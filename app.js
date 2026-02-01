@@ -43,9 +43,9 @@ document.getElementById("msg").value="";
 }
 
 db.collection("messages").orderBy("time")
-.onSnapshot(s=>{
+.onSnapshot(snapshot=>{
 document.getElementById("chat").innerHTML="";
-s.forEach(doc=>renderMsg(doc.data()));
+snapshot.forEach(doc=>renderMsg(doc.data()));
 });
 
 function openPM(user){
@@ -62,10 +62,10 @@ document.getElementById("pmPanel").style.display="none";
 
 function loadPM(){
 db.collection("pm").orderBy("time")
-.onSnapshot(s=>{
+.onSnapshot(snapshot=>{
 const box=document.getElementById("pmChat");
 box.innerHTML="";
-s.forEach(doc=>{
+snapshot.forEach(doc=>{
 const d=doc.data();
 if((d.from==nick && d.to==currentPM) || (d.to==nick && d.from==currentPM)){
 if(d.img){
