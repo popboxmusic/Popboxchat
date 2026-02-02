@@ -3,166 +3,167 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>PopboxMusic Chat</title>
+<title>Popbox Chat</title>
 
 <style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:Arial}
-body{background:#0e0e0e;color:#fff;height:100vh;overflow:hidden}
-#wrap{display:flex;flex-direction:column;height:100vh}
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
 
-#video iframe{width:100%;height:240px;border:0}
-
-#main{flex:1;display:flex;height:100%}
-
-#chatArea{flex:3;display:flex;flex-direction:column;background:#111}
-#messages{flex:1;overflow-y:auto;padding:10px}
-.msg{margin:5px 0;padding:6px;background:#1b1b1b;border-radius:6px}
-.own{background:#263238}
-
-#inputArea{display:flex;padding:8px;background:#000}
-#msgInput{flex:1;padding:10px;font-size:16px}
-button{padding:10px 15px;background:#ff3d00;color:#fff;border:0}
-
-#users{flex:1;background:#0b0b0b;border-left:1px solid #222;padding:10px;overflow-y:auto}
-.user{padding:5px;cursor:pointer}
-.user:hover{background:#222}
-
-#privateBox{
-position:fixed;
-bottom:0;
-right:20px;
-width:300px;
-height:350px;
-background:#121212;
-border:1px solid #333;
-display:none;
-flex-direction:column
+body{
+  background:#0b0f14;
+  color:#e6e6e6;
+  height:100vh;
+  overflow:hidden;
 }
-#pmHeader{background:#000;padding:8px;display:flex;justify-content:space-between}
-#pmMessages{flex:1;overflow:auto;padding:6px}
-#pmInput{display:flex}
-#pmInput input{flex:1;padding:8px}
 
-.blink{animation:blink 1s infinite}
-@keyframes blink{50%{background:red}}
+.wrapper{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  width:100vw;
+}
+
+.container{
+  width:95%;
+  max-width:1400px;
+  height:95vh;
+  background:#141b23;
+  border:1px solid #223041;
+  display:flex;
+  flex-direction:column;
+}
+
+/* HEADER VIDEO */
+.header{
+  position:relative;
+  height:200px;
+  overflow:hidden;
+}
+
+.header iframe{
+  position:absolute;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;
+}
+
+/* MAIN */
+.main{
+  flex:1;
+  display:flex;
+  overflow:hidden;
+}
+
+/* CHAT */
+.chat{
+  flex:3;
+  padding:10px;
+  overflow-y:auto;
+}
+
+/* USERS */
+.users{
+  flex:1;
+  border-left:1px solid #223041;
+  padding:10px;
+  overflow-y:auto;
+  background:#1c2632;
+}
+
+.user{
+  padding:6px;
+  border-bottom:1px solid #2a3a4d;
+}
+
+/* MESSAGE */
+.msg{
+  margin-bottom:8px;
+  padding:8px;
+  background:#1c2632;
+  border-radius:5px;
+}
+
+/* INPUT */
+.input-area{
+  display:flex;
+  border-top:1px solid #223041;
+}
+
+.input-area input{
+  flex:1;
+  padding:15px;
+  background:#1c2632;
+  border:none;
+  color:white;
+  font-size:16px;
+}
+
+.input-area button{
+  width:120px;
+  background:#e50914;
+  border:none;
+  color:white;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+/* MOBILE */
+@media(max-width:768px){
+  .main{flex-direction:column;}
+  .users{height:150px;}
+}
 </style>
 </head>
 
 <body>
-<div id="wrap">
 
-<div id="video">
-<iframe src="https://www.youtube.com/embed/if4gZc4v0ag?autoplay=1" allow="autoplay"></iframe>
+<div class="wrapper">
+<div class="container">
+
+<div class="header">
+<iframe
+src="https://www.youtube.com/embed/YOUR_VIDEO_ID?autoplay=1&mute=1&controls=0&loop=1&playlist=YOUR_VIDEO_ID"
+frameborder="0"
+allow="autoplay">
+</iframe>
 </div>
 
-<div id="main">
+<div class="main">
+  <div class="chat" id="chat">
+    <!-- Mesajlar burada -->
+  </div>
 
-<div id="chatArea">
-<div id="messages"></div>
-<div id="inputArea">
-<input id="msgInput" placeholder="Mesaj yaz ve Enter'a bas"/>
-<button onclick="sendMsg()">Gönder</button>
-</div>
-</div>
-
-<div id="users"></div>
-
-</div>
+  <div class="users" id="users">
+    <div class="user">Nick listesi</div>
+  </div>
 </div>
 
-<!-- PRIVATE CHAT -->
-<div id="privateBox">
-<div id="pmHeader">
-<span id="pmNick"></span>
-<button onclick="closePM()">X</button>
+<div class="input-area">
+  <input type="text" id="messageInput" placeholder="Mesaj yaz..." />
+  <button onclick="sendMessage()">Gönder</button>
 </div>
-<div id="pmMessages"></div>
-<div id="pmInput">
-<input id="pmText" placeholder="Özel mesaj"/>
-<button onclick="sendPM()">Gönder</button>
+
 </div>
 </div>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+<script>
+const chat = document.getElementById("chat");
+const input = document.getElementById("messageInput");
 
-const firebaseConfig = {
-apiKey:"AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
-authDomain:"popboxmusicchat.firebaseapp.com",
-projectId:"popboxmusicchat"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-let myNick = prompt("Nick gir");
-const msgBox=document.getElementById("messages");
-const usersBox=document.getElementById("users");
-
-function renderMsg(id,data){
-let div=document.createElement("div");
-div.className="msg"+(data.nick==myNick?" own":"");
-div.innerHTML=`<b>${data.nick}:</b> ${data.text}`;
-if(data.nick==myNick){
-div.onclick=()=>deleteDoc(doc(db,"messages",id));
-}
-msgBox.appendChild(div);
-msgBox.scrollTop=msgBox.scrollHeight;
+function sendMessage(){
+  if(input.value.trim() === "") return;
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.innerText = input.value;
+  chat.appendChild(div);
+  input.value="";
+  chat.scrollTop = chat.scrollHeight;
 }
 
-const q=query(collection(db,"messages"),orderBy("time"));
-onSnapshot(q,snap=>{
-msgBox.innerHTML="";
-snap.forEach(d=>renderMsg(d.id,d.data()));
-});
-
-window.sendMsg=async()=>{
-let text=msgInput.value;
-if(!text)return;
-await addDoc(collection(db,"messages"),{nick:myNick,text,time:Date.now()});
-msgInput.value="";
-}
-
-msgInput.addEventListener("keydown",e=>{
-if(e.key==="Enter")sendMsg();
-});
-
-onSnapshot(collection(db,"users"),snap=>{
-usersBox.innerHTML="";
-snap.forEach(d=>{
-let u=document.createElement("div");
-u.className="user";
-u.innerText=d.id;
-u.onclick=()=>openPM(d.id);
-usersBox.appendChild(u);
-});
-});
-
-addDoc(collection(db,"users"),{name:myNick});
-
-let pmTo=null;
-function openPM(nick){
-pmTo=nick;
-privateBox.style.display="flex";
-pmNick.innerText=nick;
-}
-
-window.closePM=()=>privateBox.style.display="none";
-
-window.sendPM=async()=>{
-let t=pmText.value;
-await addDoc(collection(db,"pm"),{from:myNick,to:pmTo,text:t,time:Date.now()});
-pmText.value="";
-}
-
-onSnapshot(collection(db,"pm"),snap=>{
-snap.forEach(d=>{
-let m=d.data();
-if(m.to==myNick && privateBox.style.display=="none"){
-usersBox.classList.add("blink");
-}
-});
+input.addEventListener("keypress", function(e){
+  if(e.key === "Enter") sendMessage();
 });
 </script>
 
