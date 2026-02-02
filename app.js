@@ -1,96 +1,141 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import {
-getFirestore, collection, addDoc, onSnapshot,
-query, orderBy, doc, updateDoc, deleteDoc
+  getFirestore, collection, addDoc, onSnapshot,
+  query, orderBy, deleteDoc, doc, getDocs, setDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
-apiKey:"AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
-authDomain:"popboxmusicchat.firebaseapp.com",
-projectId:"popboxmusicchat"
+  apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
+  authDomain: "popboxmusicchat.firebaseapp.com",
+  projectId: "popboxmusicchat",
+  storageBucket: "popboxmusicchat.firebasestorage.app",
+  messagingSenderId: "206625719024",
+  appId: "1:206625719024:web:d28f478a2c96d10412f835"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const nick = localStorage.getItem("nick");
-let currentPM = null;
+let currentNick = localStorage.getItem("nick");
+let activePrivate = null;
+
+const ADMIN_NICKS = ["popboxmusic", "popbox"];
+
+if (!currentNick) {
+  const n = prompt("Nick gir");
+  localStorage.setItem("nick", n);
+  currentNick = n;
+}
+
+document.getElementById("nickLabel").innerText = currentNick;
 
 const chat = document.getElementById("chat");
-const onlineList = document.getElementById("onlineList");
+const usersDiv = document.getElementById("users");
 
-function checkVideo(text){
-if(text.includes("youtu")){
-let id=text.split("v=")[1];
-if(id) document.getElementById("video").src=
-"https://www.youtube.com/embed/"+id+"&autoplay=1";
+async function temizleEskiMesajlar() {
+  const now = Date.now();
+  const snap = await getDocs(collection(db, "messages"));
+  snap.forEach(async (d) => {
+    if (now - d.data().time > 86400000) {
+      await deleteDoc(doc(db, "messages", d.id));
+    }
+  });
 }
-}
+temizleEskiMesajlar();
 
-window.sendMessage = async ()=>{
-const text=messageInput.value.trim();
-if(!text) return;
+function renderMessage(d, id) {
+  const div = document.createElement("div");
+  div.className = "msg";
 
-await addDoc(collection(db,"messages"),{
-nick,text,time:Date.now()
-});
-messageInput.value="";
-};
+  let delBtn = "";
+  if (d.nick === currentNick || ADMIN_NICKS.includes(currentNick)) {
+    delBtn = `<span onclick="silMesaj('${id}')" class="del">🗑</span>`;
+  }
 
-onSnapshot(query(collection(db,"messages"),orderBy("time")),snap=>{
-chat.innerHTML="";
-snap.forEach(d=>{
-const data=d.data();
-const div=document.createElement("div");
-div.innerHTML=`<span class="user" onclick="openPM('${data.nick}')">${data.nick}</span>: ${data.text}
-${data.nick===nick?`<button onclick="delMsg('${d.id}')">x</button>`:""}`;
-chat.appendChild(div);
-checkVideo(data.text);
-});
-});
-
-window.delMsg=async(id)=>{
-await deleteDoc(doc(db,"messages",id));
-};
-
-// ONLINE
-onSnapshot(collection(db,"users"),snap=>{
-onlineList.innerHTML="";
-snap.forEach(d=>{
-if(d.data().online){
-onlineList.innerHTML+=`<div class="user" onclick="openPM('${d.id}')">${d.id}</div>`;
-}
-});
-});
-
-window.openPM=(u)=>{
-currentPM=u;
-pmBox.style.display="flex";
-loadPM();
-};
-
-function loadPM(){
-onSnapshot(query(collection(db,"pm"),orderBy("time")),snap=>{
-pmChat.innerHTML="";
-snap.forEach(d=>{
-const x=d.data();
-if((x.from===nick && x.to===currentPM)||(x.to===nick && x.from===currentPM)){
-pmChat.innerHTML+=`<div>${x.from}: ${x.text||""}
-<button onclick="delPM('${d.id}')">x</button></div>`;
-}
-});
-});
+  div.innerHTML = `<b onclick="ozelBaslat('${d.nick}')">${d.nick}</b>: ${d.text} ${delBtn}`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
 }
 
-window.sendPM=async()=>{
-const t=pmText.value.trim();
-if(!t) return;
-await addDoc(collection(db,"pm"),{
-from:nick,to:currentPM,text:t,time:Date.now()
-});
-pmText.value="";
+window.silMesaj = async (id) => {
+  await deleteDoc(doc(db, "messages", id));
 };
 
-window.delPM=async(id)=>{
-await deleteDoc(doc(db,"pm",id));
+window.gonder = async () => {
+  const input = document.getElementById("msg");
+  const text = input.value.trim();
+  if (!text) return;
+
+  await addDoc(collection(db, "messages"), {
+    nick: currentNick,
+    text,
+    time: Date.now()
+  });
+
+  input.value = "";
 };
+
+document.getElementById("msg").addEventListener("keypress", e => {
+  if (e.key === "Enter") gonder();
+});
+
+const q = query(collection(db, "messages"), orderBy("time"));
+onSnapshot(q, (s) => {
+  chat.innerHTML = "";
+  s.forEach(doc => renderMessage(doc.data(), doc.id));
+});
+
+async function kullaniciKaydet() {
+  await setDoc(doc(db, "online", currentNick), {
+    nick: currentNick,
+    time: Date.now()
+  });
+}
+kullaniciKaydet();
+
+onSnapshot(collection(db, "online"), (s) => {
+  usersDiv.innerHTML = "";
+  s.forEach(d => {
+    const el = document.createElement("div");
+    el.innerText = d.data().nick;
+    el.onclick = () => ozelBaslat(d.data().nick);
+    usersDiv.appendChild(el);
+  });
+});
+
+window.ozelBaslat = (nick) => {
+  if (nick === currentNick) return;
+  activePrivate = nick;
+  document.getElementById("privateBox").style.display = "block";
+  document.getElementById("privateTitle").innerText = nick;
+};
+
+window.ozelGonder = async () => {
+  const input = document.getElementById("privateMsg");
+  const text = input.value.trim();
+  if (!text) return;
+
+  await addDoc(collection(db, "private"), {
+    from: currentNick,
+    to: activePrivate,
+    text,
+    time: Date.now()
+  });
+
+  input.value = "";
+};
+
+const pq = query(collection(db, "private"), orderBy("time"));
+onSnapshot(pq, (s) => {
+  const box = document.getElementById("privateChat");
+  box.innerHTML = "";
+  s.forEach(d => {
+    const m = d.data();
+    if (
+      (m.from === currentNick && m.to === activePrivate) ||
+      (m.from === activePrivate && m.to === currentNick)
+    ) {
+      box.innerHTML += `<div><b>${m.from}:</b> ${m.text}</div>`;
+    }
+  });
+});
