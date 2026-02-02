@@ -1,97 +1,111 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import {
-  getFirestore, collection, addDoc, onSnapshot,
-  query, orderBy, setDoc, doc, getDoc
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
   authDomain: "popboxmusicchat.firebaseapp.com",
-  projectId: "popboxmusicchat"
+  projectId: "popboxmusicchat",
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const ADMIN = ["popboxmusic","popbox"];
-let currentNick = null;
-let activePM = null;
+let currentNick="";
+let currentPM="";
 
-const loginBox = document.getElementById("login");
-const appBox = document.getElementById("app");
+window.login = async function(){
+  const nick = document.getElementById("nick").value.trim();
+  const pass = document.getElementById("pass").value.trim();
 
-loginBtn.onclick = async () => {
-  const n = nick.value.trim();
-  const p = pass.value.trim();
-  if(!n || !p) return alert("Nick ve şifre gir");
-
-  const userRef = doc(db,"users",n);
-  const snap = await getDoc(userRef);
+  const ref = doc(db,"users",nick);
+  const snap = await getDoc(ref);
 
   if(snap.exists()){
-    if(snap.data().pass !== p) return alert("Şifre yanlış");
+    if(snap.data().pass !== pass) return alert("Şifre yanlış");
   } else {
-    await setDoc(userRef,{
-      pass:p,
-      role: ADMIN.includes(n) ? "admin":"user"
-    });
+    await setDoc(ref,{pass});
   }
 
-  currentNick = n;
-  loginBox.style.display="none";
-  appBox.style.display="block";
-  baslat();
+  currentNick = nick;
+  document.getElementById("login").style.display="none";
+  loadChat();
+  loadUsers();
 };
 
-async function baslat(){
-  await setDoc(doc(db,"online",currentNick),{nick:currentNick});
+document.getElementById("msg").addEventListener("keypress",e=>{
+  if(e.key==="Enter") sendMsg();
+});
 
-  send.onclick = gonder;
-  msg.addEventListener("keypress",e=>{
-    if(e.key==="Enter") gonder();
-  });
+async function sendMsg(){
+  const text=document.getElementById("msg").value;
+  if(!text) return;
+  await addDoc(collection(db,"messages"),{nick:currentNick,text,time:Date.now()});
+  document.getElementById("msg").value="";
+}
 
-  const q = query(collection(db,"messages"),orderBy("time"));
-  onSnapshot(q,(s)=>{
+function loadChat(){
+  const q=query(collection(db,"messages"),orderBy("time"));
+  onSnapshot(q,snap=>{
+    const chat=document.getElementById("chat");
     chat.innerHTML="";
-    s.forEach(d=>{
+    snap.forEach(d=>{
       const m=d.data();
-      chat.innerHTML += `<div><b onclick="pm('${m.nick}')">${m.nick}</b>: ${m.text}</div>`;
-    });
-  });
-
-  onSnapshot(collection(db,"online"),(s)=>{
-    users.innerHTML="<b>Online</b><br>";
-    s.forEach(d=>{
-      users.innerHTML+=`<div onclick="pm('${d.data().nick}')">${d.data().nick}</div>`;
+      chat.innerHTML+=`<div class="msg"><b>${m.nick}:</b> ${m.text}</div>`;
     });
   });
 }
 
-async function gonder(){
-  if(!msg.value) return;
-  await addDoc(collection(db,"messages"),{
-    nick:currentNick,
-    text:msg.value,
-    time:Date.now()
+function loadUsers(){
+  onSnapshot(collection(db,"users"),snap=>{
+    const list=document.getElementById("userList");
+    list.innerHTML="";
+    snap.forEach(d=>{
+      const div=document.createElement("div");
+      div.className="user";
+      div.innerText=d.id;
+      div.onclick=()=>openPM(d.id,div);
+      list.appendChild(div);
+    });
   });
-  msg.value="";
 }
 
-window.pm = (n)=>{
-  if(n===currentNick) return;
-  activePM=n;
-  pm.style.display="flex";
-  pmTitle.innerText=n;
+function openPM(nick,el){
+  currentPM=nick;
+  document.getElementById("pmNick").innerText=nick;
+  document.getElementById("pmBox").style.display="flex";
+  el.classList.remove("alert");
+  loadPM();
+}
+
+window.closePM=function(){
+  document.getElementById("pmBox").style.display="none";
 };
 
-pmSend.onclick = async ()=>{
-  if(!pmMsg.value) return;
-  await addDoc(collection(db,"pm"),{
+document.getElementById("pmInput").addEventListener("keypress",e=>{
+  if(e.key==="Enter") sendPM();
+});
+
+async function sendPM(){
+  const text=document.getElementById("pmInput").value;
+  await addDoc(collection(db,"private"),{
     from:currentNick,
-    to:activePM,
-    text:pmMsg.value,
+    to:currentPM,
+    text,
     time:Date.now()
   });
-  pmMsg.value="";
-};
+  document.getElementById("pmInput").value="";
+}
+
+function loadPM(){
+  const q=query(collection(db,"private"),orderBy("time"));
+  onSnapshot(q,snap=>{
+    const box=document.getElementById("pmMessages");
+    box.innerHTML="";
+    snap.forEach(d=>{
+      const m=d.data();
+      if((m.from===currentNick && m.to===currentPM) || (m.from===currentPM && m.to===currentNick)){
+        box.innerHTML+=`<div>${m.from}: ${m.text}</div>`;
+      }
+    });
+  });
+}
