@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Popbox Live Chat</title>
+    <!-- FIREBASE -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
     <style>
         :root {
             --primary: #4fc3f7;
@@ -182,11 +186,6 @@
             background: rgba(255,85,85,0.1);
         }
         
-        .message.private {
-            border-left-color: var(--private-color);
-            background: rgba(156,39,176,0.1);
-        }
-        
         .message-header {
             display: flex;
             justify-content: space-between;
@@ -197,25 +196,11 @@
         .message-user {
             font-weight: bold;
             color: var(--primary);
-            cursor: pointer;
-        }
-        
-        .message-user:hover {
-            text-decoration: underline;
         }
         
         .message-time {
             color: #aaa;
             font-size: 0.8em;
-        }
-        
-        .message-image {
-            max-width: 100%;
-            max-height: 200px;
-            border-radius: 8px;
-            margin-top: 5px;
-            border: 2px solid var(--primary);
-            cursor: pointer;
         }
         
         .delete-btn {
@@ -267,79 +252,6 @@
             gap: 5px;
         }
         
-        .private-modal {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: var(--bg-light);
-            border: 3px solid var(--private-color);
-            border-radius: 15px;
-            width: 90%;
-            max-width: 500px;
-            max-height: 80vh;
-            z-index: 1001;
-            display: none;
-            flex-direction: column;
-        }
-        
-        .private-header {
-            padding: 15px;
-            background: rgba(0,0,0,0.3);
-            border-bottom: 1px solid var(--private-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: var(--private-color);
-            font-weight: bold;
-        }
-        
-        .private-messages {
-            flex: 1;
-            padding: 10px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            max-height: 400px;
-        }
-        
-        .private-input-container {
-            padding: 10px;
-            border-top: 1px solid var(--private-color);
-            display: flex;
-            gap: 8px;
-        }
-        
-        .overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.8);
-            z-index: 1000;
-            display: none;
-        }
-        
-        .image-modal {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.9);
-            padding: 20px;
-            border-radius: 10px;
-            z-index: 1002;
-            display: none;
-        }
-        
-        .image-modal img {
-            max-width: 80vw;
-            max-height: 80vh;
-            border-radius: 8px;
-        }
-        
         @media (max-width: 768px) {
             .main-content {
                 flex-direction: column;
@@ -350,8 +262,15 @@
                 height: 300px;
             }
         }
+        
+        .typing {
+            font-size: 0.8em;
+            color: var(--primary);
+            font-style: italic;
+            padding: 0 10px;
+            height: 20px;
+        }
     </style>
-    <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
     <div id="login-screen">
@@ -364,8 +283,8 @@
                    autocomplete="off">
             <button class="login-btn" onclick="login()">Sohbete Katıl</button>
             <div style="margin-top: 15px; color: #aaa; font-size: 0.9em;">
-                <strong>Admin Kullanıcıları:</strong> popbox, popboxmusic<br>
-                <strong>Admin Şifresi:</strong> /admin [şifre] komutunu kullanın
+                <strong>Admin:</strong> popbox / popboxmusic<br>
+                <strong>Şifre:</strong> /admin kumsal07@
             </div>
         </div>
     </div>
@@ -395,6 +314,8 @@
                 <div class="messages-container" id="messages">
                 </div>
                 
+                <div class="typing" id="typing"></div>
+                
                 <div class="input-container">
                     <input type="text" 
                            id="message-input" 
@@ -407,113 +328,37 @@
             </div>
         </div>
     </div>
-    
-    <div class="overlay" id="overlay"></div>
-    <div class="private-modal" id="privateChat">
-        <div class="private-header">
-            <span id="privateWith">🔒 Özel Sohbet</span>
-            <button onclick="closePrivateChat()" style="background:none;border:none;color:white;font-size:1.5em;cursor:pointer;">×</button>
-        </div>
-        <div class="private-messages" id="privateMessages"></div>
-        <div class="private-input-container">
-            <input type="text" 
-                   id="private-input" 
-                   class="login-input" 
-                   placeholder="Özel mesaj yazın..."
-                   autocomplete="off">
-            <button class="action-btn" onclick="sendPrivateImage()" style="background:var(--private-color);">📷</button>
-            <button class="action-btn" onclick="sendPrivateMessage()" style="background:var(--private-color);">📤</button>
-        </div>
-    </div>
-    
-    <div class="image-modal" id="imageModal">
-        <img id="modalImage" src="" alt="">
-        <button onclick="closeImageModal()" style="position:absolute;top:-10px;right:-10px;background:red;color:white;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;">×</button>
-    </div>
-    
-    <input type="file" id="imageUpload" accept="image/*" style="display:none;">
 
     <script>
+        // ========== FIREBASE KONFİGÜRASYONU ==========
+        // BURAYA FIREBASE'DEN ALDIĞIN KODU YAPIŞTIR!
+        const firebaseConfig = {
+            apiKey: "AIzaSyB...KENDI_API_KEYINI_YAPIŞTIR",
+            authDomain: "popbox-chat.firebaseapp.com",
+            databaseURL: "https://popbox-chat-default-rtdb.firebaseio.com",
+            projectId: "popbox-chat",
+            storageBucket: "popbox-chat.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef123456"
+        };
+        
+        // Firebase'i başlat
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
         // ========== GLOBAL DEĞİŞKENLER ==========
         let currentUser = null;
         let isAdmin = false;
-        let privateChatWith = null;
         let player = null;
-        let messageCheckInterval = null;
-        let userActivityInterval = null;
+        let userRef = null;
+        let typingTimeout = null;
         
-        // Admin kullanıcıları ve şifreleri
+        // Admin kullanıcıları
         const ADMIN_USERS = ['popbox', 'popboxmusic'];
         const ADMIN_PASSWORDS = {
             'popbox': 'kumsal07@',
             'popboxmusic': 'popbox123'
         };
-        
-        // ========== SESSION YÖNETİMİ ==========
-        function generateSessionId() {
-            return 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        }
-        
-        // ========== LOCALSTORAGE FONKSİYONLARI ==========
-        function getOnlineUsers() {
-            const data = JSON.parse(localStorage.getItem('popbox_online_users') || '{}');
-            
-            // Eski kullanıcıları temizle (5 dakikadan eski)
-            const now = Date.now();
-            const fiveMinutes = 5 * 60 * 1000;
-            
-            Object.keys(data).forEach(username => {
-                if (now - data[username].lastActivity > fiveMinutes) {
-                    delete data[username];
-                }
-            });
-            
-            localStorage.setItem('popbox_online_users', JSON.stringify(data));
-            return data;
-        }
-        
-        function updateUserActivity(username) {
-            const users = getOnlineUsers();
-            users[username] = {
-                lastActivity: Date.now(),
-                isActive: true
-            };
-            localStorage.setItem('popbox_online_users', JSON.stringify(users));
-        }
-        
-        function removeUser(username) {
-            const users = getOnlineUsers();
-            delete users[username];
-            localStorage.setItem('popbox_online_users', JSON.stringify(users));
-        }
-        
-        function isUserOnline(username) {
-            const users = getOnlineUsers();
-            return users.hasOwnProperty(username) && users[username].isActive;
-        }
-        
-        function getMessages() {
-            return JSON.parse(localStorage.getItem('popbox_messages') || '[]');
-        }
-        
-        function saveMessage(message) {
-            const messages = getMessages();
-            messages.push(message);
-            
-            // Son 200 mesajı sakla
-            if (messages.length > 200) {
-                messages.shift();
-            }
-            
-            localStorage.setItem('popbox_messages', JSON.stringify(messages));
-        }
-        
-        function clearOldMessages() {
-            const messages = getMessages();
-            const oneHourAgo = Date.now() - (60 * 60 * 1000);
-            const filtered = messages.filter(msg => msg.timestamp > oneHourAgo);
-            localStorage.setItem('popbox_messages', JSON.stringify(filtered));
-        }
         
         // ========== LOGIN SİSTEMİ ==========
         function login() {
@@ -530,42 +375,71 @@
                 return;
             }
             
-            // Aktif olarak online olan kullanıcıyı kontrol et
-            if (isUserOnline(nick)) {
-                alert(`"${nick}" kullanıcısı şu anda aktif! Lütfen başka bir kullanıcı adı seçin.`);
-                return;
-            }
-            
-            currentUser = { 
-                name: nick, 
-                role: 'user',
-                sessionId: generateSessionId()
-            };
-            
-            // Kullanıcıyı online listesine ekle
-            updateUserActivity(nick);
-            
-            // Sayfayı göster
-            document.getElementById('login-screen').style.display = 'none';
-            document.getElementById('app').style.display = 'flex';
-            
-            // Uygulamayı başlat
-            initApp();
+            // Firebase'de bu kullanıcı online mı kontrol et
+            database.ref('online_users/' + nick).once('value').then(snapshot => {
+                if (snapshot.exists()) {
+                    alert(`"${nick}" kullanıcısı şu anda online! Lütfen başka bir kullanıcı adı seçin.`);
+                    return;
+                }
+                
+                // Kullanıcıyı oluştur
+                currentUser = {
+                    name: nick,
+                    role: 'user',
+                    isAdminUser: ADMIN_USERS.includes(nick.toLowerCase()),
+                    lastSeen: Date.now()
+                };
+                
+                // Firebase'e online kullanıcı olarak ekle
+                userRef = database.ref('online_users/' + nick);
+                userRef.set({
+                    name: nick,
+                    lastSeen: Date.now(),
+                    isTyping: false
+                });
+                
+                // Kullanıcı çıkış yapınca Firebase'den sil
+                window.addEventListener('beforeunload', () => {
+                    if (userRef) {
+                        userRef.remove();
+                    }
+                });
+                
+                // Sayfayı göster
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('app').style.display = 'flex';
+                
+                // Uygulamayı başlat
+                initApp();
+                
+            }).catch(error => {
+                console.error('Firebase error:', error);
+                alert('Firebase bağlantı hatası!');
+            });
         }
         
         // ========== UYGULAMA BAŞLATMA ==========
         function initApp() {
             // Hoş geldin mesajı
             addSystemMessage(`Hoş geldin, ${currentUser.name}!`);
-            addSystemMessage('Admin girişi: /admin [şifre]');
+            
+            if (currentUser.isAdminUser) {
+                addSystemMessage('Admin girişi: /admin [şifre]');
+            }
             
             // Event listener'lar
-            document.getElementById('message-input').addEventListener('keypress', function(e) {
+            const messageInput = document.getElementById('message-input');
+            messageInput.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') sendMessage();
             });
             
-            document.getElementById('private-input').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') sendPrivateMessage();
+            // Yazma durumu takibi
+            messageInput.addEventListener('input', function() {
+                updateTypingStatus(true);
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => {
+                    updateTypingStatus(false);
+                }, 1000);
             });
             
             // YouTube player
@@ -573,73 +447,35 @@
                 initYouTubePlayer();
             }
             
-            // Online kullanıcıları güncelle
-            updateOnlineUsersDisplay();
+            // Mesajları dinle
+            setupMessageListener();
             
-            // Mesajları yükle
-            loadMessages();
+            // Online kullanıcıları dinle
+            setupOnlineUsersListener();
             
-            // Mesaj kontrolünü başlat
-            startMessageChecker();
-            
-            // Kullanıcı aktivite kontrolü
-            startUserActivityChecker();
-            
-            // Eski mesajları temizle
-            clearOldMessages();
-            
-            // Sayfa kapanırken kullanıcıyı çıkar
-            window.addEventListener('beforeunload', function() {
-                removeUser(currentUser.name);
+            // 10 saniyede bir lastSeen güncelle
+            setInterval(() => {
+                if (userRef && currentUser) {
+                    userRef.update({
+                        lastSeen: Date.now()
+                    });
+                }
+            }, 10000);
+        }
+        
+        // ========== FIREBASE DİNLEYİCİLERİ ==========
+        function setupMessageListener() {
+            database.ref('messages').on('value', (snapshot) => {
+                const messages = snapshot.val() || {};
+                renderMessages(messages);
             });
         }
         
-        // ========== MESAJ KONTROL SİSTEMİ ==========
-        function startMessageChecker() {
-            // Her 1 saniyede bir yeni mesajları kontrol et
-            messageCheckInterval = setInterval(checkNewMessages, 1000);
-        }
-        
-        function checkNewMessages() {
-            loadMessages();
-            updateOnlineUsersDisplay();
-            
-            // Kullanıcı aktivitesini güncelle
-            if (currentUser) {
-                updateUserActivity(currentUser.name);
-            }
-        }
-        
-        function loadMessages() {
-            const messages = getMessages();
-            const container = document.getElementById('messages');
-            const currentMessages = container.querySelectorAll('.message:not(.system)');
-            
-            // Eğer mesaj sayısı değişmişse yenile
-            if (currentMessages.length !== messages.length) {
-                renderAllMessages();
-            }
-        }
-        
-        function renderAllMessages() {
-            const messages = getMessages();
-            const container = document.getElementById('messages');
-            
-            // Tüm mesajları temizle
-            container.innerHTML = '';
-            
-            // Mesajları ekle
-            messages.forEach(msg => {
-                addMessageToUI(msg.sender, msg.text, msg.type, msg.image, false, msg.timestamp);
+        function setupOnlineUsersListener() {
+            database.ref('online_users').on('value', (snapshot) => {
+                const users = snapshot.val() || {};
+                updateOnlineUsers(users);
             });
-            
-            // Sistem mesajlarını en üste ekle
-            const welcomeMsg = document.createElement('div');
-            welcomeMsg.className = 'message system';
-            welcomeMsg.innerHTML = `<strong>Sistem:</strong> Hoş geldin, ${currentUser?.name || 'Kullanıcı'}!<br><small>Admin girişi: /admin [şifre]</small>`;
-            container.prepend(welcomeMsg);
-            
-            container.scrollTop = container.scrollHeight;
         }
         
         // ========== MESAJ GÖNDERME ==========
@@ -651,108 +487,158 @@
             
             if (text.startsWith('/')) {
                 handleCommand(text);
-            } else {
-                // Mesajı kaydet
-                const message = {
-                    id: Date.now(),
-                    sender: currentUser.name,
-                    text: text,
-                    type: isAdmin ? 'admin' : 'user',
-                    image: null,
-                    timestamp: Date.now()
-                };
-                
-                saveMessage(message);
-                
-                // UI'da göster
-                addMessageToUI(currentUser.name, text, isAdmin ? 'admin' : 'user', null, false, Date.now());
-                
-                // Demo cevap
-                setTimeout(() => {
-                    sendDemoReply(text);
-                }, 1000 + Math.random() * 2000);
+                input.value = '';
+                return;
             }
             
-            input.value = '';
-            input.focus();
+            // Yazma durumunu durdur
+            updateTypingStatus(false);
+            
+            // Mesajı Firebase'e kaydet
+            const messageId = Date.now().toString();
+            const message = {
+                id: messageId,
+                sender: currentUser.name,
+                text: text,
+                type: isAdmin ? 'admin' : 'user',
+                timestamp: Date.now()
+            };
+            
+            database.ref('messages/' + messageId).set(message)
+                .then(() => {
+                    input.value = '';
+                    input.focus();
+                    
+                    // Demo cevap (ilk mesajsa)
+                    if (Object.keys(getCurrentMessages()).length === 1) {
+                        setTimeout(() => {
+                            sendDemoReply(text);
+                        }, 1500);
+                    }
+                })
+                .catch(error => {
+                    console.error('Mesaj gönderme hatası:', error);
+                    alert('Mesaj gönderilemedi!');
+                });
         }
         
-        function addMessageToUI(sender, text, type = 'user', image = null, isPrivate = false, timestamp = Date.now()) {
-            const container = isPrivate ? 
-                document.getElementById('privateMessages') : 
-                document.getElementById('messages');
+        function updateTypingStatus(isTyping) {
+            if (userRef) {
+                userRef.update({
+                    isTyping: isTyping,
+                    lastSeen: Date.now()
+                });
+            }
+        }
+        
+        // ========== MESAJLARI GÖRÜNTÜLEME ==========
+        function renderMessages(messagesObj) {
+            const messages = Object.values(messagesObj).sort((a, b) => a.timestamp - b.timestamp);
+            const container = document.getElementById('messages');
             
-            if (!container) return;
+            // Mesajları temizle (sistem mesajları hariç)
+            const systemMessages = Array.from(container.querySelectorAll('.message.system'));
+            container.innerHTML = '';
+            
+            // Sistem mesajlarını geri ekle
+            systemMessages.forEach(msg => {
+                container.appendChild(msg);
+            });
+            
+            // Mesajları ekle
+            messages.forEach(msg => {
+                addMessageToUI(msg.sender, msg.text, msg.type, msg.timestamp);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function getCurrentMessages() {
+            // Firebase'deki mesajları al
+            return {};
+        }
+        
+        function addMessageToUI(sender, text, type = 'user', timestamp) {
+            const container = document.getElementById('messages');
             
             const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type} ${isPrivate ? 'private' : ''}`;
-            messageDiv.dataset.timestamp = timestamp;
+            messageDiv.className = `message ${type}`;
             
             const date = new Date(timestamp);
             const timeStr = date.getHours().toString().padStart(2, '0') + ':' + 
                            date.getMinutes().toString().padStart(2, '0');
             
-            let content = text;
-            if (image) {
-                content += `<br><img src="${image}" class="message-image" onclick="showImage('${image}')">`;
-            }
-            
             messageDiv.innerHTML = `
                 <div class="message-header">
-                    <span class="message-user" onclick="openPrivateChat('${sender}')">
+                    <span class="message-user">
                         ${type === 'admin' ? '👑 ' : ''}${sender}
                     </span>
                     <span class="message-time">${timeStr}</span>
                 </div>
-                <div>${content}</div>
-                ${(isAdmin && sender === currentUser.name && !isPrivate) ? 
-                  `<button class="delete-btn" onclick="deleteMessage(this, ${timestamp})">×</button>` : ''}
+                <div>${text}</div>
+                ${(isAdmin && sender === currentUser.name) ? 
+                  `<button class="delete-btn" onclick="deleteMessage('${sender}', ${timestamp})">×</button>` : ''}
             `;
             
-            // Zaman sırasına göre ekle
-            const messages = Array.from(container.children);
-            let inserted = false;
-            
-            for (let i = 0; i < messages.length; i++) {
-                const msgTime = parseInt(messages[i].dataset.timestamp || 0);
-                if (timestamp < msgTime) {
-                    container.insertBefore(messageDiv, messages[i]);
-                    inserted = true;
-                    break;
-                }
-            }
-            
-            if (!inserted) {
-                container.appendChild(messageDiv);
-            }
-            
+            container.appendChild(messageDiv);
             container.scrollTop = container.scrollHeight;
         }
         
         function addSystemMessage(text) {
-            const message = {
-                id: Date.now(),
+            const container = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message system';
+            messageDiv.innerHTML = `<strong>Sistem:</strong> ${text}`;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+            
+            // Firebase'e de kaydet
+            const messageId = Date.now().toString();
+            database.ref('messages/' + messageId).set({
+                id: messageId,
                 sender: 'Sistem',
                 text: text,
                 type: 'system',
-                image: null,
                 timestamp: Date.now()
-            };
-            
-            saveMessage(message);
-            addMessageToUI('Sistem', text, 'system', null, false, Date.now());
+            });
         }
         
-        function deleteMessage(btn, messageId) {
+        function deleteMessage(sender, timestamp) {
             if (!isAdmin) return;
             
-            // Sadece UI'dan sil
-            const messageDiv = btn.parentElement;
-            messageDiv.style.opacity = '0.5';
-            messageDiv.style.textDecoration = 'line-through';
-            btn.style.display = 'none';
+            // Firebase'den mesajı sil
+            database.ref('messages').once('value').then(snapshot => {
+                const messages = snapshot.val() || {};
+                Object.keys(messages).forEach(key => {
+                    if (messages[key].sender === sender && messages[key].timestamp === timestamp) {
+                        database.ref('messages/' + key).remove();
+                    }
+                });
+            });
             
             addSystemMessage('Bir mesaj silindi.');
+        }
+        
+        // ========== ONLINE KULLANICILAR ==========
+        function updateOnlineUsers(users) {
+            const now = Date.now();
+            const activeUsers = Object.values(users).filter(user => 
+                (now - user.lastSeen) < 30000 // 30 saniye
+            );
+            
+            const onlineCount = activeUsers.length;
+            document.getElementById('online-count').textContent = onlineCount;
+            document.getElementById('chat-online-count').textContent = onlineCount;
+            
+            // Yazma durumunu göster
+            const typingUsers = activeUsers.filter(user => user.isTyping && user.name !== currentUser.name);
+            const typingElement = document.getElementById('typing');
+            
+            if (typingUsers.length > 0) {
+                typingElement.textContent = `${typingUsers[0].name} yazıyor...`;
+            } else {
+                typingElement.textContent = '';
+            }
         }
         
         // ========== YOUTUBE PLAYER ==========
@@ -801,19 +687,6 @@
                     else addSystemMessage('⛔ Yetkiniz yok!');
                     break;
                     
-                case 'engelle':
-                    if (isAdmin && args.length === 1) {
-                        blockUser(args[0]);
-                    }
-                    break;
-                    
-                case 'sohbet':
-                    if (isAdmin && args.length === 1) {
-                        if (args[0] === 'kapat') muteChat(true);
-                        else if (args[0] === 'ac') muteChat(false);
-                    }
-                    break;
-                    
                 case 'yardım':
                     showHelp();
                     break;
@@ -824,30 +697,21 @@
         }
         
         function checkAdminPassword(password) {
-            // Admin kullanıcısı mı?
-            if (!ADMIN_USERS.includes(currentUser.name.toLowerCase())) {
+            if (!currentUser.isAdminUser) {
                 addSystemMessage('❌ Bu kullanıcı admin değil!');
                 return;
             }
             
-            // Şifre kontrolü
             const correctPassword = ADMIN_PASSWORDS[currentUser.name.toLowerCase()];
             if (password === correctPassword) {
                 isAdmin = true;
-                document.getElementById('adminBadge').style.display = 'inline-block';
                 currentUser.role = 'admin';
+                document.getElementById('adminBadge').style.display = 'inline-block';
                 
                 // Gizli admin girişi
                 document.body.style.border = '5px solid red';
                 
-                // Gizli sistem mesajı
-                setTimeout(() => {
-                    const privateMsg = document.createElement('div');
-                    privateMsg.className = 'message system';
-                    privateMsg.innerHTML = `<strong>Sistem:</strong> ✅ Admin girişi başarılı!`;
-                    privateMsg.style.background = 'rgba(255,0,0,0.1)';
-                    document.getElementById('messages').appendChild(privateMsg);
-                }, 100);
+                addSystemMessage('✅ Admin girişi başarılı!');
             } else {
                 addSystemMessage('❌ Hatalı şifre!');
             }
@@ -856,25 +720,14 @@
         function clearChat() {
             if (!confirm('Tüm sohbeti temizlemek istiyor musunuz?')) return;
             
-            // Mesajları temizle
-            localStorage.setItem('popbox_messages', JSON.stringify([]));
-            
-            // UI'yı yenile
-            renderAllMessages();
-            
-            addSystemMessage('Sohbet temizlendi.');
-        }
-        
-        function blockUser(username) {
-            addSystemMessage(`⛔ ${username} engellendi.`);
-        }
-        
-        function muteChat(mute) {
-            if (mute) {
-                addSystemMessage('🔇 Sohbet kapatıldı. Sadece adminler yazabilir.');
-            } else {
-                addSystemMessage('🔊 Sohbet açıldı.');
-            }
+            database.ref('messages').remove()
+                .then(() => {
+                    addSystemMessage('Sohbet temizlendi.');
+                })
+                .catch(error => {
+                    console.error('Temizleme hatası:', error);
+                    alert('Sohbet temizlenemedi!');
+                });
         }
         
         function showHelp() {
@@ -883,9 +736,6 @@
             
             if (isAdmin) {
                 help += '• /temizle - Sohbeti temizle<br>';
-                help += '• /engelle [kullanıcı] - Kullanıcı engelle<br>';
-                help += '• /sohbet kapat - Sohbeti kapat<br>';
-                help += '• /sohbet ac - Sohbeti aç<br>';
             }
             
             help += '• /yardım - Bu mesajı göster';
@@ -893,194 +743,19 @@
             addSystemMessage(help);
         }
         
-        // ========== ÖZEL SOHBET ==========
-        function openPrivateChat(username) {
-            if (username === currentUser.name) return;
-            
-            privateChatWith = username;
-            document.getElementById('privateWith').textContent = `🔒 ${username} ile özel sohbet`;
-            document.getElementById('privateChat').style.display = 'flex';
-            document.getElementById('overlay').style.display = 'block';
-            
-            loadPrivateMessages(username);
-            
-            setTimeout(() => {
-                document.getElementById('private-input').focus();
-            }, 100);
-        }
-        
-        function closePrivateChat() {
-            privateChatWith = null;
-            document.getElementById('privateChat').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
-            document.getElementById('private-input').value = '';
-        }
-        
-        function sendPrivateMessage() {
-            if (!privateChatWith) return;
-            
-            const input = document.getElementById('private-input');
-            const text = input.value.trim();
-            
-            if (!text) return;
-            
-            // UI'da göster
-            const container = document.getElementById('privateMessages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message private';
-            messageDiv.innerHTML = `<strong>${currentUser.name}:</strong> ${text}`;
-            container.appendChild(messageDiv);
-            container.scrollTop = container.scrollHeight;
-            
-            // Demo cevap
-            setTimeout(() => {
-                const replyDiv = document.createElement('div');
-                replyDiv.className = 'message private';
-                replyDiv.innerHTML = `<strong>${privateChatWith}:</strong> Anladım!`;
-                container.appendChild(replyDiv);
-                container.scrollTop = container.scrollHeight;
-            }, 1000);
-            
-            input.value = '';
-            input.focus();
-        }
-        
-        function loadPrivateMessages(username) {
-            const container = document.getElementById('privateMessages');
-            container.innerHTML = '';
-            
-            // Özel mesajlar şu an sadece session'da
-            const demoMessages = [
-                { from: username, text: 'Merhaba!' },
-                { from: currentUser.name, text: 'Selam, nasılsın?' }
-            ];
-            
-            demoMessages.forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message private';
-                messageDiv.innerHTML = `<strong>${msg.from}:</strong> ${msg.text}`;
-                container.appendChild(messageDiv);
-            });
-            
-            container.scrollTop = container.scrollHeight;
-        }
-        
-        // ========== RESİM GÖNDERME ==========
-        function sendPrivateImage() {
-            if (!privateChatWith) {
-                alert('Önce bir kullanıcı ile özel sohbette olmalısınız!');
-                return;
-            }
-            
-            document.getElementById('imageUpload').click();
-        }
-        
-        document.getElementById('imageUpload').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            if (!file.type.startsWith('image/')) {
-                alert('Sadece resim dosyaları!');
-                return;
-            }
-            
-            if (file.size > 2 * 1024 * 1024) {
-                alert('Resim çok büyük! Maksimum 2MB.');
-                return;
-            }
-            
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const imageData = event.target.result;
-                
-                // UI'da göster
-                const container = document.getElementById('privateMessages');
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message private';
-                messageDiv.innerHTML = `
-                    <strong>${currentUser.name}:</strong> 📸 Resim gönderdi<br>
-                    <img src="${imageData}" class="message-image" onclick="showImage('${imageData}')">
-                `;
-                container.appendChild(messageDiv);
-                container.scrollTop = container.scrollHeight;
-                
-                // Demo cevap
-                setTimeout(() => {
-                    const replyDiv = document.createElement('div');
-                    replyDiv.className = 'message private';
-                    replyDiv.innerHTML = `<strong>${privateChatWith}:</strong> Harika resim! 👏`;
-                    container.appendChild(replyDiv);
-                    container.scrollTop = container.scrollHeight;
-                }, 1500);
-            };
-            
-            reader.readAsDataURL(file);
-            e.target.value = '';
-        });
-        
-        function showImage(imageData) {
-            document.getElementById('modalImage').src = imageData;
-            document.getElementById('imageModal').style.display = 'block';
-            document.getElementById('overlay').style.display = 'block';
-        }
-        
-        function closeImageModal() {
-            document.getElementById('imageModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
-        }
-        
-        // ========== ONLINE KULLANICI YÖNETİMİ ==========
-        function updateOnlineUsersDisplay() {
-            const users = getOnlineUsers();
-            const onlineUsers = Object.keys(users).filter(username => 
-                Date.now() - users[username].lastActivity < 30000 // 30 saniye
-            );
-            
-            const onlineCount = onlineUsers.length;
-            
-            document.getElementById('online-count').textContent = onlineCount;
-            document.getElementById('chat-online-count').textContent = onlineCount;
-            
-            // Kendi kullanıcımızı aktif tut
-            if (currentUser) {
-                updateUserActivity(currentUser.name);
-            }
-        }
-        
-        function startUserActivityChecker() {
-            // Her 10 saniyede bir eski kullanıcıları temizle
-            userActivityInterval = setInterval(() => {
-                const users = getOnlineUsers();
-                const now = Date.now();
-                const thirtySeconds = 30 * 1000;
-                
-                Object.keys(users).forEach(username => {
-                    if (now - users[username].lastActivity > thirtySeconds) {
-                        delete users[username];
-                    }
-                });
-                
-                localStorage.setItem('popbox_online_users', JSON.stringify(users));
-                updateOnlineUsersDisplay();
-            }, 10000);
-        }
-        
-        // ========== DEMO MESAJLAR ==========
+        // ========== DEMO CEVAP ==========
         function sendDemoReply(text) {
-            const users = getOnlineUsers();
-            const otherUsers = Object.keys(users).filter(u => u !== currentUser.name);
+            // Demo kullanıcılar
+            const demoUsers = ['Ahmet', 'Mehmet', 'Ayşe'];
+            const randomUser = demoUsers[Math.floor(Math.random() * demoUsers.length)];
             
-            if (otherUsers.length === 0) return;
-            
-            const randomUser = otherUsers[Math.floor(Math.random() * otherUsers.length)];
             const replies = {
                 'merhaba': ['Merhaba!', 'Selam!', 'Hoş geldin!'],
                 'nasılsın': ['İyiyim, sen?', 'Harika!', 'Teşekkürler!'],
-                'admin': ['Admin aktif.', 'Popbox yönetiyor!'],
-                'resim': ['Özel sohbette resim gönderebilirsin! 📸']
+                'admin': ['Admin aktif.', 'Popbox yönetiyor!']
             };
             
-            let reply = null;
+            let reply = 'Evet!';
             const lowerText = text.toLowerCase();
             
             for (const [key, responseArray] of Object.entries(replies)) {
@@ -1090,30 +765,27 @@
                 }
             }
             
-            if (!reply) {
-                reply = 'Evet, katılıyorum!';
-            }
-            
             setTimeout(() => {
-                const message = {
-                    id: Date.now(),
+                const messageId = Date.now().toString();
+                database.ref('messages/' + messageId).set({
+                    id: messageId,
                     sender: randomUser,
                     text: reply,
                     type: 'user',
-                    image: null,
                     timestamp: Date.now()
-                };
-                
-                saveMessage(message);
-                addMessageToUI(randomUser, reply, 'user', null, false, Date.now());
-            }, 1000 + Math.random() * 2000);
+                });
+            }, 1500);
         }
         
         // ========== SAYFA YÜKLENDİĞİNDE ==========
         window.addEventListener('load', function() {
-            // Eski online kullanıcıları temizle
-            const users = getOnlineUsers();
-            localStorage.setItem('popbox_online_users', JSON.stringify({}));
+            // Otomatik login kontrolü (sessionStorage ile)
+            const savedUser = sessionStorage.getItem('popbox_user');
+            if (savedUser) {
+                const user = JSON.parse(savedUser);
+                document.getElementById('login-nick').value = user.name;
+                login();
+            }
         });
     </script>
 </body>
