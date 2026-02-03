@@ -34,6 +34,14 @@
       color: #4caf50;
       font-weight: 500;
     }
+    .admin-badge {
+      background: #ff9800;
+      color: white;
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+    }
     .main {
       flex: 1;
       display: flex;
@@ -70,7 +78,6 @@
       border-radius: 12px;
       max-width: 80%;
       word-break: break-word;
-      position: relative;
     }
     .message.own {
       background: #e91e63;
@@ -228,10 +235,6 @@
     </div>
   </div>
 
-  <audio id="notification-sound" preload="auto">
-    <source src="data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU" type="audio/wav">
-  </audio>
-
   <script>
     // ====================================================
     // FIREBASE CONFIG
@@ -254,6 +257,7 @@
     let currentNick = "";
     let currentPrivateToUid = null;
     let currentPrivateToNick = "";
+    let currentPrivateListener = null;
 
     // Basit emoji map
     const emojiMap = {
@@ -272,11 +276,15 @@
       return result;
     }
 
-    // Bildirim sesi çalma fonksiyonu
+    // Bildirim sesi
     function playNotificationSound() {
-      const sound = document.getElementById("notification-sound");
-      sound.currentTime = 0;
-      sound.play().catch(() => console.log("Ses çalınamadı (tarayıcı izni gerekebilir)"));
+      const sound = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YU");
+      sound.play().catch(() => {});
+    }
+
+    // Admin kontrolü (senin nick'in admin olsun)
+    function isAdmin(nick) {
+      return nick === "poppbox" || nick === "seninadminnickin"; // buraya kendi nick'ini yaz
     }
 
     // Giriş
@@ -309,7 +317,8 @@
             userRef.set({
               nick: nick,
               online: true,
-              lastSeen: Date.now()
+              lastSeen: Date.now(),
+              role: isAdmin(nick) ? "admin" : "user"
             });
 
             userRef.onDisconnect().update({
@@ -317,13 +326,13 @@
               lastSeen: firebase.database.ServerValue.TIMESTAMP
             });
 
-            document.getElementById("login-area").innerHTML = `Hoş geldin, <b>${nick}</b>`;
+            document.getElementById("login-area").innerHTML = `Hoş geldin, <b>${nick}</b>${isAdmin(nick) ? ' (Admin)' : ''}`;
           })
           .catch(err => alert("Giriş hatası: " + err.message));
       });
     };
 
-    // Online kullanıcılar + sayaç
+    // Online kullanıcılar + sayaç + admin badge
     db.ref("users").on("value", snapshot => {
       let count = 0;
       const list = document.getElementById("user-list");
@@ -336,7 +345,7 @@
           const div = document.createElement("div");
           div.className = "user-item";
           div.id = `user-${child.key}`;
-          div.textContent = user.nick;
+          div.innerHTML = `${user.nick}${user.role === "admin" ? '<span class="admin-badge">Admin</span>' : ''}`;
           div.onclick = () => openPrivateChat(child.key, user.nick);
           list.appendChild(div);
         }
@@ -345,7 +354,7 @@
       document.getElementById("online-count").textContent = `Online: ${count} kişi`;
     });
 
-    // Genel sohbet
+    // Genel sohbet + otomatik silme + emoji + vurgu
     db.ref("messages").limitToLast(101).on("child_added", snapshot => {
       db.ref("messages").limitToFirst(1).once("child_added", oldest => {
         if (oldest.key !== snapshot.key) oldest.ref.remove();
@@ -363,9 +372,71 @@
       }
     });
 
+    // Genel mesaj gönderme + admin komutları
+    document.getElementById("send-btn").onclick = sendPublicMessage;
+    document.getElementById("message-input").onkeypress = e => {
+      if (e.key === "Enter") sendPublicMessage();
+    };
+
     function sendPublicMessage() {
-      const text = document.getElementById("message-input").value.trim();
+      let text = document.getElementById("message-input").value.trim();
       if (!text || !currentNick) return;
+
+      // Admin komut kontrolü
+      if (text.startsWith("/")) {
+        if (!isAdmin(currentNick)) {
+          alert("Bu komutu kullanmak için admin olmalısın.");
+          return;
+        }
+
+        const parts = text.substring(1).split(" ");
+        const command = parts[0].toLowerCase();
+
+        if (command === "temiz") {
+          db.ref("messages").remove();
+          alert("Genel sohbet temizlendi.");
+        } else if (command === "sil" && parts[1]) {
+          // Son mesajı silmek için basit örnek
+          db.ref("messages").limitToLast(1).once("value", snap => {
+            snap.forEach(child => child.ref.remove());
+          });
+          alert("Son mesaj silindi.");
+        } else if (command === "kick" && parts[1]) {
+          const targetNick = parts[1];
+          db.ref("users").once("value", snap => {
+            snap.forEach(child => {
+              if (child.val().nick === targetNick) {
+                child.ref.update({ online: false });
+                alert(`${targetNick} kicklendi.`);
+              }
+            });
+          });
+        } else if (command === "admin" && parts[1]) {
+          const targetNick = parts[1];
+          db.ref("users").once("value", snap => {
+            snap.forEach(child => {
+              if (child.val().nick === targetNick) {
+                child.ref.update({ role: "admin" });
+                alert(`${targetNick} artık admin.`);
+              }
+            });
+          });
+        } else if (command === "unadmin" && parts[1]) {
+          const targetNick = parts[1];
+          db.ref("users").once("value", snap => {
+            snap.forEach(child => {
+              if (child.val().nick === targetNick) {
+                child.ref.update({ role: "user" });
+                alert(`${targetNick} artık normal kullanıcı.`);
+              }
+            });
+          });
+        } else {
+          alert("Geçersiz komut. Kullanılabilir: /temiz, /sil, /kick [nick], /admin [nick], /unadmin [nick]");
+        }
+        document.getElementById("message-input").value = "";
+        return;
+      }
 
       db.ref("messages").push({
         nick: currentNick,
@@ -375,13 +446,12 @@
       document.getElementById("message-input").value = "";
     }
 
-    document.getElementById("send-btn").onclick = sendPublicMessage;
-    document.getElementById("message-input").onkeypress = e => {
-      if (e.key === "Enter") sendPublicMessage();
-    };
-
-    // Özel sohbet
+    // Özel sohbet (dinleyici temizleme + duplicate önleme + admin komut desteği)
     function openPrivateChat(uid, nick) {
+      if (currentPrivateListener) {
+        db.ref(`private/${currentPrivateListener.chatId}`).off("child_added", currentPrivateListener.listener);
+      }
+
       currentPrivateToUid = uid;
       currentPrivateToNick = nick;
       document.getElementById("private-title").textContent = `Özel: ${nick}`;
@@ -390,7 +460,7 @@
 
       const chatId = [auth.currentUser.uid, uid].sort().join("_");
 
-      db.ref(`private/${chatId}`).limitToLast(101).on("child_added", snapshot => {
+      const listener = snapshot => {
         db.ref(`private/${chatId}`).limitToFirst(1).once("child_added", oldest => {
           if (oldest.key !== snapshot.key) oldest.ref.remove();
         });
@@ -418,7 +488,6 @@
         if (msg.from !== auth.currentUser.uid) {
           setTimeout(() => div.classList.remove("new-message-highlight"), 2000);
 
-          // Online listedeki nick'e bildirim efekti + ses
           const userDiv = document.getElementById(`user-${msg.from}`);
           if (userDiv) {
             userDiv.classList.add("blink-notification");
@@ -426,26 +495,48 @@
             playNotificationSound();
           }
         }
-      });
+      };
+
+      db.ref(`private/${chatId}`).limitToLast(101).on("child_added", listener);
+      currentPrivateListener = { chatId, listener };
     }
 
     function closePrivate() {
+      if (currentPrivateListener) {
+        db.ref(`private/${currentPrivateListener.chatId}`).off("child_added", currentPrivateListener.listener);
+        currentPrivateListener = null;
+      }
+
       document.getElementById("private-panel").classList.remove("open");
       currentPrivateToUid = null;
       currentPrivateToNick = "";
     }
 
     document.getElementById("send-private-btn").onclick = () => {
-      const text = document.getElementById("private-message-input").value.trim();
+      let text = document.getElementById("private-message-input").value.trim();
       if (!text || !currentPrivateToUid) return;
 
-      const chatId = [auth.currentUser.uid, currentPrivateToUid].sort().join("_");
-      db.ref(`private/${chatId}`).push({
-        from: auth.currentUser.uid,
-        fromNick: currentNick,
-        text,
-        timestamp: Date.now()
-      });
+      // Admin komutları özel sohbet için de çalışsın (isteğe bağlı)
+      if (text.startsWith("/") && isAdmin(currentNick)) {
+        const parts = text.substring(1).split(" ");
+        const command = parts[0].toLowerCase();
+
+        if (command === "temiz") {
+          db.ref(`private/${[auth.currentUser.uid, currentPrivateToUid].sort().join("_")}`).remove();
+          alert("Özel sohbet temizlendi.");
+          text = "";
+        }
+      }
+
+      if (text) {
+        const chatId = [auth.currentUser.uid, currentPrivateToUid].sort().join("_");
+        db.ref(`private/${chatId}`).push({
+          from: auth.currentUser.uid,
+          fromNick: currentNick,
+          text,
+          timestamp: Date.now()
+        });
+      }
       document.getElementById("private-message-input").value = "";
     };
 
@@ -486,10 +577,10 @@
       reader.readAsDataURL(file);
     };
 
-    // Bildirim sesi (hafif ding sesi - base64)
+    // Bildirim sesi
     function playNotificationSound() {
       const sound = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YU");
-      sound.play().catch(e => console.log("Ses çalınamadı:", e));
+      sound.play().catch(() => {});
     }
   </script>
 </body>
