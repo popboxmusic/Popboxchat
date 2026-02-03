@@ -2,19 +2,18 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Canlı Yayın Sohbet</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Canlı Yayın & Sohbet</title>
 
-  <!-- Firebase SDK'lar -->
+  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
-      font-family: system-ui, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
       background: #0f0f0f;
       color: #e0e0e0;
       height: 100vh;
@@ -29,6 +28,7 @@
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid #333;
+      z-index: 10;
     }
     .main {
       flex: 1;
@@ -38,6 +38,7 @@
     #video-container {
       flex: 3;
       background: #000;
+      position: relative;
     }
     #chat-container {
       flex: 1;
@@ -75,7 +76,7 @@
       background: #2a2a2a;
     }
     .message img {
-      max-width: 220px;
+      max-width: 240px;
       border-radius: 8px;
       margin-top: 6px;
       display: block;
@@ -162,12 +163,10 @@
 
   <div class="main">
     <div id="video-container">
-      <!-- BURAYA KENDİ YOUTUBE CANLI YAYIN KODUNU YAPIŞTIR -->
       <iframe 
-        id="youtube-iframe"
         width="100%" 
         height="100%" 
-        src="https://www.youtube.com/embed/RN4h0sBtzlc?autoplay=1&mute=0&controls=1"
+        src="https://www.youtube.com/embed/RN4h0sBtzlc?autoplay=1&mute=1&controls=1&playsinline=1&modestbranding=1"
         frameborder="0" 
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
         allowfullscreen>
@@ -188,7 +187,7 @@
     </div>
   </div>
 
-  <!-- Özel sohbet penceresi (sağ altta) -->
+  <!-- Özel sohbet paneli -->
   <div id="private-panel">
     <div id="private-header">
       <span id="private-title">Özel sohbet: ...</span>
@@ -205,34 +204,31 @@
 
   <script>
     // ====================================================
-    //  BURAYA FIREBASE CONFIG'İNİ YAPISTIRACAKSIN
+    // FIREBASE CONFIG - BURAYI KENDİ PROJENDEN ALDIĞIN İLE DEĞİŞTİR
     // ====================================================
-   
-      const firebaseConfig = {
-  apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
-  authDomain: "popboxmusicchat.firebaseapp.com",
-  databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
-  projectId: "popboxmusicchat",
-  storageBucket: "popboxmusicchat.appspot.com",
-  messagingSenderId: "206625719024",
-  appId: "1:206625719024:web:d28f478a2c96d10412f835",
-  measurementId: "G-SB1K22FLEX"
+    const firebaseConfig = {
+      apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
+      authDomain: "popboxmusicchat.firebaseapp.com",
+      databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
+      projectId: "popboxmusicchat",
+      storageBucket: "popboxmusicchat.appspot.com",
+      messagingSenderId: "206625719024",
+      appId: "1:206625719024:web:d28f478a2c96d10412f835",
+      measurementId: "G-SB1K22FLEX"
     };
 
-    // Firebase başlat
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.database();
-    const storage = firebase.storage();
 
     let currentNick = "";
     let currentPrivateToUid = null;
     let currentPrivateToNick = "";
 
-    // Giriş yapma
+    // Giriş
     document.getElementById("join-btn").onclick = () => {
       const nick = document.getElementById("nickname").value.trim();
-      if (!nick) return alert("Lütfen bir kullanıcı adı girin");
+      if (!nick) return alert("Kullanıcı adı girin");
 
       auth.signInAnonymously()
         .then(() => {
@@ -250,7 +246,7 @@
         .catch(err => alert("Giriş hatası: " + err.message));
     };
 
-    // Online kullanıcı listesi
+    // Online kullanıcılar
     db.ref("users").on("value", snapshot => {
       const list = document.getElementById("user-list");
       list.innerHTML = "";
@@ -268,9 +264,9 @@
 
     // Genel mesaj gönderme
     document.getElementById("send-btn").onclick = sendPublicMessage;
-    document.getElementById("message-input").addEventListener("keypress", e => {
+    document.getElementById("message-input").onkeypress = e => {
       if (e.key === "Enter") sendPublicMessage();
-    });
+    };
 
     function sendPublicMessage() {
       const text = document.getElementById("message-input").value.trim();
@@ -293,7 +289,7 @@
       div.scrollIntoView({ behavior: "smooth" });
     });
 
-    // Özel sohbet açma
+    // Özel sohbet aç/kapat
     function openPrivateChat(uid, nick) {
       currentPrivateToUid = uid;
       currentPrivateToNick = nick;
@@ -306,12 +302,20 @@
         const msg = snapshot.val();
         const div = document.createElement("div");
         div.className = `message ${msg.from === auth.currentUser.uid ? "own" : "other"}`;
-        div.innerHTML = `<strong>${msg.fromNick}:</strong> ${msg.text || ""}`;
-        if (msg.imageUrl) {
+
+        let content = `<strong>${msg.fromNick}:</strong> ${msg.text || ""}`;
+        div.innerHTML = content;
+
+        if (msg.imageBase64) {
           const img = document.createElement("img");
-          img.src = msg.imageUrl;
+          img.src = msg.imageBase64;
+          img.style.maxWidth = "240px";
+          img.style.borderRadius = "8px";
+          img.style.marginTop = "6px";
+          img.style.display = "block";
           div.appendChild(img);
         }
+
         document.getElementById("private-messages").appendChild(div);
         div.scrollIntoView();
       });
@@ -320,9 +324,10 @@
     function closePrivate() {
       document.getElementById("private-panel").classList.remove("open");
       currentPrivateToUid = null;
+      currentPrivateToNick = "";
     }
 
-    // Özel mesaj gönderme
+    // Özel metin mesaj gönderme
     document.getElementById("send-private-btn").onclick = () => {
       const text = document.getElementById("private-message-input").value.trim();
       if (!text || !currentPrivateToUid) return;
@@ -337,38 +342,43 @@
       document.getElementById("private-message-input").value = "";
     };
 
-    // Özel sohbet fotoğraf gönderme
-    document.getElementById("private-image-input").onchange = e => {
-  const file = e.target.files[0];
-  if (!file) {
-    alert("Dosya seçilmedi!");
-    return;
-  }
-  if (!currentPrivateToUid) {
-    alert("Özel sohbet açık değil!");
-    return;
-  }
+    // Base64 ile resim gönderme
+    document.getElementById("private-image-input").onchange = function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!currentPrivateToUid) {
+        alert("Özel sohbet açık değil!");
+        return;
+      }
 
-  alert("Resim seçildi: " + file.name + " (" + (file.size / 1024).toFixed(1) + " KB)");
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const base64 = event.target.result;
 
-  const chatId = [auth.currentUser.uid, currentPrivateToUid].sort().join("_");
-  const storageRef = storage.ref(`private_images/${Date.now()}_${file.name}`);
+        // Çok büyükse uyarı (yaklaşık 700-800 KB üstü)
+        if (base64.length > 800000) {
+          if (!confirm("Resim büyük (" + (base64.length / 1000).toFixed(0) + " KB). Yine de göndermek ister misiniz?")) {
+            return;
+          }
+        }
 
-  storageRef.put(file).then(() => {
-    storageRef.getDownloadURL().then(url => {
-      db.ref(`private/${chatId}`).push({
-        from: auth.currentUser.uid,
-        fromNick: currentNick,
-        imageUrl: url,
-        timestamp: Date.now()
-      });
-      alert("Resim yüklendi ve gönderildi!");
-    });
-  }).catch(err => {
-    console.error("Yükleme hatası:", err);
-    alert("Resim yüklenemedi: " + err.message);
-  });
-};
+        const chatId = [auth.currentUser.uid, currentPrivateToUid].sort().join("_");
+
+        db.ref(`private/${chatId}`).push({
+          from: auth.currentUser.uid,
+          fromNick: currentNick,
+          text: "[Resim]",
+          imageBase64: base64,
+          timestamp: Date.now()
+        }).then(() => {
+          console.log("Resim Base64 olarak kaydedildi");
+        }).catch(err => {
+          alert("Gönderme hatası: " + err.message);
+        });
+      };
+
+      reader.readAsDataURL(file);
+    };
   </script>
 </body>
 </html>
