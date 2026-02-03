@@ -233,6 +233,29 @@
             transform: translateY(-2px);
         }
         
+        /* HIZLI ADMIN BUTONU */
+        .quick-admin-btn {
+            background: linear-gradient(135deg, #ff5555, #ff0000);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+        
+        .quick-admin-btn:hover {
+            background: linear-gradient(135deg, #ff0000, #ff5555);
+            transform: translateY(-2px);
+        }
+        
         /* POPUP STILLERİ */
         .overlay {
             display: none;
@@ -338,29 +361,6 @@
             box-shadow: 0 8px 20px rgba(255, 85, 85, 0.5);
         }
         
-        /* HIZLI ADMIN BUTONU */
-        .quick-admin-btn {
-            background: linear-gradient(135deg, #ff5555, #ff0000);
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            margin-top: 10px;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: all 0.3s;
-        }
-        
-        .quick-admin-btn:hover {
-            background: linear-gradient(135deg, #ff0000, #ff5555);
-            transform: translateY(-2px);
-        }
-        
         /* RESPONSIVE */
         @media (max-width: 1024px) {
             body {
@@ -397,8 +397,10 @@
     
     <!-- YOUTUBE API -->
     <script src="https://www.youtube.com/iframe_api"></script>
-    <!-- SOCKET.IO -->
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <!-- SOCKET.IO (GÜNCEL VERSİYON) -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <!-- FONT AWESOME (icons) -->
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
 </head>
 <body>
     <!-- YOUTUBE PLAYER -->
@@ -436,10 +438,11 @@
             <div class="message system-message">
                 <div class="message-header">
                     <span class="message-user">🤖 SİSTEM</span>
-                    <span class="message-time">Hoş Geldiniz</span>
+                    <span class="message-time" id="currentTime"></span>
                 </div>
                 <div class="message-content">
-                    Popbox YouTube Live Chat'e hoş geldiniz! Admin: popbox
+                    Popbox YouTube Live Chat'e hoş geldiniz!<br>
+                    Admin: <strong>popbox</strong> | Şifre: <strong>kumsal07@</strong>
                 </div>
             </div>
         </div>
@@ -455,21 +458,22 @@
             </div>
             
             <!-- HIZLI ADMIN GİRİŞ BUTONU -->
-            <button class="quick-admin-btn" id="quickAdminBtn" onclick="quickAdminLogin()">
+            <button class="quick-admin-btn" id="quickAdminBtn">
                 <i class="fas fa-crown"></i> POPBOX ADMIN GİRİŞİ
             </button>
         </div>
     </div>
     
-    <!-- ADMIN BUTTON -->
+    <!-- ADMIN BUTTON (Admin olduktan sonra görünecek) -->
     <div class="admin-panel" id="adminPanel" style="display: none;">
-        <button class="admin-button" onclick="showUserManagementPopup()">
+        <button class="admin-button" id="adminManagerBtn">
             <i class="fas fa-users-cog"></i> Kullanıcı Yönetimi
         </button>
     </div>
     
-    <!-- ADMIN LOGIN POPUP (BASİT VERSİYON) -->
+    <!-- POPUP'LAR -->
     <div class="overlay" id="overlay"></div>
+    
     <div class="popup" id="loginPopup">
         <h3>👑 POPBOX ADMIN</h3>
         <div style="text-align: center; margin: 20px 0; padding: 15px; background: rgba(79, 195, 247, 0.1); border-radius: 10px;">
@@ -478,20 +482,19 @@
                 <strong>Şifre:</strong> kumsal07@
             </p>
             <p style="color: #aaa; font-size: 0.9em;">
-                "Giriş Yap" butonuna tıklayın
+                Giriş yapmak için butona tıklayın
             </p>
         </div>
         <div class="popup-buttons">
-            <button class="popup-ok" onclick="doAdminLogin()">
+            <button class="popup-ok" id="popupLoginBtn">
                 <i class="fas fa-sign-in-alt"></i> GİRİŞ YAP
             </button>
-            <button class="popup-cancel" onclick="closePopup()">
+            <button class="popup-cancel" id="popupCancelBtn">
                 <i class="fas fa-times"></i> İPTAL
             </button>
         </div>
     </div>
     
-    <!-- USER MANAGEMENT POPUP -->
     <div class="popup" id="userPopup">
         <h3>👥 KULLANICI YÖNETİMİ</h3>
         <select id="userSelect" style="width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; background: rgba(0,0,0,0.3); color: white; border: 2px solid #4fc3f7;">
@@ -504,90 +507,116 @@
             <option value="mute">🔇 Sessize Al</option>
         </select>
         <div class="popup-buttons">
-            <button class="popup-ok" onclick="performAdminAction()">
+            <button class="popup-ok" id="applyActionBtn">
                 <i class="fas fa-check"></i> UYGULA
             </button>
-            <button class="popup-cancel" onclick="closePopup()">
+            <button class="popup-cancel" id="closePopupBtn">
                 <i class="fas fa-times"></i> KAPAT
             </button>
         </div>
     </div>
     
-    <!-- FONT AWESOME (icons) -->
-    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
-    
+    <!-- JAVASCRIPT -->
     <script>
-        // ========== DEĞİŞKENLER ==========
-        let youtubePlayer;
-        let socket;
+        // ========== DEĞİŞKEN TANIMLARI ==========
+        let youtubePlayer = null;
+        let socket = null;
         let currentUser = {
             name: '',
             role: 'user',
             isAdmin: false
         };
-        
+
         // ========== YOUTUBE PLAYER ==========
         function onYouTubeIframeAPIReady() {
-            youtubePlayer = new YT.Player('youtube-player', {
-                height: '100%',
-                width: '100%',
-                videoId: 'dQw4w9WgXcQ', // KENDİ VİDEO ID'Nİ YAZ
-                playerVars: {
-                    'autoplay': 0,
-                    'controls': 1,
-                    'rel': 0,
-                    'modestbranding': 1
-                },
-                events: {
-                    'onReady': onPlayerReady,
-                    'onStateChange': onPlayerStateChange
-                }
-            });
-        }
-        
-        function onPlayerReady(event) {
-            console.log('✅ YouTube Player hazır');
-            document.getElementById('stream-status').textContent = 
-                `🎬 ${event.target.getVideoData().title || 'Popbox Live'}`;
-        }
-        
-        function onPlayerStateChange(event) {
-            const status = ['🟥 Bitti', '🔴 Canlı', '⏸️ Duraklatıldı', '📡 Yükleniyor'];
-            if (event.data >= 0 && event.data <= 3) {
-                document.getElementById('stream-status').textContent = status[event.data];
+            console.log('📺 YouTube API hazır...');
+            try {
+                youtubePlayer = new YT.Player('youtube-player', {
+                    height: '100%',
+                    width: '100%',
+                    videoId: 'dQw4w9WgXcQ', // BUNA KENDİ VİDEO ID'Nİ YAZ
+                    playerVars: {
+                        'autoplay': 0,
+                        'controls': 1,
+                        'rel': 0,
+                        'modestbranding': 1
+                    },
+                    events: {
+                        'onReady': function(event) {
+                            console.log('✅ YouTube Player hazır');
+                            const title = event.target.getVideoData().title || 'Popbox Live';
+                            document.getElementById('stream-status').textContent = `🎬 ${title}`;
+                        },
+                        'onStateChange': function(event) {
+                            const status = ['🟥 Bitti', '🔴 Canlı', '⏸️ Duraklatıldı', '📡 Yükleniyor'];
+                            if (event.data >= 0 && event.data <= 3) {
+                                document.getElementById('stream-status').textContent = status[event.data];
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('❌ YouTube Player hatası:', error);
             }
         }
-        
-        // ========== SOCKET.IO BAĞLANTISI ==========
+
+        // ========== SOCKET BAĞLANTISI ==========
         function initializeSocket() {
-            socket = io('http://localhost:3000');
+            console.log('🔌 Socket bağlantısı kuruluyor...');
             
+            // Socket bağlantısı - LOCALHOST için
+            socket = io('http://localhost:3000', {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 5
+            });
+            
+            // BAĞLANTI EVENT'LERİ
             socket.on('connect', () => {
-                console.log('✅ Sunucuya bağlandı');
+                console.log('✅ Socket bağlandı! ID:', socket.id);
+                addSystemMessage('✅ Sunucuya bağlandı!');
                 
                 // Kullanıcı adı iste
-                const userName = prompt('Kullanıcı adınız:', `Kullanıcı_${Math.floor(Math.random() * 1000)}`);
-                if (userName && userName.trim()) {
-                    currentUser.name = userName.trim();
-                    socket.emit('join', { username: currentUser.name });
-                    addSystemMessage(`👋 Hoş geldin, ${currentUser.name}!`);
-                }
+                setTimeout(() => {
+                    const userName = prompt('Kullanıcı adınız:', `Kullanıcı_${Math.floor(Math.random() * 1000)}`);
+                    if (userName && userName.trim()) {
+                        currentUser.name = userName.trim();
+                        socket.emit('join', { username: currentUser.name });
+                        addSystemMessage(`👋 Hoş geldin, ${currentUser.name}!`);
+                    }
+                }, 1000);
+            });
+            
+            socket.on('connect_error', (error) => {
+                console.error('❌ Socket bağlantı hatası:', error);
+                addSystemMessage('❌ Sunucuya bağlanılamıyor! server.js çalışıyor mu?');
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('⚠️ Socket bağlantısı kesildi');
+                addSystemMessage('⚠️ Sunucu bağlantısı kesildi...');
             });
             
             // MESAJ ALMA
             socket.on('chat-message', (data) => {
-                addMessage(data.username, data.message, data.role, data.isSystem || false);
+                if (data && data.username && data.message) {
+                    addMessage(data.username, data.message, data.role || 'user');
+                }
             });
             
             // SİSTEM MESAJI
             socket.on('system-message', (data) => {
-                addMessage('🤖 SİSTEM', data.message, 'system', true);
+                if (data && data.message) {
+                    addSystemMessage(data.message);
+                }
             });
             
-            // KULLANICI LİSTESİ GÜNCELLEME
+            // KULLANICI LİSTESİ
             socket.on('user-list', (users) => {
-                updateUserList(users);
-                document.getElementById('onlineCount').textContent = users.length;
+                if (users && Array.isArray(users)) {
+                    updateUserList(users);
+                    document.getElementById('onlineCount').textContent = users.length;
+                }
             });
             
             // ADMIN GİRİŞ BAŞARILI
@@ -596,24 +625,19 @@
                 currentUser.role = 'admin';
                 document.getElementById('adminPanel').style.display = 'block';
                 document.getElementById('quickAdminBtn').style.display = 'none';
-                addSystemMessage('✅ Admin yetkileri aktif edildi!');
+                addSystemMessage('✅ Admin yetkileri aktif!');
                 closePopup();
             });
             
             // ADMIN GİRİŞ BAŞARISIZ
             socket.on('admin-login-failed', () => {
-                alert('❌ Hatalı kullanıcı adı veya şifre!');
+                alert('❌ Admin girişi başarısız! Kullanıcı: popbox, Şifre: kumsal07@');
             });
             
             // KULLANICI ATILDI
             socket.on('user-kicked', () => {
                 alert('⛔ Admin tarafından atıldınız!');
                 location.reload();
-            });
-            
-            // HATA MESAJI
-            socket.on('error', (data) => {
-                alert(`❌ Hata: ${data.message}`);
             });
             
             // KULLANICI LİSTESİ (ADMIN İÇİN)
@@ -630,31 +654,64 @@
                     }
                 });
             });
+            
+            // HATA MESAJI
+            socket.on('error', (data) => {
+                console.error('Socket error:', data);
+                if (data && data.message) {
+                    alert(`Hata: ${data.message}`);
+                }
+            });
         }
-        
+
         // ========== MESAJ İŞLEMLERİ ==========
         function sendMessage() {
+            // Input kontrol
             const input = document.getElementById('messageInput');
-            const message = input.value.trim();
+            if (!input) {
+                console.error('❌ messageInput bulunamadı!');
+                return;
+            }
             
+            const message = input.value.trim();
             if (!message) return;
             
-            // KOMUT KONTROLÜ
+            // Socket kontrol
+            if (!socket) {
+                console.error('❌ Socket tanımlı değil!');
+                addSystemMessage('❌ Bağlantı kurulamadı. Sayfayı yenileyin.');
+                return;
+            }
+            
+            if (!socket.connected) {
+                console.error('❌ Socket bağlı değil!');
+                addSystemMessage('❌ Sunucuya bağlanılamıyor.');
+                return;
+            }
+            
+            // Kullanıcı adı kontrol
+            if (!currentUser.name) {
+                currentUser.name = `Kullanıcı_${Math.floor(Math.random() * 1000)}`;
+                socket.emit('join', { username: currentUser.name });
+            }
+            
+            // Komut kontrolü
             if (message.startsWith('/')) {
                 handleCommand(message);
             } else {
-                // NORMAL MESAJ
+                // Normal mesaj gönder
                 socket.emit('send-message', {
                     message: message,
                     username: currentUser.name,
                     role: currentUser.role
                 });
+                console.log('📤 Mesaj gönderildi:', message);
             }
             
             input.value = '';
             input.focus();
         }
-        
+
         function handleCommand(command) {
             const parts = command.split(' ');
             const cmd = parts[0].toLowerCase();
@@ -683,14 +740,27 @@
                     }
                     break;
                     
+                case '/debug':
+                    console.log('=== DEBUG ===');
+                    console.log('Socket:', socket ? 'Var' : 'Yok');
+                    console.log('Bağlı:', socket?.connected ? 'Evet' : 'Hayır');
+                    console.log('Kullanıcı:', currentUser);
+                    console.log('============');
+                    break;
+                    
                 default:
                     addSystemMessage(`❌ Bilinmeyen komut: ${cmd}`);
             }
         }
-        
+
         // ========== MESAJ GÖRÜNTÜLEME ==========
-        function addMessage(username, message, role = 'user', isSystem = false) {
+        function addMessage(username, message, role = 'user') {
             const container = document.getElementById('messagesContainer');
+            if (!container) {
+                console.error('❌ messagesContainer bulunamadı!');
+                return;
+            }
+            
             const messageDiv = document.createElement('div');
             
             // Rol'e göre class belirle
@@ -698,14 +768,14 @@
             if (role === 'admin') messageClass += ' admin-message';
             else if (role === 'coadmin') messageClass += ' coadmin-message';
             else if (role === 'operator') messageClass += ' operator-message';
-            else if (isSystem || role === 'system') messageClass += ' system-message';
+            else if (role === 'system') messageClass += ' system-message';
             
             // Rol simgeleri
             let roleIcon = '';
             if (role === 'admin') roleIcon = '👑 ';
             else if (role === 'coadmin') roleIcon = '⭐ ';
             else if (role === 'operator') roleIcon = '🛡️ ';
-            else if (isSystem) roleIcon = '🤖 ';
+            else if (role === 'system') roleIcon = '🤖 ';
             
             const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
             
@@ -721,14 +791,16 @@
             container.appendChild(messageDiv);
             container.scrollTop = container.scrollHeight;
         }
-        
+
         function addSystemMessage(message) {
-            addMessage('🤖 SİSTEM', message, 'system', true);
+            addMessage('SİSTEM', message, 'system');
         }
-        
+
         // ========== KULLANICI LİSTESİ ==========
         function updateUserList(users) {
             const userList = document.getElementById('userList');
+            if (!userList) return;
+            
             userList.innerHTML = '';
             
             users.forEach(user => {
@@ -757,30 +829,26 @@
                 userList.appendChild(li);
             });
         }
-        
-        // ========== ADMIN İŞLEMLERİ (YENİ VE BASİT) ==========
+
+        // ========== POPUP İŞLEMLERİ ==========
         function showAdminPopup() {
             document.getElementById('loginPopup').style.display = 'block';
             document.getElementById('overlay').style.display = 'block';
         }
-        
+
         function doAdminLogin() {
-            // DİREKT GİRİŞ YAP - INPUT GEREKMİYOR
+            if (!socket || !socket.connected) {
+                alert('❌ Sunucuya bağlı değil!');
+                return;
+            }
+            
+            // DİREKT GİRİŞ YAP
             socket.emit('admin-login', {
                 username: 'popbox',
                 password: 'kumsal07@'
             });
         }
-        
-        function quickAdminLogin() {
-            // HIZLI GİRİŞ BUTONU
-            socket.emit('admin-login', {
-                username: 'popbox',
-                password: 'kumsal07@'
-            });
-            addSystemMessage('⚡ Admin girişi yapılıyor...');
-        }
-        
+
         function showUserManagementPopup() {
             if (!currentUser.isAdmin) {
                 addSystemMessage('❌ Bu işlem için admin yetkisi gerekiyor!');
@@ -793,13 +861,18 @@
             document.getElementById('userPopup').style.display = 'block';
             document.getElementById('overlay').style.display = 'block';
         }
-        
+
         function performAdminAction() {
             const selectedUser = document.getElementById('userSelect').value;
             const action = document.getElementById('actionSelect').value;
             
             if (!selectedUser) {
                 alert('❌ Lütfen bir kullanıcı seçin!');
+                return;
+            }
+            
+            if (!socket || !socket.connected) {
+                alert('❌ Sunucuya bağlı değil!');
                 return;
             }
             
@@ -810,34 +883,69 @@
             
             closePopup();
         }
-        
+
         function closePopup() {
             document.getElementById('loginPopup').style.display = 'none';
             document.getElementById('userPopup').style.display = 'none';
             document.getElementById('overlay').style.display = 'none';
         }
-        
+
         // ========== SAYFA YÜKLENİNCE ==========
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Sayfa yüklendi, sistem başlatılıyor...');
+            
+            // Zamanı güncelle
+            document.getElementById('currentTime').textContent = 
+                new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
             // Socket bağlantısını başlat
-            initializeSocket();
+            if (typeof io !== 'undefined') {
+                initializeSocket();
+            } else {
+                console.error('❌ Socket.io yüklenmedi!');
+                addSystemMessage('❌ Socket.io kütüphanesi yüklenemedi!');
+            }
             
-            // Enter tuşu ile mesaj gönderme
-            document.getElementById('messageInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') sendMessage();
-            });
+            // EVENT LISTENER'LARI EKLE
+            // Mesaj gönderme
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
             
-            // Gönder butonu
-            document.getElementById('sendButton').addEventListener('click', sendMessage);
+            if (messageInput && sendButton) {
+                messageInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') sendMessage();
+                });
+                sendButton.addEventListener('click', sendMessage);
+            }
+            
+            // Hızlı admin butonu
+            const quickAdminBtn = document.getElementById('quickAdminBtn');
+            if (quickAdminBtn) {
+                quickAdminBtn.addEventListener('click', function() {
+                    showAdminPopup();
+                });
+            }
+            
+            // Popup butonları
+            document.getElementById('popupLoginBtn').addEventListener('click', doAdminLogin);
+            document.getElementById('popupCancelBtn').addEventListener('click', closePopup);
+            document.getElementById('applyActionBtn').addEventListener('click', performAdminAction);
+            document.getElementById('closePopupBtn').addEventListener('click', closePopup);
+            document.getElementById('adminManagerBtn').addEventListener('click', showUserManagementPopup);
             
             // Overlay'e tıklayınca popup'ları kapat
             document.getElementById('overlay').addEventListener('click', closePopup);
             
-            // Chat'e hoş geldin mesajı
+            // Başlangıç mesajı
             setTimeout(() => {
-                addSystemMessage('💡 İpucu: /admin yazarak admin panele erişebilirsiniz.');
-                addSystemMessage('🔐 Admin bilgileri: popbox / kumsal07@');
-            }, 1000);
+                addSystemMessage('💡 /admin yazarak veya alt kısımdaki butona tıklayarak admin panele ulaşabilirsiniz.');
+                addSystemMessage('🔧 Sorun olursa F12 → Console\'a bakın.');
+            }, 1500);
+            
+            // Hata yakalama
+            window.addEventListener('error', function(event) {
+                console.error('🚨 Global hata:', event.error);
+            });
         });
     </script>
 </body>
