@@ -9,12 +9,18 @@
 body{margin:0;background:#0e0e0e;color:#fff;font-family:Arial}
 #video{position:fixed;top:0;left:0;width:100%;height:220px}
 #video iframe{width:100%;height:100%}
-#chat{position:absolute;top:220px;bottom:70px;left:0;right:0;overflow:auto;padding:10px}
+#chat{position:absolute;top:220px;bottom:70px;left:0;right:200px;overflow:auto;padding:10px}
+#users{position:fixed;top:220px;right:0;width:200px;bottom:70px;background:#111;overflow:auto;padding:10px}
+.user{padding:6px;background:#1c1c1c;margin-bottom:5px;border-radius:6px;cursor:pointer}
 .msg{background:#1c1c1c;margin-bottom:8px;padding:8px;border-radius:8px}
 #bar{position:fixed;bottom:0;left:0;right:0;height:70px;display:flex;background:#111}
 #msg{flex:1;font-size:16px;border:none;padding:10px}
 button{width:80px;border:none;background:#ff3c00;color:#fff;font-weight:bold}
 .role{font-size:12px;color:#ff3c00;margin-left:6px}
+#pmBox{position:fixed;bottom:80px;right:220px;width:300px;height:300px;background:#000;border:1px solid #333;display:none;flex-direction:column}
+#pmChat{flex:1;overflow:auto;padding:5px}
+#pmInput{display:flex}
+#pmInput input{flex:1;padding:6px;border:none}
 </style>
 </head>
 <body>
@@ -24,108 +30,121 @@ button{width:80px;border:none;background:#ff3c00;color:#fff;font-weight:bold}
 </div>
 
 <div id="chat"></div>
+<div id="users"></div>
+
+<div id="pmBox">
+  <div id="pmChat"></div>
+  <div id="pmInput">
+    <input id="pmMsg" placeholder="Özel mesaj...">
+    <button onclick="sendPM()">Gönder</button>
+  </div>
+</div>
 
 <div id="bar">
 <input id="msg" placeholder="Mesaj yaz veya /komut gir"/>
 <button onclick="send()">Gönder</button>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script>
-// ===== IRC ROLE SYSTEM =====
-const ROLES = {
-  owner: ["popboxmusic"],
-  admin: ["popbox"],
-  mod: []
-};
+let nick = prompt("Nick gir");
+const chat = document.getElementById("chat");
+const usersDiv = document.getElementById("users");
+const pmBox = document.getElementById("pmBox");
+const pmChat = document.getElementById("pmChat");
+let activePM = null;
 
-function getRole(n){
-  if(ROLES.owner.includes(n)) return "owner";
-  if(ROLES.admin.includes(n)) return "admin";
-  if(ROLES.mod.includes(n)) return "mod";
-  return "user";
+const peer = new Peer("room-popbox");
+const connections = {};
+const onlineUsers = new Set();
+
+peer.on("connection", conn=>{
+  setupConn(conn);
+});
+
+function connectAll(){
+  const conn = peer.connect("room-popbox");
+  setupConn(conn);
 }
 
-let nick = prompt("Nick gir");
-let role = getRole(nick);
+function setupConn(conn){
+  conn.on("open", ()=>{
+    connections[conn.peer]=conn;
+    sendSys({type:"join", nick});
+  });
 
-const banned = new Set();
-const kicked = new Set();
+  conn.on("data", data=>{
+    handleData(data);
+  });
+}
 
-const chat = document.getElementById("chat");
+function broadcast(data){
+  Object.values(connections).forEach(c=>c.send(data));
+}
 
-function addMsg(n, text, sys=false){
-  const d=document.createElement("div");
-  d.className="msg";
-  if(sys){
-    d.innerHTML = `<i>${text}</i>`;
-  }else{
-    d.innerHTML = `<b>${n}</b><span class="role">[${getRole(n)}]</span>: ${text}`;
-    if(role!=="user"){
-      const del=document.createElement("span");
-      del.innerText=" ❌";
-      del.onclick=()=>d.remove();
-      d.appendChild(del);
+function handleData(d){
+  if(d.type==="msg"){
+    addMsg(d.nick, d.text);
+  }
+  if(d.type==="join"){
+    onlineUsers.add(d.nick);
+    renderUsers();
+  }
+  if(d.type==="pm"){
+    if(d.to===nick){
+      pmBox.style.display="flex";
+      pmChat.innerHTML+=`<div><b>${d.nick}:</b> ${d.text}</div>`;
     }
   }
-  chat.appendChild(d);
-  chat.scrollTop=chat.scrollHeight;
 }
 
-// ===== COMMANDS =====
-function command(txt){
-  const parts = txt.split(" ");
-  const cmd = parts[0];
-
-  if(cmd==="/op" && role==="owner"){
-    ROLES.mod.push(parts[1]);
-    addMsg("", parts[1]+" artık MOD", true);
-    return true;
-  }
-
-  if(cmd==="/ban" && role!=="user"){
-    banned.add(parts[1]);
-    addMsg("", parts[1]+" banlandı", true);
-    return true;
-  }
-
-  if(cmd==="/kick" && role!=="user"){
-    kicked.add(parts[1]);
-    addMsg("", parts[1]+" kicklendi", true);
-    return true;
-  }
-
-  if(cmd==="/sil" && role!=="user"){
-    chat.innerHTML="";
-    return true;
-  }
-
-  return false;
-}
-
-// ===== SEND =====
 function send(){
   const input=document.getElementById("msg");
   const t=input.value.trim();
   if(!t) return;
-
-  if(banned.has(nick)){
-    alert("Banlısın!");
-    return;
-  }
-
-  if(t.startsWith("/")){
-    if(command(t)){ input.value=""; return; }
-  }
-
-  addMsg(nick, t);
+  addMsg(nick,t);
+  broadcast({type:"msg",nick,text:t});
   input.value="";
+}
+
+function addMsg(n,t){
+  const d=document.createElement("div");
+  d.className="msg";
+  d.innerHTML=`<b>${n}:</b> ${t}`;
+  chat.appendChild(d);
+  chat.scrollTop=chat.scrollHeight;
+}
+
+function renderUsers(){
+  usersDiv.innerHTML="";
+  onlineUsers.forEach(u=>{
+    const d=document.createElement("div");
+    d.className="user";
+    d.innerText=u;
+    d.onclick=()=>openPM(u);
+    usersDiv.appendChild(d);
+  });
+}
+
+function openPM(u){
+  activePM=u;
+  pmBox.style.display="flex";
+}
+
+function sendPM(){
+  const t=document.getElementById("pmMsg").value;
+  pmChat.innerHTML+=`<div><b>Sen:</b> ${t}</div>`;
+  broadcast({type:"pm",nick,to:activePM,text:t});
+  document.getElementById("pmMsg").value="";
 }
 
 document.addEventListener("keydown",e=>{
   if(e.key==="Enter") send();
 });
 
-addMsg("", nick+" giriş yaptı", true);
+connectAll();
+onlineUsers.add(nick);
+renderUsers();
 </script>
 
 </body>
