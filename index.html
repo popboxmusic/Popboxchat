@@ -2,312 +2,1089 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Popbox YouTube Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Popbox YouTube Live Chat</title>
     <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { 
-            font-family:Arial; 
-            background:#1a1a2e; 
-            color:white; 
-            padding:20px; 
+        /* RESET VE TEMEL AYARLAR */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-text-size-adjust: 100%;
         }
         
-        .container {
-            display:flex;
-            gap:20px;
-            max-width:1200px;
-            margin:0 auto;
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            position: fixed; /* Mobil kaymayı engelle */
+            touch-action: manipulation;
         }
         
-        .youtube-box {
-            flex:3;
-            background:#000;
-            border-radius:15px;
-            overflow:hidden;
-            min-height:400px;
+        body {
+            background: linear-gradient(135deg, #0f0c29, #302b63);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 10px;
         }
         
-        .chat-box {
-            flex:1;
-            background:#2d2d44;
-            border-radius:15px;
-            padding:20px;
-            min-width:350px;
+        /* BAŞLIK */
+        .header {
+            text-align: center;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            border: 2px solid #4fc3f7;
+            margin-bottom: 5px;
         }
         
+        /* ANA CONTAINER - MOBİL UYUMLU */
+        .main-container {
+            display: flex;
+            flex: 1;
+            gap: 10px;
+            min-height: 0; /* Safari flex bug fix */
+            overflow: hidden;
+        }
+        
+        /* YOUTUBE BÖLÜMÜ */
+        .youtube-section {
+            flex: 2;
+            min-width: 0; /* Flex overflow fix */
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .video-container {
+            flex: 1;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            min-height: 200px;
+        }
+        
+        #youtube-player {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        /* SOHBET BÖLÜMÜ */
+        .chat-section {
+            flex: 1;
+            background: rgba(30, 30, 46, 0.95);
+            border-radius: 10px;
+            border: 2px solid #4fc3f7;
+            display: flex;
+            flex-direction: column;
+            min-width: 0; /* Flex overflow fix */
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        /* SOHBET BAŞLIĞI */
         .chat-header {
-            background:#3d3d5c;
-            padding:15px;
-            border-radius:10px;
-            text-align:center;
-            margin-bottom:15px;
-            border:2px solid #4fc3f7;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.4);
+            border-bottom: 1px solid rgba(79, 195, 247, 0.3);
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
         }
         
-        .messages {
-            height:300px;
-            overflow-y:auto;
-            background:#1e1e2e;
-            padding:15px;
-            border-radius:10px;
-            margin-bottom:15px;
+        .chat-title {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #4fc3f7;
+        }
+        
+        .online-info {
+            background: #4caf50;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        /* KULLANICI LİSTESİ */
+        .users-container {
+            padding: 10px;
+            border-bottom: 1px solid rgba(79, 195, 247, 0.2);
+            max-height: 120px;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        
+        .users-title {
+            font-size: 0.9em;
+            color: #4fc3f7;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .user-list {
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        
+        .user-item {
+            background: rgba(79, 195, 247, 0.1);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.85em;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            border: 1px solid rgba(79, 195, 247, 0.2);
+        }
+        
+        /* MESAJLAR ALANI */
+        .messages-container {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 0; /* Scroll fix */
+            -webkit-overflow-scrolling: touch; /* iOS smooth scroll */
         }
         
         .message {
-            background:#3d3d5c;
-            padding:10px;
-            margin:8px 0;
-            border-radius:8px;
-            border-left:3px solid #4fc3f7;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            border-radius: 8px;
+            animation: fadeIn 0.3s;
+            word-break: break-word;
+            border-left: 3px solid #4fc3f7;
         }
         
-        .admin-message { border-left-color:#ff5555; }
-        .system-message { border-left-color:#4caf50; }
-        
-        .input-area {
-            display:flex;
-            gap:10px;
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
-        input {
-            flex:1;
-            padding:12px;
-            border-radius:8px;
-            border:none;
-            background:#1e1e2e;
-            color:white;
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            font-size: 0.85em;
+            color: #aaa;
         }
         
-        button {
-            padding:12px 20px;
-            background:#4fc3f7;
-            color:white;
-            border:none;
-            border-radius:8px;
-            cursor:pointer;
-            font-weight:bold;
+        .message-user {
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
         
-        .admin-btn {
-            background:#ff5555;
-            width:100%;
-            margin-top:10px;
+        .message-time {
+            opacity: 0.7;
         }
         
-        @media (max-width:768px) {
-            .container { flex-direction:column; }
-            .chat-box { min-width:auto; }
+        .message-content {
+            line-height: 1.4;
+        }
+        
+        /* MESAJ GÖNDERME */
+        .input-container {
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(79, 195, 247, 0.2);
+            border-radius: 0 0 10px 10px;
+            flex-shrink: 0;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 8px;
+        }
+        
+        #message-input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid rgba(79, 195, 247, 0.5);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            font-size: 16px; /* iOS zoom önleme */
+            -webkit-appearance: none;
+            min-height: 44px; /* Touch friendly */
+        }
+        
+        #message-input:focus {
+            outline: none;
+            border-color: #4fc3f7;
+        }
+        
+        #send-button {
+            padding: 0 20px;
+            background: #4fc3f7;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            min-height: 44px;
+            min-width: 44px; /* Touch friendly */
+        }
+        
+        /* ADMIN BUTONU */
+        .admin-button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #ff5555, #ff0000);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            margin-top: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 44px;
+        }
+        
+        /* POPUP'LAR */
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+        }
+        
+        .popup {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(30, 30, 46, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #4fc3f7;
+            z-index: 1001;
+            width: 90%;
+            max-width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .popup-header {
+            color: #4fc3f7;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .popup-input {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 2px solid rgba(79, 195, 247, 0.5);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            font-size: 16px;
+        }
+        
+        .popup-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .popup-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            min-height: 44px;
+        }
+        
+        .popup-ok {
+            background: #4fc3f7;
+            color: white;
+        }
+        
+        .popup-cancel {
+            background: #666;
+            color: white;
+        }
+        
+        /* PRIVATE CHAT STYLES */
+        .private-chat-window {
+            position: fixed;
+            bottom: 80px;
+            right: 20px;
+            width: 300px;
+            height: 400px;
+            background: rgba(30, 30, 46, 0.95);
+            border-radius: 10px;
+            border: 2px solid #9c27b0;
+            display: none;
+            flex-direction: column;
+            z-index: 999;
+            backdrop-filter: blur(10px);
+        }
+        
+        .private-header {
+            padding: 12px;
+            background: rgba(156, 39, 176, 0.3);
+            border-bottom: 1px solid #9c27b0;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .private-messages {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+        }
+        
+        .private-input {
+            padding: 10px;
+            border-top: 1px solid rgba(156, 39, 176, 0.3);
+        }
+        
+        .private-message {
+            background: rgba(156, 39, 176, 0.1);
+            border-left-color: #9c27b0;
+        }
+        
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            body {
+                padding: 5px;
+                gap: 5px;
+            }
+            
+            .main-container {
+                flex-direction: column;
+            }
+            
+            .video-container {
+                height: 40vh;
+                min-height: 200px;
+            }
+            
+            .chat-section {
+                height: 50vh;
+            }
+            
+            .private-chat-window {
+                width: calc(100% - 40px);
+                height: 300px;
+                bottom: 70px;
+            }
+        }
+        
+        @media (max-height: 600px) {
+            .video-container {
+                height: 30vh;
+            }
+            
+            .chat-section {
+                height: 60vh;
+            }
+        }
+        
+        /* KEYBOARD FIX */
+        @media (max-height: 500px) {
+            .header {
+                display: none;
+            }
+            
+            .main-container {
+                height: 100vh;
+            }
+        }
+        
+        /* SAFARI FIX */
+        _::-webkit-full-page-media, _:future, :root .safari_only {
+            .messages-container {
+                -webkit-mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
+            }
         }
     </style>
+    
+    <!-- YOUTUBE API -->
     <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
-    <h1 style="text-align:center; color:#4fc3f7; margin-bottom:20px;">
-        🎥 Popbox YouTube Live Chat
-    </h1>
+    <!-- HEADER -->
+    <div class="header">
+        <h1 style="font-size: 1.3em; color: #4fc3f7;">🎥 Popbox YouTube Live</h1>
+        <p style="font-size: 0.9em; color: #aaa;">🔴 Canlı Yayın | 💬 Gerçek Zamanlı Sohbet</p>
+    </div>
     
-    <div class="container">
-        <!-- YouTube -->
-        <div class="youtube-box">
-            <div id="youtube-player"></div>
+    <!-- MAIN CONTENT -->
+    <div class="main-container">
+        <!-- YOUTUBE PLAYER -->
+        <div class="youtube-section">
+            <div class="video-container">
+                <div id="youtube-player"></div>
+            </div>
+            <div style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px;">
+                <h3 style="color: #ff5555;" id="video-title">YouTube Live</h3>
+                <p id="video-status">🔴 Canlı</p>
+            </div>
         </div>
         
-        <!-- Sohbet -->
-        <div class="chat-box">
+        <!-- CHAT SECTION -->
+        <div class="chat-section">
+            <!-- CHAT HEADER -->
             <div class="chat-header">
-                <h2>💬 Popbox Chat</h2>
-                <p>Kullanıcılar: <span id="userCount">1</span> | Admin: popbox</p>
-            </div>
-            
-            <div class="messages" id="messages">
-                <div class="message system-message">
-                    <strong>🤖 Sistem:</strong> Popbox Chat'e hoş geldiniz!
+                <div class="chat-title">
+                    💬 Popbox Chat
                 </div>
-                <div class="message system-message">
-                    🔐 Admin girişi için "ADMIN GİRİŞ" butonuna tıklayın
+                <div class="online-info">
+                    👥 <span id="online-count">1</span> Online
                 </div>
             </div>
             
-            <div class="input-area">
-                <input type="text" id="messageInput" placeholder="Mesajınız...">
-                <button onclick="sendMessage()">Gönder</button>
+            <!-- ONLINE USERS -->
+            <div class="users-container">
+                <div class="users-title">
+                    👤 Çevrimiçi Kullanıcılar
+                </div>
+                <ul class="user-list" id="user-list">
+                    <!-- Users will be added here -->
+                </ul>
             </div>
             
-            <button class="admin-btn" onclick="adminLogin()">
-                👑 ADMIN GİRİŞ (popbox)
-            </button>
+            <!-- MESSAGES -->
+            <div class="messages-container" id="messages-container">
+                <div class="message">
+                    <div class="message-header">
+                        <span class="message-user">🤖 Sistem</span>
+                        <span class="message-time" id="current-time"></span>
+                    </div>
+                    <div class="message-content">
+                        Popbox YouTube Live Chat'e hoş geldiniz!<br>
+                        <small style="color: #4fc3f7;">Admin: popbox | Şifre: kumsal07@</small>
+                    </div>
+                </div>
+            </div>
             
-            <div style="margin-top:15px; text-align:center; color:#888; font-size:12px;">
-                📱 Tüm cihazlara uyumlu | 🔒 Şifre: kumsal07@
+            <!-- INPUT AREA -->
+            <div class="input-container">
+                <div class="input-group">
+                    <input type="text" 
+                           id="message-input" 
+                           placeholder="Mesaj yazın... (/msg, /admin, /help)"
+                           autocomplete="off"
+                           enterkeyhint="send">
+                    <button id="send-button">📤</button>
+                </div>
+                <button class="admin-button" onclick="showAdminPopup()">
+                    👑 Popbox Admin Girişi
+                </button>
             </div>
         </div>
     </div>
     
-    <!-- Admin Panel (Popup) -->
-    <div id="adminPanel" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#2d2d44; padding:30px; border-radius:15px; border:3px solid #ff5555; z-index:1000; min-width:300px;">
-        <h2 style="color:#ff5555; margin-bottom:20px;">👑 ADMIN PANELİ</h2>
-        
-        <div style="margin:15px 0;">
-            <label style="display:block; margin-bottom:5px;">Kullanıcı:</label>
-            <input type="text" id="adminUser" value="popbox" style="width:100%; padding:10px; background:#1e1e2e; color:white; border:none; border-radius:5px;">
+    <!-- PRIVATE CHAT WINDOW -->
+    <div class="private-chat-window" id="private-chat">
+        <div class="private-header">
+            <strong style="color: #9c27b0;">🔒 Özel Sohbet</strong>
+            <button onclick="closePrivateChat()" style="background: none; border: none; color: white; font-size: 1.2em; cursor: pointer;">×</button>
         </div>
-        
-        <div style="margin:15px 0;">
-            <label style="display:block; margin-bottom:5px;">Şifre:</label>
-            <input type="password" id="adminPass" value="kumsal07@" style="width:100%; padding:10px; background:#1e1e2e; color:white; border:none; border-radius:5px;">
+        <div class="private-messages" id="private-messages">
+            <!-- Private messages will appear here -->
         </div>
-        
-        <div style="display:flex; gap:10px; margin-top:20px;">
-            <button onclick="loginAsAdmin()" style="flex:1; background:#4caf50;">Giriş Yap</button>
-            <button onclick="closeAdminPanel()" style="flex:1; background:#666;">İptal</button>
+        <div class="private-input">
+            <input type="text" 
+                   id="private-input" 
+                   placeholder="Özel mesaj..."
+                   style="width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #9c27b0; background: rgba(0,0,0,0.3); color: white;"
+                   autocomplete="off">
         </div>
     </div>
     
-    <div id="overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:999;"></div>
+    <!-- POPUPS -->
+    <div class="overlay" id="overlay"></div>
+    
+    <!-- ADMIN LOGIN POPUP -->
+    <div class="popup" id="admin-popup">
+        <h3 class="popup-header">👑 Admin Girişi</h3>
+        <input type="text" 
+               id="admin-username" 
+               class="popup-input" 
+               placeholder="Kullanıcı Adı (popbox)"
+               value="popbox">
+        <input type="password" 
+               id="admin-password" 
+               class="popup-input" 
+               placeholder="Şifre"
+               value="kumsal07@">
+        <div class="popup-buttons">
+            <button class="popup-btn popup-ok" onclick="loginAsAdmin()">Giriş Yap</button>
+            <button class="popup-btn popup-cancel" onclick="closePopup()">İptal</button>
+        </div>
+    </div>
+    
+    <!-- USER SELECT POPUP (for private messages) -->
+    <div class="popup" id="user-select-popup">
+        <h3 class="popup-header">👤 Özel Mesaj</h3>
+        <select id="private-user-select" class="popup-input">
+            <option value="">Kullanıcı seçin</option>
+        </select>
+        <input type="text" 
+               id="private-message-input" 
+               class="popup-input" 
+               placeholder="Mesajınız...">
+        <div class="popup-buttons">
+            <button class="popup-btn popup-ok" onclick="sendPrivateMessage()">Gönder</button>
+            <button class="popup-btn popup-cancel" onclick="closePopup()">İptal</button>
+        </div>
+    </div>
     
     <script>
-        // ========== BASİT SOHBET SİSTEMİ ==========
-        let messages = [];
-        let isAdmin = false;
+        // ========== GLOBAL VARIABLES ==========
+        let youtubePlayer = null;
         let currentUser = '';
+        let isAdmin = false;
+        let users = new Map(); // user id -> {name, role, online, lastSeen}
+        let privateChatTarget = null;
         
-        // YouTube Player
-        let player;
-        function onYouTubeIframeAPIReady() {
-            player = new YT.Player('youtube-player', {
-                height: '100%',
-                width: '100%',
-                videoId: 'dQw4w9WgXcQ', // KENDİ VİDEO ID'Nİ YAZ
-                playerVars: {
-                    'autoplay': 0,
-                    'controls': 1,
-                    'rel': 0
+        // ========== LOCALSTORAGE MANAGEMENT ==========
+        function getStorageKey(key) {
+            return `popbox_chat_${key}_${location.hostname}`;
+        }
+        
+        function saveToStorage(key, data) {
+            try {
+                localStorage.setItem(getStorageKey(key), JSON.stringify(data));
+            } catch (e) {
+                console.warn('LocalStorage error:', e);
+            }
+        }
+        
+        function loadFromStorage(key) {
+            try {
+                const data = localStorage.getItem(getStorageKey(key));
+                return data ? JSON.parse(data) : null;
+            } catch (e) {
+                return null;
+            }
+        }
+        
+        // ========== USER MANAGEMENT ==========
+        function generateUserId() {
+            return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        function getUserFromStorage() {
+            const saved = loadFromStorage('current_user');
+            if (saved && saved.id) {
+                return saved;
+            }
+            return null;
+        }
+        
+        function saveCurrentUser() {
+            const userData = {
+                id: currentUser.id,
+                name: currentUser.name,
+                role: currentUser.role,
+                timestamp: Date.now()
+            };
+            saveToStorage('current_user', userData);
+        }
+        
+        function updateOnlineUsers() {
+            // Remove users inactive for more than 5 minutes
+            const now = Date.now();
+            const fiveMinutes = 5 * 60 * 1000;
+            
+            users.forEach((user, id) => {
+                if (now - user.lastSeen > fiveMinutes) {
+                    user.online = false;
+                }
+            });
+            
+            // Update UI
+            const onlineUsers = Array.from(users.values()).filter(u => u.online);
+            document.getElementById('online-count').textContent = onlineUsers.length;
+            
+            // Update user list
+            const userList = document.getElementById('user-list');
+            userList.innerHTML = '';
+            
+            users.forEach(user => {
+                if (user.id === currentUser.id) return; // Don't show self
+                
+                const li = document.createElement('li');
+                li.className = 'user-item';
+                li.innerHTML = `
+                    ${user.online ? '🟢' : '⚫'} ${user.name}
+                    ${user.role === 'admin' ? '👑' : ''}
+                `;
+                
+                // Double click for private chat
+                li.addEventListener('dblclick', () => {
+                    openPrivateChat(user.id, user.name);
+                });
+                
+                userList.appendChild(li);
+            });
+            
+            // Update private chat user select
+            updatePrivateUserSelect();
+        }
+        
+        // ========== MESSAGE SYSTEM ==========
+        function addMessage(username, message, type = 'normal', isPrivate = false) {
+            const container = isPrivate ? 
+                document.getElementById('private-messages') : 
+                document.getElementById('messages-container');
+            
+            if (!container) return;
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type === 'admin' ? 'admin-message' : ''} ${isPrivate ? 'private-message' : ''}`;
+            
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-user">${type === 'admin' ? '👑 ' : ''}${username}</span>
+                    <span class="message-time">${timeStr}</span>
+                </div>
+                <div class="message-content">${message}</div>
+            `;
+            
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+            
+            // Save to history
+            saveMessageToHistory(username, message, type, isPrivate);
+        }
+        
+        function saveMessageToHistory(username, message, type, isPrivate) {
+            const history = loadFromStorage('message_history') || [];
+            history.push({
+                username,
+                message,
+                type,
+                isPrivate,
+                timestamp: Date.now(),
+                target: isPrivate ? privateChatTarget : null
+            });
+            
+            // Keep only last 100 messages
+            if (history.length > 100) {
+                history.shift();
+            }
+            
+            saveToStorage('message_history', history);
+        }
+        
+        // ========== PRIVATE CHAT SYSTEM ==========
+        function updatePrivateUserSelect() {
+            const select = document.getElementById('private-user-select');
+            select.innerHTML = '<option value="">Kullanıcı seçin</option>';
+            
+            users.forEach(user => {
+                if (user.id !== currentUser.id && user.online) {
+                    const option = document.createElement('option');
+                    option.value = user.id;
+                    option.textContent = `${user.name} ${user.role === 'admin' ? '(👑)' : ''}`;
+                    select.appendChild(option);
                 }
             });
         }
         
-        // Sayfa yüklendiğinde
-        window.onload = function() {
-            // Kullanıcı adı iste
-            currentUser = prompt('Kullanıcı adınız:', 'Kullanıcı_' + Math.floor(Math.random() * 1000));
-            if (!currentUser) currentUser = 'Anon';
+        function openPrivateChat(userId, userName) {
+            privateChatTarget = userId;
+            document.getElementById('private-chat').style.display = 'flex';
+            document.querySelector('.private-header strong').textContent = `🔒 ${userName}`;
+            document.getElementById('private-input').focus();
             
-            addMessage('Sistem', `👋 Hoş geldin, ${currentUser}!`, 'system');
-            addMessage('Sistem', '💬 Sohbete mesaj yazmaya başlayabilirsiniz.', 'system');
-        };
-        
-        // Mesaj Gönderme
-        function sendMessage() {
-            const input = document.getElementById('messageInput');
-            const message = input.value.trim();
-            
-            if (!message) return;
-            
-            // Komut kontrolü
-            if (message.startsWith('/')) {
-                handleCommand(message);
-            } else {
-                // Normal mesaj
-                addMessage(currentUser, message, isAdmin ? 'admin' : 'user');
-                
-                // Otomatik cevap (demo için)
-                if (message.toLowerCase().includes('merhaba')) {
-                    setTimeout(() => {
-                        addMessage('Bot', 'Merhaba! Nasılsınız?', 'system');
-                    }, 500);
-                }
-            }
-            
-            input.value = '';
-            input.focus();
+            // Load private chat history
+            loadPrivateChatHistory(userId);
         }
         
-        // Komut İşleme
-        function handleCommand(cmd) {
-            if (cmd === '/admin') {
-                adminLogin();
-            } else if (cmd === '/clear' && isAdmin) {
-                document.getElementById('messages').innerHTML = '';
-                addMessage('Sistem', '🧹 Chat temizlendi.', 'system');
-            } else if (cmd === '/help') {
-                addMessage('Sistem', '📋 Komutlar: /admin, /help, /clear (admin)', 'system');
-            } else if (cmd === '/users') {
-                addMessage('Sistem', `👥 Çevrimiçi: 1 kullanıcı (${currentUser})`, 'system');
-            } else {
-                addMessage('Sistem', `❌ Bilinmeyen komut: ${cmd}`, 'system');
+        function closePrivateChat() {
+            document.getElementById('private-chat').style.display = 'none';
+            privateChatTarget = null;
+            document.getElementById('private-messages').innerHTML = '';
+        }
+        
+        function loadPrivateChatHistory(userId) {
+            const history = loadFromStorage('message_history') || [];
+            const privateMessages = history.filter(msg => 
+                msg.isPrivate && 
+                (msg.target === userId || msg.username === users.get(userId)?.name)
+            );
+            
+            const container = document.getElementById('private-messages');
+            container.innerHTML = '';
+            
+            privateMessages.forEach(msg => {
+                const div = document.createElement('div');
+                div.className = 'message private-message';
+                div.innerHTML = `
+                    <div class="message-header">
+                        <span class="message-user">${msg.username}</span>
+                        <span class="message-time">${new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    </div>
+                    <div class="message-content">${msg.message}</div>
+                `;
+                container.appendChild(div);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function sendPrivateMessage() {
+            const targetId = document.getElementById('private-user-select').value;
+            const message = document.getElementById('private-message-input').value.trim();
+            
+            if (!targetId || !message) {
+                alert('Lütfen kullanıcı seçin ve mesaj yazın!');
+                return;
+            }
+            
+            const targetUser = users.get(targetId);
+            if (!targetUser) {
+                alert('Kullanıcı bulunamadı!');
+                return;
+            }
+            
+            // In a real app, this would send to server
+            // For demo, we'll just show it locally
+            addMessage(currentUser.name, `(Özel) ${message}`, 'normal', true);
+            addMessage('Sistem', `Özel mesaj gönderildi: ${targetUser.name}`, 'system');
+            
+            document.getElementById('private-message-input').value = '';
+            closePopup();
+        }
+        
+        // ========== COMMAND HANDLER ==========
+        function handleCommand(command) {
+            const parts = command.split(' ');
+            const cmd = parts[0].toLowerCase();
+            
+            switch(cmd) {
+                case '/msg':
+                    if (parts.length >= 3) {
+                        const targetName = parts[1];
+                        const message = parts.slice(2).join(' ');
+                        
+                        // Find user by name
+                        let targetUser = null;
+                        users.forEach(user => {
+                            if (user.name.toLowerCase() === targetName.toLowerCase()) {
+                                targetUser = user;
+                            }
+                        });
+                        
+                        if (targetUser) {
+                            openPrivateChat(targetUser.id, targetUser.name);
+                            setTimeout(() => {
+                                document.getElementById('private-input').value = message;
+                                // In real app, send message immediately
+                            }, 100);
+                        } else {
+                            addMessage('Sistem', `Kullanıcı bulunamadı: ${targetName}`, 'system');
+                        }
+                    } else {
+                        showUserSelectPopup();
+                    }
+                    break;
+                    
+                case '/admin':
+                    showAdminPopup();
+                    break;
+                    
+                case '/users':
+                    const onlineCount = Array.from(users.values()).filter(u => u.online).length;
+                    addMessage('Sistem', `👥 Çevrimiçi: ${onlineCount} kullanıcı`, 'system');
+                    break;
+                    
+                case '/clear':
+                    if (isAdmin) {
+                        document.getElementById('messages-container').innerHTML = '';
+                        addMessage('Sistem', 'Chat temizlendi.', 'system');
+                    }
+                    break;
+                    
+                case '/help':
+                    addMessage('Sistem', '📋 Komutlar: /msg [kullanıcı] [mesaj] - Özel mesaj', 'system');
+                    addMessage('Sistem', '   /admin - Admin girişi, /users - Çevrimiçiler', 'system');
+                    addMessage('Sistem', '   /clear - Chat temizle (admin), /help - Yardım', 'system');
+                    break;
+                    
+                default:
+                    addMessage('Sistem', `❌ Bilinmeyen komut: ${cmd}`, 'system');
             }
         }
         
-        // Admin Girişi
-        function adminLogin() {
-            document.getElementById('adminPanel').style.display = 'block';
+        // ========== ADMIN SYSTEM ==========
+        function showAdminPopup() {
+            document.getElementById('admin-popup').style.display = 'block';
             document.getElementById('overlay').style.display = 'block';
         }
         
         function loginAsAdmin() {
-            const user = document.getElementById('adminUser').value;
-            const pass = document.getElementById('adminPass').value;
+            const username = document.getElementById('admin-username').value.trim();
+            const password = document.getElementById('admin-password').value;
             
-            if (user === 'popbox' && pass === 'kumsal07@') {
+            if (username === 'popbox' && password === 'kumsal07@') {
                 isAdmin = true;
-                addMessage('Sistem', '✅ Admin yetkileri aktif edildi!', 'system');
+                currentUser.role = 'admin';
+                saveCurrentUser();
+                
+                addMessage('Sistem', '✅ Admin yetkileri aktif!', 'system');
                 addMessage('Sistem', '👑 Artık yönetici komutlarını kullanabilirsiniz.', 'system');
-                closeAdminPanel();
+                
+                closePopup();
             } else {
                 alert('❌ Hatalı kullanıcı adı veya şifre!');
             }
         }
         
-        function closeAdminPanel() {
-            document.getElementById('adminPanel').style.display = 'none';
+        // ========== POPUP MANAGEMENT ==========
+        function showUserSelectPopup() {
+            updatePrivateUserSelect();
+            document.getElementById('user-select-popup').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+        }
+        
+        function closePopup() {
+            document.querySelectorAll('.popup').forEach(popup => {
+                popup.style.display = 'none';
+            });
             document.getElementById('overlay').style.display = 'none';
         }
         
-        // Mesaj Ekleme
-        function addMessage(user, text, type = 'user') {
-            const messagesDiv = document.getElementById('messages');
-            const messageDiv = document.createElement('div');
-            
-            messageDiv.className = 'message ' + 
-                (type === 'admin' ? 'admin-message' : 
-                 type === 'system' ? 'system-message' : '');
-            
-            const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const badge = type === 'admin' ? '👑 ' : type === 'system' ? '🤖 ' : '';
-            
-            messageDiv.innerHTML = `
-                <div style="display:flex; justify-content:space-between;">
-                    <strong>${badge}${user}</strong>
-                    <span style="color:#888; font-size:12px;">${time}</span>
-                </div>
-                <div>${text}</div>
-            `;
-            
-            messagesDiv.appendChild(messageDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            
-            // Mesaj sayısını güncelle
-            document.getElementById('userCount').textContent = 
-                Math.floor(Math.random() * 5) + 1; // Demo için rastgele sayı
+        // ========== YOUTUBE PLAYER ==========
+        function onYouTubeIframeAPIReady() {
+            youtubePlayer = new YT.Player('youtube-player', {
+                height: '100%',
+                width: '100%',
+                videoId: 'dQw4w9WgXcQ',
+                playerVars: {
+                    'autoplay': 0,
+                    'controls': 1,
+                    'rel': 0,
+                    'modestbranding': 1,
+                    'playsinline': 1 // iOS inline playback
+                },
+                events: {
+                    'onReady': onPlayerReady
+                }
+            });
         }
         
-        // Enter tuşu ile mesaj gönder
-        document.getElementById('messageInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') sendMessage();
+        function onPlayerReady(event) {
+            document.getElementById('video-title').textContent = 
+                event.target.getVideoData().title || 'Popbox Live';
+        }
+        
+        // ========== INITIALIZATION ==========
+        function initializeApp() {
+            // Set current time
+            document.getElementById('current-time').textContent = 
+                new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            // Check for existing user
+            const savedUser = getUserFromStorage();
+            if (savedUser) {
+                currentUser = {
+                    id: savedUser.id,
+                    name: savedUser.name,
+                    role: savedUser.role,
+                    online: true,
+                    lastSeen: Date.now()
+                };
+            } else {
+                // Create new user
+                currentUser = {
+                    id: generateUserId(),
+                    name: '',
+                    role: 'user',
+                    online: true,
+                    lastSeen: Date.now()
+                };
+                
+                // Ask for username
+                setTimeout(() => {
+                    const userName = prompt('Kullanıcı adınız:', `Kullanıcı_${Math.floor(Math.random() * 1000)}`);
+                    if (userName && userName.trim()) {
+                        currentUser.name = userName.trim();
+                        saveCurrentUser();
+                        addMessage('Sistem', `👋 Hoş geldin, ${currentUser.name}!`, 'system');
+                    }
+                }, 500);
+            }
+            
+            // Add current user to users map
+            users.set(currentUser.id, currentUser);
+            
+            // Add some demo users
+            const demoUsers = [
+                {id: 'user_1', name: 'Ahmet', role: 'user', online: true, lastSeen: Date.now()},
+                {id: 'user_2', name: 'Mehmet', role: 'user', online: false, lastSeen: Date.now() - 100000},
+                {id: 'user_3', name: 'Ayşe', role: 'user', online: true, lastSeen: Date.now()}
+            ];
+            
+            demoUsers.forEach(user => {
+                if (!users.has(user.id)) {
+                    users.set(user.id, user);
+                }
+            });
+            
+            // Initial update
+            updateOnlineUsers();
+            
+            // Load message history
+            const history = loadFromStorage('message_history') || [];
+            history.slice(-20).forEach(msg => {
+                if (!msg.isPrivate) {
+                    addMessage(msg.username, msg.message, msg.type);
+                }
+            });
+            
+            // Add welcome message
+            setTimeout(() => {
+                addMessage('Sistem', '💡 İpucu: /msg [kullanıcı] [mesaj] yazarak özel mesaj gönderebilirsiniz.', 'system');
+                addMessage('Sistem', '   Kullanıcı listesindeki birine çift tıklayarak özel sohbet açabilirsiniz.', 'system');
+            }, 1000);
+            
+            // Simulate user activity
+            setInterval(() => {
+                currentUser.lastSeen = Date.now();
+                updateOnlineUsers();
+                
+                // Random demo messages
+                if (Math.random() > 0.9 && users.size > 1) {
+                    const demoUsersArray = Array.from(users.values()).filter(u => u.id !== currentUser.id && u.online);
+                    if (demoUsersArray.length > 0) {
+                        const randomUser = demoUsersArray[Math.floor(Math.random() * demoUsersArray.length)];
+                        const messages = [
+                            'Merhaba!',
+                            'Nasılsınız?',
+                            'Harika bir yayın!',
+                            'Popbox çok iyi!',
+                            'Sohbet aktif mi?'
+                        ];
+                        const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+                        addMessage(randomUser.name, randomMessage, randomUser.role);
+                    }
+                }
+            }, 30000); // Every 30 seconds
+            
+            // Handle page visibility (online/offline tracking)
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    currentUser.online = false;
+                    currentUser.lastSeen = Date.now();
+                } else {
+                    currentUser.online = true;
+                    currentUser.lastSeen = Date.now();
+                }
+                updateOnlineUsers();
+            });
+            
+            // Handle beforeunload (user leaving)
+            window.addEventListener('beforeunload', () => {
+                currentUser.online = false;
+                currentUser.lastSeen = Date.now();
+                saveCurrentUser();
+            });
+        }
+        
+        // ========== EVENT LISTENERS ==========
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize app
+            initializeApp();
+            
+            // Send message on Enter
+            document.getElementById('message-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // Send private message on Enter
+            document.getElementById('private-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && privateChatTarget) {
+                    const message = e.target.value.trim();
+                    if (message) {
+                        addMessage(currentUser.name, message, 'normal', true);
+                        e.target.value = '';
+                    }
+                }
+            });
+            
+            // Send button click
+            document.getElementById('send-button').addEventListener('click', sendMessage);
+            
+            // Overlay click closes popups
+            document.getElementById('overlay').addEventListener('click', closePopup);
+            
+            // Keyboard fix for mobile
+            window.addEventListener('resize', function() {
+                // Scroll to bottom when keyboard appears
+                setTimeout(() => {
+                    document.getElementById('messages-container').scrollTop = 
+                        document.getElementById('messages-container').scrollHeight;
+                }, 300);
+            });
+            
+            // Prevent page zoom on mobile
+            document.addEventListener('touchstart', function(e) {
+                if (e.touches.length > 1) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
         });
         
-        // Overlay'e tıklayınca kapat
-        document.getElementById('overlay').addEventListener('click', closeAdminPanel);
-        
-        // Demo mesajları (otomatik)
-        setTimeout(() => {
-            addMessage('Bot', 'Popbox YouTube Live Chat aktif!', 'system');
-        }, 2000);
-        
-        setTimeout(() => {
-            addMessage('Ziyaretçi', 'Harika bir sistem!', 'user');
-        }, 4000);
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            if (message.startsWith('/')) {
+                handleCommand(message);
+            } else {
+                addMessage(currentUser.name, message, currentUser.role);
+            }
+            
+            input.value = '';
+            input.focus();
+        }
     </script>
 </body>
 </html>
