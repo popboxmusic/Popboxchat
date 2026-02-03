@@ -338,6 +338,29 @@
             box-shadow: 0 8px 20px rgba(255, 85, 85, 0.5);
         }
         
+        /* HIZLI ADMIN BUTONU */
+        .quick-admin-btn {
+            background: linear-gradient(135deg, #ff5555, #ff0000);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+        
+        .quick-admin-btn:hover {
+            background: linear-gradient(135deg, #ff0000, #ff5555);
+            transform: translateY(-2px);
+        }
+        
         /* RESPONSIVE */
         @media (max-width: 1024px) {
             body {
@@ -430,49 +453,63 @@
                        autocomplete="off">
                 <button id="sendButton">Gönder</button>
             </div>
+            
+            <!-- HIZLI ADMIN GİRİŞ BUTONU -->
+            <button class="quick-admin-btn" id="quickAdminBtn" onclick="quickAdminLogin()">
+                <i class="fas fa-crown"></i> POPBOX ADMIN GİRİŞİ
+            </button>
         </div>
     </div>
     
     <!-- ADMIN BUTTON -->
     <div class="admin-panel" id="adminPanel" style="display: none;">
-        <button class="admin-button" onclick="showAdminPopup()">
-            <i class="fas fa-crown"></i> Admin Paneli
+        <button class="admin-button" onclick="showUserManagementPopup()">
+            <i class="fas fa-users-cog"></i> Kullanıcı Yönetimi
         </button>
     </div>
     
-    <!-- ADMIN LOGIN POPUP -->
+    <!-- ADMIN LOGIN POPUP (BASİT VERSİYON) -->
     <div class="overlay" id="overlay"></div>
     <div class="popup" id="loginPopup">
-        <h3>👑 ADMIN GİRİŞİ</h3>
-        <input type="text" 
-               id="adminUsername" 
-               placeholder="Kullanıcı Adı (popbox)"
-               autocomplete="off">
-        <input type="password" 
-               id="adminPassword" 
-               placeholder="Şifre"
-               autocomplete="off">
+        <h3>👑 POPBOX ADMIN</h3>
+        <div style="text-align: center; margin: 20px 0; padding: 15px; background: rgba(79, 195, 247, 0.1); border-radius: 10px;">
+            <p style="color: #4fc3f7; margin-bottom: 10px;">
+                <strong>Kullanıcı:</strong> popbox<br>
+                <strong>Şifre:</strong> kumsal07@
+            </p>
+            <p style="color: #aaa; font-size: 0.9em;">
+                "Giriş Yap" butonuna tıklayın
+            </p>
+        </div>
         <div class="popup-buttons">
-            <button class="popup-ok" onclick="loginAsAdmin()">Giriş Yap</button>
-            <button class="popup-cancel" onclick="closePopup()">İptal</button>
+            <button class="popup-ok" onclick="doAdminLogin()">
+                <i class="fas fa-sign-in-alt"></i> GİRİŞ YAP
+            </button>
+            <button class="popup-cancel" onclick="closePopup()">
+                <i class="fas fa-times"></i> İPTAL
+            </button>
         </div>
     </div>
     
     <!-- USER MANAGEMENT POPUP -->
     <div class="popup" id="userPopup">
         <h3>👥 KULLANICI YÖNETİMİ</h3>
-        <select id="userSelect" class="popup-select">
+        <select id="userSelect" style="width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; background: rgba(0,0,0,0.3); color: white; border: 2px solid #4fc3f7;">
             <option value="">Kullanıcı Seçin</option>
         </select>
-        <select id="actionSelect" class="popup-select">
+        <select id="actionSelect" style="width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; background: rgba(0,0,0,0.3); color: white; border: 2px solid #4fc3f7;">
             <option value="coadmin">⭐ Co-Admin Yap</option>
             <option value="operator">🛡️ Operator Yap</option>
             <option value="kick">⛔ Kullanıcıyı At</option>
             <option value="mute">🔇 Sessize Al</option>
         </select>
         <div class="popup-buttons">
-            <button class="popup-ok" onclick="performAdminAction()">Uygula</button>
-            <button class="popup-cancel" onclick="closePopup()">Kapat</button>
+            <button class="popup-ok" onclick="performAdminAction()">
+                <i class="fas fa-check"></i> UYGULA
+            </button>
+            <button class="popup-cancel" onclick="closePopup()">
+                <i class="fas fa-times"></i> KAPAT
+            </button>
         </div>
     </div>
     
@@ -533,6 +570,7 @@
                 if (userName && userName.trim()) {
                     currentUser.name = userName.trim();
                     socket.emit('join', { username: currentUser.name });
+                    addSystemMessage(`👋 Hoş geldin, ${currentUser.name}!`);
                 }
             });
             
@@ -557,7 +595,8 @@
                 currentUser.isAdmin = true;
                 currentUser.role = 'admin';
                 document.getElementById('adminPanel').style.display = 'block';
-                addMessage('🤖 SİSTEM', '✅ Admin yetkileri aktif edildi!', 'system', true);
+                document.getElementById('quickAdminBtn').style.display = 'none';
+                addSystemMessage('✅ Admin yetkileri aktif edildi!');
                 closePopup();
             });
             
@@ -575,6 +614,21 @@
             // HATA MESAJI
             socket.on('error', (data) => {
                 alert(`❌ Hata: ${data.message}`);
+            });
+            
+            // KULLANICI LİSTESİ (ADMIN İÇİN)
+            socket.on('users-for-admin', (users) => {
+                const select = document.getElementById('userSelect');
+                select.innerHTML = '<option value="">Kullanıcı Seçin</option>';
+                
+                users.forEach(user => {
+                    if (user.username !== currentUser.name) {
+                        const option = document.createElement('option');
+                        option.value = user.username;
+                        option.textContent = `${user.username} (${user.role})`;
+                        select.appendChild(option);
+                    }
+                });
             });
         }
         
@@ -614,25 +668,23 @@
                     if (currentUser.isAdmin) {
                         showUserManagementPopup();
                     } else {
-                        addMessage('🤖 SİSTEM', '❌ Bu komut için admin yetkisi gerekiyor!', 'system', true);
+                        addSystemMessage('❌ Bu komut için admin yetkisi gerekiyor!');
                     }
                     break;
                     
                 case '/help':
-                    addMessage('🤖 SİSTEM', 
-                        '📋 Komutlar: /admin - Admin girişi, /popup - Kullanıcı yönetimi (admin), /clear - Chat temizleme (admin)', 
-                        'system', true);
+                    addSystemMessage('📋 Komutlar: /admin - Admin girişi, /popup - Kullanıcı yönetimi (admin), /clear - Chat temizleme (admin)');
                     break;
                     
                 case '/clear':
                     if (currentUser.isAdmin) {
                         document.getElementById('messagesContainer').innerHTML = '';
-                        addMessage('🤖 SİSTEM', '🧹 Chat temizlendi.', 'system', true);
+                        addSystemMessage('🧹 Chat temizlendi.');
                     }
                     break;
                     
                 default:
-                    addMessage('🤖 SİSTEM', `❌ Bilinmeyen komut: ${cmd}`, 'system', true);
+                    addSystemMessage(`❌ Bilinmeyen komut: ${cmd}`);
             }
         }
         
@@ -670,6 +722,10 @@
             container.scrollTop = container.scrollHeight;
         }
         
+        function addSystemMessage(message) {
+            addMessage('🤖 SİSTEM', message, 'system', true);
+        }
+        
         // ========== KULLANICI LİSTESİ ==========
         function updateUserList(users) {
             const userList = document.getElementById('userList');
@@ -702,44 +758,40 @@
             });
         }
         
-        // ========== POPUP İŞLEMLERİ ==========
+        // ========== ADMIN İŞLEMLERİ (YENİ VE BASİT) ==========
         function showAdminPopup() {
             document.getElementById('loginPopup').style.display = 'block';
             document.getElementById('overlay').style.display = 'block';
-            document.getElementById('adminUsername').focus();
+        }
+        
+        function doAdminLogin() {
+            // DİREKT GİRİŞ YAP - INPUT GEREKMİYOR
+            socket.emit('admin-login', {
+                username: 'popbox',
+                password: 'kumsal07@'
+            });
+        }
+        
+        function quickAdminLogin() {
+            // HIZLI GİRİŞ BUTONU
+            socket.emit('admin-login', {
+                username: 'popbox',
+                password: 'kumsal07@'
+            });
+            addSystemMessage('⚡ Admin girişi yapılıyor...');
         }
         
         function showUserManagementPopup() {
             if (!currentUser.isAdmin) {
-                addMessage('🤖 SİSTEM', '❌ Bu işlem için admin yetkisi gerekiyor!', 'system', true);
+                addSystemMessage('❌ Bu işlem için admin yetkisi gerekiyor!');
                 return;
             }
             
-            // Kullanıcı listesini doldur
+            // Kullanıcı listesini iste
             socket.emit('get-users');
             
             document.getElementById('userPopup').style.display = 'block';
             document.getElementById('overlay').style.display = 'block';
-        }
-        
-        function loginAsAdmin() {
-            const username = document.getElementById('adminUsername').value.trim();
-            const password = document.getElementById('adminPassword').value;
-            
-            if (!username || !password) {
-                alert('❌ Lütfen kullanıcı adı ve şifre girin!');
-                return;
-            }
-            
-            // Sunucuya gönder
-            socket.emit('admin-login', {
-                username: username,
-                password: password
-            });
-            
-            // Input'ları temizle
-            document.getElementById('adminUsername').value = '';
-            document.getElementById('adminPassword').value = '';
         }
         
         function performAdminAction() {
@@ -775,31 +827,17 @@
                 if (e.key === 'Enter') sendMessage();
             });
             
-            // Admin şifre input'u için Enter
-            document.getElementById('adminPassword').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') loginAsAdmin();
-            });
-            
             // Gönder butonu
             document.getElementById('sendButton').addEventListener('click', sendMessage);
             
             // Overlay'e tıklayınca popup'ları kapat
             document.getElementById('overlay').addEventListener('click', closePopup);
             
-            // Socket users event'i
-            socket.on('users-for-admin', (users) => {
-                const select = document.getElementById('userSelect');
-                select.innerHTML = '<option value="">Kullanıcı Seçin</option>';
-                
-                users.forEach(user => {
-                    if (user.username !== currentUser.name) {
-                        const option = document.createElement('option');
-                        option.value = user.username;
-                        option.textContent = `${user.username} (${user.role})`;
-                        select.appendChild(option);
-                    }
-                });
-            });
+            // Chat'e hoş geldin mesajı
+            setTimeout(() => {
+                addSystemMessage('💡 İpucu: /admin yazarak admin panele erişebilirsiniz.');
+                addSystemMessage('🔐 Admin bilgileri: popbox / kumsal07@');
+            }, 1000);
         });
     </script>
 </body>
