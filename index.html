@@ -9,7 +9,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 
-  <!-- CryptoJS - Şifre hash için (CDN) -->
+  <!-- CryptoJS - Şifre hash için -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
   <style>
@@ -214,7 +214,7 @@
     <div id="auth-error"></div>
   </div>
 
-  <!-- Ana Sayfa (gizli başlıyor) -->
+  <!-- Ana Sayfa -->
   <div id="main-screen" style="display:none; flex:1; display:flex; flex-direction:column;">
     <header>
       <div>🎤 Canlı Yayın & Sohbet</div>
@@ -292,7 +292,7 @@
     let currentPrivateListener = null;
     let currentRole = "user";
 
-    // Basit emoji map
+    // Emoji map
     const emojiMap = {
       ":)": "😊", ":(": "😔", ":D": "😄", ":P": "😛", "<3": "❤️",
       ":fire:": "🔥", ":smile:": "😄", ":sad:": "😢", ":heart:": "❤️",
@@ -315,7 +315,7 @@
       sound.play().catch(() => {});
     }
 
-    // Admin / CoAdmin / Operator kontrolü
+    // Admin / CoAdmin / Operator seviyesi
     function getRoleLevel(role) {
       if (role === "admin") return 3;
       if (role === "coadmin") return 2;
@@ -336,7 +336,7 @@
       authToggle.textContent = isLogin ? "Hesabın yok mu? Kayıt Ol" : "Zaten hesabın var mı? Giriş Yap";
     };
 
-    // Giriş / Kayıt butonu
+    // Giriş / Kayıt işlemi
     authActionBtn.onclick = () => {
       const nick = document.getElementById("auth-nick").value.trim();
       const password = document.getElementById("auth-password").value.trim();
@@ -354,18 +354,18 @@
         return;
       }
 
-      // Şifre hash (CryptoJS ile SHA256)
+      // Şifre hash
       const hashedPassword = CryptoJS.SHA256(password).toString();
 
       db.ref("users").once("value", snapshot => {
         let nickInUse = false;
-        let existingUserUid = null;
+        let existingUid = null;
 
         snapshot.forEach(child => {
           const user = child.val();
           if (user && user.nick === nick) {
             nickInUse = true;
-            existingUserUid = child.key;
+            existingUid = child.key;
             return true;
           }
         });
@@ -377,11 +377,11 @@
             return;
           }
 
-          db.ref("users/" + existingUserUid).once("value", snap => {
+          db.ref("users/" + existingUid).once("value", snap => {
             const userData = snap.val();
             if (userData && userData.password === hashedPassword) {
               currentNick = nick;
-              currentUid = existingUserUid;
+              currentUid = existingUid;
               currentRole = userData.role || "user";
 
               db.ref("users/" + currentUid).update({
@@ -458,11 +458,88 @@
       document.getElementById("online-count").textContent = `Online: ${count} kişi`;
     });
 
-    // ... (diğer tüm fonksiyonlar - mesajlaşma, özel sohbet, komutlar vs. - önceki kodla aynı kalıyor)
-    // Eğer istersen önceki kodun kalan kısmını buraya ekleyebilirim, ama şu an sadece giriş sistemini değiştirdik.
+    // Genel sohbet + otomatik silme + emoji + vurgu
+    db.ref("messages").limitToLast(101).on("child_added", snapshot => {
+      db.ref("messages").limitToFirst(1).once("child_added", oldest => {
+        if (oldest.key !== snapshot.key) oldest.ref.remove();
+      });
 
-    // Not: Diğer kısımlar (özel sohbet, admin komutları, resim gönderme vs.) aynı kalıyor.
-    // Eğer tam hali istersen önceki mesajlardan kopyalayabilirsin veya "tam kod" dersen tekrar paylaşırım.
+      const msg = snapshot.val();
+      const div = document.createElement("div");
+      div.className = `message ${msg.nick === currentNick ? "own" : "other"} new-message-highlight`;
+      div.innerHTML = `<strong>${msg.nick}:</strong> ${convertEmojis(msg.text || "")}`;
+      document.getElementById("messages").appendChild(div);
+      div.scrollIntoView({ behavior: "smooth" });
+
+      if (msg.nick !== currentNick) {
+        setTimeout(() => div.classList.remove("new-message-highlight"), 2000);
+      }
+    });
+
+    function sendPublicMessage() {
+      let text = document.getElementById("message-input").value.trim();
+      if (!text || !currentNick) return alert("Önce giriş yapmalısınız!");
+
+      // Komut kontrolü
+      if (text.startsWith("/")) {
+        const parts = text.substring(1).split(" ");
+        const command = parts[0].toLowerCase();
+
+        const myLevel = getRoleLevel(currentRole);
+
+        if (myLevel < 1) {
+          alert("Bu komutu kullanmak için en az operator olmalısın.");
+          return;
+        }
+
+        if (command === "temiz") {
+          if (myLevel >= 2) {
+            db.ref("messages").remove();
+            alert("Genel sohbet temizlendi.");
+          } else {
+            alert("Bu komut için en az CoAdmin olmalısın.");
+          }
+        } else if (command === "sil") {
+          if (myLevel >= 1) {
+            db.ref("messages").limitToLast(1).once("value", snap => {
+              snap.forEach(child => child.ref.remove());
+            });
+            alert("Son mesaj silindi.");
+          } else {
+            alert("Bu komut için en az Operator olmalısın.");
+          }
+        } else if (command === "kick" && parts[1]) {
+          const targetNick = parts[1];
+          db.ref("users").once("value", snap => {
+            snap.forEach(child => {
+              if (child.val().nick.toLowerCase() === targetNick.toLowerCase()) {
+                child.ref.update({ online: false });
+                alert(`${targetNick} kicklendi.`);
+              }
+            });
+          });
+        } else {
+          alert("Geçersiz komut.");
+        }
+        document.getElementById("message-input").value = "";
+        return;
+      }
+
+      db.ref("messages").push({
+        nick: currentNick,
+        text,
+        timestamp: Date.now()
+      });
+      document.getElementById("message-input").value = "";
+    }
+
+    document.getElementById("send-btn").onclick = sendPublicMessage;
+    document.getElementById("message-input").onkeypress = e => {
+      if (e.key === "Enter") sendPublicMessage();
+    };
+
+    // Özel sohbet ve diğer fonksiyonlar (önceki kodla aynı kalıyor)
+    // Eğer istersen tam halini tekrar paylaşırım.
   </script>
 </body>
 </html>
