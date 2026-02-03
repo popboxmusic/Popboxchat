@@ -1,292 +1,143 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*", // Tüm origin'lere izin ver
+        origin: "*",
         methods: ["GET", "POST"]
     }
 });
 
-app.use(cors());
-app.use(express.static('.')); // Dosyaları sun
+// Static dosyalar
+app.use(express.static('.'));
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
 
-const rooms = new Map();
-const users = new Map();
-
-const ROLES = {
-    OWNER: { level: 100, name: 'Kurucu', symbol: '~' },
-    ADMIN: { level: 80, name: 'Admin', symbol: '&' },
-    MOD: { level: 60, name: 'Mod', symbol: '@' },
-    HALFOP: { level: 40, name: 'Yardımcı', symbol: '%' },
-    VOICE: { level: 20, name: 'Sesli', symbol: '+' },
-    USER: { level: 0, name: 'Kullanıcı', symbol: '' }
-};
+// Kullanıcı verisi
+const users = new Map(); // socket.id -> {name, role, room}
 
 io.on('connection', (socket) => {
-    console.log('✅ Yeni bağlantı:', socket.id);
+    console.log('Yeni bağlantı:', socket.id);
     
-    let currentUser = {
-        id: socket.id,
-        nickname: `Kullanıcı${Math.floor(Math.random() * 1000)}`,
-        role: ROLES.USER,
-        room: 'main'
-    };
-    
-    users.set(socket.id, currentUser);
-    
-    // Oda yoksa oluştur
-    if (!rooms.has('main')) {
-        rooms.set('main', {
-            users: new Map(),
-            messages: []
-        });
-    }
-    
-    const room = rooms.get('main');
-    
-    socket.emit('welcome', {
-        message: 'YouTube Live Chat\'e hoş geldin!',
-        yourNick: currentUser.nickname
-    });
-    
-    // ODAYA KATIL
     socket.on('join', (data) => {
-        const { nickname } = data;
+        const { name, role = 'user' } = data;
         
-        if (nickname && nickname.trim()) {
-            currentUser.nickname = nickname.trim();
-            users.set(socket.id, currentUser);
-        }
-        
-        // Odaya ekle
-        room.users.set(socket.id, {
+        users.set(socket.id, {
             id: socket.id,
-            nickname: currentUser.nickname,
-            role: currentUser.role
+            name: name || 'Anon',
+            role: role,
+            room: 'main'
         });
         
-        // İlk kullanıcıya admin yetkisi ver
-        if (room.users.size === 1) {
-            currentUser.role = ROLES.ADMIN;
-            room.users.get(socket.id).role = ROLES.ADMIN;
-        }
+        // Hoş geldin mesajı
+        socket.emit('system', `Hoş geldin, ${name}!`);
         
-        socket.join('main');
+        // Diğer kullanıcılara bildir
+        socket.broadcast.emit('system', `${name} sohbete katıldı!`);
         
         // Kullanıcı listesini güncelle
         updateUserList();
-        
-        // Sisteme mesaj ekle
-        io.to('main').emit('system-message', {
-            message: `${currentUser.nickname} sohbete katıldı!`
-        });
-        
-        console.log(`👤 ${currentUser.nickname} katıldı`);
     });
     
-    // MESAJ AL
     socket.on('message', (data) => {
-        const { message } = data;
+        const user = users.get(socket.id);
+        if (!user) return;
         
-        if (!message || !message.trim()) return;
-        
-        const chatMessage = {
-            user: currentUser.nickname,
-            message: message.trim(),
-            role: currentUser.role,
-            time: new Date().toISOString()
-        };
-        
-        // Mesaj geçmişine ekle (max 100)
-        room.messages.push(chatMessage);
-        if (room.messages.length > 100) {
-            room.messages.shift();
-        }
+        console.log(`Mesaj: ${user.name}: ${data.message}`);
         
         // Herkese gönder
-        io.to('main').emit('message', chatMessage);
-        
-        // Konsola log
-        console.log(`💬 ${currentUser.nickname}: ${message}`);
+        io.emit('chat', {
+            user: user.name,
+            message: data.message,
+            role: user.role,
+            time: new Date().toISOString()
+        });
     });
     
-    // RESİM MESAJI
-    socket.on('image-message', (data) => {
-        const { image, filename } = data;
+    socket.on('image', (data) => {
+        const user = users.get(socket.id);
+        if (!user) return;
         
-        if (!image) return;
+        console.log(`Resim: ${user.name} gönderdi`);
         
-        // Base64 kontrolü
-        if (typeof image === 'string' && image.startsWith('data:image')) {
-            const imageMessage = {
-                user: currentUser.nickname,
-                message: `📷 Resim gönderdi: ${filename || 'image'}`,
-                image: image,
-                role: currentUser.role,
-                time: new Date().toISOString()
-            };
-            
-            io.to('main').emit('message', imageMessage);
-            console.log(`📷 ${currentUser.nickname} resim gönderdi`);
-        }
+        // Base64 resmi herkese gönder
+        io.emit('chat', {
+            user: user.name,
+            message: '[Resim]',
+            image: data.image,
+            role: user.role
+        });
     });
     
-    // KOMUT İŞLE
-    socket.on('command', (data) => {
-        const { command, args } = data;
-        
-        switch(command.toLowerCase()) {
-            case 'nick':
-                if (!args || !args[0]) {
-                    socket.emit('system-message', { message: 'Kullanım: /nick [yeni_nick]' });
-                    return;
-                }
-                
-                const newNick = args[0].trim();
-                const oldNick = currentUser.nickname;
-                
-                // Nick değiştir
-                currentUser.nickname = newNick;
-                users.set(socket.id, currentUser);
-                
-                if (room.users.has(socket.id)) {
-                    room.users.get(socket.id).nickname = newNick;
-                }
-                
-                // Herkese duyur
-                io.to('main').emit('system-message', {
-                    message: `${oldNick} artık ${newNick} olarak biliniyor.`
-                });
-                
-                updateUserList();
-                break;
-                
-            case 'msg':
-                if (!args || args.length < 2) {
-                    socket.emit('system-message', { message: 'Kullanım: /msg [kullanıcı] [mesaj]' });
-                    return;
-                }
-                
-                const targetUser = args[0];
-                const privateMsg = args.slice(1).join(' ');
-                
-                // Kullanıcıyı bul
-                const target = Array.from(room.users.values())
-                    .find(u => u.nickname === targetUser);
-                
-                if (target) {
-                    // Gönderene
-                    socket.emit('private-message', {
-                        from: currentUser.nickname,
-                        message: privateMsg,
-                        to: targetUser
-                    });
-                    
-                    // Alıcıya
-                    io.to(target.id).emit('private-message', {
-                        from: currentUser.nickname,
-                        message: privateMsg,
-                        to: targetUser
-                    });
-                } else {
-                    socket.emit('system-message', { message: `Kullanıcı bulunamadı: ${targetUser}` });
-                }
-                break;
-                
-            case 'me':
-                if (!args || args.length === 0) {
-                    socket.emit('system-message', { message: 'Kullanım: /me [aksiyon]' });
-                    return;
-                }
-                
-                const action = args.join(' ');
-                io.to('main').emit('message', {
-                    user: '•',
-                    message: `${currentUser.nickname} ${action}`,
-                    role: currentUser.role
-                });
-                break;
-                
-            case 'op':
-                if (currentUser.role.level < ROLES.ADMIN.level) {
-                    socket.emit('system-message', { message: 'Bu komut için yetkiniz yok!' });
-                    return;
-                }
-                
-                if (!args || args.length < 2) {
-                    socket.emit('system-message', { message: 'Kullanım: /op [kullanıcı] [admin/mod/voice]' });
-                    return;
-                }
-                
-                const opUser = args[0];
-                const roleType = args[1].toUpperCase();
-                
-                if (!ROLES[roleType]) {
-                    socket.emit('system-message', { message: 'Geçersiz rol!' });
-                    return;
-                }
-                
-                const userToOp = Array.from(room.users.values())
-                    .find(u => u.nickname === opUser);
-                
-                if (userToOp) {
-                    userToOp.role = ROLES[roleType];
-                    
-                    // Tüm kullanıcıları güncelle
-                    updateUserList();
-                    
-                    io.to('main').emit('system-message', {
-                        message: `${opUser} artık ${ROLES[roleType].name} oldu.`
-                    });
-                }
-                break;
-                
-            default:
-                socket.emit('system-message', { message: `Bilinmeyen komut: ${command}` });
-        }
-    });
-    
-    // BAĞLANTI KESİLİNCE
-    socket.on('disconnect', () => {
-        console.log('❌ Bağlantı kesildi:', currentUser.nickname);
-        
-        // Odadan çıkar
-        if (room.users.has(socket.id)) {
-            room.users.delete(socket.id);
-            
-            // Kullanıcı listesini güncelle
+    socket.on('role-change', (data) => {
+        const user = users.get(socket.id);
+        if (user && data.role) {
+            user.role = data.role;
+            io.emit('system', `${user.name} artık ${data.role} oldu.`);
             updateUserList();
-            
-            // Sisteme mesaj ekle
-            io.to('main').emit('system-message', {
-                message: `${currentUser.nickname} ayrıldı.`
-            });
         }
-        
-        users.delete(socket.id);
     });
     
-    // YARDIMCI FONKSİYON
+    socket.on('admin-action', (data) => {
+        const admin = users.get(socket.id);
+        
+        // Sadece admin veya coadmin işlem yapabilir
+        if (!admin || (admin.role !== 'admin' && admin.role !== 'coadmin')) {
+            socket.emit('system', 'Yetkiniz yok!');
+            return;
+        }
+        
+        // Hedef kullanıcıyı bul
+        const target = Array.from(users.values()).find(u => u.name === data.target);
+        
+        if (target) {
+            if (data.action === 'coadmin' && admin.role === 'admin') {
+                target.role = 'coadmin';
+                io.emit('system', `${target.name} artık Co-Admin oldu.`);
+            }
+            else if (data.action === 'operator') {
+                target.role = 'operator';
+                io.emit('system', `${target.name} artık Operator oldu.`);
+            }
+            else if (data.action === 'kick') {
+                // Kullanıcıyı at
+                io.to(target.id).emit('system', 'Atıldınız!');
+                users.delete(target.id);
+                io.sockets.sockets.get(target.id)?.disconnect();
+                io.emit('system', `${target.name} atıldı.`);
+            }
+            
+            updateUserList();
+        }
+    });
+    
+    socket.on('disconnect', () => {
+        const user = users.get(socket.id);
+        if (user) {
+            console.log('Bağlantı kesildi:', user.name);
+            users.delete(socket.id);
+            io.emit('system', `${user.name} ayrıldı.`);
+            updateUserList();
+        }
+    });
+    
     function updateUserList() {
-        const userList = Array.from(room.users.values()).map(user => ({
-            nickname: user.nickname,
-            role: user.role.name.toLowerCase()
+        const userList = Array.from(users.values()).map(u => ({
+            name: u.name,
+            role: u.role
         }));
         
-        io.to('main').emit('user-list', userList);
+        io.emit('users', userList);
     }
-    
-    // İlk bağlanınca kullanıcı listesini gönder
-    updateUserList();
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 server.listen(PORT, () => {
-    console.log(`🚀 Server: http://localhost:${PORT}`);
-    console.log(`📡 YouTube Live + IRC Chat aktif!`);
+    console.log(`🚀 Sunucu: http://localhost:${PORT}`);
+    console.log('📡 YouTube Live Chat aktif!');
+    console.log('🔐 Varsayılan admin şifresi: admin123');
 });
