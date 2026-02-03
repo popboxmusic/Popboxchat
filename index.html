@@ -70,6 +70,7 @@
       border-radius: 12px;
       max-width: 80%;
       word-break: break-word;
+      position: relative;
     }
     .message.own {
       background: #e91e63;
@@ -84,6 +85,13 @@
       border-radius: 8px;
       margin-top: 6px;
       display: block;
+    }
+    .new-message-highlight {
+      animation: highlight 2s ease-out;
+    }
+    @keyframes highlight {
+      0% { background: rgba(233, 30, 99, 0.3); }
+      100% { background: transparent; }
     }
     #input-area {
       padding: 12px;
@@ -232,32 +240,78 @@
     let currentPrivateToUid = null;
     let currentPrivateToNick = "";
 
+    // Basit emoji kısaltmaları (daha fazlasını istersen ekleriz)
+    const emojiMap = {
+      ":)": "😊",
+      ":(": "😔",
+      ":D": "😄",
+      ":P": "😛",
+      "<3": "❤️",
+      ":fire:": "🔥",
+      ":smile:": "😄",
+      ":sad:": "😢",
+      ":heart:": "❤️",
+      ":thumbsup:": "👍",
+      ":thumbsdown:": "👎",
+      ":laugh:": "😂",
+      ":cry:": "😭",
+      ":angry:": "😠",
+      ":love:": "🥰",
+      ":cool:": "😎"
+    };
+
+    // Emoji dönüştürme fonksiyonu
+    function convertEmojis(text) {
+      let result = text;
+      for (const [code, emoji] of Object.entries(emojiMap)) {
+        const regex = new RegExp(code.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1"), "g");
+        result = result.replace(regex, emoji);
+      }
+      return result;
+    }
+
     // Giriş
     document.getElementById("join-btn").onclick = () => {
       const nick = document.getElementById("nickname").value.trim();
       if (!nick) return alert("Kullanıcı adı girin");
+      if (nick.length < 2) return alert("Nick en az 2 karakter olmalı");
 
-      auth.signInAnonymously()
-        .then(() => {
-          currentNick = nick;
-          const uid = auth.currentUser.uid;
+      db.ref("users").once("value", snapshot => {
+        let nickInUse = false;
+        snapshot.forEach(child => {
+          const user = child.val();
+          if (user && user.nick === nick && user.online) {
+            nickInUse = true;
+            return true;
+          }
+        });
 
-          const userRef = db.ref("users/" + uid);
-          userRef.set({
-            nick: nick,
-            online: true,
-            lastSeen: Date.now()
-          });
+        if (nickInUse) {
+          alert("Bu nick zaten online biri tarafından kullanılıyor. Başka bir nick dene.");
+          return;
+        }
 
-          // Çıkışta otomatik offline yap
-          userRef.onDisconnect().update({
-            online: false,
-            lastSeen: firebase.database.ServerValue.TIMESTAMP
-          });
+        auth.signInAnonymously()
+          .then(() => {
+            currentNick = nick;
+            const uid = auth.currentUser.uid;
 
-          document.getElementById("login-area").innerHTML = `Hoş geldin, <b>${nick}</b>`;
-        })
-        .catch(err => alert("Giriş hatası: " + err.message));
+            const userRef = db.ref("users/" + uid);
+            userRef.set({
+              nick: nick,
+              online: true,
+              lastSeen: Date.now()
+            });
+
+            userRef.onDisconnect().update({
+              online: false,
+              lastSeen: firebase.database.ServerValue.TIMESTAMP
+            });
+
+            document.getElementById("login-area").innerHTML = `Hoş geldin, <b>${nick}</b>`;
+          })
+          .catch(err => alert("Giriş hatası: " + err.message));
+      });
     };
 
     // Online kişi sayacı + liste
@@ -281,7 +335,7 @@
       document.getElementById("online-count").textContent = `Online: ${count} kişi`;
     });
 
-    // Genel sohbet (son 100 mesaj + otomatik eski silme)
+    // Genel sohbet (son 100 mesaj + otomatik eski silme + yeni mesaj vurgusu)
     db.ref("messages").limitToLast(101).on("child_added", snapshot => {
       // 101. mesaj geldiyse en eskisini sil
       db.ref("messages").limitToFirst(1).once("child_added", oldest => {
@@ -292,10 +346,19 @@
 
       const msg = snapshot.val();
       const div = document.createElement("div");
-      div.className = `message ${msg.nick === currentNick ? "own" : "other"}`;
-      div.innerHTML = `<strong>${msg.nick}:</strong> ${msg.text}`;
+      div.className = `message ${msg.nick === currentNick ? "own" : "other"} new-message-highlight`;
+
+      // Emoji dönüştürme
+      const convertedText = convertEmojis(msg.text || "");
+
+      div.innerHTML = `<strong>${msg.nick}:</strong> ${convertedText}`;
       document.getElementById("messages").appendChild(div);
       div.scrollIntoView({ behavior: "smooth" });
+
+      // Yeni mesaj efekti (kendi mesajın hariç)
+      if (msg.nick !== currentNick) {
+        setTimeout(() => div.classList.remove("new-message-highlight"), 2000);
+      }
     });
 
     // Genel mesaj gönderme
@@ -316,7 +379,7 @@
       document.getElementById("message-input").value = "";
     }
 
-    // Özel sohbet aç/kapat
+    // Özel sohbet (son 100 mesaj + otomatik silme + emoji desteği)
     function openPrivateChat(uid, nick) {
       currentPrivateToUid = uid;
       currentPrivateToNick = nick;
@@ -336,9 +399,11 @@
 
         const msg = snapshot.val();
         const div = document.createElement("div");
-        div.className = `message ${msg.from === auth.currentUser.uid ? "own" : "other"}`;
+        div.className = `message ${msg.from === auth.currentUser.uid ? "own" : "other"} new-message-highlight`;
 
-        let content = `<strong>${msg.fromNick}:</strong> ${msg.text || ""}`;
+        let content = `<strong>${msg.fromNick}:</strong> `;
+        content += convertEmojis(msg.text || "");
+
         div.innerHTML = content;
 
         if (msg.imageBase64) {
@@ -353,6 +418,11 @@
 
         document.getElementById("private-messages").appendChild(div);
         div.scrollIntoView();
+
+        // Yeni mesaj efekti (kendi mesajın hariç)
+        if (msg.from !== auth.currentUser.uid) {
+          setTimeout(() => div.classList.remove("new-message-highlight"), 2000);
+        }
       });
     }
 
