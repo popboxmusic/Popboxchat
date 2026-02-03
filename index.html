@@ -258,8 +258,9 @@
     let currentPrivateToUid = null;
     let currentPrivateToNick = "";
     let currentPrivateListener = null;
+    let currentRole = "user";
 
-    // Basit emoji map
+    // Emoji map
     const emojiMap = {
       ":)": "😊", ":(": "😔", ":D": "😄", ":P": "😛", "<3": "❤️",
       ":fire:": "🔥", ":smile:": "😄", ":sad:": "😢", ":heart:": "❤️",
@@ -276,15 +277,12 @@
       return result;
     }
 
-    // Bildirim sesi
-    function playNotificationSound() {
-      const sound = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YU");
-      sound.play().catch(() => {});
-    }
-
-    // Admin kontrolü (senin nick'in admin olsun)
-    function isAdmin(nick) {
-      return nick === "popbox" || nick === "seninadminnickin"; // buraya kendi nick'ini yaz
+    // Admin / CoAdmin / Operator kontrolü
+    function getRoleLevel(role) {
+      if (role === "admin") return 3;
+      if (role === "coadmin") return 2;
+      if (role === "operator") return 1;
+      return 0; // user
     }
 
     // Giriş
@@ -303,7 +301,7 @@
           }
         });
 
-        if (nickInUse) {
+        if (nickInUse && nick !== "popbox") { // popbox nick serbest kalabilir, ama sadece sen admin olursun
           alert("Bu nick zaten online biri tarafından kullanılıyor. Başka bir nick dene.");
           return;
         }
@@ -313,12 +311,14 @@
             currentNick = nick;
             const uid = auth.currentUser.uid;
 
+            currentRole = (nick === "popbox") ? "admin" : "user";
+
             const userRef = db.ref("users/" + uid);
             userRef.set({
               nick: nick,
               online: true,
               lastSeen: Date.now(),
-              role: isAdmin(nick) ? "admin" : "user"
+              role: currentRole
             });
 
             userRef.onDisconnect().update({
@@ -326,13 +326,13 @@
               lastSeen: firebase.database.ServerValue.TIMESTAMP
             });
 
-            document.getElementById("login-area").innerHTML = `Hoş geldin, <b>${nick}</b>${isAdmin(nick) ? ' (Admin)' : ''}`;
+            document.getElementById("login-area").innerHTML = `Hoş geldin, <b>${nick}</b>${getRoleLevel(currentRole) > 0 ? ' (Admin)' : ''}`;
           })
           .catch(err => alert("Giriş hatası: " + err.message));
       });
     };
 
-    // Online kullanıcılar + sayaç + admin badge
+    // Online kullanıcılar + sayaç + role badge
     db.ref("users").on("value", snapshot => {
       let count = 0;
       const list = document.getElementById("user-list");
@@ -345,7 +345,9 @@
           const div = document.createElement("div");
           div.className = "user-item";
           div.id = `user-${child.key}`;
-          div.innerHTML = `${user.nick}${user.role === "admin" ? '<span class="admin-badge">Admin</span>' : ''}`;
+          let badge = '';
+          if (getRoleLevel(user.role) > 0) badge = '<span class="admin-badge">Admin</span>';
+          div.innerHTML = `${user.nick}${badge}`;
           div.onclick = () => openPrivateChat(child.key, user.nick);
           list.appendChild(div);
         }
@@ -354,7 +356,7 @@
       document.getElementById("online-count").textContent = `Online: ${count} kişi`;
     });
 
-    // Genel sohbet + otomatik silme + emoji + vurgu
+    // Genel sohbet
     db.ref("messages").limitToLast(101).on("child_added", snapshot => {
       db.ref("messages").limitToFirst(1).once("child_added", oldest => {
         if (oldest.key !== snapshot.key) oldest.ref.remove();
@@ -373,66 +375,134 @@
     });
 
     // Genel mesaj gönderme + admin komutları
-    document.getElementById("send-btn").onclick = sendPublicMessage;
-    document.getElementById("message-input").onkeypress = e => {
-      if (e.key === "Enter") sendPublicMessage();
-    };
-
     function sendPublicMessage() {
       let text = document.getElementById("message-input").value.trim();
       if (!text || !currentNick) return;
 
-      // Admin komut kontrolü
+      // Komut kontrolü
       if (text.startsWith("/")) {
-        if (!isAdmin(currentNick)) {
-          alert("Bu komutu kullanmak için admin olmalısın.");
+        const parts = text.substring(1).split(" ");
+        const command = parts[0].toLowerCase();
+        const target = parts[1] ? parts[1].toLowerCase() : null;
+
+        const myLevel = getRoleLevel(currentRole);
+
+        if (myLevel < 1) {
+          alert("Bu komutu kullanmak için en az operator olmalısın.");
           return;
         }
 
-        const parts = text.substring(1).split(" ");
-        const command = parts[0].toLowerCase();
-
         if (command === "temiz") {
-          db.ref("messages").remove();
-          alert("Genel sohbet temizlendi.");
-        } else if (command === "sil" && parts[1]) {
-          // Son mesajı silmek için basit örnek
-          db.ref("messages").limitToLast(1).once("value", snap => {
-            snap.forEach(child => child.ref.remove());
-          });
-          alert("Son mesaj silindi.");
-        } else if (command === "kick" && parts[1]) {
-          const targetNick = parts[1];
-          db.ref("users").once("value", snap => {
-            snap.forEach(child => {
-              if (child.val().nick === targetNick) {
-                child.ref.update({ online: false });
-                alert(`${targetNick} kicklendi.`);
-              }
+          if (myLevel >= 2) { // CoAdmin+
+            db.ref("messages").remove();
+            db.ref("messages").push({
+              nick: "Sistem",
+              text: "Sohbet temizlendi.",
+              timestamp: Date.now()
             });
-          });
-        } else if (command === "admin" && parts[1]) {
-          const targetNick = parts[1];
-          db.ref("users").once("value", snap => {
-            snap.forEach(child => {
-              if (child.val().nick === targetNick) {
-                child.ref.update({ role: "admin" });
-                alert(`${targetNick} artık admin.`);
-              }
+            alert("Genel sohbet temizlendi.");
+          } else {
+            alert("Bu komut için en az CoAdmin olmalısın.");
+          }
+        } else if (command === "sil") {
+          if (myLevel >= 1) { // Operator+
+            db.ref("messages").limitToLast(1).once("value", snap => {
+              snap.forEach(child => child.ref.remove());
             });
-          });
-        } else if (command === "unadmin" && parts[1]) {
-          const targetNick = parts[1];
-          db.ref("users").once("value", snap => {
-            snap.forEach(child => {
-              if (child.val().nick === targetNick) {
-                child.ref.update({ role: "user" });
-                alert(`${targetNick} artık normal kullanıcı.`);
-              }
+            db.ref("messages").push({
+              nick: "Sistem",
+              text: "Son mesaj silindi.",
+              timestamp: Date.now()
             });
-          });
+            alert("Son mesaj silindi.");
+          } else {
+            alert("Bu komut için en az Operator olmalısın.");
+          }
+        } else if (command === "kick" && target) {
+          if (myLevel >= 1) { // Operator+
+            db.ref("users").once("value", snap => {
+              snap.forEach(child => {
+                if (child.val().nick.toLowerCase() === target) {
+                  child.ref.update({ online: false });
+                  db.ref("messages").push({
+                    nick: "Sistem",
+                    text: `${target} kicklendi.`,
+                    timestamp: Date.now()
+                  });
+                  alert(`${target} kicklendi.`);
+                }
+              });
+            });
+          } else {
+            alert("Bu komut için en az Operator olmalısın.");
+          }
+        } else if (command === "spamengelle" && target) {
+          if (myLevel >= 1) { // Operator+
+            db.ref("users").once("value", snap => {
+              snap.forEach(child => {
+                if (child.val().nick.toLowerCase() === target) {
+                  child.ref.update({ banned: true });
+                  alert(`${target} spam engellendi.`);
+                }
+              });
+            });
+          } else {
+            alert("Bu komut için en az Operator olmalısın.");
+          }
+        } else if (command === "coadmin" && target) {
+          if (myLevel >= 3) { // Admin+
+            db.ref("users").once("value", snap => {
+              snap.forEach(child => {
+                if (child.val().nick.toLowerCase() === target) {
+                  child.ref.update({ role: "coadmin" });
+                  alert(`${target} artık CoAdmin.`);
+                }
+              });
+            });
+          } else {
+            alert("Bu komut için Admin olmalısın.");
+          }
+        } else if (command === "uncoadmin" && target) {
+          if (myLevel >= 3) { // Admin+
+            db.ref("users").once("value", snap => {
+              snap.forEach(child => {
+                if (child.val().nick.toLowerCase() === target) {
+                  child.ref.update({ role: "user" });
+                  alert(`${target} artık normal kullanıcı.`);
+                }
+              });
+            });
+          } else {
+            alert("Bu komut için Admin olmalısın.");
+          }
+        } else if (command === "operator" && target) {
+          if (myLevel >= 2) { // CoAdmin+
+            db.ref("users").once("value", snap => {
+              snap.forEach(child => {
+                if (child.val().nick.toLowerCase() === target) {
+                  child.ref.update({ role: "operator" });
+                  alert(`${target} artık Operator.`);
+                }
+              });
+            });
+          } else {
+            alert("Bu komut için en az CoAdmin olmalısın.");
+          }
+        } else if (command === "unoperator" && target) {
+          if (myLevel >= 2) { // CoAdmin+
+            db.ref("users").once("value", snap => {
+              snap.forEach(child => {
+                if (child.val().nick.toLowerCase() === target) {
+                  child.ref.update({ role: "user" });
+                  alert(`${target} artık normal kullanıcı.`);
+                }
+              });
+            });
+          } else {
+            alert("Bu komut için en az CoAdmin olmalısın.");
+          }
         } else {
-          alert("Geçersiz komut. Kullanılabilir: /temiz, /sil, /kick [nick], /admin [nick], /unadmin [nick]");
+          alert("Geçersiz komut. Kullanılabilir: /temiz, /sil, /kick [nick], /spamengelle [nick], /coadmin [nick], /uncoadmin [nick], /operator [nick], /unoperator [nick]");
         }
         document.getElementById("message-input").value = "";
         return;
@@ -446,7 +516,7 @@
       document.getElementById("message-input").value = "";
     }
 
-    // Özel sohbet (dinleyici temizleme + duplicate önleme + admin komut desteği)
+    // Özel sohbet
     function openPrivateChat(uid, nick) {
       if (currentPrivateListener) {
         db.ref(`private/${currentPrivateListener.chatId}`).off("child_added", currentPrivateListener.listener);
@@ -516,27 +586,13 @@
       let text = document.getElementById("private-message-input").value.trim();
       if (!text || !currentPrivateToUid) return;
 
-      // Admin komutları özel sohbet için de çalışsın (isteğe bağlı)
-      if (text.startsWith("/") && isAdmin(currentNick)) {
-        const parts = text.substring(1).split(" ");
-        const command = parts[0].toLowerCase();
-
-        if (command === "temiz") {
-          db.ref(`private/${[auth.currentUser.uid, currentPrivateToUid].sort().join("_")}`).remove();
-          alert("Özel sohbet temizlendi.");
-          text = "";
-        }
-      }
-
-      if (text) {
-        const chatId = [auth.currentUser.uid, currentPrivateToUid].sort().join("_");
-        db.ref(`private/${chatId}`).push({
-          from: auth.currentUser.uid,
-          fromNick: currentNick,
-          text,
-          timestamp: Date.now()
-        });
-      }
+      const chatId = [auth.currentUser.uid, currentPrivateToUid].sort().join("_");
+      db.ref(`private/${chatId}`).push({
+        from: auth.currentUser.uid,
+        fromNick: currentNick,
+        text,
+        timestamp: Date.now()
+      });
       document.getElementById("private-message-input").value = "";
     };
 
