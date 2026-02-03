@@ -2,280 +2,517 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>YouTube Live + IRC Sohbet</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Live Chat</title>
+    <style>
+        /* BASİT CSS */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a2e;
+            color: white;
+            height: 100vh;
+            display: flex;
+            padding: 10px;
+            gap: 10px;
+        }
+        
+        /* YouTube Kısmı */
+        .youtube-box {
+            flex: 3;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        /* Sohbet Kısmı */
+        .chat-box {
+            flex: 1;
+            background: #2d2d44;
+            border-radius: 10px;
+            min-width: 350px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Sohbet Başlığı */
+        .chat-header {
+            background: #3d3d5c;
+            padding: 15px;
+            border-radius: 10px 10px 0 0;
+            text-align: center;
+            font-weight: bold;
+            border-bottom: 2px solid #4fc3f7;
+        }
+        
+        /* Mesajlar Alanı */
+        .messages {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        /* Tek Mesaj */
+        .message {
+            background: #3d3d5c;
+            padding: 10px;
+            border-radius: 8px;
+            border-left: 3px solid #4fc3f7;
+        }
+        
+        /* Mesaj Gönderme */
+        .input-area {
+            padding: 15px;
+            background: #3d3d5c;
+            border-radius: 0 0 10px 10px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .input-area input {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            background: #4a4a6a;
+            color: white;
+        }
+        
+        .input-area button {
+            padding: 12px 20px;
+            background: #4fc3f7;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        /* Yetki Renkleri */
+        .admin { color: #ff5555; }
+        .coadmin { color: #ffaa00; }
+        .operator { color: #55aaff; }
+        .user { color: #aaa; }
+        
+        /* Popup (Popbox) */
+        .popup {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #2d2d44;
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #4fc3f7;
+            z-index: 1000;
+            min-width: 300px;
+        }
+        
+        .popup h3 {
+            margin-bottom: 15px;
+            color: #4fc3f7;
+        }
+        
+        .popup input, .popup select {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border: 1px solid #4a4a6a;
+            background: #3d3d5c;
+            color: white;
+        }
+        
+        .popup-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .popup-buttons button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .popup-buttons .ok {
+            background: #4fc3f7;
+            color: white;
+        }
+        
+        .popup-buttons .cancel {
+            background: #666;
+            color: white;
+        }
+        
+        /* Overlay */
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 999;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+            .chat-box {
+                min-width: auto;
+                max-height: 50vh;
+            }
+        }
+    </style>
     
-    <!-- CSS DOSYASI -->
-    <link rel="stylesheet" href="style.css">
-    
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- YouTube IFrame API -->
+    <!-- YouTube API -->
     <script src="https://www.youtube.com/iframe_api"></script>
     <!-- Socket.io -->
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body>
-    <!-- Mobile Menu Butonu -->
-    <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Sohbeti aç/kapat">
-        <i class="fas fa-comments"></i>
-    </button>
-    
-    <div class="container">
-        <!-- YouTube Canlı Yayın -->
-        <section class="stream-section">
-            <div class="stream-container">
-                <div id="youtube-player"></div>
-            </div>
-            
-            <div class="stream-info">
-                <h2 id="stream-title">YouTube Canlı Yayın</h2>
-                <p id="stream-status">📡 Yayın yükleniyor...</p>
-                <div id="stream-stats">
-                    <span>👁️ <span id="view-count">0</span> izleyici</span>
-                    <span> | </span>
-                    <span>💬 <span id="chat-count">0</span> mesaj</span>
-                </div>
-            </div>
-        </section>
-        
-        <!-- Sohbet -->
-        <section class="chat-section">
-            <div class="chat-header">
-                <div class="channel-info">
-                    <div class="channel-name">#canli-yayin</div>
-                    <div class="online-count">
-                        <i class="fas fa-users"></i>
-                        <span id="online-count">1</span>
-                    </div>
-                </div>
-                <div class="channel-topic">
-                    <small id="channel-topic">YouTube canlı yayın sohbeti</small>
-                </div>
-            </div>
-            
-            <!-- Online Kullanıcılar -->
-            <div class="users-container">
-                <h4><i class="fas fa-user-friends"></i> Çevrimiçi</h4>
-                <ul class="user-list" id="user-list">
-                    <!-- Kullanıcılar buraya eklenecek -->
-                </ul>
-            </div>
-            
-            <!-- Mesajlar -->
-            <div class="messages-container" id="messages-container">
-                <div class="message system-message">
-                    <div class="message-header">
-                        <span class="message-user">Sistem</span>
-                        <span class="message-time">Hoş Geldin</span>
-                    </div>
-                    <div class="message-content">
-                        Sohbete hoş geldiniz! /help yazarak komutları görebilirsiniz.
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Mesaj Gönderme -->
-            <div class="message-input-container">
-                <div class="input-group">
-                    <input type="text" 
-                           id="message-input" 
-                           placeholder="Mesaj yazın... (/help için)"
-                           autocomplete="off">
-                    
-                    <!-- Resim Yükle -->
-                    <label for="image-upload" class="btn btn-upload" title="Resim Yükle">
-                        <i class="fas fa-image"></i>
-                    </label>
-                    <input type="file" 
-                           id="image-upload" 
-                           accept="image/*" 
-                           style="display: none;">
-                    
-                    <button id="send-button" class="btn">
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
-                </div>
-                <div id="command-hint" style="display: none;">
-                    <strong>Komutlar:</strong> /nick, /msg, /me, /help
-                </div>
-            </div>
-        </section>
+    <!-- YouTube Player -->
+    <div class="youtube-box">
+        <div id="youtube-player"></div>
     </div>
     
-    <!-- Modal (Büyük Resim) -->
-    <div id="image-modal">
-        <img id="modal-image" src="" alt="Büyütülmüş resim">
-        <button id="close-modal">Kapat</button>
+    <!-- Sohbet Kutusu -->
+    <div class="chat-box">
+        <div class="chat-header">
+            YouTube Live Chat
+            <div style="font-size: 12px; color: #aaa;">Kullanıcılar: <span id="userCount">1</span></div>
+        </div>
+        
+        <div class="messages" id="messages">
+            <div class="message">
+                <span style="color: #4fc3f7">[Sistem]</span> Sohbete hoş geldin!
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="Mesajınız...">
+            <button onclick="sendMessage()">Gönder</button>
+        </div>
+    </div>
+    
+    <!-- Admin Paneli Popup -->
+    <div class="overlay" id="overlay"></div>
+    <div class="popup" id="adminPopup">
+        <h3>🔐 Admin Girişi</h3>
+        <input type="password" id="adminPassword" placeholder="Admin Şifresi" value="admin123">
+        <div class="popup-buttons">
+            <button class="ok" onclick="loginAdmin()">Giriş Yap</button>
+            <button class="cancel" onclick="closePopup()">İptal</button>
+        </div>
+    </div>
+    
+    <!-- Kullanıcı İşlemleri Popup -->
+    <div class="popup" id="userPopup">
+        <h3>👤 Kullanıcı İşlemleri</h3>
+        <select id="userSelect">
+            <option value="">Kullanıcı seçin</option>
+        </select>
+        <select id="actionSelect">
+            <option value="coadmin">Co-Admin Yap</option>
+            <option value="operator">Operator Yap</option>
+            <option value="kick">At</option>
+        </select>
+        <div class="popup-buttons">
+            <button class="ok" onclick="performAction()">Uygula</button>
+            <button class="cancel" onclick="closePopup()">Kapat</button>
+        </div>
     </div>
     
     <script>
-        // YouTube Player
-        let youtubePlayer;
+        // DEĞİŞKENLER
+        let player;
+        let socket;
+        let currentUser = {
+            name: 'Kullanıcı_' + Math.floor(Math.random() * 1000),
+            role: 'user' // user, operator, coadmin, admin
+        };
+        let isAdmin = false;
         
+        // YOUTUBE PLAYER
         function onYouTubeIframeAPIReady() {
-            youtubePlayer = new YT.Player('youtube-player', {
+            player = new YT.Player('youtube-player', {
                 height: '100%',
                 width: '100%',
-                videoId: 'dQw4w9WgXcQ', // DEĞİŞTİR: Kendi video ID'n
+                videoId: 'dQw4w9WgXcQ', // BUNA KENDİ VİDEO ID'Nİ YAZ
                 playerVars: {
                     'autoplay': 0,
                     'controls': 1,
                     'rel': 0
                 },
                 events: {
-                    'onReady': onPlayerReady,
-                    'onStateChange': onPlayerStateChange
+                    'onReady': onPlayerReady
                 }
             });
         }
         
         function onPlayerReady(event) {
             console.log('YouTube player hazır');
-            document.getElementById('stream-title').textContent = 
-                event.target.getVideoData().title || 'YouTube Live';
         }
         
-        function onPlayerStateChange(event) {
-            const status = ['Bitti', 'Oynatılıyor', 'Duraklatıldı', 'Yükleniyor', '?'];
-            document.getElementById('stream-status').textContent = 
-                '📡 ' + (status[event.data] || 'Yayın');
-        }
-        
-        // Mobile Menu
-        const mobileMenuToggle = document.getElementById('mobileMenuToggle');
-        const chatSection = document.querySelector('.chat-section');
-        
-        if (mobileMenuToggle && chatSection) {
-            mobileMenuToggle.addEventListener('click', () => {
-                chatSection.classList.toggle('active');
-                mobileMenuToggle.innerHTML = chatSection.classList.contains('active') 
-                    ? '<i class="fas fa-times"></i>' 
-                    : '<i class="fas fa-comments"></i>';
+        // SOCKET.IO BAĞLANTISI
+        function connectSocket() {
+            socket = io('http://localhost:3000');
+            
+            socket.on('connect', () => {
+                console.log('Sunucuya bağlandı');
+                socket.emit('join', { 
+                    name: currentUser.name,
+                    role: currentUser.role 
+                });
+            });
+            
+            socket.on('chat', (data) => {
+                addMessage(data.user, data.message, data.role);
+            });
+            
+            socket.on('users', (users) => {
+                updateUserList(users);
+            });
+            
+            socket.on('system', (msg) => {
+                addSystemMessage(msg);
             });
         }
         
-        // Socket.io (client.js'den gelecek)
-        const socket = io('http://localhost:3000');
-        
-        // Nickname sor
-        document.addEventListener('DOMContentLoaded', function() {
-            const nickname = prompt('Nickname girin:', 'Kullanıcı' + Math.floor(Math.random() * 1000));
-            if (nickname) {
-                socket.emit('join', { nickname: nickname, room: 'main' });
-            }
-            
-            // Mesaj gönderme
-            document.getElementById('send-button').addEventListener('click', sendMessage);
-            document.getElementById('message-input').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') sendMessage();
-            });
-            
-            // Resim yükleme
-            document.getElementById('image-upload').addEventListener('change', handleImageUpload);
-            
-            // Modal
-            document.getElementById('close-modal').addEventListener('click', function() {
-                document.getElementById('image-modal').style.display = 'none';
-            });
-        });
-        
+        // MESAJ İŞLEMLERİ
         function sendMessage() {
-            const input = document.getElementById('message-input');
+            const input = document.getElementById('messageInput');
             const message = input.value.trim();
+            
             if (!message) return;
             
             if (message.startsWith('/')) {
                 handleCommand(message);
             } else {
                 socket.emit('message', {
-                    room: 'main',
-                    message: message
+                    user: currentUser.name,
+                    message: message,
+                    role: currentUser.role
                 });
             }
             
             input.value = '';
+            input.focus();
         }
         
-        function handleCommand(command) {
-            const parts = command.split(' ');
-            const cmd = parts[0];
+        function handleCommand(cmd) {
+            const parts = cmd.split(' ');
+            const command = parts[0];
             
-            if (cmd === '/help') {
-                addMessage('Sistem', 'Komutlar: /nick [yeni], /msg [kullanıcı] [mesaj], /me [aksiyon]');
-            } else if (cmd === '/nick' && parts[1]) {
-                socket.emit('command', { command: 'nick', args: [parts[1]] });
-            } else if (cmd === '/msg' && parts.length >= 3) {
-                socket.emit('command', { 
-                    command: 'msg', 
-                    args: [parts[1], parts.slice(2).join(' ')] 
-                });
-            } else {
-                addMessage('Sistem', 'Bilinmeyen komut: ' + cmd);
+            switch(command) {
+                case '/admin':
+                    if (parts[1] === '123') {
+                        currentUser.role = 'admin';
+                        isAdmin = true;
+                        addSystemMessage('Admin yetkisi alındı!');
+                    }
+                    break;
+                    
+                case '/popup':
+                    showAdminPopup();
+                    break;
+                    
+                case '/users':
+                    showUserPopup();
+                    break;
+                    
+                case '/clear':
+                    if (isAdmin) {
+                        document.getElementById('messages').innerHTML = '';
+                        addSystemMessage('Chat temizlendi.');
+                    }
+                    break;
+                    
+                default:
+                    addSystemMessage('Bilinmeyen komut: ' + command);
             }
         }
         
-        function handleImageUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+        // MESAJ GÖSTERME
+        function addMessage(user, message, role = 'user') {
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            
+            let roleClass = role;
+            let roleSymbol = '';
+            
+            if (role === 'admin') roleSymbol = '👑 ';
+            else if (role === 'coadmin') roleSymbol = '⭐ ';
+            else if (role === 'operator') roleSymbol = '🛡️ ';
+            
+            msgDiv.innerHTML = `
+                <span class="${roleClass}">${roleSymbol}${user}:</span> ${message}
+                <span style="float: right; color: #666; font-size: 12px">
+                    ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                </span>
+            `;
+            
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        function addSystemMessage(message) {
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            msgDiv.innerHTML = `<span style="color: #4fc3f7">[Sistem]</span> ${message}`;
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        // POPUP İŞLEMLERİ
+        function showAdminPopup() {
+            if (!isAdmin) {
+                document.getElementById('adminPopup').style.display = 'block';
+                document.getElementById('overlay').style.display = 'block';
+            } else {
+                showUserPopup();
+            }
+        }
+        
+        function loginAdmin() {
+            const password = document.getElementById('adminPassword').value;
+            if (password === 'admin123') {
+                currentUser.role = 'admin';
+                isAdmin = true;
+                socket.emit('role-change', { role: 'admin' });
+                addSystemMessage('Admin paneline hoş geldin!');
+                closePopup();
+                showUserPopup();
+            } else {
+                alert('Yanlış şifre!');
+            }
+        }
+        
+        function showUserPopup() {
+            if (!isAdmin) {
+                addSystemMessage('Bu işlem için admin yetkisi gerekiyor!');
+                return;
+            }
+            
+            // Kullanıcı listesini doldur
+            const select = document.getElementById('userSelect');
+            select.innerHTML = '<option value="">Kullanıcı seçin</option>';
+            
+            // Burada socket'ten kullanıcı listesi alınacak
+            // Şimdilik örnek
+            ['Ahmet', 'Mehmet', 'Ayşe'].forEach(user => {
+                if (user !== currentUser.name) {
+                    const option = document.createElement('option');
+                    option.value = user;
+                    option.textContent = user;
+                    select.appendChild(option);
+                }
+            });
+            
+            document.getElementById('userPopup').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+        }
+        
+        function performAction() {
+            const user = document.getElementById('userSelect').value;
+            const action = document.getElementById('actionSelect').value;
+            
+            if (!user) {
+                alert('Lütfen bir kullanıcı seçin!');
+                return;
+            }
+            
+            socket.emit('admin-action', {
+                target: user,
+                action: action,
+                by: currentUser.name
+            });
+            
+            addSystemMessage(`${user} kullanıcısına ${action} işlemi uygulandı.`);
+            closePopup();
+        }
+        
+        function closePopup() {
+            document.getElementById('adminPopup').style.display = 'none';
+            document.getElementById('userPopup').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+        
+        // KULLANICI LİSTESİ
+        function updateUserList(users) {
+            document.getElementById('userCount').textContent = users.length;
+        }
+        
+        // RESİM YÜKLEME (Base64)
+        function uploadImage(file) {
+            if (!file.type.startsWith('image/')) {
+                addSystemMessage('Sadece resim dosyaları yüklenebilir!');
+                return;
+            }
             
             const reader = new FileReader();
             reader.onload = function(e) {
-                socket.emit('image-message', {
-                    image: e.target.result,
-                    filename: file.name
+                const base64 = e.target.result;
+                
+                // Resmi gönder
+                socket.emit('image', {
+                    user: currentUser.name,
+                    image: base64,
+                    role: currentUser.role
                 });
+                
+                // Önizleme göster
+                const img = document.createElement('img');
+                img.src = base64;
+                img.style.maxWidth = '200px';
+                img.style.maxHeight = '200px';
+                img.style.borderRadius = '5px';
+                img.style.marginTop = '5px';
+                
+                addMessage(currentUser.name, 'Resim gönderdi:');
+                const lastMsg = document.getElementById('messages').lastChild;
+                lastMsg.appendChild(img);
             };
+            
             reader.readAsDataURL(file);
         }
         
-        function addMessage(user, message, isSystem = false) {
-            const container = document.getElementById('messages-container');
-            const div = document.createElement('div');
-            div.className = isSystem ? 'message system-message' : 'message';
+        // SAYFA YÜKLENİNCE
+        document.addEventListener('DOMContentLoaded', function() {
+            // Kullanıcı adı sor
+            const name = prompt('Kullanıcı adınız:', currentUser.name);
+            if (name) currentUser.name = name;
             
-            div.innerHTML = `
-                <div class="message-header">
-                    <span class="message-user">${user}</span>
-                    <span class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                </div>
-                <div class="message-content">${message}</div>
-            `;
+            // Socket bağlantısını kur
+            connectSocket();
             
-            container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
-        }
-        
-        // Socket.io events
-        socket.on('message', (data) => {
-            addMessage(data.user, data.message);
-        });
-        
-        socket.on('system-message', (data) => {
-            addMessage('Sistem', data.message, true);
-        });
-        
-        socket.on('user-list', (users) => {
-            const userList = document.getElementById('user-list');
-            userList.innerHTML = '';
-            document.getElementById('online-count').textContent = users.length;
-            
-            users.forEach(user => {
-                const li = document.createElement('li');
-                li.className = 'user-item';
-                li.innerHTML = `
-                    <span class="user-badge badge-${user.role || 'normal'}">
-                        ${user.role === 'admin' ? '@' : user.role === 'mod' ? '%' : ''}
-                    </span>
-                    <span class="user-name">${user.nickname}</span>
-                `;
-                userList.appendChild(li);
+            // Enter tuşu ile mesaj gönderme
+            document.getElementById('messageInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') sendMessage();
             });
-        });
-        
-        socket.on('private-message', (data) => {
-            addMessage(`[Özel] ${data.from}`, data.message);
+            
+            // Admin şifre input'u için Enter
+            document.getElementById('adminPassword').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') loginAdmin();
+            });
+            
+            // Overlay'e tıklayınca popup'ı kapat
+            document.getElementById('overlay').addEventListener('click', closePopup);
+            
+            addSystemMessage(`Hoş geldin, ${currentUser.name}!`);
+            addSystemMessage('Komutlar: /admin [şifre], /popup, /users, /clear');
         });
     </script>
 </body>
