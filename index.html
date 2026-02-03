@@ -1054,3 +1054,851 @@
             });
             
             let messageContent = message;
+            if (imageData) {
+                messageContent = `
+                    ${message}<br>
+                    <img src="${imageData}" 
+                         style="max-width:100%;max-height:200px;border-radius:8px;margin-top:5px;cursor:pointer;border:2px solid rgba(79,195,247,0.3)"
+                         onclick="showImageModal('${imageData}')"
+                         alt="Gönderilen resim">
+                `;
+            }
+            
+            // Reaksiyonları yükle
+            const messageId = `msg_${messageCounter}`;
+            const reactions = messageReactions[messageId] || {};
+            let reactionsHtml = '';
+            
+            if (Object.keys(reactions).length > 0) {
+                reactionsHtml = '<div class="reactions">';
+                for (const [emoji, users] of Object.entries(reactions)) {
+                    reactionsHtml += `
+                        <div class="reaction" onclick="reactToMessage('${messageId}', '${emoji}')">
+                            ${emoji} <small>${users.length}</small>
+                        </div>
+                    `;
+                }
+                reactionsHtml += '</div>';
+            }
+            
+            const badge = type === 'admin' ? '👑 ' : 
+                         type === 'coadmin' ? '🛡️ ' : 
+                         type === 'system' ? '🤖 ' : 
+                         isPrivate ? '🔒 ' : '👤 ';
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-user" onclick="showProfile('${username}')">
+                        ${badge}${username}
+                    </span>
+                    <span class="message-time">${timeStr}</span>
+                </div>
+                <div class="message-content">${messageContent}</div>
+                ${reactionsHtml}
+                <div class="message-actions">
+                    ${(userRole === 'admin' || userRole === 'coadmin') ? `
+                        <button class="action-btn delete" onclick="deleteMessage(${messageCounter})" title="Sil">🗑️</button>
+                    ` : ''}
+                    <button class="action-btn react" onclick="showReactionPopup(${messageCounter})" title="Reaksiyon">😀</button>
+                </div>
+            `;
+            
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+            
+            if (!isPrivate && username !== currentUser.name) {
+                showNotification(username, message);
+            }
+        }
+        
+        function saveMessage(username, message, type, imageData = null) {
+            const messageObj = {
+                id: `msg_${Date.now()}`,
+                username,
+                message,
+                type,
+                imageData,
+                timestamp: Date.now()
+            };
+            
+            messages.push(messageObj);
+            
+            if (messages.length > 500) {
+                messages.shift();
+            }
+            
+            localStorage.setItem('popbox_messages', JSON.stringify(messages));
+        }
+        
+        function loadMessageHistory() {
+            const recentMessages = messages.slice(-50);
+            recentMessages.forEach(msg => {
+                if (msg.type !== 'system' || msg.username === 'Sistem') {
+                    addMessage(msg.username, msg.message, msg.type, msg.imageData);
+                }
+            });
+        }
+        
+        // ========== REAKSİYON SİSTEMİ ==========
+        function showReactionPopup(messageId) {
+            reactingToMessage = messageId;
+            const popup = document.getElementById('reaction-popup');
+            popup.style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+            
+            // Popup'ı mesajın yanına konumlandır
+            const messageElem = document.getElementById(`msg-${messageId}`);
+            if (messageElem) {
+                const rect = messageElem.getBoundingClientRect();
+                popup.style.top = `${rect.top - 60}px`;
+                popup.style.left = `${rect.right - 200}px`;
+            }
+        }
+        
+        function addReaction(emoji) {
+            if (!reactingToMessage) return;
+            
+            const messageId = `msg_${reactingToMessage}`;
+            if (!messageReactions[messageId]) {
+                messageReactions[messageId] = {};
+            }
+            
+            if (!messageReactions[messageId][emoji]) {
+                messageReactions[messageId][emoji] = [];
+            }
+            
+            // Aynı kişi aynı reaksiyonu vermiş mi kontrol et
+            const existingIndex = messageReactions[messageId][emoji].indexOf(currentUser.name);
+            if (existingIndex === -1) {
+                messageReactions[messageId][emoji].push(currentUser.name);
+            } else {
+                messageReactions[messageId][emoji].splice(existingIndex, 1);
+                if (messageReactions[messageId][emoji].length === 0) {
+                    delete messageReactions[messageId][emoji];
+                }
+            }
+            
+            localStorage.setItem('popbox_reactions', JSON.stringify(messageReactions));
+            closeAllPopups();
+            
+            // Mesajı yeniden yükle
+            const messageElem = document.getElementById(`msg-${reactingToMessage}`);
+            if (messageElem) {
+                const content = messageElem.querySelector('.message-content').innerHTML;
+                const username = messageElem.querySelector('.message-user').textContent.replace(/[👑🛡️🤖🔒👤 ]/g, '');
+                const type = messageElem.className.includes('admin') ? 'admin' : 
+                            messageElem.className.includes('coadmin') ? 'coadmin' : 
+                            messageElem.className.includes('system') ? 'system' : 'user';
+                
+                messageElem.remove();
+                addMessage(username, content.replace(/<br>.*$/g, '').replace(/<img.*$/g, ''), type);
+            }
+        }
+        
+        function reactToMessage(messageId, emoji) {
+            // Bu fonksiyon reaksiyon div'ine tıklanınca çağrılır
+            if (!messageReactions[messageId]) {
+                messageReactions[messageId] = {};
+            }
+            
+            if (!messageReactions[messageId][emoji]) {
+                messageReactions[messageId][emoji] = [];
+            }
+            
+            const existingIndex = messageReactions[messageId][emoji].indexOf(currentUser.name);
+            if (existingIndex === -1) {
+                messageReactions[messageId][emoji].push(currentUser.name);
+            } else {
+                messageReactions[messageId][emoji].splice(existingIndex, 1);
+                if (messageReactions[messageId][emoji].length === 0) {
+                    delete messageReactions[messageId][emoji];
+                }
+            }
+            
+            localStorage.setItem('popbox_reactions', JSON.stringify(messageReactions));
+            
+            // Sayfayı yenile
+            location.reload();
+        }
+        
+        // ========== EMOJI PICKER ==========
+        function initEmojiPicker() {
+            const picker = document.getElementById('emoji-picker');
+            emojis.forEach(emoji => {
+                const btn = document.createElement('button');
+                btn.className = 'emoji-btn';
+                btn.textContent = emoji;
+                btn.onclick = () => insertEmoji(emoji);
+                picker.appendChild(btn);
+            });
+        }
+        
+        function toggleEmojiPicker() {
+            const picker = document.getElementById('emoji-picker');
+            picker.style.display = picker.style.display === 'flex' ? 'none' : 'flex';
+        }
+        
+        function togglePrivateEmojiPicker() {
+            // Özel sohbet için emoji picker
+            const emoji = prompt('Emoji seçin:', '😀');
+            if (emoji) {
+                const input = document.getElementById('private-message-input');
+                input.value += emoji;
+                input.focus();
+            }
+        }
+        
+        function insertEmoji(emoji) {
+            const input = document.getElementById('message-input');
+            input.value += emoji;
+            input.focus();
+            toggleEmojiPicker();
+        }
+        
+        // ========== ÖZEL SOHBET ==========
+        function openPrivateChat(username) {
+            if (username === currentUser.name || isUserBlocked(username)) return;
+            
+            privateChatWith = username;
+            document.getElementById('private-chat-with').textContent = `🔒 ${username} ile özel sohbet`;
+            document.getElementById('private-chat-modal').style.display = 'flex';
+            document.getElementById('private-chat-overlay').style.display = 'block';
+            
+            loadPrivateMessages(username);
+            
+            setTimeout(() => {
+                document.getElementById('private-message-input').focus();
+            }, 100);
+        }
+        
+        function openPrivateChatFromProfile() {
+            const username = document.getElementById('profile-name').textContent;
+            closeAllPopups();
+            setTimeout(() => openPrivateChat(username), 100);
+        }
+        
+        function closePrivateChat() {
+            privateChatWith = null;
+            document.getElementById('private-chat-modal').style.display = 'none';
+            document.getElementById('private-chat-overlay').style.display = 'none';
+        }
+        
+        function sendPrivateMessage() {
+            if (!privateChatWith) return;
+            
+            const input = document.getElementById('private-message-input');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // Kendi ekranıma mesajı göster
+            addMessage(currentUser.name, message, 'user', null, true);
+            savePrivateMessage(currentUser.name, privateChatWith, message);
+            
+            // Alıcıya simüle edilmiş cevap
+            setTimeout(() => {
+                const replies = ['Anladım!', 'Tamam', 'Teşekkürler', '👌', 'Peki', 'Güzel'];
+                const randomReply = replies[Math.floor(Math.random() * replies.length)];
+                addMessage(privateChatWith, randomReply, 'user', null, true);
+                savePrivateMessage(privateChatWith, currentUser.name, randomReply);
+            }, 1000 + Math.random() * 2000);
+            
+            input.value = '';
+            input.focus();
+        }
+        
+        function savePrivateMessage(fromUser, toUser, message, imageData = null) {
+            const key = [fromUser, toUser].sort().join('_');
+            if (!privateMessages[key]) {
+                privateMessages[key] = [];
+            }
+            
+            const messageObj = {
+                id: `pmsg_${Date.now()}`,
+                from: fromUser,
+                to: toUser,
+                message,
+                imageData,
+                timestamp: Date.now()
+            };
+            
+            privateMessages[key].push(messageObj);
+            
+            if (privateMessages[key].length > 100) {
+                privateMessages[key].shift();
+            }
+            
+            localStorage.setItem('popbox_private_messages', JSON.stringify(privateMessages));
+        }
+        
+        function loadPrivateMessages(otherUser) {
+            const container = document.getElementById('private-chat-messages');
+            container.innerHTML = '';
+            
+            const key = [currentUser.name, otherUser].sort().join('_');
+            const pmessages = privateMessages[key] || [];
+            
+            pmessages.forEach(msg => {
+                const type = msg.from === currentUser.name ? 'user' : 'user';
+                addMessage(msg.from, msg.message, type, msg.imageData, true);
+            });
+        }
+        
+        // ========== RESİM YÜKLEME (SADECE ÖZEL) ==========
+        function openPrivateImageUpload() {
+            document.getElementById('image-popup').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+            document.getElementById('image-preview').style.display = 'none';
+            selectedImage = null;
+            imagePreviewUrl = null;
+            
+            const fileInput = document.getElementById('image-file-input');
+            fileInput.onchange = function(e) {
+                if (e.target.files && e.target.files[0]) {
+                    handleImageSelect(e.target.files[0]);
+                }
+            };
+        }
+        
+        function handleImageSelect(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Sadece resim dosyaları!');
+                return;
+            }
+            
+            if (file.size > 2 * 1024 * 1024) {
+                alert('Maksimum 2MB!');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                imagePreviewUrl = e.target.result;
+                selectedImage = file;
+                
+                const preview = document.getElementById('image-preview');
+                preview.src = imagePreviewUrl;
+                preview.style.display = 'block';
+            };
+            
+            reader.readAsDataURL(file);
+        }
+        
+        function uploadImage() {
+            if (!selectedImage || !imagePreviewUrl) {
+                alert('Önce resim seçin!');
+                return;
+            }
+            
+            if (!privateChatWith) {
+                alert('Özel sohbette resim gönderebilirsiniz!');
+                closePopup();
+                return;
+            }
+            
+            // Özel sohbete resim gönder
+            addMessage(currentUser.name, '📸 Resim gönderdi', 'user', imagePreviewUrl, true);
+            savePrivateMessage(currentUser.name, privateChatWith, '📸 Resim gönderdi', imagePreviewUrl);
+            
+            // Alıcıdan cevap
+            setTimeout(() => {
+                addMessage(privateChatWith, 'Harika resim! 👏', 'user', null, true);
+                savePrivateMessage(privateChatWith, currentUser.name, 'Harika resim! 👏');
+            }, 1500);
+            
+            closePopup();
+        }
+        
+        // ========== PROFİL SİSTEMİ ==========
+        function showProfile(username) {
+            const user = users.find(u => u.name === username) || {
+                name: username,
+                role: 'user',
+                joinDate: Date.now()
+            };
+            
+            document.getElementById('profile-name').textContent = user.name;
+            document.getElementById('profile-role').textContent = 
+                user.role === 'admin' ? '👑 Admin' : 
+                user.role === 'coadmin' ? '🛡️ Co-Admin' : '👤 Kullanıcı';
+            
+            document.getElementById('profile-status').textContent = 
+                user.online ? '🟢 Çevrimiçi' : '⚫ Çevrimdışı';
+            
+            const joinDate = new Date(user.joinDate);
+            document.getElementById('profile-join').textContent = 
+                joinDate.toLocaleDateString('tr-TR');
+            
+            // Avatar
+            const avatar = document.getElementById('profile-avatar');
+            if (userAvatars[username]) {
+                avatar.innerHTML = `<img src="${userAvatars[username]}" alt="${username}">`;
+            } else {
+                avatar.textContent = username.charAt(0).toUpperCase();
+            }
+            
+            // Admin butonlarını göster/gizle
+            const adminActions = document.getElementById('admin-actions');
+            if (userRole === 'admin' && username !== currentUser.name) {
+                adminActions.style.display = 'block';
+            } else {
+                adminActions.style.display = 'none';
+            }
+            
+            document.getElementById('profile-popup').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+        }
+        
+        function blockUserFromProfile() {
+            const username = document.getElementById('profile-name').textContent;
+            if (confirm(`${username} kullanıcısını engellemek istiyor musunuz?`)) {
+                blockUser(username);
+                closeAllPopups();
+            }
+        }
+        
+        function makeCoadminFromProfile() {
+            const username = document.getElementById('profile-name').textContent;
+            const password = prompt('Co-Admin şifresi belirleyin:');
+            if (password) {
+                makeCoadmin(username, password);
+                closeAllPopups();
+            }
+        }
+        
+        // ========== KOMUT SİSTEMİ ==========
+        function handleCommand(command) {
+            const parts = command.substring(1).split(' ');
+            const cmd = parts[0].toLowerCase();
+            const args = parts.slice(1);
+            
+            switch (cmd) {
+                case 'admin':
+                    if (args.length === 2 && args[0] === 'popbox' && args[1] === 'kumsal07@') {
+                        loginAsAdmin();
+                    } else {
+                        addMessage('Sistem', '❌ Geçersiz admin bilgileri!', 'system');
+                    }
+                    break;
+                    
+                case 'coadmin':
+                    if (args.length >= 2) {
+                        if (args[0] === '+' && userRole === 'admin') {
+                            const username = args[1];
+                            const password = args[2] || 'default123';
+                            makeCoadmin(username, password);
+                        } else if (args[0] === '-' && userRole === 'admin') {
+                            const username = args[1];
+                            removeCoadmin(username);
+                        } else {
+                            addMessage('Sistem', '❌ Geçersiz coadmin komutu!', 'system');
+                        }
+                    }
+                    break;
+                    
+                case 'temizle':
+                    if (userRole === 'admin' || userRole === 'coadmin') {
+                        clearChat();
+                    } else {
+                        addMessage('Sistem', '⛔ Yetkiniz yok!', 'system');
+                    }
+                    break;
+                    
+                case 'sil':
+                    if (args.length > 0 && (userRole === 'admin' || userRole === 'coadmin')) {
+                        deleteMessage(parseInt(args[0]));
+                    }
+                    break;
+                    
+                case 'engelle':
+                    if (args.length > 0 && (userRole === 'admin' || userRole === 'coadmin')) {
+                        blockUser(args[0]);
+                    }
+                    break;
+                    
+                case 'engelkaldir':
+                    if (args.length > 0 && (userRole === 'admin' || userRole === 'coadmin')) {
+                        unblockUser(args[0]);
+                    }
+                    break;
+                    
+                case 'sohbet':
+                    if (args.length > 0 && (userRole === 'admin' || userRole === 'coadmin')) {
+                        if (args[0] === 'kapat') {
+                            muteChat(true);
+                        } else if (args[0] === 'ac') {
+                            muteChat(false);
+                        }
+                    }
+                    break;
+                    
+                case 'kullanıcılar':
+                    listUsers();
+                    break;
+                    
+                case 'yardım':
+                    showHelp();
+                    break;
+                    
+                default:
+                    addMessage('Sistem', `❌ Bilinmeyen komut: /${cmd}`, 'system');
+            }
+        }
+        
+        function loginAsAdmin() {
+            userRole = 'admin';
+            currentUser.role = 'admin';
+            updateUserBadge();
+            
+            addMessage('Sistem', `🎉 ${currentUser.name} admin olarak giriş yaptı!`, 'system');
+            addMessage(currentUser.name, '👑 Admin olarak giriş yapıldı!', 'admin');
+            
+            // Admin kullanıcıyı kaydet
+            const userIndex = users.findIndex(u => u.name === currentUser.name);
+            if (userIndex !== -1) {
+                users[userIndex].role = 'admin';
+                saveUsers();
+            }
+        }
+        
+        function makeCoadmin(username, password) {
+            const userIndex = users.findIndex(u => u.name === username);
+            if (userIndex !== -1) {
+                users[userIndex].role = 'coadmin';
+                saveUsers();
+                
+                // Co-admin listesine ekle
+                coadmins.push({ username, password });
+                localStorage.setItem('popbox_coadmins', JSON.stringify(coadmins));
+                
+                addMessage('Sistem', `🛡️ ${username} co-admin yapıldı! Şifre: ${password}`, 'system');
+            } else {
+                addMessage('Sistem', `❌ ${username} kullanıcısı bulunamadı!`, 'system');
+            }
+        }
+        
+        function removeCoadmin(username) {
+            const userIndex = users.findIndex(u => u.name === username);
+            if (userIndex !== -1) {
+                users[userIndex].role = 'user';
+                saveUsers();
+                
+                // Co-admin listesinden çıkar
+                coadmins = coadmins.filter(c => c.username !== username);
+                localStorage.setItem('popbox_coadmins', JSON.stringify(coadmins));
+                
+                addMessage('Sistem', `❌ ${username} co-admin yetkisi alındı!`, 'system');
+            }
+        }
+        
+        function clearChat() {
+            if (!confirm('Tüm sohbeti temizlemek istiyor musunuz?')) return;
+            
+            const container = document.getElementById('messages-container');
+            const systemMsg = container.querySelector('.message.system');
+            
+            container.innerHTML = '';
+            if (systemMsg) {
+                container.appendChild(systemMsg);
+            }
+            
+            addMessage('Sistem', `🗑️ Sohbet ${currentUser.name} tarafından temizlendi!`, 'system');
+            messages = [];
+            localStorage.setItem('popbox_messages', JSON.stringify(messages));
+        }
+        
+        function deleteMessage(messageNumber) {
+            const messageElem = document.getElementById(`msg-${messageNumber}`);
+            if (messageElem) {
+                messageElem.classList.add('deleted');
+                messageElem.querySelector('.message-content').innerHTML = '<em>Bu mesaj silindi</em>';
+                messageElem.querySelector('.message-actions').style.display = 'none';
+                
+                addMessage('Sistem', `🗑️ ${messageNumber}. mesaj silindi!`, 'system');
+            }
+        }
+        
+        function blockUser(username) {
+            if (!blockedUsers.includes(username)) {
+                blockedUsers.push(username);
+                localStorage.setItem('popbox_blocked_users', JSON.stringify(blockedUsers));
+                addMessage('Sistem', `⛔ ${username} engellendi!`, 'system');
+            }
+        }
+        
+        function unblockUser(username) {
+            const index = blockedUsers.indexOf(username);
+            if (index !== -1) {
+                blockedUsers.splice(index, 1);
+                localStorage.setItem('popbox_blocked_users', JSON.stringify(blockedUsers));
+                addMessage('Sistem', `✅ ${username} engeli kaldırıldı!`, 'system');
+            }
+        }
+        
+        function isUserBlocked(username) {
+            return blockedUsers.includes(username);
+        }
+        
+        function muteChat(mute) {
+            chatMuted = mute;
+            addMessage('Sistem', mute ? 
+                '⛔ Sohbet kapatıldı! Sadece adminler yazabilir.' : 
+                '✅ Sohbet açıldı! Herkes yazabilir.', 'system');
+        }
+        
+        function listUsers() {
+            const onlineUsers = users.filter(u => u.online && !isUserBlocked(u.name));
+            const offlineUsers = users.filter(u => !u.online && !isUserBlocked(u.name));
+            const blockedUsersList = users.filter(u => isUserBlocked(u.name));
+            
+            let userList = `
+                👥 <strong>KULLANICI LİSTESİ</strong><br>
+                <small>
+                <strong>Online (${onlineUsers.length}):</strong><br>
+                ${onlineUsers.map(u => `• ${u.name} ${u.role === 'admin' ? '👑' : u.role === 'coadmin' ? '🛡️' : ''}`).join('<br>') || '• Yok'}<br><br>
+                
+                <strong>Offline (${offlineUsers.length}):</strong><br>
+                ${offlineUsers.map(u => `• ${u.name} ${u.role === 'admin' ? '👑' : u.role === 'coadmin' ? '🛡️' : ''}`).join('<br>') || '• Yok'}<br><br>
+                
+                <strong>Engelli (${blockedUsersList.length}):</strong><br>
+                ${blockedUsersList.map(u => `• ${u.name} ⛔`).join('<br>') || '• Yok'}
+                </small>
+            `;
+            
+            addMessage('Sistem', userList, 'system');
+        }
+        
+        function showHelp() {
+            let helpText = `
+                📋 <strong>KOMUT LİSTESİ</strong><br>
+                <small>
+                <strong>Tüm Kullanıcılar:</strong><br>
+                • /yardım - Komut listesi<br>
+                • /admin popbox kumsal07@ - Admin girişi<br>
+                • /kullanıcılar - Kullanıcı listesi<br><br>
+            `;
+            
+            if (userRole === 'coadmin') {
+                helpText += `
+                    <strong>Co-Admin Komutları:</strong><br>
+                    • /temizle - Sohbeti temizle<br>
+                    • /sil [numara] - Mesaj sil<br>
+                    • /engelle [kullanıcı] - Kullanıcı engelle<br>
+                    • /engelkaldir [kullanıcı] - Engel kaldır<br>
+                    • /sohbet kapat - Sohbeti kapat<br>
+                    • /sohbet ac - Sohbeti aç<br><br>
+                `;
+            }
+            
+            if (userRole === 'admin') {
+                helpText += `
+                    <strong>Admin Komutları:</strong><br>
+                    • /coadmin + [kullanıcı] [şifre] - Co-admin yap<br>
+                    • /coadmin - [kullanıcı] - Co-admin yetkisi al<br>
+                    • /temizle - Sohbeti temizle<br>
+                    • /sil [numara] - Mesaj sil<br>
+                    • /engelle [kullanıcı] - Kullanıcı engelle<br>
+                    • /engelkaldir [kullanıcı] - Engel kaldır<br>
+                    • /sohbet kapat - Sohbeti kapat<br>
+                    • /sohbet ac - Sohbeti aç<br>
+                `;
+            }
+            
+            helpText += '</small>';
+            
+            addMessage('Sistem', helpText, 'system');
+        }
+        
+        // ========== YOUTUBE PLAYER ==========
+        function initYouTubePlayer(videoId = 'dQw4w9WgXcQ') {
+            if (typeof YT === 'undefined' || !YT.Player) {
+                setTimeout(() => initYouTubePlayer(videoId), 1000);
+                return;
+            }
+            
+            youtubePlayer = new YT.Player('youtube-player', {
+                height: '100%',
+                width: '100%',
+                videoId: videoId,
+                playerVars: {
+                    'autoplay': 1,
+                    'controls': 1,
+                    'rel': 0,
+                    'modestbranding': 1,
+                    'playsinline': 1
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+        }
+        
+        function onPlayerReady(event) {
+            console.log('🎬 YouTube Player hazır!');
+            event.target.playVideo();
+        }
+        
+        function onPlayerStateChange(event) {
+            // Player state tracking
+        }
+        
+        // ========== BİLDİRİM SİSTEMİ ==========
+        function showNotification(username, message) {
+            if (document.hidden) {
+                const originalTitle = document.title;
+                document.title = `💬 ${username}: ${message.substring(0, 30)}...`;
+                
+                setTimeout(() => {
+                    document.title = originalTitle;
+                }, 3000);
+            }
+        }
+        
+        // ========== POPUP YÖNETİMİ ==========
+        function closeAllPopups() {
+            document.querySelectorAll('.popup').forEach(popup => {
+                popup.style.display = 'none';
+            });
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('emoji-picker').style.display = 'none';
+        }
+        
+        function closePopup() {
+            closeAllPopups();
+        }
+        
+        // ========== RESİM MODALI ==========
+        function showImageModal(imageUrl) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                z-index: 2000;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            `;
+            
+            modal.innerHTML = `
+                <img src="${imageUrl}" style="max-width: 90%; max-height: 90%; border-radius: 10px;">
+                <button onclick="this.parentElement.remove()" style="position:absolute;top:20px;right:20px;background:#ff5555;border:none;color:white;width:40px;height:40px;border-radius:50%;font-size:1.5em;cursor:pointer;">×</button>
+            `;
+            
+            document.body.appendChild(modal);
+        }
+        
+        // ========== GERÇEK ZAMANLI SİMÜLASYON ==========
+        function startRealtimeMessages() {
+            setInterval(() => {
+                if (Math.random() > 0.6) {
+                    sendRandomMessage();
+                }
+            }, 10000);
+            
+            setInterval(() => {
+                simulateUserActivity();
+            }, 30000);
+        }
+        
+        function sendRandomMessage() {
+            const user = getRandomOnlineUser();
+            if (!user || user.name === currentUser?.name) return;
+            
+            const messages = [
+                'Harika yayın!',
+                'Popbox en iyisi!',
+                'Nasılsınız?',
+                'Emoji picker süper!',
+                'Admin nerede?',
+                '👋 Selamlar!',
+                'Tema değiştirme güzelmiş',
+                'Reaksiyonlara bayıldım',
+                'Özel sohbet var mı?',
+                'Resim gönderebilir miyim?'
+            ];
+            
+            const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+            addMessage(user.name, randomMessage, user.role || 'user');
+            saveMessage(user.name, randomMessage, user.role || 'user');
+        }
+        
+        function sendRandomReply(toMessage) {
+            const user = getRandomOnlineUser();
+            if (!user || user.name === currentUser?.name) return;
+            
+            const replies = {
+                'merhaba': ['Merhaba!', 'Selam!', 'Hoş geldin!'],
+                'nasılsın': ['İyiyim, sen?', 'Harika!', 'Teşekkürler!'],
+                'admin': ['Admin aktif.', 'Popbox yönetiyor!'],
+                'resim': ['Özel sohbette resim gönderebilirsin! 📸']
+            };
+            
+            let reply = null;
+            const lowerMessage = toMessage.toLowerCase();
+            
+            for (const [key, responseArray] of Object.entries(replies)) {
+                if (lowerMessage.includes(key)) {
+                    reply = responseArray[Math.floor(Math.random() * responseArray.length)];
+                    break;
+                }
+            }
+            
+            if (!reply) {
+                reply = 'Evet, katılıyorum!';
+            }
+            
+            setTimeout(() => {
+                addMessage(user.name, reply, user.role || 'user');
+                saveMessage(user.name, reply, user.role || 'user');
+            }, 1000 + Math.random() * 2000);
+        }
+        
+        function simulateUserActivity() {
+            if (Math.random() > 0.5) {
+                const offlineUsers = users.filter(u => !u.online && !isUserBlocked(u.name));
+                if (offlineUsers.length > 0 && Math.random() > 0.7) {
+                    const user = offlineUsers[Math.floor(Math.random() * offlineUsers.length)];
+                    user.online = true;
+                    user.lastSeen = Date.now();
+                    addMessage('Sistem', `${user.name} sohbete katıldı!`, 'system');
+                    updateOnlineUsers();
+                }
+            }
+        }
+        
+        function getRandomOnlineUser() {
+            const onlineUsers = users.filter(u => u.online && u.name !== currentUser?.name && !isUserBlocked(u.name));
+            if (onlineUsers.length === 0) return null;
+            return onlineUsers[Math.floor(Math.random() * onlineUsers.length)];
+        }
+        
+        // ========== YOUTUBE API ==========
+        function onYouTubeIframeAPIReady() {
+            console.log('YouTube API hazır!');
+            if (!youtubePlayer) {
+                initYouTubePlayer();
+            }
+        }
+        
+        window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
+        
+        // ========== SAYFA KAPATMA ==========
+        window.addEventListener('beforeunload', function() {
+            if (currentUser) {
+                const userIndex = users.findIndex(u => u.name === currentUser.name);
+                if (userIndex !== -1) {
+                    users[userIndex].online = false;
+                    users[userIndex].lastSeen = Date.now();
+                    saveUsers();
+                }
+            }
+        });
+        
+    </script>
+</body>
+</html>
