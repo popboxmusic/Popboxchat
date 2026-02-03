@@ -14,7 +14,7 @@ const io = socketIo(server, {
 // ========== YAPILANDIRMA ==========
 const CONFIG = {
     ADMIN_USERNAME: "popbox",
-    ADMIN_PASSWORD: "kumsal07@",
+    ADMIN_PASSWORD: "kumsal07",
     MAX_USERS: 500,
     ROOM_NAME: "popbox-live",
     YOUTUBE_VIDEO_ID: "dQw4w9WgXcQ" // Buraya video ID yaz
