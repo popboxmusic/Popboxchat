@@ -1,202 +1,161 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>PopboxMusic Chat</title>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial, Helvetica, sans-serif;
-  background:#0e0e0e;
-  color:white;
-  overflow:hidden;
-}
-#video{
-  position:fixed;
-  top:0; left:0;
-  width:100%;
-  height:220px;
-  z-index:1;
-}
-#video iframe{
-  width:100%;
-  height:100%;
-}
-#chat{
-  position:absolute;
-  top:220px;
-  bottom:60px;
-  left:0;
-  right:0;
-  overflow-y:auto;
-  padding:10px;
-}
-.msg{
-  background:#1c1c1c;
-  padding:8px;
-  border-radius:8px;
-  margin-bottom:8px;
-}
-#inputBar{
-  position:fixed;
-  bottom:0;
-  left:0;
-  right:0;
-  height:60px;
-  background:#111;
-  display:flex;
-}
-#msg{
-  flex:1;
-  border:none;
-  font-size:16px;
-  padding:10px;
-}
-button{
-  width:80px;
-  border:none;
-  background:#ff3c00;
-  color:white;
-  font-weight:bold;
-}
+body{margin:0;font-family:Arial;background:#0e0e0e;color:#fff;overflow:hidden}
+#video{position:fixed;top:0;left:0;width:100%;height:220px;z-index:1}
+#video iframe{width:100%;height:100%}
+#main{position:absolute;top:220px;bottom:60px;left:0;right:200px;overflow:auto;padding:10px}
+#users{position:fixed;top:220px;right:0;width:200px;bottom:0;background:#111;overflow:auto;padding:10px}
+.msg{background:#1c1c1c;padding:8px;border-radius:8px;margin-bottom:8px}
+#bar{position:fixed;bottom:0;left:0;right:200px;height:60px;background:#111;display:flex}
+#msg{flex:1;border:none;font-size:16px;padding:10px}
+button{width:70px;border:none;background:#ff3c00;color:#fff;font-weight:bold}
 img{max-width:150px;border-radius:8px;margin-top:5px}
-#login{
-  position:fixed;
-  inset:0;
-  background:#000;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  z-index:9999;
-}
-#login input{
-  padding:12px;
-  margin:5px;
-  width:220px;
-  font-size:16px;
-}
+#pmBox{position:fixed;bottom:70px;right:210px;width:260px;height:300px;background:#000;border:2px solid #ff3c00;display:none;flex-direction:column}
+#pmChat{flex:1;overflow:auto;padding:5px}
+#login{position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column}
+input{padding:10px;margin:5px}
 </style>
 </head>
 <body>
 
-<div id="login">
-  <h2>Nick Giriş</h2>
-  <input id="nick" placeholder="Nick">
-  <input id="pass" type="password" placeholder="Şifre">
-  <button onclick="login()">Giriş / Kayıt</button>
-</div>
-
 <div id="video">
-<iframe src="https://www.youtube.com/embed/shD--eyF8ug?autoplay=1&mute=1&playsinline=1"
-allow="autoplay"></iframe>
+<iframe src="https://www.youtube.com/embed/shD--eyF8ug?autoplay=1&mute=1" allow="autoplay"></iframe>
 </div>
 
-<div id="chat"></div>
+<div id="main"></div>
+<div id="users"></div>
 
-<div id="inputBar">
-  <input id="msg" placeholder="Mesaj yaz..." onkeydown="if(event.key==='Enter') sendMessage()">
-  <button onclick="pickImage()">📷</button>
-  <button onclick="sendMessage()">Gönder</button>
+<div id="bar">
+<input id="msg" placeholder="Mesaj yaz...">
+<button onclick="imagePick()">📷</button>
+<button onclick="sendMessage()">Gönder</button>
 </div>
 
-<!-- Firebase COMPAT -->
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<div id="pmBox">
+<div id="pmChat"></div>
+<input id="pmMsg" placeholder="Özel mesaj...">
+<button onclick="sendPM()">Gönder</button>
+</div>
+
+<div id="login">
+<h2>Nick Giriş</h2>
+<input id="nick" placeholder="Nick">
+<input id="pass" type="password" placeholder="Şifre">
+<button onclick="login()">Giriş</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
 <script>
-const firebaseConfig = {
-  apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
-  authDomain: "popboxmusicchat.firebaseapp.com",
-  projectId: "popboxmusicchat",
-};
+firebase.initializeApp({
+apiKey:"AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
+authDomain:"popboxmusicchat.firebaseapp.com",
+projectId:"popboxmusicchat"
+});
+const db=firebase.firestore();
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+let me=null,activePM=null;
 
-let myNick="";
-
-async function login(){
-  const nick=document.getElementById("nick").value.trim();
-  const pass=document.getElementById("pass").value.trim();
-  if(!nick||!pass) return;
-
-  const ref=db.collection("users").doc(nick);
-  const doc=await ref.get();
-
-  if(!doc.exists){
-    await ref.set({password:pass});
-  }else{
-    if(doc.data().password!==pass){
-      alert("Şifre yanlış");
-      return;
-    }
-  }
-
-  myNick=nick;
-  document.getElementById("login").style.display="none";
+function login(){
+const n=nick.value.trim(),p=pass.value.trim();
+db.collection("users").doc(n).get().then(d=>{
+ if(!d.exists){
+  db.collection("users").doc(n).set({pass:p,online:true});
+ }else{
+  if(d.data().pass!==p){alert("Şifre yanlış");return;}
+  db.collection("users").doc(n).update({online:true});
+ }
+ me=n;
+ login.style.display="none";
+});
 }
+
+window.addEventListener("beforeunload",()=>{
+ if(me) db.collection("users").doc(me).update({online:false});
+});
+
+document.addEventListener("keydown",e=>{if(e.key==="Enter") sendMessage();});
 
 function sendMessage(){
-  const input=document.getElementById("msg");
-  if(!input.value.trim()) return;
-
-  db.collection("messages").add({
-    nick:myNick,
-    text:input.value,
-    time:Date.now()
-  });
-
-  input.value="";
+if(!msg.value.trim())return;
+db.collection("messages").add({nick:me,text:msg.value,time:Date.now()});
+msg.value="";
 }
 
-function pickImage(){
-  const inp=document.createElement("input");
-  inp.type="file";
-  inp.accept="image/*";
-  inp.onchange=e=>{
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      db.collection("messages").add({
-        nick:myNick,
-        image:ev.target.result,
-        time:Date.now()
-      });
-    };
-    reader.readAsDataURL(e.target.files[0]);
-  };
-  inp.click();
+function imagePick(){
+const i=document.createElement("input");
+i.type="file";i.accept="image/*";
+i.onchange=e=>{
+ const r=new FileReader();
+ r.onload=ev=>{
+  db.collection("messages").add({nick:me,image:ev.target.result,time:Date.now()});
+ };
+ r.readAsDataURL(e.target.files[0]);
+};
+i.click();
 }
 
-db.collection("messages").orderBy("time")
-.onSnapshot(snap=>{
-  const area=document.getElementById("chat");
-  area.innerHTML="";
-  snap.forEach(doc=>{
-    const d=doc.data();
-    const el=document.createElement("div");
-    el.className="msg";
-
-    if(d.image){
-      el.innerHTML=`<b>${d.nick}:</b><br><img src="${d.image}">`;
-    }else{
-      el.innerHTML=`<b>${d.nick}:</b> ${d.text}`;
-    }
-
-    if(d.nick===myNick){
-      const del=document.createElement("span");
-      del.innerText=" ❌";
-      del.onclick=()=>db.collection("messages").doc(doc.id).delete();
-      el.appendChild(del);
-    }
-
-    area.appendChild(el);
-    area.scrollTop=area.scrollHeight;
-  });
+db.collection("messages").orderBy("time").onSnapshot(s=>{
+main.innerHTML="";
+s.forEach(doc=>{
+ const d=doc.data(),el=document.createElement("div");
+ el.className="msg";
+ el.innerHTML=`<b>${d.nick}:</b><br>${d.text?d.text:""}${d.image?'<br><img src="'+d.image+'">':""}`;
+ if(d.nick===me){
+  const x=document.createElement("span");
+  x.innerText=" ❌";
+  x.onclick=()=>db.collection("messages").doc(doc.id).delete();
+  el.appendChild(x);
+ }
+ main.appendChild(el);
+ main.scrollTop=main.scrollHeight;
 });
-</script>
+});
 
+db.collection("users").onSnapshot(s=>{
+users.innerHTML="<b>Online</b><br>";
+s.forEach(d=>{
+ if(d.data().online){
+  const u=document.createElement("div");
+  u.innerText=d.id;
+  u.onclick=()=>openPM(d.id);
+  users.appendChild(u);
+ }
+});
+});
+
+function openPM(n){
+activePM=n;
+pmBox.style.display="flex";
+listenPM();
+}
+
+function sendPM(){
+if(!pmMsg.value.trim())return;
+db.collection("pm").add({from:me,to:activePM,text:pmMsg.value,time:Date.now()});
+pmMsg.value="";
+}
+
+function listenPM(){
+db.collection("pm").orderBy("time").onSnapshot(s=>{
+pmChat.innerHTML="";
+s.forEach(doc=>{
+ const d=doc.data();
+ if((d.from===me&&d.to===activePM)||(d.from===activePM&&d.to===me)){
+  const el=document.createElement("div");
+  el.innerHTML=`<b>${d.from}:</b> ${d.text}`;
+  pmChat.appendChild(el);
+ }
+});
+});
+}
+</script>
 </body>
 </html>
