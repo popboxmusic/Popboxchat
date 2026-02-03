@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PopboxMusic Chat</title>
 
 <style>
@@ -24,7 +24,7 @@ body{
   width:100%;
   height:100%;
 }
-#chatArea{
+#chat{
   position:absolute;
   top:220px;
   bottom:60px;
@@ -62,25 +62,47 @@ button{
   font-weight:bold;
 }
 img{max-width:150px;border-radius:8px;margin-top:5px}
+#login{
+  position:fixed;
+  inset:0;
+  background:#000;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+#login input{
+  padding:12px;
+  margin:5px;
+  width:220px;
+  font-size:16px;
+}
 </style>
 </head>
-
 <body>
 
+<div id="login">
+  <h2>Nick Giriş</h2>
+  <input id="nick" placeholder="Nick">
+  <input id="pass" type="password" placeholder="Şifre">
+  <button onclick="login()">Giriş / Kayıt</button>
+</div>
+
 <div id="video">
-<iframe src="https://www.youtube.com/embed/shD--eyF8ug?autoplay=1&mute=1"
+<iframe src="https://www.youtube.com/embed/shD--eyF8ug?autoplay=1&mute=1&playsinline=1"
 allow="autoplay"></iframe>
 </div>
 
-<div id="chatArea"></div>
+<div id="chat"></div>
 
 <div id="inputBar">
-  <input id="msg" placeholder="Mesaj yaz..." />
-  <button onclick="imagePick()">📷</button>
+  <input id="msg" placeholder="Mesaj yaz..." onkeydown="if(event.key==='Enter') sendMessage()">
+  <button onclick="pickImage()">📷</button>
   <button onclick="sendMessage()">Gönder</button>
 </div>
 
-<!-- ✅ DOĞRU Firebase -->
+<!-- Firebase COMPAT -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
@@ -89,84 +111,90 @@ const firebaseConfig = {
   apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
   authDomain: "popboxmusicchat.firebaseapp.com",
   projectId: "popboxmusicchat",
-  storageBucket: "popboxmusicchat.firebasestorage.app",
-  messagingSenderId: "206625719024",
-  appId: "1:206625719024:web:d28f478a2c96d10412f835"
 };
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// Nick
-let myNick = localStorage.getItem("nick");
-if(!myNick){
-  myNick = prompt("Nick gir");
-  localStorage.setItem("nick", myNick);
+let myNick="";
+
+async function login(){
+  const nick=document.getElementById("nick").value.trim();
+  const pass=document.getElementById("pass").value.trim();
+  if(!nick||!pass) return;
+
+  const ref=db.collection("users").doc(nick);
+  const doc=await ref.get();
+
+  if(!doc.exists){
+    await ref.set({password:pass});
+  }else{
+    if(doc.data().password!==pass){
+      alert("Şifre yanlış");
+      return;
+    }
+  }
+
+  myNick=nick;
+  document.getElementById("login").style.display="none";
 }
 
-// Enter gönder
-document.addEventListener("keydown",e=>{
- if(e.key==="Enter") sendMessage();
-});
-
-// Mesaj gönder
 function sendMessage(){
- const input=document.getElementById("msg");
- if(!input.value.trim()) return;
+  const input=document.getElementById("msg");
+  if(!input.value.trim()) return;
 
- db.collection("messages").add({
-  nick:myNick,
-  text:input.value,
-  time:Date.now()
- });
- input.value="";
+  db.collection("messages").add({
+    nick:myNick,
+    text:input.value,
+    time:Date.now()
+  });
+
+  input.value="";
 }
 
-// Resim gönder
-function imagePick(){
- const inp=document.createElement("input");
- inp.type="file";
- inp.accept="image/*";
- inp.onchange=e=>{
-   const reader=new FileReader();
-   reader.onload=ev=>{
-     db.collection("messages").add({
-       nick:myNick,
-       image:ev.target.result,
-       time:Date.now()
-     });
-   };
-   reader.readAsDataURL(e.target.files[0]);
- };
- inp.click();
+function pickImage(){
+  const inp=document.createElement("input");
+  inp.type="file";
+  inp.accept="image/*";
+  inp.onchange=e=>{
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      db.collection("messages").add({
+        nick:myNick,
+        image:ev.target.result,
+        time:Date.now()
+      });
+    };
+    reader.readAsDataURL(e.target.files[0]);
+  };
+  inp.click();
 }
 
-// Mesajları dinle
 db.collection("messages").orderBy("time")
 .onSnapshot(snap=>{
- const area=document.getElementById("chatArea");
- area.innerHTML="";
- snap.forEach(doc=>{
-  const d=doc.data();
-  const el=document.createElement("div");
-  el.className="msg";
+  const area=document.getElementById("chat");
+  area.innerHTML="";
+  snap.forEach(doc=>{
+    const d=doc.data();
+    const el=document.createElement("div");
+    el.className="msg";
 
-  if(d.image){
-    el.innerHTML=`<b>${d.nick}:</b><br><img src="${d.image}">`;
-  }else{
-    el.innerHTML=`<b>${d.nick}:</b> ${d.text}`;
-  }
+    if(d.image){
+      el.innerHTML=`<b>${d.nick}:</b><br><img src="${d.image}">`;
+    }else{
+      el.innerHTML=`<b>${d.nick}:</b> ${d.text}`;
+    }
 
-  if(d.nick===myNick){
-    const del=document.createElement("span");
-    del.innerText=" ❌";
-    del.onclick=()=>db.collection("messages").doc(doc.id).delete();
-    el.appendChild(del);
-  }
+    if(d.nick===myNick){
+      const del=document.createElement("span");
+      del.innerText=" ❌";
+      del.onclick=()=>db.collection("messages").doc(doc.id).delete();
+      el.appendChild(del);
+    }
 
-  area.appendChild(el);
-  area.scrollTop=area.scrollHeight;
- });
+    area.appendChild(el);
+    area.scrollTop=area.scrollHeight;
+  });
 });
 </script>
 
