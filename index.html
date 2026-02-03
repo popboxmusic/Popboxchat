@@ -439,8 +439,8 @@
         let isAdmin = false;
         let privateChatWith = null;
         let player = null;
-        let lastMessageId = 0;
-        let checkInterval = null;
+        let messageCheckInterval = null;
+        let userActivityInterval = null;
         
         // Admin kullanıcıları ve şifreleri
         const ADMIN_USERS = ['popbox', 'popboxmusic'];
@@ -449,35 +449,47 @@
             'popboxmusic': 'popbox123'
         };
         
-        // ========== LOCALSTORAGE FONKSİYONLARI ==========
-        function getOnlineUsers() {
-            return JSON.parse(localStorage.getItem('popbox_online_users') || '[]');
+        // ========== SESSION YÖNETİMİ ==========
+        function generateSessionId() {
+            return 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         }
         
-        function setOnlineUsers(users) {
+        // ========== LOCALSTORAGE FONKSİYONLARI ==========
+        function getOnlineUsers() {
+            const data = JSON.parse(localStorage.getItem('popbox_online_users') || '{}');
+            
+            // Eski kullanıcıları temizle (5 dakikadan eski)
+            const now = Date.now();
+            const fiveMinutes = 5 * 60 * 1000;
+            
+            Object.keys(data).forEach(username => {
+                if (now - data[username].lastActivity > fiveMinutes) {
+                    delete data[username];
+                }
+            });
+            
+            localStorage.setItem('popbox_online_users', JSON.stringify(data));
+            return data;
+        }
+        
+        function updateUserActivity(username) {
+            const users = getOnlineUsers();
+            users[username] = {
+                lastActivity: Date.now(),
+                isActive: true
+            };
             localStorage.setItem('popbox_online_users', JSON.stringify(users));
         }
         
-        function addOnlineUser(username) {
+        function removeUser(username) {
             const users = getOnlineUsers();
-            if (!users.includes(username)) {
-                users.push(username);
-                setOnlineUsers(users);
-            }
-        }
-        
-        function removeOnlineUser(username) {
-            const users = getOnlineUsers();
-            const index = users.indexOf(username);
-            if (index > -1) {
-                users.splice(index, 1);
-                setOnlineUsers(users);
-            }
+            delete users[username];
+            localStorage.setItem('popbox_online_users', JSON.stringify(users));
         }
         
         function isUserOnline(username) {
             const users = getOnlineUsers();
-            return users.includes(username);
+            return users.hasOwnProperty(username) && users[username].isActive;
         }
         
         function getMessages() {
@@ -496,21 +508,11 @@
             localStorage.setItem('popbox_messages', JSON.stringify(messages));
         }
         
-        function getPrivateMessages(user1, user2) {
-            const key = [user1, user2].sort().join('_');
-            return JSON.parse(localStorage.getItem(`popbox_private_${key}`) || '[]');
-        }
-        
-        function savePrivateMessage(user1, user2, message) {
-            const key = [user1, user2].sort().join('_');
-            const messages = getPrivateMessages(user1, user2);
-            messages.push(message);
-            
-            if (messages.length > 100) {
-                messages.shift();
-            }
-            
-            localStorage.setItem(`popbox_private_${key}`, JSON.stringify(messages));
+        function clearOldMessages() {
+            const messages = getMessages();
+            const oneHourAgo = Date.now() - (60 * 60 * 1000);
+            const filtered = messages.filter(msg => msg.timestamp > oneHourAgo);
+            localStorage.setItem('popbox_messages', JSON.stringify(filtered));
         }
         
         // ========== LOGIN SİSTEMİ ==========
@@ -528,20 +530,20 @@
                 return;
             }
             
-            // Aynı nick kullanımda mı kontrol et
+            // Aktif olarak online olan kullanıcıyı kontrol et
             if (isUserOnline(nick)) {
-                alert(`"${nick}" kullanıcı adı şu anda kullanımda! Lütfen başka bir kullanıcı adı seçin.`);
+                alert(`"${nick}" kullanıcısı şu anda aktif! Lütfen başka bir kullanıcı adı seçin.`);
                 return;
             }
             
             currentUser = { 
                 name: nick, 
                 role: 'user',
-                sessionId: Date.now() + Math.random().toString(36).substr(2, 9)
+                sessionId: generateSessionId()
             };
             
             // Kullanıcıyı online listesine ekle
-            addOnlineUser(nick);
+            updateUserActivity(nick);
             
             // Sayfayı göster
             document.getElementById('login-screen').style.display = 'none';
@@ -572,7 +574,7 @@
             }
             
             // Online kullanıcıları güncelle
-            updateOnlineUsers();
+            updateOnlineUsersDisplay();
             
             // Mesajları yükle
             loadMessages();
@@ -580,60 +582,64 @@
             // Mesaj kontrolünü başlat
             startMessageChecker();
             
-            // Demo mesajları başlat
-            startDemoMessages();
+            // Kullanıcı aktivite kontrolü
+            startUserActivityChecker();
+            
+            // Eski mesajları temizle
+            clearOldMessages();
             
             // Sayfa kapanırken kullanıcıyı çıkar
             window.addEventListener('beforeunload', function() {
-                removeOnlineUser(currentUser.name);
+                removeUser(currentUser.name);
             });
         }
         
         // ========== MESAJ KONTROL SİSTEMİ ==========
         function startMessageChecker() {
-            // Her 2 saniyede bir yeni mesajları kontrol et
-            checkInterval = setInterval(checkNewMessages, 2000);
+            // Her 1 saniyede bir yeni mesajları kontrol et
+            messageCheckInterval = setInterval(checkNewMessages, 1000);
         }
         
         function checkNewMessages() {
-            const messages = getMessages();
-            const lastMessage = messages[messages.length - 1];
+            loadMessages();
+            updateOnlineUsersDisplay();
             
-            if (lastMessage && lastMessage.id > lastMessageId) {
-                // Yeni mesaj var, yükle
-                loadMessages();
-                lastMessageId = lastMessage.id;
+            // Kullanıcı aktivitesini güncelle
+            if (currentUser) {
+                updateUserActivity(currentUser.name);
             }
-            
-            // Online kullanıcıları güncelle
-            updateOnlineUsers();
         }
         
         function loadMessages() {
             const messages = getMessages();
             const container = document.getElementById('messages');
+            const currentMessages = container.querySelectorAll('.message:not(.system)');
             
-            // Sadece son 50 mesajı göster
-            const recentMessages = messages.slice(-50);
+            // Eğer mesaj sayısı değişmişse yenile
+            if (currentMessages.length !== messages.length) {
+                renderAllMessages();
+            }
+        }
+        
+        function renderAllMessages() {
+            const messages = getMessages();
+            const container = document.getElementById('messages');
             
-            // Mevcut mesajları temizle (sistem mesajları hariç)
-            const systemMessages = Array.from(container.querySelectorAll('.message.system'));
+            // Tüm mesajları temizle
             container.innerHTML = '';
             
-            // Sistem mesajlarını geri ekle
-            systemMessages.forEach(msg => {
-                container.appendChild(msg);
+            // Mesajları ekle
+            messages.forEach(msg => {
+                addMessageToUI(msg.sender, msg.text, msg.type, msg.image, false, msg.timestamp);
             });
             
-            // Yeni mesajları ekle
-            recentMessages.forEach(msg => {
-                if (msg.type !== 'system' || msg.sender === 'Sistem') {
-                    addMessageToUI(msg.sender, msg.text, msg.type, msg.image, false);
-                }
-            });
+            // Sistem mesajlarını en üste ekle
+            const welcomeMsg = document.createElement('div');
+            welcomeMsg.className = 'message system';
+            welcomeMsg.innerHTML = `<strong>Sistem:</strong> Hoş geldin, ${currentUser?.name || 'Kullanıcı'}!<br><small>Admin girişi: /admin [şifre]</small>`;
+            container.prepend(welcomeMsg);
             
             container.scrollTop = container.scrollHeight;
-            lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : 0;
         }
         
         // ========== MESAJ GÖNDERME ==========
@@ -652,13 +658,14 @@
                     sender: currentUser.name,
                     text: text,
                     type: isAdmin ? 'admin' : 'user',
-                    timestamp: new Date().toISOString()
+                    image: null,
+                    timestamp: Date.now()
                 };
                 
                 saveMessage(message);
                 
                 // UI'da göster
-                addMessageToUI(currentUser.name, text, isAdmin ? 'admin' : 'user', null, false);
+                addMessageToUI(currentUser.name, text, isAdmin ? 'admin' : 'user', null, false, Date.now());
                 
                 // Demo cevap
                 setTimeout(() => {
@@ -670,7 +677,7 @@
             input.focus();
         }
         
-        function addMessageToUI(sender, text, type = 'user', image = null, isPrivate = false) {
+        function addMessageToUI(sender, text, type = 'user', image = null, isPrivate = false, timestamp = Date.now()) {
             const container = isPrivate ? 
                 document.getElementById('privateMessages') : 
                 document.getElementById('messages');
@@ -679,10 +686,11 @@
             
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${type} ${isPrivate ? 'private' : ''}`;
+            messageDiv.dataset.timestamp = timestamp;
             
-            const now = new Date();
-            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
-                           now.getMinutes().toString().padStart(2, '0');
+            const date = new Date(timestamp);
+            const timeStr = date.getHours().toString().padStart(2, '0') + ':' + 
+                           date.getMinutes().toString().padStart(2, '0');
             
             let content = text;
             if (image) {
@@ -698,10 +706,26 @@
                 </div>
                 <div>${content}</div>
                 ${(isAdmin && sender === currentUser.name && !isPrivate) ? 
-                  `<button class="delete-btn" onclick="deleteMessage(this, ${Date.now()})">×</button>` : ''}
+                  `<button class="delete-btn" onclick="deleteMessage(this, ${timestamp})">×</button>` : ''}
             `;
             
-            container.appendChild(messageDiv);
+            // Zaman sırasına göre ekle
+            const messages = Array.from(container.children);
+            let inserted = false;
+            
+            for (let i = 0; i < messages.length; i++) {
+                const msgTime = parseInt(messages[i].dataset.timestamp || 0);
+                if (timestamp < msgTime) {
+                    container.insertBefore(messageDiv, messages[i]);
+                    inserted = true;
+                    break;
+                }
+            }
+            
+            if (!inserted) {
+                container.appendChild(messageDiv);
+            }
+            
             container.scrollTop = container.scrollHeight;
         }
         
@@ -711,11 +735,12 @@
                 sender: 'Sistem',
                 text: text,
                 type: 'system',
-                timestamp: new Date().toISOString()
+                image: null,
+                timestamp: Date.now()
             };
             
             saveMessage(message);
-            addMessageToUI('Sistem', text, 'system', null, false);
+            addMessageToUI('Sistem', text, 'system', null, false, Date.now());
         }
         
         function deleteMessage(btn, messageId) {
@@ -815,10 +840,11 @@
                 // Gizli admin girişi
                 document.body.style.border = '5px solid red';
                 
+                // Gizli sistem mesajı
                 setTimeout(() => {
                     const privateMsg = document.createElement('div');
                     privateMsg.className = 'message system';
-                    privateMsg.innerHTML = `<strong>Sistem (Gizli):</strong> ✅ Admin girişi başarılı!`;
+                    privateMsg.innerHTML = `<strong>Sistem:</strong> ✅ Admin girişi başarılı!`;
                     privateMsg.style.background = 'rgba(255,0,0,0.1)';
                     document.getElementById('messages').appendChild(privateMsg);
                 }, 100);
@@ -833,9 +859,8 @@
             // Mesajları temizle
             localStorage.setItem('popbox_messages', JSON.stringify([]));
             
-            // UI'yı temizle
-            const container = document.getElementById('messages');
-            container.innerHTML = '';
+            // UI'yı yenile
+            renderAllMessages();
             
             addSystemMessage('Sohbet temizlendi.');
         }
@@ -899,16 +924,6 @@
             
             if (!text) return;
             
-            // Özel mesajı kaydet
-            const message = {
-                from: currentUser.name,
-                to: privateChatWith,
-                text: text,
-                timestamp: new Date().toISOString()
-            };
-            
-            savePrivateMessage(currentUser.name, privateChatWith, message);
-            
             // UI'da göster
             const container = document.getElementById('privateMessages');
             const messageDiv = document.createElement('div');
@@ -934,9 +949,13 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '';
             
-            const messages = getPrivateMessages(currentUser.name, username);
+            // Özel mesajlar şu an sadece session'da
+            const demoMessages = [
+                { from: username, text: 'Merhaba!' },
+                { from: currentUser.name, text: 'Selam, nasılsın?' }
+            ];
             
-            messages.forEach(msg => {
+            demoMessages.forEach(msg => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = 'message private';
                 messageDiv.innerHTML = `<strong>${msg.from}:</strong> ${msg.text}`;
@@ -974,17 +993,6 @@
             reader.onload = function(event) {
                 const imageData = event.target.result;
                 
-                // Özel mesaj olarak kaydet
-                const message = {
-                    from: currentUser.name,
-                    to: privateChatWith,
-                    text: '📸 Resim gönderdi',
-                    image: imageData,
-                    timestamp: new Date().toISOString()
-                };
-                
-                savePrivateMessage(currentUser.name, privateChatWith, message);
-                
                 // UI'da göster
                 const container = document.getElementById('privateMessages');
                 const messageDiv = document.createElement('div');
@@ -1021,55 +1029,46 @@
             document.getElementById('overlay').style.display = 'none';
         }
         
-        // ========== ONLINE KULLANICILAR ==========
-        function updateOnlineUsers() {
-            const onlineUsers = getOnlineUsers();
+        // ========== ONLINE KULLANICI YÖNETİMİ ==========
+        function updateOnlineUsersDisplay() {
+            const users = getOnlineUsers();
+            const onlineUsers = Object.keys(users).filter(username => 
+                Date.now() - users[username].lastActivity < 30000 // 30 saniye
+            );
+            
             const onlineCount = onlineUsers.length;
             
             document.getElementById('online-count').textContent = onlineCount;
             document.getElementById('chat-online-count').textContent = onlineCount;
             
             // Kendi kullanıcımızı aktif tut
-            if (currentUser && !onlineUsers.includes(currentUser.name)) {
-                addOnlineUser(currentUser.name);
+            if (currentUser) {
+                updateUserActivity(currentUser.name);
             }
         }
         
-        // ========== DEMO MESAJLAR ==========
-        function startDemoMessages() {
-            // İlk demo mesajlar
-            setTimeout(() => {
-                if (!getMessages().some(m => m.sender === 'Ahmet')) {
-                    const message = {
-                        id: Date.now(),
-                        sender: 'Ahmet',
-                        text: 'Selam herkese!',
-                        type: 'user',
-                        timestamp: new Date().toISOString()
-                    };
-                    saveMessage(message);
-                    loadMessages();
-                }
-            }, 2000);
-            
-            setTimeout(() => {
-                if (!getMessages().some(m => m.sender === 'Mehmet')) {
-                    const message = {
-                        id: Date.now(),
-                        sender: 'Mehmet',
-                        text: 'Yayın harika!',
-                        type: 'user',
-                        timestamp: new Date().toISOString()
-                    };
-                    saveMessage(message);
-                    loadMessages();
-                }
-            }, 4000);
+        function startUserActivityChecker() {
+            // Her 10 saniyede bir eski kullanıcıları temizle
+            userActivityInterval = setInterval(() => {
+                const users = getOnlineUsers();
+                const now = Date.now();
+                const thirtySeconds = 30 * 1000;
+                
+                Object.keys(users).forEach(username => {
+                    if (now - users[username].lastActivity > thirtySeconds) {
+                        delete users[username];
+                    }
+                });
+                
+                localStorage.setItem('popbox_online_users', JSON.stringify(users));
+                updateOnlineUsersDisplay();
+            }, 10000);
         }
         
+        // ========== DEMO MESAJLAR ==========
         function sendDemoReply(text) {
-            const onlineUsers = getOnlineUsers();
-            const otherUsers = onlineUsers.filter(u => u !== currentUser.name);
+            const users = getOnlineUsers();
+            const otherUsers = Object.keys(users).filter(u => u !== currentUser.name);
             
             if (otherUsers.length === 0) return;
             
@@ -1101,13 +1100,21 @@
                     sender: randomUser,
                     text: reply,
                     type: 'user',
-                    timestamp: new Date().toISOString()
+                    image: null,
+                    timestamp: Date.now()
                 };
                 
                 saveMessage(message);
-                loadMessages();
+                addMessageToUI(randomUser, reply, 'user', null, false, Date.now());
             }, 1000 + Math.random() * 2000);
         }
+        
+        // ========== SAYFA YÜKLENDİĞİNDE ==========
+        window.addEventListener('load', function() {
+            // Eski online kullanıcıları temizle
+            const users = getOnlineUsers();
+            localStorage.setItem('popbox_online_users', JSON.stringify({}));
+        });
     </script>
 </body>
 </html>
