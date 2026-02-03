@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Canlı Yayın & Sohbet</title>
 
-  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
@@ -243,10 +242,17 @@
           currentNick = nick;
           const uid = auth.currentUser.uid;
 
-          db.ref("users/" + uid).set({
+          const userRef = db.ref("users/" + uid);
+          userRef.set({
             nick: nick,
             online: true,
             lastSeen: Date.now()
+          });
+
+          // Çıkışta otomatik offline yap
+          userRef.onDisconnect().update({
+            online: false,
+            lastSeen: firebase.database.ServerValue.TIMESTAMP
           });
 
           document.getElementById("login-area").innerHTML = `Hoş geldin, <b>${nick}</b>`;
@@ -254,7 +260,7 @@
         .catch(err => alert("Giriş hatası: " + err.message));
     };
 
-    // Online kişi sayacı
+    // Online kişi sayacı + liste
     db.ref("users").on("value", snapshot => {
       let count = 0;
       const list = document.getElementById("user-list");
@@ -262,7 +268,7 @@
 
       snapshot.forEach(child => {
         const user = child.val();
-        if (user.online) {
+        if (user && user.online) {
           count++;
           const div = document.createElement("div");
           div.className = "user-item";
@@ -273,6 +279,23 @@
       });
 
       document.getElementById("online-count").textContent = `Online: ${count} kişi`;
+    });
+
+    // Genel sohbet (son 100 mesaj + otomatik eski silme)
+    db.ref("messages").limitToLast(101).on("child_added", snapshot => {
+      // 101. mesaj geldiyse en eskisini sil
+      db.ref("messages").limitToFirst(1).once("child_added", oldest => {
+        if (oldest.key !== snapshot.key) {
+          oldest.ref.remove();
+        }
+      });
+
+      const msg = snapshot.val();
+      const div = document.createElement("div");
+      div.className = `message ${msg.nick === currentNick ? "own" : "other"}`;
+      div.innerHTML = `<strong>${msg.nick}:</strong> ${msg.text}`;
+      document.getElementById("messages").appendChild(div);
+      div.scrollIntoView({ behavior: "smooth" });
     });
 
     // Genel mesaj gönderme
@@ -293,15 +316,6 @@
       document.getElementById("message-input").value = "";
     }
 
-    db.ref("messages").limitToLast(100).on("child_added", snapshot => {
-      const msg = snapshot.val();
-      const div = document.createElement("div");
-      div.className = `message ${msg.nick === currentNick ? "own" : "other"}`;
-      div.innerHTML = `<strong>${msg.nick}:</strong> ${msg.text}`;
-      document.getElementById("messages").appendChild(div);
-      div.scrollIntoView({ behavior: "smooth" });
-    });
-
     // Özel sohbet aç/kapat
     function openPrivateChat(uid, nick) {
       currentPrivateToUid = uid;
@@ -311,7 +325,15 @@
       document.getElementById("private-messages").innerHTML = "";
 
       const chatId = [auth.currentUser.uid, uid].sort().join("_");
-      db.ref(`private/${chatId}`).limitToLast(60).on("child_added", snapshot => {
+
+      db.ref(`private/${chatId}`).limitToLast(101).on("child_added", snapshot => {
+        // 101. mesaj geldiyse en eskisini sil
+        db.ref(`private/${chatId}`).limitToFirst(1).once("child_added", oldest => {
+          if (oldest.key !== snapshot.key) {
+            oldest.ref.remove();
+          }
+        });
+
         const msg = snapshot.val();
         const div = document.createElement("div");
         div.className = `message ${msg.from === auth.currentUser.uid ? "own" : "other"}`;
