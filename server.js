@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,100 +12,89 @@ const io = socketIo(server, {
     }
 });
 
-const CONFIG = {
-    ADMIN_USERNAME: "popbox",
-    ADMIN_PASSWORD: "kumsal07@"
-};
+app.use(cors());
+app.use(express.json());
 
-const users = new Map();
+let users = {};
+let messages = [];
 
 io.on('connection', (socket) => {
-    console.log('🔗 Bağlantı:', socket.id);
-    
-    socket.on('join', (data) => {
-        const username = data.username || `Kullanıcı_${socket.id.substring(0, 5)}`;
-        
-        users.set(socket.id, {
+    console.log('Yeni kullanıcı bağlandı:', socket.id);
+
+    // Kullanıcı girişi
+    socket.on('login', (username) => {
+        users[socket.id] = {
             id: socket.id,
-            username: username,
-            role: 'user'
-        });
-        
-        socket.emit('system-message', { message: `Hoş geldin, ${username}!` });
-        socket.broadcast.emit('system-message', { message: `${username} katıldı!` });
-        
-        updateUserList();
-        console.log(`👤 ${username} katıldı`);
-    });
-    
-    socket.on('send-message', (data) => {
-        const user = users.get(socket.id);
-        if (!user) return;
-        
-        const messageData = {
-            username: user.username,
-            message: data.message,
-            role: user.role
+            name: username,
+            isAdmin: ['popbox', 'popboxmusic'].includes(username.toLowerCase())
         };
         
-        io.emit('chat-message', messageData);
-        console.log(`💬 ${user.username}: ${data.message}`);
-    });
-    
-    socket.on('admin-login', (data) => {
-        const user = users.get(socket.id);
-        if (!user) return;
+        // Online kullanıcıları güncelle
+        io.emit('updateUsers', Object.values(users));
         
-        if (data.username === CONFIG.ADMIN_USERNAME && data.password === CONFIG.ADMIN_PASSWORD) {
-            user.role = 'admin';
-            socket.emit('admin-login-success');
-            io.emit('system-message', { message: `${user.username} artık Admin!` });
-            updateUserList();
-            console.log(`👑 Admin girişi: ${user.username}`);
-        } else {
-            socket.emit('admin-login-failed');
-        }
+        // Mesaj geçmişini gönder
+        socket.emit('messageHistory', messages.slice(-50));
+        
+        // Hoş geldin mesajı
+        const welcomeMsg = {
+            id: Date.now(),
+            sender: 'Sistem',
+            text: `${username} sohbete katıldı!`,
+            type: 'system',
+            timestamp: Date.now()
+        };
+        
+        messages.push(welcomeMsg);
+        io.emit('newMessage', welcomeMsg);
     });
-    
-    socket.on('get-users', () => {
-        const user = users.get(socket.id);
-        if (user && user.role === 'admin') {
-            const userList = Array.from(users.values()).map(u => ({
-                username: u.username,
-                role: u.role
-            }));
-            socket.emit('users-for-admin', userList);
+
+    // Mesaj gönderme
+    socket.on('sendMessage', (message) => {
+        const user = users[socket.id];
+        if (!user) return;
+
+        const newMessage = {
+            id: Date.now(),
+            sender: user.name,
+            text: message.text,
+            type: user.isAdmin ? 'admin' : 'user',
+            timestamp: Date.now()
+        };
+
+        messages.push(newMessage);
+        
+        // Son 200 mesajı sakla
+        if (messages.length > 200) {
+            messages.shift();
         }
+
+        io.emit('newMessage', newMessage);
     });
-    
+
+    // Kullanıcı çıkışı
     socket.on('disconnect', () => {
-        const user = users.get(socket.id);
+        const user = users[socket.id];
         if (user) {
-            users.delete(socket.id);
-            io.emit('system-message', { message: `${user.username} ayrıldı.` });
-            updateUserList();
-            console.log(`👋 ${user.username} ayrıldı`);
+            delete users[socket.id];
+            
+            const leaveMsg = {
+                id: Date.now(),
+                sender: 'Sistem',
+                text: `${user.name} ayrıldı.`,
+                type: 'system',
+                timestamp: Date.now()
+            };
+            
+            messages.push(leaveMsg);
+            io.emit('newMessage', leaveMsg);
+            io.emit('updateUsers', Object.values(users));
         }
+        
+        console.log('Kullanıcı ayrıldı:', socket.id);
     });
-    
-    function updateUserList() {
-        const userList = Array.from(users.values()).map(user => ({
-            username: user.username,
-            role: user.role
-        }));
-        io.emit('user-list', userList);
-    }
 });
 
-app.use(express.static('.'));
-app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
-
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log('========================================');
-    console.log('🚀 POPBOX CHAT SERVER');
-    console.log(`📡 http://localhost:${PORT}`);
-    console.log(`🔐 Admin: ${CONFIG.ADMIN_USERNAME}`);
-    console.log(`🔑 Şifre: ${CONFIG.ADMIN_PASSWORD}`);
-    console.log('========================================');
+    console.log(`Server ${PORT} portunda çalışıyor`);
 });
