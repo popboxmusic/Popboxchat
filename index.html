@@ -762,6 +762,9 @@
                         console.log("✅ Tüm refs created!");
                         
                         updateBannedUsers();
+                        
+                        // REAL-TIME BAN TAKİBİ BAŞLAT
+                        startBanMonitoring();
                     } else {
                         console.log("❌ Firebase bağlantısı KESİLDİ");
                         isFirebaseConnected = false;
@@ -791,6 +794,52 @@
             'popbox': 'kumsal07@',
             'popboxmusic': 'popbox123'
         };
+        
+        // ========== REAL-TIME BAN TAKİBİ ==========
+        function startBanMonitoring() {
+            if (!bansRef) return;
+            
+            // Ban değişikliklerini REAL-TIME takip et
+            bansRef.on('value', async (snapshot) => {
+                const bans = snapshot.val() || {};
+                const now = Date.now();
+                
+                // Her ban değişikliğinde kontrol et
+                for (const [username, banData] of Object.entries(bans)) {
+                    if (banData && banData.bannedUntil > now) {
+                        // Bu kullanıcı BANLI, hemen at!
+                        await forceKickUser(username);
+                    }
+                }
+            });
+            
+            console.log("✅ Real-time ban takibi başlatıldı!");
+        }
+        
+        async function forceKickUser(username) {
+            try {
+                if (!usersRef) return;
+                
+                // 1. Kullanıcıyı online listeden HEMEN kaldır
+                await usersRef.child(username).remove();
+                
+                // 2. Eğer bu kullanıcı şu an aktifse (aynı tarayıcıda)
+                if (currentUser && currentUser.name === username) {
+                    // Kullanıcıyı HEMEN çıkış yaptır
+                    addSystemMessage("🚫 BANLANDINIZ! Sayfadan atılıyorsunuz...");
+                    
+                    setTimeout(() => {
+                        logout();
+                    }, 2000);
+                }
+                
+                // 3. Chat'ten de mesaj göndermesini engelle
+                addBanMessage(`⛔ ${username} kullanıcısı banlandığı için atıldı!`);
+                
+            } catch (error) {
+                console.error("Force kick hatası:", error);
+            }
+        }
         
         // ========== YARDIMCI FONKSİYONLAR ==========
         function showLoginError(message) {
@@ -887,6 +936,7 @@
                 const durationNum = parseInt(duration) || 5;
                 const banUntil = Date.now() + (durationNum * 60000);
                 
+                // 1. Ban kaydı oluştur (REAL-TIME tetiklenecek)
                 await bansRef.child(username).set({
                     bannedUntil: banUntil,
                     bannedBy: currentUser.name,
@@ -895,13 +945,16 @@
                     duration: durationNum
                 });
                 
+                // 2. Kullanıcıyı HEMEN online listeden kaldır
                 await usersRef.child(username).remove();
                 
+                // 3. Sistem mesajı
                 addBanMessage(
                     `🚫 ${username} kullanıcısı ${currentUser.name} tarafından ${durationNum} dakika banlandı!\n` +
                     `Sebep: ${reason}`
                 );
                 
+                // 4. Chat mesajı olarak da gönder
                 const banMessage = {
                     sender: 'Sistem',
                     text: `🚫 ${username} kullanıcısı ${durationNum} dakika banlandı!`,
@@ -912,9 +965,10 @@
                 
                 await messagesRef.push(banMessage);
                 
-                await updateBannedUsers();
+                // 5. REAL-TIME olarak kullanıcıyı at
+                await forceKickUser(username);
                 
-                console.log(`✅ ${username} banlandı (${durationNum} dakika)`);
+                console.log(`✅ ${username} banlandı ve atıldı (${durationNum} dakika)`);
                 
             } catch (error) {
                 console.error("Ban hatası:", error);
@@ -1042,6 +1096,23 @@
             
             document.getElementById('ban-username').value = '';
             document.getElementById('ban-reason').value = '';
+        }
+        
+        // ========== MESAJ GÖNDERME KONTROLÜ ==========
+        async function checkBanBeforeMessage() {
+            if (!currentUser || !bansRef) return true;
+            
+            try {
+                const banCheck = await checkIfBanned(currentUser.name);
+                if (banCheck.isBanned) {
+                    addSystemMessage("🚫 BANLANDINIZ! Mesaj gönderemezsiniz.");
+                    return false;
+                }
+                return true;
+            } catch (error) {
+                console.error("Ban kontrol hatası:", error);
+                return true;
+            }
         }
         
         // ========== MESAJ SİLME SİSTEMİ ==========
@@ -1281,6 +1352,21 @@
                 });
             }
             
+            // KENDİ BAN DURUMUNUZU KONTROL ET
+            const banCheckInterval = setInterval(async () => {
+                if (currentUser && bansRef) {
+                    const banCheck = await checkIfBanned(currentUser.name);
+                    if (banCheck.isBanned) {
+                        addSystemMessage("🚫 BANLANDINIZ! Sayfadan atılıyorsunuz...");
+                        clearInterval(banCheckInterval);
+                        
+                        setTimeout(() => {
+                            logout();
+                        }, 3000);
+                    }
+                }
+            }, 5000);
+            
             setInterval(() => {
                 if (currentUser && usersRef) {
                     usersRef.child(currentUser.name).update({
@@ -1475,6 +1561,10 @@
         async function sendPrivateMessage() {
             if (!privateChatWith || !currentPrivateChatId || !privateChatsRef) return;
             
+            // Ban kontrolü
+            const canSend = await checkBanBeforeMessage();
+            if (!canSend) return;
+            
             const input = document.getElementById('private-input');
             const text = input.value.trim();
             
@@ -1575,6 +1665,10 @@
         
         // ========== GENEL MESAJ SİSTEMİ ==========
         async function sendMessage() {
+            // Ban kontrolü
+            const canSend = await checkBanBeforeMessage();
+            if (!canSend) return;
+            
             const input = document.getElementById('message-input');
             const text = input.value.trim();
             
@@ -1665,6 +1759,10 @@
         
         // ========== TÜM KOMUT SİSTEMİ ==========
         async function handleCommand(cmd) {
+            // Ban kontrolü
+            const canSend = await checkBanBeforeMessage();
+            if (!canSend) return;
+            
             const parts = cmd.substring(1).split(' ');
             const command = parts[0].toLowerCase();
             const args = parts.slice(1);
