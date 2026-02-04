@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Popbox Music Chat - FIREBASE PRO</title>
-    <!-- FIREBASE SDK v8 (ES5 - daha kararlı) -->
+    <title>Popbox Music Chat - TÜM KOMUTLAR AKTİF</title>
+    <!-- FIREBASE SDK v8 -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
@@ -265,6 +265,7 @@
             padding: 10px;
             border-radius: 8px;
             border-left: 3px solid var(--primary);
+            position: relative;
         }
         
         .message.system {
@@ -313,6 +314,22 @@
         .message-time {
             color: #aaa;
             font-size: 0.8em;
+        }
+        
+        .delete-btn {
+            background: rgba(255,85,85,0.2);
+            color: #ff5555;
+            border: none;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 0.7em;
+            cursor: pointer;
+            margin-left: 10px;
+            display: none;
+        }
+        
+        .message:hover .delete-btn {
+            display: inline-block;
         }
         
         .message-image {
@@ -540,10 +557,10 @@
             <div class="error-message" id="login-error"></div>
             <div class="success-message" id="login-success"></div>
             <div style="margin-top: 15px; color: #aaa; font-size: 0.9em;">
-                ✅ <strong>PRO ÖZELLİKLER:</strong><br>
-                • Özel sohbet + Görsel gönderme<br>
+                ✅ <strong>TÜM KOMUTLAR AKTİF:</strong><br>
+                • Kişisel mesaj silme 🗑️<br>
                 • Admin + Co-admin sistemi<br>
-                • Gerçek zamanlı nick kontrolü<br>
+                • Özel sohbet + Resim gönderme<br>
                 <small>Proje ID: popboxmusicchat</small>
             </div>
         </div>
@@ -599,8 +616,8 @@
                 
                 <div class="messages-container" id="messages">
                     <div class="message system">
-                        <strong>🔥 Firebase Chat PRO</strong><br>
-                        Özel sohbet + Görsel gönderme aktif!
+                        <strong>🔥 Tüm Komutlar Aktif!</strong><br>
+                        Kendi mesajınızı silmek için üzerine gelin → 🗑️
                     </div>
                 </div>
                 
@@ -656,6 +673,7 @@
         let usersRef;
         let messagesRef;
         let privateChatsRef;
+        let coAdminsRef;
         let isFirebaseConnected = false;
         
         function initializeFirebase() {
@@ -677,6 +695,7 @@
                         usersRef = database.ref('onlineUsers');
                         messagesRef = database.ref('messages');
                         privateChatsRef = database.ref('privateChats');
+                        coAdminsRef = database.ref('coAdmins');
                         
                         console.log("✅ Tüm refs created!");
                     } else {
@@ -699,16 +718,14 @@
         let player = null;
         let privateChatWith = null;
         let currentPrivateChatId = null;
+        let coAdminList = [];
         
-        // Admin & Co-admin bilgileri
+        // Admin bilgileri
         const ADMIN_USERS = ['popbox', 'popboxmusic'];
         const ADMIN_PASSWORDS = {
             'popbox': 'kumsal07@',
             'popboxmusic': 'popbox123'
         };
-        
-        // Co-admin listesi (dinamik - adminler ekleyebilir)
-        let coAdminList = [];
         
         // ========== YARDIMCI FONKSİYONLAR ==========
         function showLoginError(message) {
@@ -739,9 +756,101 @@
         }
         
         function generateChatId(user1, user2) {
-            // Aynı chat ID'yi üretmek için alfabetik sırala
             const users = [user1, user2].sort();
             return `chat_${users[0]}_${users[1]}`;
+        }
+        
+        function generateFakeIP() {
+            return `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+        }
+        
+        // ========== MESAJ SİLME SİSTEMİ ==========
+        async function deleteMessage(messageId) {
+            if (!messagesRef || !currentUser) return;
+            
+            try {
+                // Mesajı al
+                const snapshot = await messagesRef.child(messageId).once('value');
+                const message = snapshot.val();
+                
+                if (!message) {
+                    addSystemMessage('❌ Mesaj bulunamadı!');
+                    return;
+                }
+                
+                // Yetki kontrolü
+                const canDelete = message.sender === currentUser.name || isAdmin || isCoAdmin;
+                
+                if (!canDelete) {
+                    addSystemMessage('⛔ Sadece kendi mesajlarınızı silebilirsiniz!');
+                    return;
+                }
+                
+                if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
+                    await messagesRef.child(messageId).remove();
+                    
+                    // Görsel feedback
+                    const messageDiv = document.getElementById(`msg_${messageId}`);
+                    if (messageDiv) {
+                        messageDiv.style.opacity = '0.5';
+                        messageDiv.style.textDecoration = 'line-through';
+                        messageDiv.innerHTML = '<em style="color:#aaa;">(mesaj silindi)</em>';
+                        
+                        setTimeout(() => {
+                            if (messageDiv.parentNode) {
+                                messageDiv.remove();
+                            }
+                        }, 2000);
+                    }
+                    
+                    console.log(`Mesaj silindi: ${messageId}`);
+                }
+                
+            } catch (error) {
+                console.error('Mesaj silme hatası:', error);
+                addSystemMessage('❌ Mesaj silinemedi!');
+            }
+        }
+        
+        async function deletePrivateMessage(messageId, chatId) {
+            if (!privateChatsRef || !currentUser || !chatId) return;
+            
+            try {
+                const snapshot = await privateChatsRef.child(chatId).child(messageId).once('value');
+                const message = snapshot.val();
+                
+                if (!message) {
+                    alert('Mesaj bulunamadı!');
+                    return;
+                }
+                
+                // Sadece kendi mesajını silebilir
+                if (message.sender !== currentUser.name) {
+                    alert('Sadece kendi mesajlarınızı silebilirsiniz!');
+                    return;
+                }
+                
+                if (confirm('Bu özel mesajı silmek istediğinize emin misiniz?')) {
+                    await privateChatsRef.child(chatId).child(messageId).remove();
+                    
+                    const messageDiv = document.getElementById(`private_msg_${messageId}`);
+                    if (messageDiv) {
+                        messageDiv.style.opacity = '0.5';
+                        messageDiv.style.textDecoration = 'line-through';
+                        messageDiv.innerHTML = '<em style="color:#aaa;">(mesaj silindi)</em>';
+                        
+                        setTimeout(() => {
+                            if (messageDiv.parentNode) {
+                                messageDiv.remove();
+                            }
+                        }, 2000);
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Özel mesaj silme hatası:', error);
+                alert('Özel mesaj silinemedi!');
+            }
         }
         
         // ========== GİRİŞ SİSTEMİ ==========
@@ -821,7 +930,7 @@
                 initApp();
                 
                 addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}!`);
-                addSystemMessage('💡 Kullanıcı adına tıklayarak özel sohbet başlatabilirsin!');
+                addSystemMessage('💡 Mesajınızın üzerine gelin → 🗑️ ile silin');
                 
                 if (currentUser.isAdminUser) {
                     addSystemMessage('🔑 Admin girişi için: /admin [şifre]');
@@ -833,10 +942,6 @@
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Sohbete Katıl';
             }
-        }
-        
-        function generateFakeIP() {
-            return `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
         }
         
         // ========== UYGULAMA BAŞLATMA ==========
@@ -876,11 +981,10 @@
                 });
             }
             
-            // Co-admin listesini dinle
-            if (database) {
-                database.ref('coAdmins').on('value', (snapshot) => {
+            if (coAdminsRef) {
+                coAdminsRef.on('value', (snapshot) => {
                     coAdminList = snapshot.val() || [];
-                    console.log("Co-admin listesi güncellendi:", coAdminList);
+                    checkCoAdminStatus();
                 });
             }
             
@@ -900,6 +1004,15 @@
             });
             
             console.log("✅ Uygulama başlatıldı!");
+        }
+        
+        // ========== CO-ADMIN KONTROLÜ ==========
+        function checkCoAdminStatus() {
+            if (currentUser && coAdminList.includes(currentUser.name)) {
+                isCoAdmin = true;
+                document.getElementById('coadminBadge').style.display = 'inline-block';
+                console.log(`${currentUser.name} co-admin olarak tanındı!`);
+            }
         }
         
         // ========== ONLINE KULLANICI GÜNCELLEME ==========
@@ -1020,9 +1133,9 @@
             }
             
             const messagesArray = [];
-            Object.entries(messages).forEach(([key, value]) => {
+            Object.entries(messages).forEach(([messageId, value]) => {
                 messagesArray.push({
-                    id: key,
+                    id: messageId,
                     ...value
                 });
             });
@@ -1034,6 +1147,13 @@
             messagesArray.forEach(msg => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = 'message private-msg';
+                messageDiv.id = `private_msg_${msg.id}`;
+                
+                // Sil butonu (sadece kendi mesajlarında)
+                let deleteButton = '';
+                if (currentUser && msg.sender === currentUser.name) {
+                    deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${msg.id}', '${currentPrivateChatId}')">🗑️</button>`;
+                }
                 
                 let content = msg.text;
                 if (msg.image) {
@@ -1045,7 +1165,10 @@
                         <span class="message-user">
                             ${msg.sender === currentUser.name ? '👤 ' : ''}${msg.sender}
                         </span>
-                        <span class="message-time">${msg.time || '--:--'}</span>
+                        <div>
+                            <span class="message-time">${msg.time || '--:--'}</span>
+                            ${deleteButton}
+                        </div>
                     </div>
                     <div>${content}</div>
                 `;
@@ -1092,7 +1215,7 @@
             }
         }
         
-        // ========== GÖRSEL GÖNDERME SİSTEMİ ==========
+        // ========== GÖRSEL GÖNDERME ==========
         function openPrivateImageUpload() {
             if (!privateChatWith) {
                 alert('Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -1203,9 +1326,9 @@
             if (!messages) return;
             
             const messagesArray = [];
-            Object.entries(messages).forEach(([key, value]) => {
+            Object.entries(messages).forEach(([messageId, value]) => {
                 messagesArray.push({
-                    id: key,
+                    id: messageId,
                     ...value
                 });
             });
@@ -1218,8 +1341,15 @@
             recentMessages.forEach(msg => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${msg.type || 'user'}`;
+                messageDiv.id = `msg_${msg.id}`;
                 
-                // Mesaj gönderenin adına tıklanınca özel sohbet aç
+                // Sil butonu (kendi mesajlarında veya admin/coadmin için)
+                let deleteButton = '';
+                if (currentUser && 
+                    (msg.sender === currentUser.name || isAdmin || isCoAdmin)) {
+                    deleteButton = `<button class="delete-btn" onclick="deleteMessage('${msg.id}')">🗑️</button>`;
+                }
+                
                 const userHtml = `<span class="message-user" onclick="openPrivateChat('${msg.sender}')">
                     ${msg.type === 'admin' ? '👑 ' : msg.type === 'coadmin' ? '⚡ ' : ''}${msg.sender}
                 </span>`;
@@ -1227,7 +1357,10 @@
                 messageDiv.innerHTML = `
                     <div class="message-header">
                         ${userHtml}
-                        <span class="message-time">${msg.time || '--:--'}</span>
+                        <div>
+                            <span class="message-time">${msg.time || '--:--'}</span>
+                            ${deleteButton}
+                        </div>
                     </div>
                     <div>${msg.text}</div>
                 `;
@@ -1238,21 +1371,23 @@
             container.scrollTop = container.scrollHeight;
         }
         
-        // ========== KOMUT SİSTEMİ (ADMIN + CO-ADMIN) ==========
+        // ========== TÜM KOMUT SİSTEMİ ==========
         async function handleCommand(cmd) {
             const parts = cmd.substring(1).split(' ');
             const command = parts[0].toLowerCase();
             const args = parts.slice(1);
             
             switch(command) {
+                // 🔐 ADMIN GİRİŞ
                 case 'admin':
                     if (args.length === 1) {
-                        checkAdminPassword(args[0]);
+                        await checkAdminPassword(args[0]);
                     } else {
                         addSystemMessage('Kullanım: /admin [şifre]');
                     }
                     break;
                     
+                // 👥 CO-ADMIN YÖNETİMİ
                 case 'coadmin':
                     if (isAdmin && args.length === 1) {
                         await makeCoAdmin(args[0]);
@@ -1273,14 +1408,29 @@
                     }
                     break;
                     
+                // 🗑️ İÇERİK TEMİZLEME
                 case 'temizle':
                     if (isAdmin || isCoAdmin) {
                         try {
                             if (messagesRef) {
                                 await messagesRef.remove();
                                 addSystemMessage('🗑️ Tüm mesajlar temizlendi!');
+                                
+                                // Sistem mesajını ekle
+                                const systemMsg = {
+                                    sender: 'Sistem',
+                                    text: `${currentUser.name} tüm mesajları temizledi!`,
+                                    type: isAdmin ? 'admin' : 'coadmin',
+                                    timestamp: Date.now(),
+                                    time: new Date().toLocaleTimeString('tr-TR', { 
+                                        hour: '2-digit', 
+                                        minute: '2-digit' 
+                                    })
+                                };
+                                await messagesRef.push(systemMsg);
                             }
                         } catch (error) {
+                            console.error('Temizleme hatası:', error);
                             addSystemMessage('❌ Temizleme hatası!');
                         }
                     } else {
@@ -1288,6 +1438,7 @@
                     }
                     break;
                     
+                // 👢 KULLANICI ATMA
                 case 'kick':
                     if ((isAdmin || isCoAdmin) && args.length === 1) {
                         await kickUser(args[0]);
@@ -1298,21 +1449,55 @@
                     }
                     break;
                     
-                case 'kullanıcılar':
-                    showFirebaseUsers();
+                // 🆔 ID İLE MESAJ SİLME
+                case 'sil':
+                    if ((isAdmin || isCoAdmin) && args.length === 1) {
+                        await deleteMessage(args[0]);
+                    } else if (!isAdmin && !isCoAdmin) {
+                        addSystemMessage('⛔ Sadece admin/co-admin ID ile mesaj silebilir!');
+                    } else {
+                        addSystemMessage('Kullanım: /sil [mesaj-id] (sadece admin/co-admin)');
+                    }
                     break;
                     
+                // 👥 KULLANICI LİSTESİ
+                case 'kullanıcılar':
+                case 'users':
+                    await showFirebaseUsers();
+                    break;
+                    
+                case 'list':
+                case 'online':
+                    await showFirebaseUsers();
+                    break;
+                    
+                // ℹ️ YARDIM
                 case 'yardım':
+                case 'help':
+                case 'komutlar':
                     showHelp();
                     break;
                     
+                // 🔥 FIREBASE BİLGİ
                 case 'firebase':
+                case 'fb':
+                case 'info':
                     addSystemMessage('🔥 Firebase Realtime Database aktif!');
                     addSystemMessage(`📊 Proje: ${firebaseConfig.projectId}`);
                     addSystemMessage(`👤 Online: ${document.getElementById('online-count').textContent}`);
+                    addSystemMessage(`🔐 Durum: ${isFirebaseConnected ? '✅ Bağlı' : '❌ Bağlı Değil'}`);
                     break;
                     
+                // 🏓 PİNG TEST
+                case 'ping':
+                    addSystemMessage('🏓 Pong! Bağlantı aktif.');
+                    break;
+                    
+                // 🚪 ÇIKIŞ
                 case 'çıkış':
+                case 'exit':
+                case 'logout':
+                case 'quit':
                     logout();
                     break;
                     
@@ -1321,7 +1506,7 @@
             }
         }
         
-        function checkAdminPassword(password) {
+        async function checkAdminPassword(password) {
             if (!currentUser?.isAdminUser) {
                 addSystemMessage('❌ Bu kullanıcı admin değil!');
                 return;
@@ -1333,6 +1518,7 @@
                 currentUser.role = 'admin';
                 document.getElementById('adminBadge').style.display = 'inline-block';
                 
+                // Admin efekti
                 document.body.style.border = '5px solid red';
                 document.body.style.boxShadow = '0 0 30px rgba(255,0,0,0.5)';
                 
@@ -1345,10 +1531,9 @@
         
         async function makeCoAdmin(username) {
             try {
-                if (!database) return;
+                if (!coAdminsRef) return;
                 
-                const coAdminRef = database.ref('coAdmins');
-                const snapshot = await coAdminRef.once('value');
+                const snapshot = await coAdminsRef.once('value');
                 let coAdmins = snapshot.val() || [];
                 
                 if (!Array.isArray(coAdmins)) {
@@ -1357,13 +1542,13 @@
                 
                 if (!coAdmins.includes(username)) {
                     coAdmins.push(username);
-                    await coAdminRef.set(coAdmins);
+                    await coAdminsRef.set(coAdmins);
                     addSystemMessage(`✅ ${username} co-admin yapıldı!`);
                     
-                    // Co-admin'e bildirim gönder
+                    // Bildirim mesajı
                     const messageData = {
                         sender: 'Sistem',
-                        text: `🎉 ${currentUser.name} sizi co-admin yaptı!`,
+                        text: `🎉 ${username} artık co-admin!`,
                         type: 'system',
                         timestamp: Date.now(),
                         time: new Date().toLocaleTimeString('tr-TR', { 
@@ -1386,10 +1571,9 @@
         
         async function removeCoAdmin(username) {
             try {
-                if (!database) return;
+                if (!coAdminsRef) return;
                 
-                const coAdminRef = database.ref('coAdmins');
-                const snapshot = await coAdminRef.once('value');
+                const snapshot = await coAdminsRef.once('value');
                 let coAdmins = snapshot.val() || [];
                 
                 if (!Array.isArray(coAdmins)) {
@@ -1399,7 +1583,7 @@
                 const index = coAdmins.indexOf(username);
                 if (index > -1) {
                     coAdmins.splice(index, 1);
-                    await coAdminRef.set(coAdmins);
+                    await coAdminsRef.set(coAdmins);
                     addSystemMessage(`✅ ${username} co-admin'lıktan kaldırıldı!`);
                 } else {
                     addSystemMessage(`ℹ️ ${username} co-admin değil!`);
@@ -1479,47 +1663,35 @@
         }
         
         function showHelp() {
-            let help = '🔥 <strong>KOMUT LİSTESİ:</strong><br>';
+            let help = '🔥 <strong>TÜM KOMUTLAR:</strong><br><br>';
             
-            if (isAdmin) {
-                help += '• /admin [şifre] - Admin girişi<br>';
-                help += '• /coadmin [kullanıcı] - Co-admin yap<br>';
-                help += '• /removecoadmin [kullanıcı] - Co-admin kaldır<br>';
-                help += '• /temizle - Tüm mesajları temizle<br>';
-                help += '• /kick [kullanıcı] - Kullanıcıyı at<br>';
-            } else if (isCoAdmin) {
-                help += '• /temizle - Tüm mesajları temizle<br>';
-                help += '• /kick [kullanıcı] - Kullanıcıyı at<br>';
-            }
+            help += '👑 <strong>ADMIN KOMUTLARI:</strong><br>';
+            help += '• /admin [şifre] - Admin girişi<br>';
+            help += '• /coadmin [kullanıcı] - Co-admin yap<br>';
+            help += '• /removecoadmin [kullanıcı] - Co-admin kaldır<br>';
+            help += '• /temizle - Tüm mesajları temizle<br>';
+            help += '• /kick [kullanıcı] - Kullanıcıyı at<br>';
+            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
             
+            help += '⚡ <strong>CO-ADMIN KOMUTLARI:</strong><br>';
+            help += '• /temizle - Tüm mesajları temizle<br>';
+            help += '• /kick [kullanıcı] - Kullanıcıyı at<br>';
+            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
+            
+            help += '👤 <strong>HERKES İÇİN:</strong><br>';
             help += '• /kullanıcılar - Online kullanıcıları göster<br>';
+            help += '• /yardım - Bu mesajı göster<br>';
             help += '• /firebase - Firebase bilgileri<br>';
-            help += '• /çıkış - Çıkış yap<br>';
-            help += '• /yardım - Bu mesajı göster<br><br>';
+            help += '• /ping - Bağlantı testi<br>';
+            help += '• /çıkış - Çıkış yap<br><br>';
             
             help += '💡 <strong>ÖZELLİKLER:</strong><br>';
+            help += '• Mesajınızın üzerine gelin → 🗑️ ile silin<br>';
             help += '• Kullanıcı adına tıkla → Özel sohbet<br>';
             help += '• Özel sohbette 📷 → Resim gönder<br>';
-            help += '• Gerçek zamanlı nick kontrolü<br>';
+            help += '• Gerçek zamanlı nick kontrolü';
             
             addSystemMessage(help);
-        }
-        
-        // Co-admin kontrolü
-        function checkCoAdminStatus() {
-            if (currentUser && coAdminList.includes(currentUser.name)) {
-                isCoAdmin = true;
-                document.getElementById('coadminBadge').style.display = 'inline-block';
-                console.log(`${currentUser.name} co-admin olarak tanındı!`);
-            }
-        }
-        
-        // Co-admin listesi değişince kontrol et
-        if (database) {
-            database.ref('coAdmins').on('value', (snapshot) => {
-                coAdminList = snapshot.val() || [];
-                checkCoAdminStatus();
-            });
         }
         
         async function logout() {
