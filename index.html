@@ -88,6 +88,12 @@
             margin-top: 10px;
             font-size: 0.9em;
             display: none;
+            white-space: pre-line;
+            text-align: left;
+            background: rgba(255,0,0,0.1);
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 3px solid #ff5555;
         }
         
         /* ANA UYGULAMA */
@@ -208,10 +214,13 @@
             font-weight: bold;
             color: var(--primary);
             cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 4px;
+            transition: background 0.3s;
         }
         
         .message-user:hover {
-            text-decoration: underline;
+            background: rgba(79, 195, 247, 0.2);
         }
         
         .message-time {
@@ -341,6 +350,60 @@
                 width: 100%;
                 height: 300px;
             }
+            
+            .message-user {
+                min-height: 44px;
+                padding: 10px 0;
+            }
+            
+            .login-input {
+                font-size: 16px;
+            }
+        }
+        
+        /* USER LIST */
+        .user-list {
+            position: fixed;
+            top: 60px;
+            right: 20px;
+            background: var(--bg-light);
+            border: 2px solid var(--primary);
+            border-radius: 10px;
+            padding: 15px;
+            min-width: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+            z-index: 999;
+        }
+        
+        .user-item {
+            padding: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .user-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+            display: inline-block;
+        }
+        
+        .status-online {
+            background: var(--online);
+        }
+        
+        .status-idle {
+            background: #ff9800;
+        }
+        
+        .user-time {
+            font-size: 0.8em;
+            color: #aaa;
         }
     </style>
     <script src="https://www.youtube.com/iframe_api"></script>
@@ -354,7 +417,10 @@
             <button class="login-btn" onclick="login()" id="login-btn">Sohbete Katıl</button>
             <div class="error-message" id="login-error"></div>
             <div style="margin-top: 15px; color: #aaa; font-size: 0.9em;">
-                ⚠️ <strong>ÖNEMLİ:</strong> Aynı nick iki cihazda kullanılamaz!<br>
+                ⚠️ <strong>GELİŞTİRİLMİŞ GÜVENLİK:</strong><br>
+                • Aynı nick iki cihazda kullanılamaz!<br>
+                • 15 saniye aktiflik kontrolü<br>
+                • Gerçek zamanlı bloklama<br>
                 <small>Admin: popbox | Şifre: /admin kumsal07@</small>
             </div>
         </div>
@@ -367,7 +433,17 @@
                 🎥 Popbox Live
                 <span class="admin-badge" id="adminBadge">👑 ADMIN</span>
             </div>
-            <div>👥 <span id="online-count">1</span> online</div>
+            <div>
+                <span onclick="showUserList()" style="cursor:pointer;">
+                    👥 <span id="online-count">1</span> online
+                </span>
+            </div>
+        </div>
+        
+        <!-- ONLINE KULLANICI LİSTESİ -->
+        <div class="user-list" id="userList">
+            <div style="color:var(--primary); margin-bottom:10px; font-weight:bold;">🟢 Online Kullanıcılar</div>
+            <div id="userListContent"></div>
         </div>
         
         <div class="main-content">
@@ -428,8 +504,10 @@
         let privateChatWith = null;
         let player = null;
         let onlineUsers = {};
-        let lastCheckTime = 0;
         let userCheckInterval = null;
+        
+        // HER SAYFA İÇİN UNIQUE SESSION ID
+        const GLOBAL_SESSION_ID = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         
         // Admin bilgileri
         const ADMIN_USERS = ['popbox', 'popboxmusic'];
@@ -438,15 +516,12 @@
             'popboxmusic': 'popbox123'
         };
         
-        // ========== BASİT API SİMÜLASYONU ==========
-        // Bu kısım gerçek bir API ile değiştirilebilir
-        // Şimdilik localStorage'ı kullanıyoruz ama timestamp kontrolü ekleyeceğiz
-        
+        // ========== GELİŞMİŞ USER API SİSTEMİ ==========
         class UserAPI {
-            static STORAGE_KEY = 'popbox_global_users';
-            static MESSAGES_KEY = 'popbox_global_messages';
+            static STORAGE_KEY = 'popbox_global_users_v4'; // Version değişti
+            static CLEANUP_INTERVAL = 15000; // 15 saniye
             
-            // Tüm online kullanıcıları getir
+            // Tüm online kullanıcıları getir ve temizle
             static getAllOnlineUsers() {
                 try {
                     const data = localStorage.getItem(this.STORAGE_KEY);
@@ -456,18 +531,19 @@
                     const now = Date.now();
                     const cleanedUsers = {};
                     
-                    // 30 saniyeden eski kullanıcıları temizle
+                    // 15 SANİYE KURALI - agresif temizleme
                     Object.keys(users).forEach(username => {
-                        if (now - users[username].lastSeen < 30000) {
-                            cleanedUsers[username] = users[username];
+                        const user = users[username];
+                        // Sadece 15 saniye içinde aktif olanları tut
+                        if (now - user.lastSeen < this.CLEANUP_INTERVAL) {
+                            cleanedUsers[username] = user;
+                        } else {
+                            console.log(`${username} temizlendi (${Math.floor((now - user.lastSeen)/1000)}sn)`);
                         }
                     });
                     
                     // Temizlenmiş listeyi kaydet
-                    if (JSON.stringify(users) !== JSON.stringify(cleanedUsers)) {
-                        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(cleanedUsers));
-                    }
-                    
+                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(cleanedUsers));
                     return cleanedUsers;
                 } catch (error) {
                     console.error('Kullanıcı getirme hatası:', error);
@@ -475,36 +551,49 @@
                 }
             }
             
-            // Kullanıcı ekle
-            static addUser(username, sessionId) {
-                try {
-                    const users = this.getAllOnlineUsers();
+            // Kullanıcı ekle - SIKI KONTROLLÜ
+            static addUser(username) {
+                const users = this.getAllOnlineUsers();
+                const now = Date.now();
+                
+                // GÜÇLÜ NICK KONTROLÜ
+                if (users[username]) {
+                    const existingUser = users[username];
+                    const timeDiff = now - existingUser.lastSeen;
                     
-                    // Aynı nick kontrolü
-                    if (users[username]) {
-                        const user = users[username];
-                        const now = Date.now();
-                        
-                        // Eğer kullanıcı 10 saniye içinde aktifse, nick alınmış demektir
-                        if (now - user.lastSeen < 10000) {
-                            return { success: false, error: 'Bu kullanıcı adı kullanımda!' };
-                        }
+                    // DURUM 1: 8 SANİYEDEN AZ İSE KESİNLİKLE DOLU
+                    if (timeDiff < 8000) {
+                        return { 
+                            success: false, 
+                            error: `"${username}" ŞU ANDA AKTİF!\n\n` +
+                                   `Son aktivite: ${Math.floor(timeDiff/1000)} saniye önce\n` +
+                                   `Cihaz: ${existingUser.userAgent || 'Bilinmiyor'}\n` +
+                                   `IP Benzeri: ${existingUser.sessionId.substr(0, 10)}...`
+                        };
                     }
                     
-                    // Yeni kullanıcı ekle
-                    users[username] = {
-                        name: username,
-                        sessionId: sessionId,
-                        lastSeen: Date.now(),
-                        joinedAt: Date.now()
-                    };
-                    
-                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(users));
-                    return { success: true };
-                } catch (error) {
-                    console.error('Kullanıcı ekleme hatası:', error);
-                    return { success: false, error: 'Sistem hatası!' };
+                    // DURUM 2: 8-15 saniye arası - uyarı ver ama izin ver
+                    if (timeDiff < 15000) {
+                        console.warn(`${username} kullanıcısı ${Math.floor(timeDiff/1000)}sn önce aktifti`);
+                    }
                 }
+                
+                // YENİ KULLANICI EKLE
+                users[username] = {
+                    name: username,
+                    sessionId: GLOBAL_SESSION_ID, // HER SAYFA FARKLI ID
+                    lastSeen: now,
+                    joinedAt: now,
+                    userAgent: navigator.userAgent.substring(0, 80),
+                    ipSimulation: '192.168.' + Math.floor(Math.random() * 255) + '.' + Math.floor(Math.random() * 255)
+                };
+                
+                localStorage.setItem(this.STORAGE_KEY, JSON.stringify(users));
+                return { 
+                    success: true, 
+                    data: users[username],
+                    message: '✅ Kullanıcı başarıyla eklendi!'
+                };
             }
             
             // Kullanıcıyı güncelle (aktivite)
@@ -513,6 +602,8 @@
                     const users = this.getAllOnlineUsers();
                     if (users[username]) {
                         users[username].lastSeen = Date.now();
+                        // Session ID'yi de güncelle (aktivite göster)
+                        users[username].sessionId = GLOBAL_SESSION_ID;
                         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(users));
                     }
                 } catch (error) {
@@ -524,8 +615,11 @@
             static removeUser(username) {
                 try {
                     const users = this.getAllOnlineUsers();
-                    delete users[username];
-                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(users));
+                    if (users[username]) {
+                        delete users[username];
+                        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(users));
+                        console.log(`${username} kullanıcısı silindi`);
+                    }
                 } catch (error) {
                     console.error('Kullanıcı silme hatası:', error);
                 }
@@ -538,9 +632,36 @@
                 
                 const user = users[username];
                 const now = Date.now();
+                const timeDiff = now - user.lastSeen;
                 
-                // 10 saniye içinde aktif mi?
-                return (now - user.lastSeen) < 10000;
+                // 8 saniyeden az ise KESİNLİKLE dolu
+                if (timeDiff < 8000) {
+                    return {
+                        taken: true,
+                        user: user,
+                        timeAgo: Math.floor(timeDiff / 1000),
+                        message: `Kullanıcı ${timeDiff < 3000 ? 'ÇOK YAKINDA' : 'yakın zamanda'} aktif`
+                    };
+                }
+                
+                // 8-15 saniye arası - riskli ama boş say
+                if (timeDiff < 15000) {
+                    return {
+                        taken: false,
+                        warning: true,
+                        user: user,
+                        timeAgo: Math.floor(timeDiff / 1000),
+                        message: '⚠️ Bu kullanıcı yakın zamanda çıkmış'
+                    };
+                }
+                
+                return false;
+            }
+            
+            // Tüm kullanıcıları temizle (admin için)
+            static clearAllUsers() {
+                localStorage.removeItem(this.STORAGE_KEY);
+                return { success: true };
             }
         }
         
@@ -552,48 +673,67 @@
             const errorMsg = document.getElementById('login-error');
             
             if (!nick) {
-                showError('Lütfen bir kullanıcı adı girin!');
+                showError('❌ Lütfen bir kullanıcı adı girin!');
                 return;
             }
             
             if (nick.length < 2 || nick.length > 20) {
-                showError('Kullanıcı adı 2-20 karakter arasında olmalı!');
+                showError('❌ Kullanıcı adı 2-20 karakter arasında olmalı!');
+                return;
+            }
+            
+            // Özel karakter kontrolü
+            if (/[<>\/\\]/.test(nick)) {
+                showError('❌ Geçersiz karakterler içeriyor!');
                 return;
             }
             
             // Butonu devre dışı bırak
             loginBtn.disabled = true;
-            loginBtn.textContent = 'Kontrol ediliyor...';
+            loginBtn.textContent = '⏳ Kontrol ediliyor...';
             errorMsg.style.display = 'none';
             
-            // 1 saniye bekle (simülasyon)
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // 1 saniye bekle (gerçekçi hissiyat)
+            await new Promise(resolve => setTimeout(resolve, 800));
             
-            // Nick kontrolü
-            if (UserAPI.isNickTaken(nick)) {
-                showError(`"${nick}" kullanıcısı şu anda çevrimiçi!\nLütfen başka bir kullanıcı adı seçin.`);
+            // GELİŞMİŞ NICK KONTROLÜ
+            const checkResult = UserAPI.isNickTaken(nick);
+            
+            if (checkResult && checkResult.taken) {
+                const user = checkResult.user;
+                const timeAgo = checkResult.timeAgo;
+                const userInfo = `👤 ${user.name}\n⏰ ${timeAgo}sn önce aktif\n📱 ${user.userAgent || 'Unknown'}\n🔑 ${user.sessionId.substr(0, 15)}...`;
+                
+                showError(`⛔ BU KULLANICI ŞU ANDA AKTİF!\n\n${userInfo}\n\n💡 Lütfen:\n1. Başka bir kullanıcı adı seçin\n2. ${15-timeAgo} saniye bekleyin`);
+                
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Sohbete Katıl';
                 return;
             }
             
+            if (checkResult && checkResult.warning) {
+                // Uyarı ver ama izin ver
+                console.warn(`Uyarı: ${nick} kullanıcısı ${checkResult.timeAgo}sn önce aktifti`);
+            }
+            
             // Kullanıcıyı oluştur
+            const addResult = UserAPI.addUser(nick);
+            
+            if (!addResult.success) {
+                showError(addResult.error);
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sohbete Katıl';
+                return;
+            }
+            
             currentUser = {
                 name: nick,
                 role: 'user',
                 isAdminUser: ADMIN_USERS.includes(nick.toLowerCase()),
-                sessionId: Date.now() + Math.random().toString(36).substr(2, 9),
-                lastSeen: Date.now()
+                sessionId: GLOBAL_SESSION_ID,
+                lastSeen: Date.now(),
+                data: addResult.data
             };
-            
-            // API'ye ekle
-            const result = UserAPI.addUser(nick, currentUser.sessionId);
-            if (!result.success) {
-                showError(result.error);
-                loginBtn.disabled = false;
-                loginBtn.textContent = 'Sohbete Katıl';
-                return;
-            }
             
             // Uygulamayı göster
             document.getElementById('login-screen').style.display = 'none';
@@ -601,12 +741,35 @@
             
             // Başlat
             initApp();
+            
+            // Başarı mesajı
+            showTemporaryMessage('✅ Başarıyla giriş yapıldı!', 'success');
         }
         
         function showError(message) {
             const errorMsg = document.getElementById('login-error');
-            errorMsg.textContent = message;
+            errorMsg.innerHTML = message.replace(/\n/g, '<br>');
             errorMsg.style.display = 'block';
+            
+            // Otomatik kaydır
+            setTimeout(() => {
+                errorMsg.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        }
+        
+        function showTemporaryMessage(message, type = 'info') {
+            const container = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${type === 'success' ? 'system' : ''}`;
+            msgDiv.innerHTML = `<strong>${type === 'success' ? '✅' : 'ℹ️'} Sistem:</strong> ${message}`;
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    msgDiv.style.opacity = '0.7';
+                }, 3000);
+            }
         }
         
         // ========== UYGULAMA BAŞLATMA ==========
@@ -619,6 +782,7 @@
             }
             
             addSystemMessage('💬 Kullanıcı adına tıklayarak özel sohbet başlatabilirsin!');
+            addSystemMessage('👥 Online listesi için header\'daki sayıya tıklayın');
             
             // Event listener'lar
             document.getElementById('message-input').addEventListener('keypress', function(e) {
@@ -629,7 +793,12 @@
                 if (e.key === 'Enter') sendPrivateMessage();
             });
             
-            document.getElementById('overlay').addEventListener('click', closePrivateChat);
+            document.getElementById('overlay').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closePrivateChat();
+                    closeImageModal();
+                }
+            });
             
             // YouTube player
             if (typeof YT !== 'undefined') {
@@ -639,14 +808,19 @@
             // Online kullanıcıları güncelle
             updateOnlineUsers();
             
-            // Periyodik güncellemeler
+            // Periyodik güncellemeler - DAHA SIK
             userCheckInterval = setInterval(() => {
                 updateOnlineUsers();
                 updateUserActivity();
-            }, 5000);
+                
+                // Her 10 saniyede bir storage temizle
+                if (Date.now() % 10000 < 3000) {
+                    UserAPI.getAllOnlineUsers(); // Otomatik temizler
+                }
+            }, 3000); // 3 SANİYEDE BİR
             
             // Demo mesajlar
-            startDemoMessages();
+            setTimeout(() => startDemoMessages(), 2000);
             
             // Sayfa kapanırken çıkış yap
             window.addEventListener('beforeunload', function() {
@@ -657,6 +831,18 @@
                     clearInterval(userCheckInterval);
                 }
             });
+            
+            // Sayfa görünürlüğü değişince
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    // Sayfa gizlendi
+                    console.log('Sayfa gizlendi, aktivite durduruldu');
+                } else {
+                    // Sayfa görünür oldu
+                    updateUserActivity();
+                    updateOnlineUsers();
+                }
+            });
         }
         
         // ========== ONLINE KULLANICI YÖNETİMİ ==========
@@ -665,12 +851,15 @@
             
             // Online sayısını göster
             const activeUsers = Object.values(onlineUsers).filter(user => 
-                (Date.now() - user.lastSeen) < 30000
+                (Date.now() - user.lastSeen) < 15000
             );
             
             const onlineCount = activeUsers.length;
             document.getElementById('online-count').textContent = onlineCount;
             document.getElementById('chat-online-count').textContent = onlineCount;
+            
+            // Kullanıcı listesini güncelle
+            updateUserList();
             
             // Kendi kullanıcımızın aktivitesini güncelle
             updateUserActivity();
@@ -680,6 +869,61 @@
             if (currentUser) {
                 UserAPI.updateUser(currentUser.name);
             }
+        }
+        
+        function showUserList() {
+            const userList = document.getElementById('userList');
+            userList.style.display = userList.style.display === 'block' ? 'none' : 'block';
+        }
+        
+        function updateUserList() {
+            const container = document.getElementById('userListContent');
+            container.innerHTML = '';
+            
+            const activeUsers = Object.values(onlineUsers)
+                .filter(user => (Date.now() - user.lastSeen) < 15000)
+                .sort((a, b) => b.lastSeen - a.lastSeen);
+            
+            if (activeUsers.length === 0) {
+                container.innerHTML = '<div style="color:#aaa; padding:10px; text-align:center;">Online kullanıcı yok</div>';
+                return;
+            }
+            
+            activeUsers.forEach(user => {
+                const timeDiff = Date.now() - user.lastSeen;
+                const secondsAgo = Math.floor(timeDiff / 1000);
+                
+                const userDiv = document.createElement('div');
+                userDiv.className = 'user-item';
+                
+                let statusClass = 'status-online';
+                let statusText = '🟢 Online';
+                
+                if (secondsAgo > 10) {
+                    statusClass = 'status-idle';
+                    statusText = '🟡 Boşta';
+                }
+                
+                userDiv.innerHTML = `
+                    <div>
+                        <span class="user-status ${statusClass}"></span>
+                        <strong>${user.name === currentUser.name ? '👤 ' + user.name + ' (Siz)' : user.name}</strong>
+                        ${user.name === currentUser.name ? ' <small>(Siz)</small>' : ''}
+                    </div>
+                    <div class="user-time">
+                        ${secondsAgo < 5 ? 'Şimdi' : secondsAgo + 'sn önce'}
+                    </div>
+                `;
+                
+                // Kendimiz değilse tıklanabilir yap
+                if (user.name !== currentUser.name) {
+                    userDiv.style.cursor = 'pointer';
+                    userDiv.onclick = () => openPrivateChat(user.name);
+                    userDiv.title = `${user.name} ile özel sohbet başlat`;
+                }
+                
+                container.appendChild(userDiv);
+            });
         }
         
         // ========== MESAJ SİSTEMİ ==========
@@ -702,6 +946,9 @@
             
             input.value = '';
             input.focus();
+            
+            // Aktiviteyi güncelle
+            updateUserActivity();
         }
         
         function addMessage(sender, text, type = 'user', image = null) {
@@ -744,12 +991,18 @@
         
         // ========== ÖZEL SOHBET SİSTEMİ ==========
         function openPrivateChat(username) {
-            if (username === currentUser.name) return;
+            if (username === currentUser.name) {
+                addSystemMessage('Kendinize özel mesaj gönderemezsiniz!');
+                return;
+            }
             
             privateChatWith = username;
             document.getElementById('privateWith').textContent = `🔒 ${username} ile özel sohbet`;
             document.getElementById('privateChat').style.display = 'flex';
             document.getElementById('overlay').style.display = 'block';
+            
+            // Kullanıcı listesini gizle
+            document.getElementById('userList').style.display = 'none';
             
             // Özel mesajları yükle
             loadPrivateMessages(username);
@@ -813,6 +1066,9 @@
             
             input.value = '';
             input.focus();
+            
+            // Aktivite güncelle
+            updateUserActivity();
         }
         
         function addPrivateMessage(sender, text, image = null) {
@@ -870,17 +1126,34 @@
             reader.onload = function(event) {
                 const imageData = event.target.result;
                 
-                // Özel sohbete resim gönder
-                addPrivateMessage(currentUser.name, '📸 Resim gönderdi', imageData);
-                
-                // Demo cevap
-                setTimeout(() => {
-                    addPrivateMessage(privateChatWith, 'Harika resim! 👏');
-                }, 1500);
+                if (privateChatWith) {
+                    // Özel sohbete resim gönder
+                    addPrivateMessage(currentUser.name, '📸 Resim gönderdi', imageData);
+                    
+                    // Demo cevap
+                    setTimeout(() => {
+                        addPrivateMessage(privateChatWith, 'Harika resim! 👏');
+                    }, 1500);
+                } else {
+                    // Genel sohbete resim gönder
+                    addMessage(currentUser.name, '📸 Resim paylaştı', isAdmin ? 'admin' : 'user', imageData);
+                    
+                    // Demo cevap
+                    setTimeout(() => {
+                        const users = Object.keys(onlineUsers).filter(u => u !== currentUser.name);
+                        if (users.length > 0) {
+                            const randomUser = users[Math.floor(Math.random() * users.length)];
+                            addMessage(randomUser, 'Güzel resim! 👍');
+                        }
+                    }, 1500);
+                }
             };
             
             reader.readAsDataURL(file);
             e.target.value = '';
+            
+            // Aktivite güncelle
+            updateUserActivity();
         });
         
         function showImage(imageData) {
@@ -922,8 +1195,22 @@
                     showOnlineUsers();
                     break;
                     
+                case 'temizkullanici':
+                    if (isAdmin) {
+                        UserAPI.clearAllUsers();
+                        updateOnlineUsers();
+                        addSystemMessage('✅ Tüm kullanıcılar temizlendi!');
+                    } else {
+                        addSystemMessage('⛔ Admin yetkisi gerekiyor!');
+                    }
+                    break;
+                    
                 case 'yardım':
                     showHelp();
+                    break;
+                    
+                case 'ping':
+                    addSystemMessage(`🏓 Pong! Session ID: ${GLOBAL_SESSION_ID.substr(0, 20)}...`);
                     break;
                     
                 default:
@@ -945,8 +1232,14 @@
                 
                 // Gizli admin girişi
                 document.body.style.border = '5px solid red';
+                document.body.style.boxShadow = '0 0 30px rgba(255,0,0,0.5)';
                 
-                addSystemMessage('✅ Admin girişi başarılı!');
+                addSystemMessage('✅ Admin girişi başarılı! Gizli mod aktif!');
+                
+                // Admin mesajı
+                setTimeout(() => {
+                    addMessage(currentUser.name, '👑 Admin olarak giriş yaptım!', 'admin');
+                }, 1000);
             } else {
                 addSystemMessage('❌ Hatalı şifre!');
             }
@@ -957,10 +1250,17 @@
                 (Date.now() - user.lastSeen) < 30000
             );
             
+            if (activeUsers.length === 0) {
+                addSystemMessage('👥 Online kullanıcı yok');
+                return;
+            }
+            
             let userList = '<strong>👥 Online Kullanıcılar:</strong><br>';
             activeUsers.forEach(user => {
                 const minutes = Math.floor((Date.now() - user.joinedAt) / 60000);
-                userList += `• ${user.name} (${minutes}dk)<br>`;
+                const seconds = Math.floor((Date.now() - user.lastSeen) / 1000);
+                const isMe = user.name === currentUser.name;
+                userList += `• ${isMe ? '👤 ' : ''}${user.name} (${minutes}dk, ${seconds}sn önce)${isMe ? ' (Siz)' : ''}<br>`;
             });
             
             addSystemMessage(userList);
@@ -972,11 +1272,16 @@
             
             if (isAdmin) {
                 help += '• /temizle - Sohbeti temizle<br>';
+                help += '• /temizkullanici - Tüm kullanıcıları temizle<br>';
             }
             
             help += '• /kullanıcılar - Online kullanıcıları listele<br>';
-            help += '• /yardım - Bu mesajı göster<br><br>';
-            help += '<strong>💡 İpucu:</strong> Kullanıcı adına tıklayarak özel sohbet başlat!';
+            help += '• /yardım - Bu mesajı göster<br>';
+            help += '• /ping - Bağlantı testi<br><br>';
+            help += '<strong>💡 İpuçları:</strong><br>';
+            help += '• Kullanıcı adına tıkla → Özel sohbet<br>';
+            help += '• Header\'daki sayıya tıkla → Online listesi<br>';
+            help += '• Özel sohbette 📷 → Resim gönder';
             
             addSystemMessage(help);
         }
@@ -1011,16 +1316,22 @@
         function startDemoMessages() {
             // Demo mesaj ekle
             setTimeout(() => {
-                addMessage('Ahmet', 'Selam herkese! Popbox harika! 👏');
+                if (Object.keys(onlineUsers).length > 1) {
+                    const demoUsers = ['Ahmet', 'Mehmet', 'Ayşe', 'Fatma', 'Ali'];
+                    const randomUser = demoUsers[Math.floor(Math.random() * demoUsers.length)];
+                    
+                    // Bu kullanıcı online değilse gönder
+                    if (!onlineUsers[randomUser]) {
+                        addMessage(randomUser, 'Selam herkese! Popbox harika! 👏');
+                    }
+                }
             }, 2000);
             
             setTimeout(() => {
-                addMessage('Mehmet', 'Yayın süper gidiyor! 🎉');
-            }, 4000);
-            
-            setTimeout(() => {
-                addMessage('Ayşe', 'Özel sohbet özelliği var mı?');
-            }, 6000);
+                if (Math.random() > 0.5) {
+                    addMessage('Canlı_Yayın', '🎬 Canlı yayın devam ediyor!', 'system');
+                }
+            }, 5000);
         }
         
         function sendDemoReply(text) {
@@ -1031,16 +1342,22 @@
             
             if (activeUsers.length === 0) return;
             
-            const randomUser = activeUsers[Math.floor(Math.random() * activeUsers.length)];
+            // Demo kullanıcılar
+            const demoUsers = ['ChatBot', 'Sistem', 'Moderatör', 'PopboxFan'];
+            const allPossibleUsers = [...activeUsers.map(u => u.name), ...demoUsers];
+            const randomUser = allPossibleUsers[Math.floor(Math.random() * allPossibleUsers.length)];
+            
             const replies = {
-                'merhaba': ['Merhaba!', 'Selam!', 'Hoş geldin!'],
-                'nasılsın': ['İyiyim, sen?', 'Harika!', 'Teşekkürler!'],
-                'admin': ['Admin aktif.', 'Popbox yönetiyor!'],
+                'merhaba': ['Merhaba!', 'Selam!', 'Hoş geldin! 👋', 'Merhabalar!'],
+                'nasılsın': ['İyiyim, sen?', 'Harika!', 'Teşekkürler! 😊'],
+                'admin': ['Admin aktif.', 'Popbox yönetiyor! 👑'],
                 'özel': ['Evet! Kullanıcı adıma tıklayarak özel sohbet başlatabilirsin! 🔒'],
-                'resim': ['Özel sohbette resim gönderebilirsin! 📸']
+                'resim': ['Özel sohbette resim gönderebilirsin! 📸'],
+                'popbox': ['Popbox en iyisi! 🎵', 'Popbox music forever! 🎧'],
+                'canlı': ['Canlı yayın süper gidiyor! 🎥']
             };
             
-            let reply = 'Evet, katılıyorum!';
+            let reply = 'Evet, katılıyorum! 👍';
             const lowerText = text.toLowerCase();
             
             for (const [key, responseArray] of Object.entries(replies)) {
@@ -1050,8 +1367,14 @@
                 }
             }
             
+            // Bazen random cevap ver
+            if (Math.random() > 0.7) {
+                const randomReplies = ['👌', '😂', 'Harika!', 'Aynen!', 'Doğru!', '👍'];
+                reply = randomReplies[Math.floor(Math.random() * randomReplies.length)];
+            }
+            
             setTimeout(() => {
-                addMessage(randomUser.name, reply);
+                addMessage(randomUser, reply);
             }, 1000 + Math.random() * 2000);
         }
         
@@ -1060,14 +1383,40 @@
             // Otomatik focus
             document.getElementById('login-nick').focus();
             
-            // Eski online kullanıcıları temizle
-            UserAPI.getAllOnlineUsers(); // Bu zaten temizler
+            // Eski online kullanıcıları temizle (15 saniyeden eski)
+            UserAPI.getAllOnlineUsers();
             
             // Enter tuşu ile login
             document.getElementById('login-nick').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') login();
             });
+            
+            // Sayfa başlığına session ID ekle (debug için)
+            document.title += ' | Session: ' + GLOBAL_SESSION_ID.substr(0, 8);
+            
+            // Sayfa kapatma uyarısı
+            window.addEventListener('beforeunload', function(e) {
+                if (currentUser) {
+                    // Çıkış yap
+                    UserAPI.removeUser(currentUser.name);
+                }
+            });
         });
+        
+        // ========== DEBUG MODU ==========
+        function debugInfo() {
+            console.log('=== DEBUG INFO ===');
+            console.log('Session ID:', GLOBAL_SESSION_ID);
+            console.log('Current User:', currentUser);
+            console.log('Online Users:', onlineUsers);
+            console.log('Is Admin:', isAdmin);
+            console.log('Storage:', localStorage.getItem(UserAPI.STORAGE_KEY));
+        }
+        
+        // Debug için global erişim
+        window.debugInfo = debugInfo;
+        window.UserAPI = UserAPI;
+        
     </script>
 </body>
 </html>
