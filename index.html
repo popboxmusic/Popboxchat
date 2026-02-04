@@ -267,11 +267,6 @@
             background: rgba(255,85,85,0.1);
         }
         
-        .message.private-msg {
-            border-left-color: var(--private);
-            background: rgba(156,39,176,0.1);
-        }
-        
         .message-header {
             display: flex;
             justify-content: space-between;
@@ -371,12 +366,6 @@
             opacity: 0.8;
         }
         
-        .user-item.offline {
-            border-left-color: #777;
-            opacity: 0.5;
-            display: none;
-        }
-        
         .user-status {
             display: flex;
             align-items: center;
@@ -407,6 +396,21 @@
             to { transform: rotate(360deg); }
         }
         
+        /* DEBUG INFO */
+        .debug-info {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: #0f0;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.7em;
+            font-family: monospace;
+            z-index: 999;
+            display: none;
+        }
+        
         /* MOBİL */
         @media (max-width: 768px) {
             .main-content {
@@ -432,6 +436,9 @@
         <span class="firebase-icon">🔥</span> Firebase Active
     </div>
     
+    <!-- DEBUG INFO -->
+    <div class="debug-info" id="debugInfo"></div>
+    
     <!-- GİRİŞ EKRANI -->
     <div id="login-screen">
         <div class="login-box">
@@ -449,6 +456,11 @@
                 • Tüm cihazlar senkronize<br>
                 • Anlık mesajlaşma<br>
                 <small>Proje ID: popboxmusicchat</small>
+            </div>
+            <div style="margin-top: 10px; font-size: 0.8em;">
+                <button onclick="showDebugInfo()" style="background:none;border:1px solid #666;color:#aaa;padding:5px 10px;border-radius:5px;cursor:pointer;">
+                    🔧 Debug Info
+                </button>
             </div>
         </div>
     </div>
@@ -519,44 +531,60 @@
 
     <script>
         // ========== FIREBASE KONFİGÜRASYONU ==========
-        // ⚠️ BU BİLGİLER SENİN FIREBASE PROJENDEN ⚠️
+        // ⚠️ BURAYI KENDİ FIREBASE PROJENDEN ALDIĞIN GİBİ YAPIŞTIR ⚠️
         const firebaseConfig = {
             apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
-  authDomain: "popboxmusicchat.firebaseapp.com",
-  databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
-  projectId: "popboxmusicchat",
-  storageBucket: "popboxmusicchat.firebasestorage.app",
-  messagingSenderId: "206625719024",
-  appId: "1:206625719024:web:d28f478a2c96d10412f835",
-  measurementId: "G-SB1K22FLEX"
-};
-        
-        // ========== API KEY'İ BULMAK İÇİN ==========
-        // 1. Firebase Console'a git: https://console.firebase.google.com/
-        // 2. Popboxmusicchat projesini seç
-        // 3. ⚙️ → Project settings → General
-        // 4. "Your apps" bölümünde "Popboxmusic" app'ine tıkla
-        // 5. "SDK setup and configuration" altında
-        // 6. "Config" seçeneğini seç
-        // 7. apiKey değerini kopyala
+            authDomain: "popboxmusicchat.firebaseapp.com",
+            databaseURL: "https://popboxmusicchat-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "popboxmusicchat",
+            storageBucket: "popboxmusicchat.firebasestorage.app",
+            messagingSenderId: "206625719024",
+            appId: "1:206625719024:web:d28f478a2c96d10412f835",
+            measurementId: "G-SB1K22FLEX"
+        };
         
         // ========== FIREBASE BAŞLATMA ==========
-        let firebaseApp;
         let database;
         let usersRef;
         let messagesRef;
+        let isFirebaseConnected = false;
         
-        try {
-            firebaseApp = firebase.initializeApp(firebaseConfig);
-            database = firebase.database();
-            usersRef = database.ref('onlineUsers');
-            messagesRef = database.ref('messages');
-            
-            console.log('✅ Firebase başarıyla başlatıldı!');
-            showLoginSuccess('🔥 Firebase bağlantısı kuruldu!');
-        } catch (error) {
-            console.error('❌ Firebase başlatma hatası:', error);
-            showLoginError('Firebase bağlantı hatası! API Key kontrol edin.');
+        function initializeFirebase() {
+            try {
+                // Firebase'i başlat
+                firebase.initializeApp(firebaseConfig);
+                database = firebase.database();
+                
+                // Test bağlantısı
+                const connectedRef = database.ref(".info/connected");
+                connectedRef.on("value", function(snap) {
+                    if (snap.val() === true) {
+                        console.log("✅ Firebase'e bağlandı!");
+                        isFirebaseConnected = true;
+                        showLoginSuccess("🔥 Firebase bağlantısı kuruldu!");
+                        
+                        // Referansları oluştur
+                        usersRef = database.ref('onlineUsers');
+                        messagesRef = database.ref('messages');
+                        
+                        // Debug info
+                        updateDebugInfo("✅ Firebase Connected");
+                    } else {
+                        console.log("❌ Firebase bağlantısı kesildi");
+                        isFirebaseConnected = false;
+                        showLoginError("Firebase bağlantısı kesildi!");
+                        updateDebugInfo("❌ Firebase Disconnected");
+                    }
+                });
+                
+                // Hata dinleyicisi
+                database.ref().onDisconnect().remove();
+                
+            } catch (error) {
+                console.error("❌ Firebase başlatma hatası:", error);
+                showLoginError("Firebase başlatma hatası: " + error.message);
+                updateDebugInfo("❌ Firebase Error: " + error.message);
+            }
         }
         
         // ========== GLOBAL DEĞİŞKENLER ==========
@@ -591,6 +619,25 @@
             errorMsg.style.display = 'none';
         }
         
+        function updateDebugInfo(message) {
+            const debugDiv = document.getElementById('debugInfo');
+            debugDiv.innerHTML = message;
+            debugDiv.style.display = 'block';
+        }
+        
+        function showDebugInfo() {
+            const debugDiv = document.getElementById('debugInfo');
+            debugDiv.style.display = debugDiv.style.display === 'block' ? 'none' : 'block';
+            
+            if (debugDiv.style.display === 'block') {
+                let info = `Firebase Status: ${isFirebaseConnected ? '✅' : '❌'}<br>`;
+                info += `Project: ${firebaseConfig.projectId}<br>`;
+                info += `DB URL: ${firebaseConfig.databaseURL}<br>`;
+                info += `User: ${currentUser ? currentUser.name : 'Not logged in'}`;
+                debugDiv.innerHTML = info;
+            }
+        }
+        
         function addSystemMessage(text) {
             const container = document.getElementById('messages');
             const messageDiv = document.createElement('div');
@@ -617,8 +664,8 @@
             }
             
             // Firebase bağlantı kontrolü
-            if (!database) {
-                showLoginError('❌ Firebase bağlantısı yok! Lütfen API Key kontrol edin.');
+            if (!isFirebaseConnected || !usersRef) {
+                showLoginError('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
                 return;
             }
             
@@ -660,7 +707,8 @@
                     joinedAt: Date.now(),
                     ip: generateFakeIP(),
                     userAgent: navigator.userAgent.substring(0, 80),
-                    isOnline: true
+                    isOnline: true,
+                    timestamp: Date.now()
                 };
                 
                 await usersRef.child(nick).set(userData);
@@ -673,14 +721,17 @@
                     data: userData
                 };
                 
-                // 4. Uygulamayı göster
+                // 4. Disconnect handler ekle
+                usersRef.child(nick).onDisconnect().remove();
+                
+                // 5. Uygulamayı göster
                 document.getElementById('login-screen').style.display = 'none';
                 document.getElementById('app').style.display = 'flex';
                 
-                // 5. Başlat
+                // 6. Başlat
                 initApp();
                 
-                // 6. Hoş geldin mesajı
+                // 7. Hoş geldin mesajı
                 addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}! (Firebase Active)`);
                 
                 if (currentUser.isAdminUser) {
@@ -689,7 +740,7 @@
                 
             } catch (error) {
                 console.error('Giriş hatası:', error);
-                showLoginError('❌ Giriş hatası! Lütfen tekrar deneyin.');
+                showLoginError(`❌ Giriş hatası: ${error.message}`);
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Sohbete Katıl';
             }
@@ -706,7 +757,7 @@
                 if (e.key === 'Enter') sendMessage();
             });
             
-            // YouTube player (opsiyonel)
+            // YouTube player
             if (typeof YT !== 'undefined') {
                 initYouTubePlayer();
             }
@@ -717,32 +768,28 @@
             });
             
             // MESAJLARI DİNLE
-            messagesRef.limitToLast(50).on('value', (snapshot) => {
-                updateMessages(snapshot.val());
-            });
+            if (messagesRef) {
+                messagesRef.limitToLast(50).on('value', (snapshot) => {
+                    updateMessages(snapshot.val());
+                });
+            }
             
             // Aktivite güncelleme interval'i
             setInterval(() => {
-                if (currentUser) {
-                    updateUserActivity();
+                if (currentUser && usersRef) {
+                    usersRef.child(currentUser.name).update({
+                        lastSeen: Date.now(),
+                        isOnline: true
+                    });
                 }
             }, 5000);
             
             // Sayfa kapanırken çıkış yap
-            window.addEventListener('beforeunload', async function() {
-                if (currentUser) {
-                    await usersRef.child(currentUser.name).remove();
+            window.addEventListener('beforeunload', function() {
+                if (currentUser && usersRef) {
+                    usersRef.child(currentUser.name).remove();
                 }
             });
-        }
-        
-        function updateUserActivity() {
-            if (currentUser && usersRef) {
-                usersRef.child(currentUser.name).update({
-                    lastSeen: Date.now(),
-                    isOnline: true
-                });
-            }
         }
         
         // ========== ONLINE KULLANICI GÜNCELLEME ==========
@@ -797,7 +844,6 @@
             users.forEach(user => {
                 const isCurrentUser = user.username === (currentUser?.name || '');
                 const statusClass = user.secondsAgo > 10 ? 'idle' : '';
-                const statusText = user.secondsAgo > 10 ? '🟡' : '🟢';
                 
                 html += `
                     <div class="user-item ${statusClass}" onclick="pingUser('${user.username}')">
@@ -843,14 +889,22 @@
                 };
                 
                 try {
-                    await messagesRef.push(messageData);
-                    
-                    // Aktiviteyi güncelle
-                    updateUserActivity();
+                    if (messagesRef) {
+                        await messagesRef.push(messageData);
+                        
+                        // Aktiviteyi güncelle
+                        if (usersRef) {
+                            usersRef.child(currentUser.name).update({
+                                lastSeen: Date.now()
+                            });
+                        }
+                    } else {
+                        addSystemMessage('❌ Mesaj servisi hazır değil!');
+                    }
                     
                 } catch (error) {
                     console.error('Mesaj gönderme hatası:', error);
-                    addSystemMessage('❌ Mesaj gönderilemedi!');
+                    addSystemMessage('❌ Mesaj gönderilemedi: ' + error.message);
                 }
             }
             
@@ -925,8 +979,10 @@
                 case 'temizle':
                     if (isAdmin) {
                         try {
-                            await messagesRef.remove();
-                            addSystemMessage('🗑️ Firebase mesajları temizlendi!');
+                            if (messagesRef) {
+                                await messagesRef.remove();
+                                addSystemMessage('🗑️ Firebase mesajları temizlendi!');
+                            }
                         } catch (error) {
                             addSystemMessage('❌ Temizleme hatası!');
                         }
@@ -947,10 +1003,15 @@
                     addSystemMessage('🔥 Firebase Realtime Database aktif!');
                     addSystemMessage(`📊 Proje: ${firebaseConfig.projectId}`);
                     addSystemMessage(`👤 Online: ${document.getElementById('online-count').textContent}`);
+                    addSystemMessage(`🔗 Durum: ${isFirebaseConnected ? '✅ Bağlı' : '❌ Bağlı Değil'}`);
                     break;
                     
                 case 'çıkış':
                     logout();
+                    break;
+                    
+                case 'debug':
+                    showDebugInfo();
                     break;
                     
                 default:
@@ -960,6 +1021,11 @@
         
         async function showFirebaseUsers() {
             try {
+                if (!usersRef) {
+                    addSystemMessage('❌ Firebase bağlantısı yok!');
+                    return;
+                }
+                
                 const snapshot = await usersRef.once('value');
                 const users = snapshot.val() || {};
                 
@@ -1020,6 +1086,7 @@
             help += '• /kullanıcılar - Online kullanıcıları göster<br>';
             help += '• /firebase - Firebase bilgileri<br>';
             help += '• /çıkış - Çıkış yap<br>';
+            help += '• /debug - Debug bilgileri<br>';
             help += '• /yardım - Bu mesajı göster<br><br>';
             help += '💡 <strong>Özellikler:</strong><br>';
             help += '• Gerçek zamanlı nick kontrolü<br>';
@@ -1031,7 +1098,7 @@
         }
         
         async function logout() {
-            if (currentUser) {
+            if (currentUser && usersRef) {
                 try {
                     await usersRef.child(currentUser.name).remove();
                 } catch (error) {
@@ -1068,6 +1135,9 @@
         
         // ========== SAYFA YÜKLENDİĞİNDE ==========
         window.addEventListener('load', function() {
+            // Firebase'i başlat
+            initializeFirebase();
+            
             // Otomatik focus
             document.getElementById('login-nick').focus();
             
