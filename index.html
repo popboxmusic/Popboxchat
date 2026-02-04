@@ -161,7 +161,7 @@
         .login-input {
             width: 100%;
             padding: 14px;
-            margin: 12px 0;
+            margin: 8px 0;
             border: 2px solid var(--primary);
             border-radius: 10px;
             background: var(--input-bg);
@@ -1045,7 +1045,7 @@
         <span class="firebase-icon">🔥</span> Firebase Active
     </div>
     
-    <!-- GİRİŞ EKRANI - GÜNCELLENDİ -->
+    <!-- GİRİŞ EKRANI - ŞİFRE SİSTEMİ EKLENDİ -->
     <div id="login-screen">
         <div class="login-box">
             <div class="login-title">
@@ -1054,16 +1054,30 @@
             </div>
             <div class="login-subtitle">
                 🎶 Müzik eşliğinde keyifli sohbetlerin adresi<br>
-                👥 Online arkadaşlarla gerçek zamanlı iletişim<br>
-                🔒 Güvenli ve moderatörlü sohbet ortamı
+                🔐 Kayıtlı kullanıcılar şifre ile giriş yapar<br>
+                👥 Online arkadaşlarla gerçek zamanlı iletişim
             </div>
             <input type="text" id="login-nick" class="login-input" placeholder="Kullanıcı adınız" autocomplete="off">
+            
+            <!-- ŞİFRE ALANI -->
+            <input type="password" id="login-password" class="login-input" placeholder="Şifre (sadece kayıtlı kullanıcılar)" autocomplete="off" style="margin-top: 8px; display: none;">
+            
+            <div id="password-info" style="color: #aaa; font-size: 0.85em; margin: 5px 0; display: none;">
+                🔐 Bu kullanıcı kayıtlıdır, lütfen şifrenizi girin
+            </div>
+            
             <button class="login-btn" onclick="login()" id="login-btn">Sohbete Katıl</button>
             <div class="error-message" id="login-error"></div>
             <div class="success-message" id="login-success"></div>
+            
             <div style="margin-top: 15px; color: #aaa; font-size: 0.9em;">
-                💡 <strong>Özellikler:</strong> Özel sohbet • Resim gönderme • YouTube müzik • Ban sistemi
+                💡 <strong>Özellikler:</strong><br>
+                • Kayıtlı kullanıcılar: Şifre ile güvenli giriş<br>
+                • Normal kullanıcılar: Şifresiz giriş<br>
+                • Yönetici özel bildirimleri<br>
+                • Özel sohbet ve resim gönderme
             </div>
+            
             <div style="margin-top: 10px; font-size: 0.8em; color: #888;">
                 🌙/☀️ Sağ üstten tema değiştirebilirsiniz
             </div>
@@ -1166,7 +1180,7 @@
         </div>
         <div class="modal-body">
             <input type="text" id="reg-username" class="modal-input" placeholder="Kullanıcı Adı" autocomplete="off">
-            <input type="text" id="reg-password" class="modal-input" placeholder="Şifre" autocomplete="off">
+            <input type="password" id="reg-password" class="modal-input" placeholder="Şifre" autocomplete="off">
             <select id="reg-role" class="modal-select">
                 <option value="user">Kullanıcı</option>
                 <option value="operator">Operatör</option>
@@ -1262,6 +1276,7 @@
         let bansRef;
         let registeredUsersRef;
         let operatorsRef;
+        let userLocksRef;
         let isFirebaseConnected = false;
         
         function initializeFirebase() {
@@ -1287,11 +1302,13 @@
                         bansRef = database.ref('bans');
                         registeredUsersRef = database.ref('registeredUsers');
                         operatorsRef = database.ref('operators');
+                        userLocksRef = database.ref('userLocks');
                         
                         console.log("✅ Tüm refs created!");
                         
                         updateBannedUsers();
                         startBanMonitoring();
+                        startUserLocksCleanup();
                         
                     } else {
                         console.log("❌ Firebase bağlantısı KESİLDİ");
@@ -1326,13 +1343,73 @@
             'popboxmusic': 'popbox123'
         };
         
+        // ========== KULLANICI KİLİT SİSTEMİ ==========
+        async function lockUserForLogin(username, userId) {
+            try {
+                if (!userLocksRef) return false;
+                
+                const lockData = {
+                    userId: userId,
+                    username: username,
+                    lockedAt: Date.now(),
+                    expiresAt: Date.now() + 30000
+                };
+                
+                await userLocksRef.child(username).set(lockData);
+                return true;
+            } catch (error) {
+                console.error('Kullanıcı kilitleme hatası:', error);
+                return false;
+            }
+        }
+        
+        async function unlockUser(username) {
+            try {
+                if (!userLocksRef) return;
+                await userLocksRef.child(username).remove();
+            } catch (error) {
+                console.error('Kullanıcı kilidini açma hatası:', error);
+            }
+        }
+        
+        async function checkUserLock(username) {
+            try {
+                if (!userLocksRef) return null;
+                
+                const snapshot = await userLocksRef.child(username).once('value');
+                return snapshot.val();
+            } catch (error) {
+                console.error('Kilit kontrol hatası:', error);
+                return null;
+            }
+        }
+        
+        function startUserLocksCleanup() {
+            setInterval(async () => {
+                try {
+                    if (!userLocksRef) return;
+                    
+                    const snapshot = await userLocksRef.once('value');
+                    const locks = snapshot.val() || {};
+                    const now = Date.now();
+                    
+                    for (const [username, lockData] of Object.entries(locks)) {
+                        if (lockData && lockData.expiresAt < now) {
+                            await userLocksRef.child(username).remove();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Kilit temizleme hatası:', error);
+                }
+            }, 60000);
+        }
+        
         // ========== MOBİL ONLINE LİSTESİ ==========
         function toggleUserList() {
             const sidebar = document.getElementById('userListSidebar');
             sidebar.classList.toggle('active');
         }
         
-        // Mobilde overlay'e tıklayınca kapat
         document.addEventListener('click', function(event) {
             const sidebar = document.getElementById('userListSidebar');
             const menuBtn = document.querySelector('.mobile-menu-btn');
@@ -1402,7 +1479,7 @@
             e.target.value = '';
         }
         
-        // ========== YENİ KOMUT: /INFO ==========
+        // ========== ÖZEL BİLDİRİM ==========
         async function sendPrivateNotification(targetUser, message) {
             if (!isAdmin && !isCoAdmin) {
                 addSystemMessage("⛔ Sadece admin/co-admin özel bildirim gönderebilir!");
@@ -1434,7 +1511,6 @@
                 
                 addSystemMessage(`✅ ${targetUser} kullanıcısına özel bildirim gönderildi!`);
                 
-                // Sistem mesajı olarak da kaydet
                 const systemMsg = {
                     sender: 'Sistem',
                     text: `${currentUser.name}, ${targetUser} kullanıcısına bildirim gönderdi: ${message}`,
@@ -1500,7 +1576,8 @@
                     password: password,
                     role: role,
                     registeredBy: currentUser.name,
-                    registeredAt: Date.now()
+                    registeredAt: Date.now(),
+                    isRegistered: true
                 });
                 
                 if (role === 'coadmin') {
@@ -1509,7 +1586,7 @@
                     await addToOperatorList(username);
                 }
                 
-                addSystemMessage(`✅ ${username} kullanıcısı ${role} rolü ile kaydedildi!`);
+                addSystemMessage(`✅ ${username} kullanıcısı ${role} rolü ile kaydedildi! Şifre: ${password}`);
                 
                 closeAdminModal();
                 document.getElementById('reg-username').value = '';
@@ -1742,6 +1819,51 @@
         
         function generateFakeIP() {
             return `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+        }
+        
+        // ========== KAYITLI KULLANICI KONTROLÜ ==========
+        async function isRegisteredUser(username) {
+            try {
+                const snapshot = await registeredUsersRef.child(username).once('value');
+                return snapshot.val();
+            } catch (error) {
+                return null;
+            }
+        }
+        
+        // ========== KULLANICI ADI KONTROLÜ (REAL-TIME) ==========
+        function checkUsernameRealTime() {
+            const nickInput = document.getElementById('login-nick');
+            const passwordInput = document.getElementById('login-password');
+            const passwordInfo = document.getElementById('password-info');
+            
+            nickInput.addEventListener('input', async function() {
+                const nick = this.value.trim();
+                
+                if (nick.length < 2) {
+                    passwordInput.style.display = 'none';
+                    passwordInfo.style.display = 'none';
+                    return;
+                }
+                
+                try {
+                    const userRegistered = await isRegisteredUser(nick);
+                    
+                    if (userRegistered && userRegistered.isRegistered) {
+                        // Kayıtlı kullanıcı - şifre göster
+                        passwordInput.style.display = 'block';
+                        passwordInfo.style.display = 'block';
+                        passwordInput.placeholder = `Şifre (${userRegistered.role} kullanıcısı)`;
+                        passwordInfo.innerHTML = `🔐 <strong>${nick}</strong> kayıtlı bir ${userRegistered.role} kullanıcısıdır. Lütfen şifrenizi girin.`;
+                    } else {
+                        // Kayıtlı değil - şifre gizle
+                        passwordInput.style.display = 'none';
+                        passwordInfo.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Kullanıcı kontrol hatası:', error);
+                }
+            });
         }
         
         // ========== BAN SİSTEMİ FONKSİYONLARI ==========
@@ -2020,10 +2142,12 @@
             }
         }
         
-        // ========== GİRİŞ SİSTEMİ ==========
+        // ========== ŞİFRELİ GİRİŞ SİSTEMİ ==========
         async function login() {
             const nickInput = document.getElementById('login-nick');
+            const passwordInput = document.getElementById('login-password');
             const nick = nickInput.value.trim();
+            const password = passwordInput.value;
             const loginBtn = document.getElementById('login-btn');
             
             if (!nick) {
@@ -2047,9 +2171,59 @@
             showLoginSuccess('');
             
             try {
-                // BAN KONTROLÜ
+                // 1. KULLANICI KİLİT KONTROLÜ
+                const lockCheck = await checkUserLock(nick);
+                if (lockCheck && lockCheck.expiresAt > Date.now()) {
+                    const secondsLeft = Math.ceil((lockCheck.expiresAt - Date.now()) / 1000);
+                    showLoginError(
+                        `🔒 BU KULLANICI ŞU ANDA GİRİŞ YAPMAYA ÇALIŞIYOR!\n\n` +
+                        `Lütfen ${secondsLeft} saniye bekleyin.\n` +
+                        `Eğer bu siz değilseniz, yetkililere bildirin.`
+                    );
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sohbete Katıl';
+                    return;
+                }
+                
+                // 2. KULLANICI KİLİTLE
+                const userId = generateUserId();
+                const locked = await lockUserForLogin(nick, userId);
+                if (!locked) {
+                    showLoginError('❌ Giriş işlemi başlatılamadı! Lütfen tekrar deneyin.');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sohbete Katıl';
+                    return;
+                }
+                
+                // 3. KAYITLI KULLANICI KONTROLÜ
+                const userRegistered = await isRegisteredUser(nick);
+                
+                if (userRegistered && userRegistered.isRegistered) {
+                    // KAYITLI KULLANICI - ŞİFRE KONTROLÜ
+                    if (!password) {
+                        await unlockUser(nick);
+                        showLoginError('🔐 Bu kullanıcı kayıtlıdır! Lütfen şifrenizi girin.');
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Sohbete Katıl';
+                        return;
+                    }
+                    
+                    // ŞİFRE KONTROLÜ
+                    if (userRegistered.password !== password) {
+                        await unlockUser(nick);
+                        showLoginError('❌ Hatalı şifre! Lütfen doğru şifreyi girin.');
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Sohbete Katıl';
+                        return;
+                    }
+                    
+                    // Şifre doğru, devam et
+                }
+                
+                // 4. BAN KONTROLÜ
                 const banCheck = await checkIfBanned(nick);
                 if (banCheck.isBanned) {
+                    await unlockUser(nick);
                     const remaining = Math.ceil((banCheck.banData.bannedUntil - Date.now()) / 60000);
                     showLoginError(
                         `🚫 BU KULLANICI BANLI!\n\n` +
@@ -2063,6 +2237,7 @@
                     return;
                 }
                 
+                // 5. ONLINE KULLANICI KONTROLÜ
                 const snapshot = await usersRef.child(nick).once('value');
                 const existingUser = snapshot.val();
                 
@@ -2071,12 +2246,13 @@
                     const lastSeen = existingUser.lastSeen || 0;
                     const timeDiff = now - lastSeen;
                     
-                    if (timeDiff < 10000) {
+                    if (timeDiff < 30000) { // 30 saniye
+                        await unlockUser(nick);
                         const seconds = Math.floor(timeDiff / 1000);
                         showLoginError(
                             `⛔ "${nick}" kullanıcısı ŞU ANDA AKTİF!\n\n` +
                             `Son aktivite: ${seconds} saniye önce\n` +
-                            `💡 Lütfen başka bir kullanıcı adı seçin veya ${10-seconds} sn bekleyin`
+                            `💡 Lütfen başka bir kullanıcı adı seçin veya ${30-seconds} sn bekleyin`
                         );
                         
                         loginBtn.disabled = false;
@@ -2085,8 +2261,8 @@
                     }
                 }
                 
-                // KAYITLI KULLANICI KONTROLÜ
-                const userRegistered = await checkRegisteredUser(nick);
+                // 6. KAYITLI KULLANICI KONTROLÜ (TEKRAR)
+                const userRegisteredFinal = await isRegisteredUser(nick);
                 
                 const userData = {
                     name: nick,
@@ -2096,26 +2272,32 @@
                     userAgent: navigator.userAgent.substring(0, 80),
                     isOnline: true,
                     timestamp: Date.now(),
-                    role: userRegistered ? userRegistered.role : 'user'
+                    role: userRegisteredFinal ? userRegisteredFinal.role : 'user',
+                    isRegistered: !!userRegisteredFinal
                 };
                 
+                // 7. KULLANICIYI KAYDET
                 await usersRef.child(nick).set(userData);
+                
+                // 8. KİLİDİ KALDIR
+                await unlockUser(nick);
                 
                 currentUser = {
                     name: nick,
                     role: userData.role,
+                    isRegistered: !!userRegisteredFinal,
                     isAdminUser: ADMIN_USERS.includes(nick.toLowerCase()),
                     data: userData
                 };
                 
-                // YETKİLERİ AYARLA
-                if (userRegistered && userRegistered.role === 'admin') {
+                // 9. YETKİLERİ AYARLA
+                if (userRegisteredFinal && userRegisteredFinal.role === 'admin') {
                     isAdmin = true;
                     document.getElementById('adminBadge').style.display = 'inline-block';
-                } else if (userRegistered && userRegistered.role === 'coadmin') {
+                } else if (userRegisteredFinal && userRegisteredFinal.role === 'coadmin') {
                     isCoAdmin = true;
                     document.getElementById('coadminBadge').style.display = 'inline-block';
-                } else if (userRegistered && userRegistered.role === 'operator') {
+                } else if (userRegisteredFinal && userRegisteredFinal.role === 'operator') {
                     isOperator = true;
                     document.getElementById('operatorBadge').style.display = 'inline-block';
                 } else if (ADMIN_USERS.includes(nick.toLowerCase())) {
@@ -2124,15 +2306,22 @@
                     document.getElementById('adminBadge').style.display = 'inline-block';
                 }
                 
+                // 10. ÇIKIŞTA SİLMEK İÇİN
                 usersRef.child(nick).onDisconnect().remove();
                 
+                // 11. UYGULAMAYI GÖSTER
                 document.getElementById('login-screen').style.display = 'none';
                 document.getElementById('app').style.display = 'flex';
                 
                 initApp();
                 
+                // 12. HOŞ GELDİN MESAJI
                 addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}!`);
                 addSystemMessage('💡 Mesajınızın üzerine gelin → 🗑️ ile silin');
+                
+                if (currentUser.isRegistered) {
+                    addSystemMessage('✅ Kayıtlı kullanıcı olarak giriş yaptınız!');
+                }
                 
                 if (currentUser.isAdminUser && !isAdmin) {
                     addSystemMessage('🔑 Admin girişi için: /admin [şifre]');
@@ -2143,16 +2332,18 @@
                 showLoginError(`❌ Giriş hatası: ${error.message}`);
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Sohbete Katıl';
+                
+                // Hata durumunda kilidi temizle
+                try {
+                    await unlockUser(nick);
+                } catch (e) {
+                    console.error('Kilit temizleme hatası:', e);
+                }
             }
         }
         
-        async function checkRegisteredUser(username) {
-            try {
-                const snapshot = await registeredUsersRef.child(username).once('value');
-                return snapshot.val();
-            } catch (error) {
-                return null;
-            }
+        function generateUserId() {
+            return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         }
         
         // ========== UYGULAMA BAŞLATMA ==========
@@ -2223,6 +2414,7 @@
                 }
             }, 5000);
             
+            // SON AKTİVİTE GÜNCELLE
             setInterval(() => {
                 if (currentUser && usersRef) {
                     usersRef.child(currentUser.name).update({
@@ -2307,12 +2499,14 @@
                 const isCoAdminUser = coAdminList.includes(user.username) || (registeredUsers[user.username] && registeredUsers[user.username].role === 'coadmin');
                 const isOperatorUser = operatorList.includes(user.username) || (registeredUsers[user.username] && registeredUsers[user.username].role === 'operator');
                 const isBanned = bannedUsers[user.username] && bannedUsers[user.username].bannedUntil > Date.now();
+                const isRegistered = user.isRegistered || (registeredUsers[user.username] && registeredUsers[user.username].isRegistered);
                 
                 let badge = '';
                 if (isAdminUser) badge = '👑';
                 else if (isCoAdminUser) badge = '⚡';
                 else if (isOperatorUser) badge = '🔧';
                 else if (isBanned) badge = '🚫';
+                else if (isRegistered) badge = '✅';
                 
                 html += `
                     <div class="user-item ${statusClass} ${isBanned ? 'banned' : ''}" onclick="openPrivateChat('${user.username}')">
@@ -2426,7 +2620,6 @@
         }
         
         function showImageModal(imageData) {
-            // Resim modalı oluştur
             const modal = document.createElement('div');
             modal.style.position = 'fixed';
             modal.style.top = '0';
@@ -2458,7 +2651,6 @@
         async function sendPrivateMessage() {
             if (!privateChatWith || !currentPrivateChatId || !privateChatsRef) return;
             
-            // Ban kontrolü
             const canSend = await checkBanBeforeMessage();
             if (!canSend) return;
             
@@ -2497,7 +2689,6 @@
         
         // ========== GENEL MESAJ SİSTEMİ ==========
         async function sendMessage() {
-            // Ban kontrolü
             const canSend = await checkBanBeforeMessage();
             if (!canSend) return;
             
@@ -2591,7 +2782,6 @@
         
         // ========== TÜM KOMUT SİSTEMİ ==========
         async function handleCommand(cmd) {
-            // Ban kontrolü
             const canSend = await checkBanBeforeMessage();
             if (!canSend) return;
             
@@ -2600,7 +2790,6 @@
             const args = parts.slice(1);
             
             switch(command) {
-                // 🔐 ADMIN GİRİŞ
                 case 'admin':
                     if (args.length === 1) {
                         await checkAdminPassword(args[0]);
@@ -2609,7 +2798,6 @@
                     }
                     break;
                     
-                // 📢 YENİ KOMUT: ÖZEL BİLDİRİM
                 case 'info':
                     if (args.length >= 2) {
                         await sendPrivateNotification(args[0], args.slice(1).join(' '));
@@ -2618,7 +2806,6 @@
                     }
                     break;
                     
-                // 👥 YENİ KOMUTLAR
                 case 'reg':
                 case 'register':
                     if (isAdmin) {
@@ -2637,7 +2824,6 @@
                     }
                     break;
                     
-                // CO-ADMIN YÖNETİMİ
                 case 'coadmin':
                     if (isAdmin && args.length === 1) {
                         await makeCoAdmin(args[0]);
@@ -2658,7 +2844,6 @@
                     }
                     break;
                     
-                // OPERATOR YÖNETİMİ
                 case 'op':
                 case 'operator':
                     if (isAdmin && args.length === 1) {
@@ -2681,7 +2866,6 @@
                     }
                     break;
                     
-                // 🗑️ İÇERİK TEMİZLEME
                 case 'temizle':
                     if (isAdmin || isCoAdmin || isOperator) {
                         try {
@@ -2710,7 +2894,6 @@
                     }
                     break;
                     
-                // 🚫 BAN KOMUTLARI
                 case 'ban':
                     if ((isAdmin || isCoAdmin || isOperator) && args.length >= 1) {
                         const username = args[0];
@@ -2745,7 +2928,6 @@
                     await showBanList();
                     break;
                     
-                // 🆔 ID İLE MESAJ SİLME
                 case 'sil':
                     if ((isAdmin || isCoAdmin || isOperator) && args.length === 1) {
                         await deleteMessage(args[0]);
@@ -2756,7 +2938,6 @@
                     }
                     break;
                     
-                // 👥 KULLANICI LİSTESİ
                 case 'kullanıcılar':
                 case 'users':
                     await showFirebaseUsers();
@@ -2767,14 +2948,12 @@
                     await showFirebaseUsers();
                     break;
                     
-                // ℹ️ YARDIM
                 case 'yardım':
                 case 'help':
                 case 'komutlar':
                     showHelp();
                     break;
                     
-                // 🔥 FIREBASE BİLGİ
                 case 'firebase':
                 case 'fb':
                     addSystemMessage('🔥 Firebase Realtime Database aktif!');
@@ -2782,19 +2961,16 @@
                     addSystemMessage(`👤 Online: ${document.getElementById('online-count').textContent}`);
                     break;
                     
-                // 🌙/☀️ TEMA KOMUTU
                 case 'tema':
                 case 'theme':
                     toggleTheme();
                     addSystemMessage(`Tema değiştirildi: ${currentTheme === 'dark' ? 'Koyu' : currentTheme === 'light' ? 'Açık' : 'WhatsApp'}`);
                     break;
                     
-                // 🏓 PİNG TEST
                 case 'ping':
                     addSystemMessage('🏓 Pong! Bağlantı aktif.');
                     break;
                     
-                // 🚪 ÇIKIŞ
                 case 'çıkış':
                 case 'exit':
                 case 'logout':
@@ -2846,7 +3022,8 @@
                         password: 'coadmin123',
                         role: 'coadmin',
                         registeredBy: currentUser.name,
-                        registeredAt: Date.now()
+                        registeredAt: Date.now(),
+                        isRegistered: true
                     }, { merge: true });
                     
                     addSystemMessage(`✅ ${username} co-admin yapıldı! Varsayılan şifre: coadmin123`);
@@ -2918,7 +3095,8 @@
                         password: 'operator123',
                         role: 'operator',
                         registeredBy: currentUser.name,
-                        registeredAt: Date.now()
+                        registeredAt: Date.now(),
+                        isRegistered: true
                     }, { merge: true });
                     
                     addSystemMessage(`✅ ${username} operatör yapıldı! Varsayılan şifre: operator123`);
@@ -2984,6 +3162,7 @@
                 let userList = '🔥 <strong>Online Kullanıcılar:</strong><br>';
                 const now = Date.now();
                 let onlineCount = 0;
+                let registeredCount = 0;
                 
                 Object.entries(users).forEach(([username, userData]) => {
                     if (!userData) return;
@@ -2998,18 +3177,22 @@
                         const isCoAdminUser = coAdminList.includes(username) || (registeredUsers[username] && registeredUsers[username].role === 'coadmin');
                         const isOperatorUser = operatorList.includes(username) || (registeredUsers[username] && registeredUsers[username].role === 'operator');
                         const isBanned = bannedUsers[username] && bannedUsers[username].bannedUntil > now;
+                        const isRegistered = userData.isRegistered || (registeredUsers[username] && registeredUsers[username].isRegistered);
+                        
+                        if (isRegistered) registeredCount++;
                         
                         let badge = '';
                         if (isAdminUser) badge = '👑';
                         else if (isCoAdminUser) badge = '⚡';
                         else if (isOperatorUser) badge = '🔧';
                         else if (isBanned) badge = '🚫';
+                        else if (isRegistered) badge = '✅';
                         
                         userList += `${status} ${badge} ${username} (${secondsAgo}sn önce)<br>`;
                     }
                 });
                 
-                userList += `<br>Toplam: ${onlineCount} online kullanıcı`;
+                userList += `<br>Toplam: ${onlineCount} online kullanıcı (${registeredCount} kayıtlı)`;
                 addSystemMessage(userList);
             } catch (error) {
                 addSystemMessage('❌ Kullanıcıları getirirken hata!');
@@ -3060,6 +3243,8 @@
             help += '• /çıkış - Çıkış yap<br><br>';
             
             help += '💡 <strong>ÖZELLİKLER:</strong><br>';
+            help += '• Kayıtlı kullanıcılar: Şifre ile güvenli giriş<br>';
+            help += '• Normal kullanıcılar: Şifresiz giriş<br>';
             help += '• Sağ üstte 🌙/☀️/💬 butonu - Tema değiştir<br>';
             help += '• Telefonda: Üst bar WhatsApp tarzı<br>';
             help += '• Özel sohbette 📷 butonu - Resim gönder<br>';
@@ -3110,14 +3295,17 @@
         window.addEventListener('load', function() {
             console.log("📱 Sayfa yüklendi!");
             
-            // Tema yükle
             loadTheme();
-            
             initializeFirebase();
+            checkUsernameRealTime();
             
             document.getElementById('login-nick').focus();
             
             document.getElementById('login-nick').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') login();
+            });
+            
+            document.getElementById('login-password').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') login();
             });
             
