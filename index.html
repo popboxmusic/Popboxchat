@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Popbox Music Chat - TÜM KOMUTLAR AKTİF</title>
+    <title>Popbox Music Chat - TÜM KOMUTLAR + BAN SİSTEMİ</title>
     <!-- FIREBASE SDK v8 -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
@@ -19,6 +19,7 @@
             --text-light: #ffffff;
             --online: #4caf50;
             --firebase: #ffa000;
+            --ban-color: #ff3333;
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -288,6 +289,11 @@
             background: rgba(156,39,176,0.1);
         }
         
+        .message.ban-message {
+            border-left-color: var(--ban-color);
+            background: rgba(255,51,51,0.1);
+        }
+        
         .message-header {
             display: flex;
             justify-content: space-between;
@@ -415,6 +421,12 @@
             opacity: 0.8;
         }
         
+        .user-item.banned {
+            border-left-color: var(--ban-color);
+            background: rgba(255,51,51,0.1);
+            opacity: 0.7;
+        }
+        
         .user-status {
             display: flex;
             align-items: center;
@@ -429,6 +441,7 @@
         
         .status-online { background: var(--online); }
         .status-idle { background: #ff9800; }
+        .status-banned { background: var(--ban-color); }
         
         /* ÖZEL SOHBET MODALI */
         .overlay {
@@ -481,6 +494,32 @@
             border-top: 1px solid var(--private);
             display: flex;
             gap: 8px;
+        }
+        
+        /* BAN MODAL */
+        .ban-modal {
+            display: none;
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-light);
+            border: 3px solid var(--ban-color);
+            border-radius: 15px;
+            width: 90%;
+            max-width: 400px;
+            z-index: 2003;
+            flex-direction: column;
+        }
+        
+        .ban-header {
+            padding: 15px;
+            background: rgba(255,51,51,0.2);
+            border-bottom: 1px solid var(--ban-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--ban-color);
+            font-weight: bold;
         }
         
         /* RESİM MODALI */
@@ -557,7 +596,8 @@
             <div class="error-message" id="login-error"></div>
             <div class="success-message" id="login-success"></div>
             <div style="margin-top: 15px; color: #aaa; font-size: 0.9em;">
-                ✅ <strong>TÜM KOMUTLAR AKTİF:</strong><br>
+                ✅ <strong>TÜM KOMUTLAR + BAN SİSTEMİ:</strong><br>
+                • Gelişmiş Ban/Kick Sistemi 🚫<br>
                 • Kişisel mesaj silme 🗑️<br>
                 • Admin + Co-admin sistemi<br>
                 • Özel sohbet + Resim gönderme<br>
@@ -616,8 +656,8 @@
                 
                 <div class="messages-container" id="messages">
                     <div class="message system">
-                        <strong>🔥 Tüm Komutlar Aktif!</strong><br>
-                        Kendi mesajınızı silmek için üzerine gelin → 🗑️
+                        <strong>🔥 Tüm Komutlar + Ban Sistemi Aktif!</strong><br>
+                        Komutlar için: /yardım yazın
                     </div>
                 </div>
                 
@@ -643,6 +683,26 @@
             <input type="text" id="private-input" class="login-input" placeholder="Özel mesaj yazın..." autocomplete="off">
             <button class="action-btn" onclick="openPrivateImageUpload()" style="background:var(--private);">📷</button>
             <button class="action-btn" onclick="sendPrivateMessage()" style="background:var(--private);">📤</button>
+        </div>
+    </div>
+    
+    <!-- BAN MODAL -->
+    <div class="ban-modal" id="banModal">
+        <div class="ban-header">
+            <span>🚫 Kullanıcı Banla</span>
+            <button onclick="closeBanModal()" style="background:none;border:none;color:white;font-size:1.5em;cursor:pointer;">×</button>
+        </div>
+        <div style="padding: 20px;">
+            <div style="margin-bottom: 15px;">
+                <input type="text" id="ban-username" class="login-input" placeholder="Kullanıcı adı" autocomplete="off">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <input type="number" id="ban-duration" class="login-input" placeholder="Ban süresi (dakika)" value="5" min="1" max="1440">
+            </div>
+            <div style="margin-bottom: 20px;">
+                <input type="text" id="ban-reason" class="login-input" placeholder="Ban sebebi (opsiyonel)" autocomplete="off">
+            </div>
+            <button class="login-btn" onclick="executeBan()" style="background:var(--ban-color);">🚫 Banla</button>
         </div>
     </div>
     
@@ -674,6 +734,7 @@
         let messagesRef;
         let privateChatsRef;
         let coAdminsRef;
+        let bansRef;
         let isFirebaseConnected = false;
         
         function initializeFirebase() {
@@ -696,8 +757,11 @@
                         messagesRef = database.ref('messages');
                         privateChatsRef = database.ref('privateChats');
                         coAdminsRef = database.ref('coAdmins');
+                        bansRef = database.ref('bans');
                         
                         console.log("✅ Tüm refs created!");
+                        
+                        updateBannedUsers();
                     } else {
                         console.log("❌ Firebase bağlantısı KESİLDİ");
                         isFirebaseConnected = false;
@@ -719,6 +783,7 @@
         let privateChatWith = null;
         let currentPrivateChatId = null;
         let coAdminList = [];
+        let bannedUsers = {};
         
         // Admin bilgileri
         const ADMIN_USERS = ['popbox', 'popboxmusic'];
@@ -755,6 +820,15 @@
             container.scrollTop = container.scrollHeight;
         }
         
+        function addBanMessage(text) {
+            const container = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ban-message';
+            messageDiv.innerHTML = `<strong>🚫 Ban Sistemi:</strong> ${text}`;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+        
         function generateChatId(user1, user2) {
             const users = [user1, user2].sort();
             return `chat_${users[0]}_${users[1]}`;
@@ -764,12 +838,217 @@
             return `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
         }
         
+        // ========== BAN SİSTEMİ FONKSİYONLARI ==========
+        async function checkIfBanned(username) {
+            try {
+                if (!bansRef) return { isBanned: false };
+                
+                const banSnapshot = await bansRef.child(username).once('value');
+                const banData = banSnapshot.val();
+                
+                if (banData && banData.bannedUntil > Date.now()) {
+                    return {
+                        isBanned: true,
+                        banData: banData
+                    };
+                } else if (banData) {
+                    await bansRef.child(username).remove();
+                }
+                
+                return { isBanned: false };
+            } catch (error) {
+                console.error("Ban kontrol hatası:", error);
+                return { isBanned: false };
+            }
+        }
+        
+        async function kickUser(username, duration = 5, reason = "Kick komutu") {
+            if (!currentUser || (!isAdmin && !isCoAdmin)) {
+                addSystemMessage("⛔ Yetkiniz yok!");
+                return;
+            }
+            
+            if (!username) {
+                addSystemMessage("❌ Kullanıcı adı belirtin!");
+                return;
+            }
+            
+            if (username === currentUser.name) {
+                addSystemMessage("❌ Kendinizi banlayamazsınız!");
+                return;
+            }
+            
+            if (ADMIN_USERS.includes(username.toLowerCase())) {
+                addSystemMessage("⛔ Admin kullanıcıları banlayamazsınız!");
+                return;
+            }
+            
+            try {
+                const durationNum = parseInt(duration) || 5;
+                const banUntil = Date.now() + (durationNum * 60000);
+                
+                await bansRef.child(username).set({
+                    bannedUntil: banUntil,
+                    bannedBy: currentUser.name,
+                    reason: reason,
+                    timestamp: Date.now(),
+                    duration: durationNum
+                });
+                
+                await usersRef.child(username).remove();
+                
+                addBanMessage(
+                    `🚫 ${username} kullanıcısı ${currentUser.name} tarafından ${durationNum} dakika banlandı!\n` +
+                    `Sebep: ${reason}`
+                );
+                
+                const banMessage = {
+                    sender: 'Sistem',
+                    text: `🚫 ${username} kullanıcısı ${durationNum} dakika banlandı!`,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    type: 'ban'
+                };
+                
+                await messagesRef.push(banMessage);
+                
+                await updateBannedUsers();
+                
+                console.log(`✅ ${username} banlandı (${durationNum} dakika)`);
+                
+            } catch (error) {
+                console.error("Ban hatası:", error);
+                addSystemMessage("❌ Ban işlemi başarısız!");
+            }
+        }
+        
+        async function unbanUser(username) {
+            if (!currentUser || (!isAdmin && !isCoAdmin)) {
+                addSystemMessage("⛔ Yetkiniz yok!");
+                return;
+            }
+            
+            try {
+                await bansRef.child(username).remove();
+                
+                addSystemMessage(`✅ ${username} kullanıcısının banı kaldırıldı!`);
+                
+                const unbanMessage = {
+                    sender: 'Sistem',
+                    text: `🎉 ${username} kullanıcısının banı kaldırıldı!`,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    type: 'system'
+                };
+                
+                await messagesRef.push(unbanMessage);
+                
+                await updateBannedUsers();
+                
+            } catch (error) {
+                console.error("Unban hatası:", error);
+                addSystemMessage("❌ Ban kaldırma işlemi başarısız!");
+            }
+        }
+        
+        async function showBanList() {
+            try {
+                const banSnapshot = await bansRef.once('value');
+                const bans = banSnapshot.val() || {};
+                
+                if (Object.keys(bans).length === 0) {
+                    addBanMessage("✅ Aktif banlı kullanıcı yok!");
+                    return;
+                }
+                
+                let banList = "🚫 <strong>AKTİF BANLAR:</strong><br><br>";
+                const now = Date.now();
+                let activeCount = 0;
+                
+                Object.entries(bans).forEach(([username, banData]) => {
+                    if (banData.bannedUntil > now) {
+                        activeCount++;
+                        const remaining = Math.ceil((banData.bannedUntil - now) / 60000);
+                        const by = banData.bannedBy || 'Admin';
+                        const reason = banData.reason || 'Belirtilmemiş';
+                        
+                        banList += `
+                            <strong>${username}</strong><br>
+                            • Kalan Süre: ${remaining} dakika<br>
+                            • Banlayan: ${by}<br>
+                            • Sebep: ${reason}<br><br>
+                        `;
+                    }
+                });
+                
+                if (activeCount === 0) {
+                    addBanMessage("✅ Aktif banlı kullanıcı yok!");
+                } else {
+                    banList += `<em>Toplam ${activeCount} aktif ban</em>`;
+                    addBanMessage(banList);
+                }
+                
+            } catch (error) {
+                console.error("Ban listesi hatası:", error);
+                addBanMessage("❌ Ban listesi getirilemedi!");
+            }
+        }
+        
+        async function updateBannedUsers() {
+            try {
+                const banSnapshot = await bansRef.once('value');
+                bannedUsers = banSnapshot.val() || {};
+                
+                const now = Date.now();
+                for (const [username, banData] of Object.entries(bannedUsers)) {
+                    if (banData.bannedUntil < now) {
+                        await bansRef.child(username).remove();
+                        console.log(`Ban süresi doldu: ${username}`);
+                    }
+                }
+                
+            } catch (error) {
+                console.error("Ban listesi güncelleme hatası:", error);
+            }
+        }
+        
+        function openBanModal() {
+            if (!currentUser || (!isAdmin && !isCoAdmin)) {
+                addSystemMessage("⛔ Yetkiniz yok!");
+                return;
+            }
+            
+            document.getElementById('banModal').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+        }
+        
+        function closeBanModal() {
+            document.getElementById('banModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+        
+        async function executeBan() {
+            const username = document.getElementById('ban-username').value.trim();
+            const duration = document.getElementById('ban-duration').value;
+            const reason = document.getElementById('ban-reason').value.trim() || "Belirtilmemiş";
+            
+            if (!username) {
+                addSystemMessage("❌ Kullanıcı adı girin!");
+                return;
+            }
+            
+            await kickUser(username, duration, reason);
+            closeBanModal();
+            
+            document.getElementById('ban-username').value = '';
+            document.getElementById('ban-reason').value = '';
+        }
+        
         // ========== MESAJ SİLME SİSTEMİ ==========
         async function deleteMessage(messageId) {
             if (!messagesRef || !currentUser) return;
             
             try {
-                // Mesajı al
                 const snapshot = await messagesRef.child(messageId).once('value');
                 const message = snapshot.val();
                 
@@ -778,7 +1057,6 @@
                     return;
                 }
                 
-                // Yetki kontrolü
                 const canDelete = message.sender === currentUser.name || isAdmin || isCoAdmin;
                 
                 if (!canDelete) {
@@ -789,7 +1067,6 @@
                 if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
                     await messagesRef.child(messageId).remove();
                     
-                    // Görsel feedback
                     const messageDiv = document.getElementById(`msg_${messageId}`);
                     if (messageDiv) {
                         messageDiv.style.opacity = '0.5';
@@ -824,7 +1101,6 @@
                     return;
                 }
                 
-                // Sadece kendi mesajını silebilir
                 if (message.sender !== currentUser.name) {
                     alert('Sadece kendi mesajlarınızı silebilirsiniz!');
                     return;
@@ -880,6 +1156,22 @@
             showLoginSuccess('');
             
             try {
+                // BAN KONTROLÜ
+                const banCheck = await checkIfBanned(nick);
+                if (banCheck.isBanned) {
+                    const remaining = Math.ceil((banCheck.banData.bannedUntil - Date.now()) / 60000);
+                    showLoginError(
+                        `🚫 BU KULLANICI BANLI!\n\n` +
+                        `Kullanıcı: ${nick}\n` +
+                        `Ban Süresi: ${remaining} dakika kaldı\n` +
+                        `Banlayan: ${banCheck.banData.bannedBy || 'Admin'}\n` +
+                        `Sebep: ${banCheck.banData.reason || 'Belirtilmemiş'}`
+                    );
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sohbete Katıl';
+                    return;
+                }
+                
                 const snapshot = await usersRef.child(nick).once('value');
                 const existingUser = snapshot.val();
                 
@@ -960,6 +1252,7 @@
                 if (e.target === this) {
                     closePrivateChat();
                     closeImageModal();
+                    closeBanModal();
                 }
             });
             
@@ -1062,16 +1355,17 @@
                 const statusClass = user.secondsAgo > 10 ? 'idle' : '';
                 const isAdminUser = ADMIN_USERS.includes(user.username.toLowerCase());
                 const isCoAdminUser = coAdminList.includes(user.username);
+                const isBanned = bannedUsers[user.username] && bannedUsers[user.username].bannedUntil > Date.now();
                 
                 let badge = '';
                 if (isAdminUser) badge = '👑';
                 else if (isCoAdminUser) badge = '⚡';
                 
                 html += `
-                    <div class="user-item ${statusClass}" onclick="openPrivateChat('${user.username}')">
+                    <div class="user-item ${statusClass} ${isBanned ? 'banned' : ''}" onclick="openPrivateChat('${user.username}')">
                         <div class="user-status">
-                            <span class="status-dot ${user.secondsAgo > 10 ? 'status-idle' : 'status-online'}"></span>
-                            <strong>${isCurrentUser ? '👤 ' : ''}${badge} ${user.username}</strong>
+                            <span class="status-dot ${isBanned ? 'status-banned' : (user.secondsAgo > 10 ? 'status-idle' : 'status-online')}"></span>
+                            <strong>${isCurrentUser ? '👤 ' : ''}${badge} ${user.username} ${isBanned ? '🚫' : ''}</strong>
                         </div>
                         <div style="font-size:0.8em; color:#aaa;">
                             ${user.secondsAgo < 5 ? 'Şimdi' : user.secondsAgo + 'sn'}
@@ -1149,7 +1443,6 @@
                 messageDiv.className = 'message private-msg';
                 messageDiv.id = `private_msg_${msg.id}`;
                 
-                // Sil butonu (sadece kendi mesajlarında)
                 let deleteButton = '';
                 if (currentUser && msg.sender === currentUser.name) {
                     deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${msg.id}', '${currentPrivateChatId}')">🗑️</button>`;
@@ -1343,7 +1636,6 @@
                 messageDiv.className = `message ${msg.type || 'user'}`;
                 messageDiv.id = `msg_${msg.id}`;
                 
-                // Sil butonu (kendi mesajlarında veya admin/coadmin için)
                 let deleteButton = '';
                 if (currentUser && 
                     (msg.sender === currentUser.name || isAdmin || isCoAdmin)) {
@@ -1416,7 +1708,6 @@
                                 await messagesRef.remove();
                                 addSystemMessage('🗑️ Tüm mesajlar temizlendi!');
                                 
-                                // Sistem mesajını ekle
                                 const systemMsg = {
                                     sender: 'Sistem',
                                     text: `${currentUser.name} tüm mesajları temizledi!`,
@@ -1438,15 +1729,43 @@
                     }
                     break;
                     
-                // 👢 KULLANICI ATMA
-                case 'kick':
-                    if ((isAdmin || isCoAdmin) && args.length === 1) {
-                        await kickUser(args[0]);
-                    } else if (!isAdmin && !isCoAdmin) {
-                        addSystemMessage('⛔ Yetkiniz yok!');
+                // 🚫 BAN KOMUTLARI
+                case 'ban':
+                    if ((isAdmin || isCoAdmin) && args.length >= 1) {
+                        const username = args[0];
+                        const duration = args[1] || 5;
+                        const reason = args.slice(2).join(' ') || "Belirtilmemiş";
+                        await kickUser(username, duration, reason);
                     } else {
-                        addSystemMessage('Kullanım: /kick [kullanıcı-adı]');
+                        addSystemMessage('Kullanım: /ban [kullanıcı] [dakika] [sebep]');
                     }
+                    break;
+                    
+                case 'kick':
+                    if ((isAdmin || isCoAdmin) && args.length >= 1) {
+                        const username = args[0];
+                        const duration = args[1] || 5;
+                        const reason = args.slice(2).join(' ') || "Belirtilmemiş";
+                        await kickUser(username, duration, reason);
+                    } else {
+                        addSystemMessage('Kullanım: /kick [kullanıcı] [dakika] [sebep]');
+                    }
+                    break;
+                    
+                case 'unban':
+                    if ((isAdmin || isCoAdmin) && args.length === 1) {
+                        await unbanUser(args[0]);
+                    } else {
+                        addSystemMessage('Kullanım: /unban [kullanıcı]');
+                    }
+                    break;
+                    
+                case 'banlist':
+                    await showBanList();
+                    break;
+                    
+                case 'banpanel':
+                    openBanModal();
                     break;
                     
                 // 🆔 ID İLE MESAJ SİLME
@@ -1518,12 +1837,12 @@
                 currentUser.role = 'admin';
                 document.getElementById('adminBadge').style.display = 'inline-block';
                 
-                // Admin efekti
                 document.body.style.border = '5px solid red';
                 document.body.style.boxShadow = '0 0 30px rgba(255,0,0,0.5)';
                 
                 addSystemMessage('✅ Admin girişi başarılı!');
                 addSystemMessage('⚡ Co-admin eklemek için: /coadmin [kullanıcı-adı]');
+                addSystemMessage('🚫 Ban komutları: /ban [kullanıcı] [dakika] [sebep]');
             } else {
                 addSystemMessage('❌ Hatalı şifre!');
             }
@@ -1545,7 +1864,6 @@
                     await coAdminsRef.set(coAdmins);
                     addSystemMessage(`✅ ${username} co-admin yapıldı!`);
                     
-                    // Bildirim mesajı
                     const messageData = {
                         sender: 'Sistem',
                         text: `🎉 ${username} artık co-admin!`,
@@ -1594,33 +1912,6 @@
             }
         }
         
-        async function kickUser(username) {
-            try {
-                if (usersRef) {
-                    await usersRef.child(username).remove();
-                    addSystemMessage(`⛔ ${username} kullanıcısı atıldı!`);
-                    
-                    const messageData = {
-                        sender: 'Sistem',
-                        text: `🚫 ${username} ${currentUser.name} tarafından atıldı!`,
-                        type: isAdmin ? 'admin' : 'coadmin',
-                        timestamp: Date.now(),
-                        time: new Date().toLocaleTimeString('tr-TR', { 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
-                        })
-                    };
-                    
-                    if (messagesRef) {
-                        await messagesRef.push(messageData);
-                    }
-                }
-            } catch (error) {
-                console.error('Kick hatası:', error);
-                addSystemMessage('❌ Kullanıcı atılamadı!');
-            }
-        }
-        
         async function showFirebaseUsers() {
             try {
                 if (!usersRef) {
@@ -1646,10 +1937,12 @@
                         const status = secondsAgo < 10 ? '🟢' : '🟡';
                         const isAdminUser = ADMIN_USERS.includes(username.toLowerCase());
                         const isCoAdminUser = coAdminList.includes(username);
+                        const isBanned = bannedUsers[username] && bannedUsers[username].bannedUntil > now;
                         
                         let badge = '';
                         if (isAdminUser) badge = '👑';
                         else if (isCoAdminUser) badge = '⚡';
+                        else if (isBanned) badge = '🚫';
                         
                         userList += `${status} ${badge} ${username} (${secondsAgo}sn önce)<br>`;
                     }
@@ -1670,12 +1963,19 @@
             help += '• /coadmin [kullanıcı] - Co-admin yap<br>';
             help += '• /removecoadmin [kullanıcı] - Co-admin kaldır<br>';
             help += '• /temizle - Tüm mesajları temizle<br>';
-            help += '• /kick [kullanıcı] - Kullanıcıyı at<br>';
+            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /unban [kullanıcı] - Ban kaldır<br>';
+            help += '• /banlist - Aktif banları göster<br>';
+            help += '• /banpanel - Ban panelini aç<br>';
             help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
             
             help += '⚡ <strong>CO-ADMIN KOMUTLARI:</strong><br>';
             help += '• /temizle - Tüm mesajları temizle<br>';
-            help += '• /kick [kullanıcı] - Kullanıcıyı at<br>';
+            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /unban [kullanıcı] - Ban kaldır<br>';
+            help += '• /banlist - Aktif banları göster<br>';
             help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
             
             help += '👤 <strong>HERKES İÇİN:</strong><br>';
@@ -1689,7 +1989,8 @@
             help += '• Mesajınızın üzerine gelin → 🗑️ ile silin<br>';
             help += '• Kullanıcı adına tıkla → Özel sohbet<br>';
             help += '• Özel sohbette 📷 → Resim gönder<br>';
-            help += '• Gerçek zamanlı nick kontrolü';
+            help += '• Gerçek zamanlı nick kontrolü<br>';
+            help += '• Gelişmiş Ban/Kick sistemi 🚫';
             
             addSystemMessage(help);
         }
