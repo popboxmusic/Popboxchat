@@ -921,6 +921,7 @@
                 flex-direction: column;
                 margin-top: 56px;
                 height: calc(100vh - 56px);
+                position: relative;
             }
             
             .video-container {
@@ -928,10 +929,13 @@
                 height: auto;
                 min-height: 0;
                 flex-shrink: 0;
+                position: relative;
             }
             
             .video-wrapper {
                 padding-bottom: 56.25%;
+                position: relative;
+                margin-bottom: 0;
             }
             
             .chat-container {
@@ -941,8 +945,12 @@
                 min-height: 0;
                 border-left: none;
                 border-top: 1px solid var(--border-color);
+                display: flex;
+                flex-direction: column;
+                position: relative;
             }
             
+            /* Mobilde sohbet alanını büyüt */
             .messages-area {
                 flex: 1;
                 min-height: 0;
@@ -950,6 +958,7 @@
                 padding-bottom: 80px;
             }
             
+            /* Mobilde input sabit kalacak */
             .chat-input-area {
                 position: fixed;
                 bottom: 0;
@@ -959,6 +968,30 @@
                 border-top: 1px solid var(--border-color);
                 z-index: 100;
                 padding: 12px;
+            }
+            
+            /* Mobilde video ile sohbet arasında boşluk olmayacak */
+            .main-container {
+                gap: 0 !important;
+            }
+            
+            .chat-container {
+                margin-top: 0;
+            }
+            
+            /* Video küçültülmüş boyut */
+            .video-container {
+                flex: 0 0 auto;
+                height: auto;
+            }
+            
+            /* Sohbet alanı video alanından 2 kat daha fazla yer kaplasın */
+            .video-container {
+                height: 30vh;
+            }
+            
+            .chat-container {
+                height: 70vh;
             }
             
             .users-sidebar {
@@ -989,6 +1022,15 @@
         @media (min-width: 769px) {
             .mobile-menu-btn {
                 display: none;
+            }
+            
+            /* Masaüstünde video alanı küçültülsün, sohbet alanı daha büyük olsun */
+            .video-container {
+                flex: 3;
+            }
+            
+            .chat-container {
+                flex: 2;
             }
         }
         
@@ -1027,6 +1069,42 @@
         
         @keyframes spin {
             to { transform: rotate(360deg); }
+        }
+        
+        /* EMOJİ SELECTOR */
+        .emoji-selector {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px;
+            display: none;
+            max-width: 200px;
+            max-height: 150px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        
+        .emoji-selector.active {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 5px;
+        }
+        
+        .emoji-btn {
+            font-size: 20px;
+            cursor: pointer;
+            padding: 5px;
+            text-align: center;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        
+        .emoji-btn:hover {
+            background: var(--input-bg);
         }
     </style>
 </head>
@@ -1735,12 +1813,12 @@
                     const snapshot = await adminPasswordsRef.child(username).once('value');
                     const storedPassword = snapshot.val();
                     
-                    if (storedPassword) {
-                        return password === storedPassword;
-                    } else {
+                    if (!storedPassword) {
                         await adminPasswordsRef.child(username).set(password);
                         return true;
                     }
+                    
+                    return password === storedPassword;
                 }
                 
                 const userRegistered = await isRegisteredUser(username);
@@ -1759,7 +1837,15 @@
         async function isRegisteredUser(username) {
             try {
                 const snapshot = await registeredUsersRef.child(username).once('value');
-                return snapshot.val();
+                const userData = snapshot.val();
+                
+                if (userData && userData.isRegistered) {
+                    return {
+                        ...userData,
+                        isRegistered: true
+                    };
+                }
+                return null;
             } catch (error) {
                 return null;
             }
@@ -2444,6 +2530,11 @@
         
         // ========== MESAJ GÖNDERME ==========
         async function sendMessage() {
+            if (!isFirebaseConnected) {
+                addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
+                return;
+            }
+            
             const canSend = await checkBanBeforeMessage();
             if (!canSend) return;
             
@@ -2482,6 +2573,7 @@
                 }
             } catch (error) {
                 console.error('Mesaj gönderme hatası:', error);
+                addSystemMessage('❌ Mesaj gönderilemedi!');
             }
         }
         
@@ -3048,8 +3140,55 @@
             }
         }
         
+        // ========== YETKİ KONTROL SİSTEMİ ==========
+        function checkCommandPermission(command, args = []) {
+            if (!currentUser) return false;
+            
+            const commandPermissions = {
+                'admin': () => true, // Herkes admin komutunu deneyebilir
+                'info': () => isAdmin || isCoAdmin,
+                'reg': () => isAdmin,
+                'unreg': () => isAdmin,
+                'coadmin': () => isAdmin,
+                'removecoadmin': () => isAdmin,
+                'operator': () => isAdmin,
+                'removeoperator': () => isAdmin,
+                'temizle': () => isAdmin || isCoAdmin || isOperator,
+                'ban': () => isAdmin || isCoAdmin || isOperator,
+                'kick': () => isAdmin || isCoAdmin || isOperator,
+                'unban': () => isAdmin || isCoAdmin || isOperator,
+                'banlist': () => true,
+                'sil': () => isAdmin || isCoAdmin || isOperator,
+                'bot': () => isAdmin || isCoAdmin,
+                'kullanıcılar': () => true,
+                'users': () => true,
+                'list': () => true,
+                'online': () => true,
+                'yardım': () => true,
+                'help': () => true,
+                'komutlar': () => true,
+                'firebase': () => true,
+                'fb': () => true,
+                'tema': () => true,
+                'theme': () => true,
+                'ping': () => true,
+                'çıkış': () => true,
+                'exit': () => true,
+                'logout': () => true,
+                'quit': () => true
+            };
+            
+            const permissionCheck = commandPermissions[command];
+            return permissionCheck ? permissionCheck(args) : false;
+        }
+        
         // ========== KOMUT SİSTEMİ ==========
         async function handleCommand(cmd) {
+            if (!isFirebaseConnected) {
+                addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
+                return;
+            }
+            
             const canSend = await checkBanBeforeMessage();
             if (!canSend) return;
             
@@ -3057,108 +3196,106 @@
             const command = parts[0].toLowerCase();
             const args = parts.slice(1);
             
-            switch(command) {
-                case 'admin':
-                    if (args.length === 1) {
-                        const passwordValid = await verifyAdminPassword(currentUser.name, args[0]);
-                        if (passwordValid) {
-                            isAdmin = true;
-                            currentUser.role = 'admin';
-                            document.getElementById('adminBadge').style.display = 'inline-block';
-                            
-                            addSystemMessage('✅ Admin girişi başarılı!');
-                            addSystemMessage('📢 Özel bildirim göndermek için: /info [kullanıcı] [mesaj]');
-                            addSystemMessage('👑 Kullanıcı kaydetmek için: /reg');
+            // Yetki kontrolü
+            if (!checkCommandPermission(command, args)) {
+                addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!');
+                return;
+            }
+            
+            try {
+                switch(command) {
+                    case 'admin':
+                        if (args.length === 1) {
+                            const passwordValid = await verifyAdminPassword(currentUser.name, args[0]);
+                            if (passwordValid) {
+                                isAdmin = true;
+                                currentUser.role = 'admin';
+                                document.getElementById('adminBadge').style.display = 'inline-block';
+                                
+                                addSystemMessage('✅ Admin girişi başarılı!');
+                                addSystemMessage('📢 Özel bildirim göndermek için: /info [kullanıcı] [mesaj]');
+                                addSystemMessage('👑 Kullanıcı kaydetmek için: /reg');
+                            } else {
+                                addSystemMessage('❌ Hatalı şifre!');
+                            }
                         } else {
-                            addSystemMessage('❌ Hatalı şifre!');
+                            addSystemMessage('Kullanım: /admin [şifre]');
                         }
-                    } else {
-                        addSystemMessage('Kullanım: /admin [şifre]');
-                    }
-                    break;
-                    
-                case 'bot':
-                    if (args[0] === 'start' && (isAdmin || isCoAdmin)) {
-                        popboxBot.startAutoMessages();
-                        addSystemMessage('🤖 PopboxChat Bot mesajları başlatıldı!');
-                    } else if (args[0] === 'stop' && (isAdmin || isCoAdmin)) {
-                        popboxBot.stopAutoMessages();
-                        addSystemMessage('🤖 PopboxChat Bot mesajları durduruldu!');
-                    } else {
-                        addSystemMessage('Kullanım: /bot start veya /bot stop');
-                    }
-                    break;
-                    
-                case 'info':
-                    if (args.length >= 2) {
-                        await sendPrivateNotification(args[0], args.slice(1).join(' '));
-                    } else {
-                        addSystemMessage('Kullanım: /info [kullanıcı] [mesaj]');
-                    }
-                    break;
-                    
-                case 'reg':
-                case 'register':
-                    if (isAdmin) {
-                        openAdminRegisterModal();
-                    } else {
-                        addSystemMessage('⛔ Sadece adminler kullanıcı kaydedebilir!');
-                    }
-                    break;
-                    
-                case 'unreg':
-                case 'unregister':
-                    if (isAdmin) {
-                        openAdminRegisterModal();
-                    } else {
-                        addSystemMessage('⛔ Sadece adminler kullanıcı silebilir!');
-                    }
-                    break;
-                    
-                case 'coadmin':
-                    if (isAdmin && args.length === 1) {
-                        await makeCoAdmin(args[0]);
-                    } else if (!isAdmin) {
-                        addSystemMessage('⛔ Sadece adminler co-admin ekleyebilir!');
-                    } else {
-                        addSystemMessage('Kullanım: /coadmin [kullanıcı-adı]');
-                    }
-                    break;
-                    
-                case 'removecoadmin':
-                    if (isAdmin && args.length === 1) {
-                        await removeCoAdmin(args[0]);
-                    } else if (!isAdmin) {
-                        addSystemMessage('⛔ Sadece adminler co-admin kaldırabilir!');
-                    } else {
-                        addSystemMessage('Kullanım: /removecoadmin [kullanıcı-adı]');
-                    }
-                    break;
-                    
-                case 'op':
-                case 'operator':
-                    if (isAdmin && args.length === 1) {
-                        await makeOperator(args[0]);
-                    } else if (!isAdmin) {
-                        addSystemMessage('⛔ Sadece adminler operatör ekleyebilir!');
-                    } else {
-                        addSystemMessage('Kullanım: /operator [kullanıcı-adı]');
-                    }
-                    break;
-                    
-                case 'removeop':
-                case 'removeoperator':
-                    if (isAdmin && args.length === 1) {
-                        await removeOperator(args[0]);
-                    } else if (!isAdmin) {
-                        addSystemMessage('⛔ Sadece adminler operatör kaldırabilir!');
-                    } else {
-                        addSystemMessage('Kullanım: /removeoperator [kullanıcı-adı]');
-                    }
-                    break;
-                    
-                case 'temizle':
-                    if (isAdmin || isCoAdmin || isOperator) {
+                        break;
+                        
+                    case 'bot':
+                        if (args[0] === 'start' && (isAdmin || isCoAdmin)) {
+                            popboxBot.startAutoMessages();
+                            addSystemMessage('🤖 PopboxChat Bot mesajları başlatıldı!');
+                        } else if (args[0] === 'stop' && (isAdmin || isCoAdmin)) {
+                            popboxBot.stopAutoMessages();
+                            addSystemMessage('🤖 PopboxChat Bot mesajları durduruldu!');
+                        } else {
+                            addSystemMessage('Kullanım: /bot start veya /bot stop');
+                        }
+                        break;
+                        
+                    case 'info':
+                        if (args.length >= 2) {
+                            await sendPrivateNotification(args[0], args.slice(1).join(' '));
+                        } else {
+                            addSystemMessage('Kullanım: /info [kullanıcı] [mesaj]');
+                        }
+                        break;
+                        
+                    case 'reg':
+                    case 'register':
+                        if (isAdmin) {
+                            openAdminRegisterModal();
+                        } else {
+                            addSystemMessage('⛔ Sadece adminler kullanıcı kaydedebilir!');
+                        }
+                        break;
+                        
+                    case 'unreg':
+                    case 'unregister':
+                        if (isAdmin) {
+                            openAdminRegisterModal();
+                        } else {
+                            addSystemMessage('⛔ Sadece adminler kullanıcı silebilir!');
+                        }
+                        break;
+                        
+                    case 'coadmin':
+                        if (isAdmin && args.length === 1) {
+                            await makeCoAdmin(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /coadmin [kullanıcı-adı]');
+                        }
+                        break;
+                        
+                    case 'removecoadmin':
+                        if (isAdmin && args.length === 1) {
+                            await removeCoAdmin(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /removecoadmin [kullanıcı-adı]');
+                        }
+                        break;
+                        
+                    case 'op':
+                    case 'operator':
+                        if (isAdmin && args.length === 1) {
+                            await makeOperator(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /operator [kullanıcı-adı]');
+                        }
+                        break;
+                        
+                    case 'removeop':
+                    case 'removeoperator':
+                        if (isAdmin && args.length === 1) {
+                            await removeOperator(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /removeoperator [kullanıcı-adı]');
+                        }
+                        break;
+                        
+                    case 'temizle':
                         try {
                             if (messagesRef) {
                                 await messagesRef.remove();
@@ -3168,92 +3305,91 @@
                             console.error('Temizleme hatası:', error);
                             addSystemMessage('❌ Temizleme hatası!');
                         }
-                    } else {
-                        addSystemMessage('⛔ Yetkiniz yok!');
-                    }
-                    break;
-                    
-                case 'ban':
-                    if ((isAdmin || isCoAdmin || isOperator) && args.length >= 1) {
-                        const username = args[0];
-                        const duration = args[1] || 5;
-                        const reason = args.slice(2).join(' ') || "Belirtilmemiş";
-                        await kickUser(username, duration, reason);
-                    } else {
-                        addSystemMessage('Kullanım: /ban [kullanıcı] [dakika] [sebep]');
-                    }
-                    break;
-                    
-                case 'kick':
-                    if ((isAdmin || isCoAdmin || isOperator) && args.length >= 1) {
-                        const username = args[0];
-                        const duration = args[1] || 5;
-                        const reason = args.slice(2).join(' ') || "Belirtilmemiş";
-                        await kickUser(username, duration, reason);
-                    } else {
-                        addSystemMessage('Kullanım: /kick [kullanıcı] [dakika] [sebep]');
-                    }
-                    break;
-                    
-                case 'unban':
-                    if ((isAdmin || isCoAdmin || isOperator) && args.length === 1) {
-                        await unbanUser(args[0]);
-                    } else {
-                        addSystemMessage('Kullanım: /unban [kullanıcı]');
-                    }
-                    break;
-                    
-                case 'banlist':
-                    await showBanList();
-                    break;
-                    
-                case 'sil':
-                    if ((isAdmin || isCoAdmin || isOperator) && args.length === 1) {
-                        await deleteMessage(args[0]);
-                    } else if (!isAdmin && !isCoAdmin && !isOperator) {
-                        addSystemMessage('⛔ Sadece yetkililer ID ile mesaj silebilir!');
-                    } else {
-                        addSystemMessage('Kullanım: /sil [mesaj-id] (sadece yetkililer)');
-                    }
-                    break;
-                    
-                case 'kullanıcılar':
-                case 'users':
-                case 'list':
-                case 'online':
-                    showFirebaseUsers();
-                    break;
-                    
-                case 'yardım':
-                case 'help':
-                case 'komutlar':
-                    showHelp();
-                    break;
-                    
-                case 'firebase':
-                case 'fb':
-                    addSystemMessage('🔥 Firebase Realtime Database aktif!');
-                    addSystemMessage(`📊 Proje: ${firebaseConfig.projectId}`);
-                    break;
-                    
-                case 'tema':
-                case 'theme':
-                    toggleTheme();
-                    break;
-                    
-                case 'ping':
-                    addSystemMessage('🏓 Pong! Bağlantı aktif.');
-                    break;
-                    
-                case 'çıkış':
-                case 'exit':
-                case 'logout':
-                case 'quit':
-                    logout();
-                    break;
-                    
-                default:
-                    addSystemMessage(`❌ Bilinmeyen komut: ${command}`);
+                        break;
+                        
+                    case 'ban':
+                        if (args.length >= 1) {
+                            const username = args[0];
+                            const duration = args[1] || 5;
+                            const reason = args.slice(2).join(' ') || "Belirtilmemiş";
+                            await kickUser(username, duration, reason);
+                        } else {
+                            addSystemMessage('Kullanım: /ban [kullanıcı] [dakika] [sebep]');
+                        }
+                        break;
+                        
+                    case 'kick':
+                        if (args.length >= 1) {
+                            const username = args[0];
+                            const duration = args[1] || 5;
+                            const reason = args.slice(2).join(' ') || "Belirtilmemiş";
+                            await kickUser(username, duration, reason);
+                        } else {
+                            addSystemMessage('Kullanım: /kick [kullanıcı] [dakika] [sebep]');
+                        }
+                        break;
+                        
+                    case 'unban':
+                        if (args.length === 1) {
+                            await unbanUser(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /unban [kullanıcı]');
+                        }
+                        break;
+                        
+                    case 'banlist':
+                        await showBanList();
+                        break;
+                        
+                    case 'sil':
+                        if (args.length === 1) {
+                            await deleteMessage(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /sil [mesaj-id]');
+                        }
+                        break;
+                        
+                    case 'kullanıcılar':
+                    case 'users':
+                    case 'list':
+                    case 'online':
+                        showFirebaseUsers();
+                        break;
+                        
+                    case 'yardım':
+                    case 'help':
+                    case 'komutlar':
+                        showHelp();
+                        break;
+                        
+                    case 'firebase':
+                    case 'fb':
+                        addSystemMessage('🔥 Firebase Realtime Database aktif!');
+                        addSystemMessage(`📊 Proje: ${firebaseConfig.projectId}`);
+                        break;
+                        
+                    case 'tema':
+                    case 'theme':
+                        toggleTheme();
+                        break;
+                        
+                    case 'ping':
+                        addSystemMessage('🏓 Pong! Bağlantı aktif.');
+                        break;
+                        
+                    case 'çıkış':
+                    case 'exit':
+                    case 'logout':
+                    case 'quit':
+                        logout();
+                        break;
+                        
+                    default:
+                        addSystemMessage(`❌ Bilinmeyen komut: ${command}`);
+                }
+            } catch (error) {
+                console.error('Komut işleme hatası:', error);
+                addSystemMessage('❌ Komut işlenirken bir hata oluştu!');
             }
         }
         
