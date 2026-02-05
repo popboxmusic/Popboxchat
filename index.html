@@ -930,12 +930,14 @@
                 min-height: 0;
                 flex-shrink: 0;
                 position: relative;
+                height: 30vh !important;
             }
             
             .video-wrapper {
                 padding-bottom: 56.25%;
                 position: relative;
                 margin-bottom: 0;
+                height: 100% !important;
             }
             
             .chat-container {
@@ -948,9 +950,9 @@
                 display: flex;
                 flex-direction: column;
                 position: relative;
+                height: 70vh !important;
             }
             
-            /* Mobilde sohbet alanını büyüt */
             .messages-area {
                 flex: 1;
                 min-height: 0;
@@ -958,7 +960,6 @@
                 padding-bottom: 80px;
             }
             
-            /* Mobilde input sabit kalacak */
             .chat-input-area {
                 position: fixed;
                 bottom: 0;
@@ -968,30 +969,6 @@
                 border-top: 1px solid var(--border-color);
                 z-index: 100;
                 padding: 12px;
-            }
-            
-            /* Mobilde video ile sohbet arasında boşluk olmayacak */
-            .main-container {
-                gap: 0 !important;
-            }
-            
-            .chat-container {
-                margin-top: 0;
-            }
-            
-            /* Video küçültülmüş boyut */
-            .video-container {
-                flex: 0 0 auto;
-                height: auto;
-            }
-            
-            /* Sohbet alanı video alanından 2 kat daha fazla yer kaplasın */
-            .video-container {
-                height: 30vh;
-            }
-            
-            .chat-container {
-                height: 70vh;
             }
             
             .users-sidebar {
@@ -1024,7 +1001,6 @@
                 display: none;
             }
             
-            /* Masaüstünde video alanı küçültülsün, sohbet alanı daha büyük olsun */
             .video-container {
                 flex: 3;
             }
@@ -1069,42 +1045,6 @@
         
         @keyframes spin {
             to { transform: rotate(360deg); }
-        }
-        
-        /* EMOJİ SELECTOR */
-        .emoji-selector {
-            position: absolute;
-            bottom: 80px;
-            right: 20px;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 10px;
-            display: none;
-            max-width: 200px;
-            max-height: 150px;
-            overflow-y: auto;
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-        
-        .emoji-selector.active {
-            display: grid;
-            grid-template-columns: repeat(6, 1fr);
-            gap: 5px;
-        }
-        
-        .emoji-btn {
-            font-size: 20px;
-            cursor: pointer;
-            padding: 5px;
-            text-align: center;
-            border-radius: 4px;
-            transition: background 0.2s;
-        }
-        
-        .emoji-btn:hover {
-            background: var(--input-bg);
         }
     </style>
 </head>
@@ -1305,20 +1245,15 @@
                 name: 'PopboxChatBot',
                 welcomeMessages: [
                     "🎉 {user} aramıza hoş geldin! Sohbetin keyfini çıkar!",
-                    "👋 Merhaba {user}! Popbox Music Chat'e hoş geldin!",
-                    "🌟 {user} katıldı! Müzik eşliğinde sohbet başlasın!",
-                    "😊 Hoş geldin {user}! Keyifli sohbetler dileriz!",
-                    "🎵 {user} geldi! Hadi müzik eşliğinde sohbet edelim!"
+                    "👋 Merhaba {user}! Popbox Music Chat'e hoş geldin!"
                 ],
                 autoMessages: [
                     "💡 İpucu: /yardım yazarak tüm komutları görebilirsin!",
-                    "🎶 Popbox Music ile en sevdiğiniz şarkıları dinleyin!",
-                    "🔒 Güvenli sohbet için kurallara uyun lütfen.",
-                    "👥 Online kullanıcıları görmek için /online yazın!",
-                    "🌟 Premium özellikler için kayıt olabilirsiniz!"
+                    "👥 Online kullanıcıları görmek için /online yazın!"
                 ],
-                messageInterval: 300000,
-                welcomeDelay: 2000
+                messageInterval: 600000, // 10 dakika (600000 ms) - ESKİ: 300000 (5 dakika)
+                welcomeDelay: 2000,
+                maxMessagesPerHour: 2 // Saatte maksimum 2 otomatik mesaj
             }
         };
 
@@ -1424,6 +1359,8 @@
                 this.name = SECURE_CONFIG.BOT_CONFIG.name;
                 this.autoMessageInterval = null;
                 this.welcomedUsers = new Set();
+                this.messageCount = 0;
+                this.lastMessageTime = 0;
             }
             
             sendWelcome(user) {
@@ -1440,9 +1377,26 @@
             }
             
             sendAutoMessage() {
+                const now = Date.now();
+                const hourInMs = 60 * 60 * 1000;
+                
+                // Saatte maksimum mesaj kontrolü
+                if (now - this.lastMessageTime < hourInMs && 
+                    this.messageCount >= SECURE_CONFIG.BOT_CONFIG.maxMessagesPerHour) {
+                    return;
+                }
+                
+                // 1 saat geçmişse sayacı sıfırla
+                if (now - this.lastMessageTime >= hourInMs) {
+                    this.messageCount = 0;
+                }
+                
                 const messages = SECURE_CONFIG.BOT_CONFIG.autoMessages;
                 const randomMessage = messages[Math.floor(Math.random() * messages.length)];
                 this.sendBotMessage(randomMessage);
+                
+                this.messageCount++;
+                this.lastMessageTime = now;
             }
             
             sendBotMessage(text) {
@@ -1950,6 +1904,15 @@
             if (SECURE_CONFIG.DEFAULT_ADMINS.includes(username.toLowerCase())) {
                 addSystemMessage("⛔ Admin kullanıcıları banlayamazsınız!");
                 return;
+            }
+            
+            // Operatörler için maksimum 60 dakika ban sınırı
+            if (isOperator && !isAdmin && !isCoAdmin) {
+                const durationNum = parseInt(duration) || 5;
+                if (durationNum > 60) {
+                    addSystemMessage("⛔ Operatörler maksimum 60 dakika ban atabilir!");
+                    return;
+                }
             }
             
             try {
@@ -3140,50 +3103,10 @@
             }
         }
         
-        // ========== YETKİ KONTROL SİSTEMİ ==========
-        function checkCommandPermission(command, args = []) {
-            if (!currentUser) return false;
-            
-            const commandPermissions = {
-                'admin': () => true, // Herkes admin komutunu deneyebilir
-                'info': () => isAdmin || isCoAdmin,
-                'reg': () => isAdmin,
-                'unreg': () => isAdmin,
-                'coadmin': () => isAdmin,
-                'removecoadmin': () => isAdmin,
-                'operator': () => isAdmin,
-                'removeoperator': () => isAdmin,
-                'temizle': () => isAdmin || isCoAdmin || isOperator,
-                'ban': () => isAdmin || isCoAdmin || isOperator,
-                'kick': () => isAdmin || isCoAdmin || isOperator,
-                'unban': () => isAdmin || isCoAdmin || isOperator,
-                'banlist': () => true,
-                'sil': () => isAdmin || isCoAdmin || isOperator,
-                'bot': () => isAdmin || isCoAdmin,
-                'kullanıcılar': () => true,
-                'users': () => true,
-                'list': () => true,
-                'online': () => true,
-                'yardım': () => true,
-                'help': () => true,
-                'komutlar': () => true,
-                'firebase': () => true,
-                'fb': () => true,
-                'tema': () => true,
-                'theme': () => true,
-                'ping': () => true,
-                'çıkış': () => true,
-                'exit': () => true,
-                'logout': () => true,
-                'quit': () => true
-            };
-            
-            const permissionCheck = commandPermissions[command];
-            return permissionCheck ? permissionCheck(args) : false;
-        }
-        
         // ========== KOMUT SİSTEMİ ==========
         async function handleCommand(cmd) {
+            console.log("🔍 Komut algılandı:", cmd);
+            
             if (!isFirebaseConnected) {
                 addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
                 return;
@@ -3196,12 +3119,43 @@
             const command = parts[0].toLowerCase();
             const args = parts.slice(1);
             
-            // Yetki kontrolü
-            if (!checkCommandPermission(command, args)) {
-                addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!');
-                return;
+            console.log("Komut:", command, "Args:", args);
+            console.log("Yetki durumu - Admin:", isAdmin, "CoAdmin:", isCoAdmin, "Operator:", isOperator);
+            
+            // ÖNEMLİ: /temizle komutunu özel olarak işle
+            if (command === 'temizle') {
+                console.log("🚨 /temizle komutu işleniyor...");
+                
+                // Yetki kontrolü
+                if (!isAdmin && !isCoAdmin && !isOperator) {
+                    addSystemMessage('⛔ Sadece admin/co-admin/operatörler tüm mesajları temizleyebilir!');
+                    return;
+                }
+                
+                try {
+                    if (!messagesRef) {
+                        addSystemMessage('❌ Firebase bağlantısı yok!');
+                        return;
+                    }
+                    
+                    if (confirm('TÜM mesajları temizlemek istediğinize emin misiniz?\n\nBu işlem GERİ ALINAMAZ!')) {
+                        console.log("🗑️ Mesajlar temizleniyor...");
+                        await messagesRef.remove();
+                        addSystemMessage('✅ Tüm mesajlar temizlendi!');
+                        
+                        // Sohbet alanını temizle
+                        const container = document.getElementById('messages');
+                        container.innerHTML = '<div class="yt-message system">✅ Tüm mesajlar temizlendi!</div>';
+                        console.log("✅ Temizleme tamamlandı");
+                    }
+                } catch (error) {
+                    console.error('Temizleme hatası:', error);
+                    addSystemMessage('❌ Temizleme hatası: ' + error.message);
+                }
+                return; // Burada return yap ki diğer case'lere girmesin
             }
             
+            // Diğer komutlar için switch-case
             try {
                 switch(command) {
                     case 'admin':
@@ -3236,6 +3190,11 @@
                         break;
                         
                     case 'info':
+                        if (!isAdmin && !isCoAdmin) {
+                            addSystemMessage('⛔ Sadece admin/co-admin özel bildirim gönderebilir!');
+                            return;
+                        }
+                        
                         if (args.length >= 2) {
                             await sendPrivateNotification(args[0], args.slice(1).join(' '));
                         } else {
@@ -3245,24 +3204,29 @@
                         
                     case 'reg':
                     case 'register':
-                        if (isAdmin) {
-                            openAdminRegisterModal();
-                        } else {
+                        if (!isAdmin) {
                             addSystemMessage('⛔ Sadece adminler kullanıcı kaydedebilir!');
+                            return;
                         }
+                        openAdminRegisterModal();
                         break;
                         
                     case 'unreg':
                     case 'unregister':
-                        if (isAdmin) {
-                            openAdminRegisterModal();
-                        } else {
+                        if (!isAdmin) {
                             addSystemMessage('⛔ Sadece adminler kullanıcı silebilir!');
+                            return;
                         }
+                        openAdminRegisterModal();
                         break;
                         
                     case 'coadmin':
-                        if (isAdmin && args.length === 1) {
+                        if (!isAdmin) {
+                            addSystemMessage('⛔ Sadece adminler co-admin ekleyebilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
                             await makeCoAdmin(args[0]);
                         } else {
                             addSystemMessage('Kullanım: /coadmin [kullanıcı-adı]');
@@ -3270,7 +3234,12 @@
                         break;
                         
                     case 'removecoadmin':
-                        if (isAdmin && args.length === 1) {
+                        if (!isAdmin) {
+                            addSystemMessage('⛔ Sadece adminler co-admin kaldırabilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
                             await removeCoAdmin(args[0]);
                         } else {
                             addSystemMessage('Kullanım: /removecoadmin [kullanıcı-adı]');
@@ -3279,7 +3248,12 @@
                         
                     case 'op':
                     case 'operator':
-                        if (isAdmin && args.length === 1) {
+                        if (!isAdmin) {
+                            addSystemMessage('⛔ Sadece adminler operatör ekleyebilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
                             await makeOperator(args[0]);
                         } else {
                             addSystemMessage('Kullanım: /operator [kullanıcı-adı]');
@@ -3288,35 +3262,25 @@
                         
                     case 'removeop':
                     case 'removeoperator':
-                        if (isAdmin && args.length === 1) {
+                        if (!isAdmin) {
+                            addSystemMessage('⛔ Sadece adminler operatör kaldırabilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
                             await removeOperator(args[0]);
                         } else {
                             addSystemMessage('Kullanım: /removeoperator [kullanıcı-adı]');
                         }
                         break;
                         
-                    case 'temizle':
-    try {
-        if (!messagesRef) {
-            addSystemMessage('❌ Firebase bağlantısı yok!');
-            return;
-        }
-        
-        if (confirm('TÜM mesajları temizlemek istediğinize emin misiniz?\n\nBu işlem GERİ ALINAMAZ!')) {
-            await messagesRef.remove();
-            addSystemMessage('🗑️ Tüm mesajlar temizlendi!');
-            
-            // Sohbet alanını temizle
-            const container = document.getElementById('messages');
-            container.innerHTML = '<div class="yt-message system">🗑️ Tüm mesajlar temizlendi!</div>';
-        }
-    } catch (error) {
-        console.error('Temizleme hatası:', error);
-        addSystemMessage('❌ Temizleme hatası: ' + error.message);
-    }
-    break;
-                        
                     case 'ban':
+                    case 'kick':
+                        if (!isAdmin && !isCoAdmin && !isOperator) {
+                            addSystemMessage('⛔ Sadece yetkililer ban/kick atabilir!');
+                            return;
+                        }
+                        
                         if (args.length >= 1) {
                             const username = args[0];
                             const duration = args[1] || 5;
@@ -3327,18 +3291,12 @@
                         }
                         break;
                         
-                    case 'kick':
-                        if (args.length >= 1) {
-                            const username = args[0];
-                            const duration = args[1] || 5;
-                            const reason = args.slice(2).join(' ') || "Belirtilmemiş";
-                            await kickUser(username, duration, reason);
-                        } else {
-                            addSystemMessage('Kullanım: /kick [kullanıcı] [dakika] [sebep]');
-                        }
-                        break;
-                        
                     case 'unban':
+                        if (!isAdmin && !isCoAdmin && !isOperator) {
+                            addSystemMessage('⛔ Sadece yetkililer ban kaldırabilir!');
+                            return;
+                        }
+                        
                         if (args.length === 1) {
                             await unbanUser(args[0]);
                         } else {
@@ -3351,6 +3309,11 @@
                         break;
                         
                     case 'sil':
+                        if (!isAdmin && !isCoAdmin && !isOperator) {
+                            addSystemMessage('⛔ Sadece yetkililer ID ile mesaj silebilir!');
+                            return;
+                        }
+                        
                         if (args.length === 1) {
                             await deleteMessage(args[0]);
                         } else {
@@ -3598,8 +3561,8 @@
             
             help += '🔧 <strong>OPERATÖR KOMUTLARI:</strong><br>';
             help += '• /temizle - Tüm mesajları temizle<br>';
-            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
-            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban (max 60dk)<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban (max 60dk)<br>';
             help += '• /unban [kullanıcı] - Ban kaldır<br>';
             help += '• /banlist - Aktif banları göster<br>';
             help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
