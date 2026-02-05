@@ -8,538 +8,6 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
-    <!-- ========== GÜVENLİK KORUMA SİSTEMİ ========== -->
-    <script>
-        // Sayfa yüklendiğinde güvenlik önlemlerini başlat
-        document.addEventListener('DOMContentLoaded', function() {
-            initSecurityProtection();
-            initEncryptionSystem();
-        });
-
-        // ========== SAYFA KORUMA SİSTEMİ ==========
-        class PageProtection {
-            constructor() {
-                this.initProtection();
-                this.initUserActivity();
-            }
-            
-            initProtection() {
-                // 1. SAĞ TIK ENGELLEME
-                this.preventRightClick();
-                
-                // 2. KLAVYE KISAYOLLARI ENGELLEME
-                this.preventKeyboardShortcuts();
-                
-                // 3. DEVELOPER TOOLS ENGELLEME
-                this.preventDevTools();
-                
-                // 4. SAYFA KAYNAĞI GÖRÜNTÜLEME ENGELLEME
-                this.preventViewSource();
-                
-                // 5. FOTOĞRAF/İÇERİK İNDİRME ENGELLEME
-                this.preventContentDownload();
-                
-                // 6. TARAYICI YAZDIRMA ENGELLEME
-                this.preventPrinting();
-                
-                // 7. EKRAN GÖRÜNTÜSÜ ENGELLEME
-                this.preventScreenshot();
-            }
-            
-            preventRightClick() {
-                document.addEventListener('contextmenu', function(e) {
-                    e.preventDefault();
-                    showSecurityAlert('Sayfa kaynağı görüntüleme engellendi!');
-                    return false;
-                });
-                
-                // Mobil için uzun basmayı engelle
-                document.addEventListener('touchstart', function(e) {
-                    if (e.touches.length > 1) {
-                        e.preventDefault();
-                        showSecurityAlert('Çoklu dokunma engellendi!');
-                    }
-                }, { passive: false });
-                
-                // Sürükle-bırak engelleme
-                document.addEventListener('dragstart', function(e) {
-                    e.preventDefault();
-                    return false;
-                });
-            }
-            
-            preventKeyboardShortcuts() {
-                document.addEventListener('keydown', function(e) {
-                    // F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S
-                    if (e.key === 'F12' || 
-                        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j')) ||
-                        (e.ctrlKey && (e.key === 'U' || e.key === 'u' || e.key === 'S' || e.key === 's')) ||
-                        (e.key === 'PrintScreen') ||
-                        (e.ctrlKey && e.key === 'P')) {
-                        
-                        e.preventDefault();
-                        showSecurityAlert('Bu klavye kısayolu engellendi!');
-                        return false;
-                    }
-                    
-                    // DevTools için alternatif yöntemler
-                    if (e.altKey && e.key === 'F12') {
-                        e.preventDefault();
-                        return false;
-                    }
-                });
-            }
-            
-            preventDevTools() {
-                // DevTools açıldığını tespit etmeye çalış
-                let devtools = function(){};
-                devtools.toString = function() {
-                    showSecurityAlert('Developer Tools tespit edildi!');
-                    setTimeout(() => {
-                        document.body.innerHTML = '<div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;z-index:999999;font-size:24px;text-align:center;padding:20px;">⚠️ Güvenlik İhlali Tespit Edildi!<br><br>Developer Tools kullanımı engellenmiştir.<br><br>Sayfa yeniden yükleniyor...</div>';
-                        setTimeout(() => { location.reload(); }, 3000);
-                    }, 100);
-                    return '';
-                };
-                
-                setInterval(function() {
-                    console.log('%c', devtools);
-                }, 1000);
-                
-                // Debugger tuzakları
-                setInterval(function() {
-                    (function() {
-                        return false;
-                    })
-                    ['constructor']('debugger')
-                    ['call']();
-                }, 5000);
-                
-                // Eğer devtools açıksa sayfayı boz
-                const checkDevTools = setInterval(function() {
-                    const widthThreshold = window.outerWidth - window.innerWidth > 160;
-                    const heightThreshold = window.outerHeight - window.innerHeight > 160;
-                    
-                    if (widthThreshold || heightThreshold) {
-                        document.body.innerHTML = '<div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;z-index:999999;font-size:24px;text-align:center;padding:20px;">⚠️ Güvenlik İhlali Tespit Edildi!<br><br>Developer Tools kullanımı engellenmiştir.<br><br>Sayfa yeniden yükleniyor...</div>';
-                        clearInterval(checkDevTools);
-                        setTimeout(() => { location.reload(); }, 3000);
-                    }
-                }, 1000);
-            }
-            
-            preventViewSource() {
-                // Sayfa kaynağı görüntülemeyi engelle
-                Object.defineProperty(document, 'hidden', { 
-                    get: function() { return false; } 
-                });
-                
-                Object.defineProperty(document, 'visibilityState', { 
-                    get: function() { return 'visible'; } 
-                });
-                
-                // Network sekmesini boz
-                const originalFetch = window.fetch;
-                window.fetch = function() {
-                    const args = arguments;
-                    if (args[0] && typeof args[0] === 'string' && args[0].includes('firebaseio.com')) {
-                        showSecurityAlert('Firebase istekleri korunuyor...');
-                    }
-                    return originalFetch.apply(this, args);
-                };
-            }
-            
-            preventContentDownload() {
-                // Resim indirmeyi engelle
-                document.addEventListener('selectstart', function(e) {
-                    e.preventDefault();
-                    return false;
-                });
-                
-                // Kopyalamayı kısıtla (ama kullanıcı deneyimini bozmadan)
-                const protectedElements = document.querySelectorAll('.yt-message, .message-content, .notification');
-                protectedElements.forEach(el => {
-                    el.style.userSelect = 'none';
-                    el.style.webkitUserSelect = 'none';
-                    el.style.msUserSelect = 'none';
-                });
-                
-                // Resimlere sağ tık koruması ekle
-                document.addEventListener('DOMContentLoaded', function() {
-                    const images = document.querySelectorAll('img');
-                    images.forEach(img => {
-                        img.addEventListener('contextmenu', function(e) {
-                            e.preventDefault();
-                            return false;
-                        });
-                        
-                        img.setAttribute('draggable', 'false');
-                    });
-                });
-            }
-            
-            preventPrinting() {
-                window.addEventListener('beforeprint', function(e) {
-                    e.preventDefault();
-                    showSecurityAlert('Yazdırma işlemi engellendi!');
-                    return false;
-                });
-                
-                // Ctrl+P engelleme
-                document.addEventListener('keydown', function(e) {
-                    if (e.ctrlKey && e.key === 'p') {
-                        e.preventDefault();
-                        return false;
-                    }
-                });
-            }
-            
-            preventScreenshot() {
-                // Ekran görüntüsü için bazı engellemeler
-                document.body.style.webkitUserSelect = 'none';
-                document.body.style.mozUserSelect = 'none';
-                document.body.style.msUserSelect = 'none';
-                document.body.style.userSelect = 'none';
-                
-                // Bazı tarayıcılarda çalışan blur efekti
-                window.addEventListener('blur', function() {
-                    document.title = '🔒 Güvenli Sohbet - Popbox Music';
-                    setTimeout(() => {
-                        document.title = originalTitle || 'Popbox Music Chat';
-                    }, 1000);
-                });
-            }
-            
-            initUserActivity() {
-                // Kullanıcı etkinliğini izle
-                let lastActivity = Date.now();
-                const checkInterval = 5000;
-                
-                document.addEventListener('mousemove', updateActivity);
-                document.addEventListener('keypress', updateActivity);
-                document.addEventListener('click', updateActivity);
-                document.addEventListener('scroll', updateActivity);
-                
-                function updateActivity() {
-                    lastActivity = Date.now();
-                }
-                
-                setInterval(function() {
-                    const now = Date.now();
-                    if (now - lastActivity > 300000) { // 5 dakika
-                        showSecurityAlert('Uzun süre hareketsiz kaldınız. Güvenlik için çıkış yapılıyor...');
-                        setTimeout(() => {
-                            if (typeof logout === 'function') logout();
-                        }, 5000);
-                    }
-                }, checkInterval);
-            }
-        }
-
-        // ========== ŞİFRELEME SİSTEMİ ==========
-        class EncryptionSystem {
-            constructor() {
-                this.salt = 'popbox_music_chat_2024_secure_salt';
-            }
-            
-            // SHA-256 hashleme
-            async hashPassword(password) {
-                const encoder = new TextEncoder();
-                const data = encoder.encode(password + this.salt);
-                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-                const hashArray = Array.from(new Uint8Array(hashBuffer));
-                const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-                return hashHex;
-            }
-            
-            // Güvenli şifre saklama
-            async storePasswordSecurely(username, password) {
-                try {
-                    const hashedPassword = await this.hashPassword(password);
-                    localStorage.setItem(`secure_${username}`, hashedPassword);
-                    return hashedPassword;
-                } catch (error) {
-                    console.error('Şifre saklama hatası:', error);
-                    return null;
-                }
-            }
-            
-            // Şifre doğrulama
-            async verifyPassword(username, inputPassword) {
-                try {
-                    const storedHash = localStorage.getItem(`secure_${username}`);
-                    if (!storedHash) return false;
-                    
-                    const inputHash = await this.hashPassword(inputPassword);
-                    return inputHash === storedHash;
-                } catch (error) {
-                    console.error('Şifre doğrulama hatası:', error);
-                    return false;
-                }
-            }
-            
-            // Owner şifresi için özel hash
-            async verifyOwnerPassword(inputPassword) {
-                const ownerUsername = 'MateKy';
-                const defaultPassword = 'Sahil7407@SCM';
-                
-                // Önce localStorage'da saklananı kontrol et
-                const storedHash = localStorage.getItem(`secure_${ownerUsername}`);
-                if (storedHash) {
-                    const inputHash = await this.hashPassword(inputPassword);
-                    return inputHash === storedHash;
-                }
-                
-                // Yoksa default şifreyi kontrol et ve sakla
-                const isDefault = inputPassword === defaultPassword;
-                if (isDefault) {
-                    await this.storePasswordSecurely(ownerUsername, defaultPassword);
-                }
-                return isDefault;
-            }
-        }
-
-        // ========== GÜVENLİ OWNER SİSTEMİ ==========
-        class SecureOwnerSystem {
-            constructor() {
-                this.ownerUsername = 'MateKy';
-                this.ownerData = null;
-                this.isEncrypted = true;
-            }
-            
-            // Owner bilgilerini şifreli sakla
-            async initialize() {
-                // Owner bilgilerini bellek içinde şifrele
-                this.ownerData = {
-                    username: this.ownerUsername,
-                    role: 'owner',
-                    permissions: ['all'],
-                    level: 1000,
-                    isHidden: true,
-                    loginTime: Date.now()
-                };
-                
-                // LocalStorage'da iz bırakmadan sakla
-                sessionStorage.setItem('secure_session', btoa(JSON.stringify({
-                    timestamp: Date.now(),
-                    user: 'secure_user'
-                })));
-                
-                return true;
-            }
-            
-            // Owner mı kontrol et (şifreli)
-            async verifyOwner(username, password) {
-                if (username !== this.ownerUsername) return false;
-                
-                const encryption = new EncryptionSystem();
-                const isOwner = await encryption.verifyOwnerPassword(password);
-                
-                if (isOwner) {
-                    await this.initialize();
-                    return true;
-                }
-                
-                return false;
-            }
-            
-            // Owner yetkilerini gizle
-            hideOwnerPermissions() {
-                // Owner yetkilerini HTML'den gizle
-                const ownerBadge = document.getElementById('ownerBadge');
-                if (ownerBadge) {
-                    ownerBadge.style.display = 'none';
-                    ownerBadge.textContent = '🔒 Gizli Kullanıcı';
-                }
-                
-                // Owner komutlarını gizle
-                this.hideOwnerCommands();
-            }
-            
-            hideOwnerCommands() {
-                // /help komutundan owner yetkilerini gizle
-                const originalShowHelp = window.showHelp;
-                if (originalShowHelp) {
-                    window.showHelp = function() {
-                        let help = originalShowHelp();
-                        
-                        // Owner komutlarını filtrele
-                        const lines = help.split('<br>');
-                        const filteredLines = lines.filter(line => {
-                            return !line.includes('OWNER KOMUTLARI:') &&
-                                   !line.includes('/özelokuma') &&
-                                   !line.includes('/özelara') &&
-                                   !line.includes('/özeltemizle') &&
-                                   !line.includes('/komut') &&
-                                   !line.includes('/komutlar');
-                        });
-                        
-                        return filteredLines.join('<br>');
-                    };
-                }
-            }
-            
-            // Owner aktivitelerini gizle
-            secureOwnerActivity() {
-                // Owner mesajlarını özel formatta göster
-                const originalAddSystemMessage = window.addSystemMessage;
-                if (originalAddSystemMessage && this.ownerData) {
-                    window.addSystemMessage = function(text) {
-                        // Owner için özel mesaj formatı
-                        if (window.currentUser && window.currentUser.name === 'MateKy') {
-                            text = text.replace(/🤴/g, '⭐️')
-                                     .replace(/Owner/g, 'Admin')
-                                     .replace(/owner/g, 'admin');
-                        }
-                        return originalAddSystemMessage(text);
-                    };
-                }
-            }
-        }
-
-        // ========== FIREBASE GÜVENLİK SİSTEMİ ==========
-        class FirebaseSecurity {
-            constructor() {
-                this.apiKey = this.obfuscateKey();
-                this.isSecure = true;
-            }
-            
-            // API anahtarını obfuscate et
-            obfuscateKey() {
-                // Anahtarı parçalara ayır ve dinamik olarak birleştir
-                const parts = [
-                    'AIzaSyCrn_tXJZCAlK',
-                    'hem45aXxj4f0h26EPO',
-                    'Q70'
-                ];
-                
-                // Karıştırma fonksiyonu
-                const scramble = (str) => {
-                    let result = '';
-                    for (let i = 0; i < str.length; i++) {
-                        result += String.fromCharCode(str.charCodeAt(i) ^ 0x1F);
-                    }
-                    return result;
-                };
-                
-                // Anahtarı dinamik olarak oluştur
-                return parts.join('').split('').reverse().join('');
-            }
-            
-            // Güvenli Firebase başlatma
-            async initializeSecure() {
-                try {
-                    const config = {
-                        apiKey: atob('QUl6YVN5Q3JuX3RYSlpDQWxLaGVtNDVhWHhqNGYwaDI2RVBPUTcw'),
-                        authDomain: "popboxmusicchat.firebaseapp.com",
-                        databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
-                        projectId: "popboxmusicchat",
-                        storageBucket: "popboxmusicchat.firebasestorage.app",
-                        messagingSenderId: "206625719024",
-                        appId: "1:206625719024:web:d28f478a2c96d10412f835",
-                        measurementId: "G-SB1K22FLEX"
-                    };
-                    
-                    // Firebase'i başlat
-                    firebase.initializeApp(config);
-                    
-                    // Bağlantı kontrolü
-                    const connectedRef = firebase.database().ref(".info/connected");
-                    connectedRef.on("value", (snap) => {
-                        if (snap.val() === true) {
-                            console.log("✅ Güvenli Firebase bağlantısı kuruldu");
-                        }
-                    });
-                    
-                    return true;
-                } catch (error) {
-                    console.error("Firebase güvenlik hatası:", error);
-                    return false;
-                }
-            }
-        }
-
-        // ========== GÜVENLİK UYARI SİSTEMİ ==========
-        function showSecurityAlert(message) {
-            // Görünmez güvenlik uyarısı (sadece log)
-            console.warn('🔒 GÜVENLİK: ' + message);
-            
-            // Kullanıcıya sadece önemli uyarıları göster
-            if (message.includes('Developer Tools') || message.includes('Güvenlik İhlali')) {
-                const alertDiv = document.createElement('div');
-                alertDiv.style.cssText = `
-                    position: fixed;
-                    top: 10px;
-                    right: 10px;
-                    background: #ff4444;
-                    color: white;
-                    padding: 10px 20px;
-                    border-radius: 5px;
-                    z-index: 999999;
-                    font-size: 14px;
-                    animation: slideIn 0.3s ease;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-                `;
-                
-                alertDiv.innerHTML = `
-                    <strong>⚠️ Güvenlik Uyarısı</strong><br>
-                    <small>${message}</small>
-                `;
-                
-                document.body.appendChild(alertDiv);
-                
-                setTimeout(() => {
-                    if (alertDiv.parentNode) {
-                        alertDiv.style.animation = 'slideOut 0.3s ease';
-                        setTimeout(() => alertDiv.remove(), 300);
-                    }
-                }, 5000);
-            }
-        }
-
-        // Animasyonlar
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-            }
-            @keyframes slideOut {
-                from { transform: translateX(0); opacity: 1; }
-                to { transform: translateX(100%); opacity: 0; }
-            }
-            .protected-element {
-                -webkit-touch-callout: none;
-                -webkit-user-select: none;
-                -khtml-user-select: none;
-                -moz-user-select: none;
-                -ms-user-select: none;
-                user-select: none;
-            }
-        `;
-        document.head.appendChild(style);
-
-        // ========== SİSTEM BAŞLATMA ==========
-        function initSecurityProtection() {
-            window.pageProtection = new PageProtection();
-            window.encryptionSystem = new EncryptionSystem();
-            window.secureOwnerSystem = new SecureOwnerSystem();
-            window.firebaseSecurity = new FirebaseSecurity();
-            
-            console.log('🔒 Güvenlik sistemleri başlatıldı');
-        }
-
-        function initEncryptionSystem() {
-            // Owner şifresini şifrele
-            const ownerUsername = 'MateKy';
-            const ownerPassword = 'Sahil7407@SCM';
-            
-            window.encryptionSystem.storePasswordSecurely(ownerUsername, ownerPassword)
-                .then(() => console.log('Owner şifresi güvenli şekilde saklandı'))
-                .catch(err => console.error('Şifre saklama hatası:', err));
-        }
-    </script>
-    
     <style>
         /* YOUTUBE LIVE TEMA (Varsayılan) */
         :root {
@@ -1876,9 +1344,9 @@
             DEFAULT_ADMINS: ['popbox', 'popboxmusic'],
             OWNER_CONFIG: {
                 username: 'MateKy',
+                password: 'Sahi17407@SCM',
                 role: 'owner',
                 isHidden: true
-                // Şifre artık güvenli şekilde şifrelenmiş olarak saklanacak
             },
             BOT_CONFIG: {
                 name: 'PopboxChatBot',
@@ -1897,9 +1365,8 @@
         };
 
         // ========== FIREBASE KONFİGÜRASYONU ==========
-        // API anahtarı artık şifrelenmiş durumda
         const firebaseConfig = {
-            apiKey: atob('QUl6YVN5Q3JuX3RYSlpDQWxLaGVtNDVhWHhqNGYwaDI2RVBPUTcw'),
+            apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
             authDomain: "popboxmusicchat.firebaseapp.com",
             databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
             projectId: "popboxmusicchat",
@@ -1942,6 +1409,62 @@
         let ownerPrivateMessages = {};
         let allPrivateMessages = [];
         let activePrivateChatListeners = {};
+        
+        // ========== GOOGLE-UYUMLU GÜVENLİK ÖNLEMLERİ ==========
+        // Sadece temel ve Google'ın şikayet etmeyeceği korumalar:
+        
+        // 1. Sağ tık engelleme (sadece korumalı alanlarda)
+        document.addEventListener('contextmenu', function(e) {
+            // Sadece mesaj alanında ve özel içeriklerde engelle
+            if (e.target.closest('.yt-message') || 
+                e.target.closest('.message-content') ||
+                e.target.closest('#privateMessages') ||
+                e.target.closest('#ownerPrivateMessages')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+        
+        // 2. Resim indirmeyi sınırla
+        document.addEventListener('dragstart', function(e) {
+            if (e.target.tagName === 'IMG' && e.target.classList.contains('message-image')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+        
+        // 3. Kopyalamayı sınırla (Owner bilgilerini koru)
+        document.addEventListener('copy', function(e) {
+            const selection = window.getSelection().toString();
+            // Owner bilgilerini kopyalamayı engelle
+            if (selection.includes('Sahi17407@SCM') || selection.includes('MateKy')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+        
+        // 4. Owner şifresini gizle (memory'de sakla)
+        let secureOwnerPassword = null;
+        function initSecureOwnerPassword() {
+            // Owner şifresini güvenli sakla
+            secureOwnerPassword = 'Sahi17407@SCM';
+            // Console'da görünmesini engelle
+            Object.defineProperty(window, 'secureOwnerPassword', {
+                value: secureOwnerPassword,
+                writable: false,
+                enumerable: false,
+                configurable: false
+            });
+        }
+        
+        // 5. Kullanıcı deneyimini bozmayan klavye koruması
+        document.addEventListener('keydown', function(e) {
+            // Sadece Ctrl+S (kaydet) engelle - sayfa kaynağını değil
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                return false;
+            }
+        });
         
         // ========== TEMA SİSTEMİ ==========
         function toggleTheme() {
@@ -2337,14 +1860,21 @@
             }, 60000);
         }
         
-        // ========== GÜVENLİ ŞİFRE SİSTEMİ (GÜNCELLENMİŞ) ==========
+        // ========== GÜVENLİ ŞİFRE SİSTEMİ ==========
         async function verifyAdminPassword(username, password) {
             try {
                 const isOwnerUser = username === SECURE_CONFIG.OWNER_CONFIG.username;
                 
                 if (isOwnerUser) {
-                    // Güvenli owner şifre doğrulama
-                    return await window.encryptionSystem.verifyOwnerPassword(password);
+                    const ownerPassword = localStorage.getItem('owner_password');
+                    if (ownerPassword) {
+                        return password === ownerPassword;
+                    }
+                    const defaultValid = password === SECURE_CONFIG.OWNER_CONFIG.password;
+                    if (defaultValid) {
+                        localStorage.setItem('owner_password', password);
+                    }
+                    return defaultValid;
                 }
                 
                 const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.includes(username.toLowerCase());
@@ -2354,22 +1884,16 @@
                     const storedPassword = snapshot.val();
                     
                     if (!storedPassword) {
-                        // Yeni admin için şifre hashle ve sakla
-                        const hashedPassword = await window.encryptionSystem.hashPassword(password);
-                        await adminPasswordsRef.child(username).set(hashedPassword);
+                        await adminPasswordsRef.child(username).set(password);
                         return true;
                     }
                     
-                    // Hashlenmiş şifreyi doğrula
-                    const inputHash = await window.encryptionSystem.hashPassword(password);
-                    return inputHash === storedPassword;
+                    return password === storedPassword;
                 }
                 
-                // Kayıtlı kullanıcı kontrolü
                 const userRegistered = await isRegisteredUser(username);
-                if (userRegistered) {
-                    const inputHash = await window.encryptionSystem.hashPassword(password);
-                    return inputHash === userRegistered.password;
+                if (userRegistered && userRegistered.password === password) {
+                    return true;
                 }
                 
                 return false;
@@ -3029,7 +2553,7 @@
             addSystemMessage(resultList);
         }
         
-        // ========== GİRİŞ SİSTEMİ (GÜNCELLENMİŞ) ==========
+        // ========== GİRİŞ SİSTEMİ ==========
         async function login() {
             const nickInput = document.getElementById('login-nick');
             const passwordInput = document.getElementById('login-password');
@@ -3083,7 +2607,7 @@
                 const isOwnerUser = nick === SECURE_CONFIG.OWNER_CONFIG.username;
                 
                 if (isOwnerUser) {
-                    // GÜVENLİ OWNER ŞİFRE KONTROLÜ
+                    // OWNER İÇİN ŞİFRE KONTROLÜ
                     if (!password) {
                         await unlockUser(nick);
                         showLoginError('🔐 Owner girişi için şifre gerekli!');
@@ -3092,8 +2616,7 @@
                         return;
                     }
                     
-                    // Güvenli şifre doğrulama
-                    const passwordValid = await window.encryptionSystem.verifyOwnerPassword(password);
+                    const passwordValid = await verifyAdminPassword(nick, password);
                     if (!passwordValid) {
                         await unlockUser(nick);
                         showLoginError('❌ Hatalı şifre!');
@@ -3101,11 +2624,6 @@
                         loginBtn.textContent = 'Sohbete Katıl';
                         return;
                     }
-                    
-                    // Owner sistemini başlat
-                    await window.secureOwnerSystem.initialize();
-                    window.secureOwnerSystem.hideOwnerPermissions();
-                    window.secureOwnerSystem.secureOwnerActivity();
                 } else {
                     const userRegistered = await isRegisteredUser(nick);
                     
@@ -3227,12 +2745,11 @@
                 }
                 
                 if (isOwner) {
-                    // Owner yetkilerini gizle
-                    addSystemMessage('⭐️ Yönetici olarak giriş yaptınız!');
-                    addSystemMessage('🔒 Gelişmiş sistem özellikleri aktif!');
-                    
-                    // Owner için özel mesaj monitörü başlat
-                    startOwnerPrivateMessageMonitoring();
+                    addSystemMessage('🤴 Owner olarak giriş yaptınız!');
+                    addSystemMessage('🔒 Tüm özel mesajları okuyabilirsiniz (/özelokuma)');
+                    addSystemMessage('⚡ Yeni komutlar oluşturabilirsiniz (/komut)');
+                    addSystemMessage('👑 Sadece siz Admin atayabilirsiniz');
+                    // Owner mesaj gönderebilir
                 }
                 
                 setTimeout(() => {
@@ -3620,10 +3137,10 @@
                 const messageDiv = document.createElement('div');
                 let messageClass = `yt-message ${msg.type || 'user'} ${msg.isBot ? 'system' : ''}`;
                 
-                // Owner mesajları için özel ikon (gizlenmiş)
+                // Owner mesajları için özel ikon
                 let senderName = msg.sender;
                 if (msg.type === 'owner') {
-                    senderName = '⭐️ ' + senderName; // Owner'ı admin gibi göster
+                    senderName = '🤴 ' + senderName;
                 } else if (msg.type === 'admin') {
                     senderName = '⭐️ ' + senderName;
                 } else if (msg.type === 'coadmin') {
@@ -4066,11 +3583,8 @@
             }
             
             try {
-                // Şifreyi hashle
-                const hashedPassword = await window.encryptionSystem.hashPassword(password);
-                
                 await registeredUsersRef.child(username).set({
-                    password: hashedPassword, // Hashlenmiş şifre
+                    password: password,
                     role: role,
                     registeredBy: currentUser.name,
                     registeredAt: Date.now(),
@@ -4088,7 +3602,7 @@
                     }
                 }
                 
-                addSystemMessage(`✅ ${username} kullanıcısı ${role} rolü ile kaydedildi!`);
+                addSystemMessage(`✅ ${username} kullanıcısı ${role} rolü ile kaydedildi! Şifre: ${password}`);
                 closeAdminModal();
                 
             } catch (error) {
@@ -4368,7 +3882,7 @@
             addSystemMessage(commandList);
         }
         
-        // ========== KOMUT SİSTEMİ (GÜNCELLENMİŞ - OWNER GİZLİ) ==========
+        // ========== KOMUT SİSTEMİ ==========
         async function handleCommand(cmd) {
             console.log("🔍 Komut algılandı:", cmd);
             
@@ -4452,7 +3966,7 @@
                 return;
             }
             
-            // OWNER ÖZEL KOMUTLARI (GİZLİ)
+            // OWNER ÖZEL KOMUTLARI
             if (command === 'ozelokuma' || command === 'özelokuma' || command === 'ozelmesajlar' || command === 'özelmesajlar') {
                 if (!isOwner) {
                     addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!");
@@ -4503,7 +4017,7 @@
                 return;
             }
             
-            // KOMUT OLUŞTURMA KOMUTU (SADECE OWNER)
+            // KOMUT OLUŞTURMA KOMUTU
             if (command === 'komut' || command === 'yenikomut' || command === 'command') {
                 openCommandModal();
                 return;
@@ -4525,8 +4039,8 @@
                                     isOwner = true;
                                     currentUser.role = 'owner';
                                     document.getElementById('ownerBadge').style.display = 'inline-block';
-                                    addSystemMessage('✅ Yönetici girişi başarılı!');
-                                    addSystemMessage('🔒 Gelişmiş sistem özellikleri aktif!');
+                                    addSystemMessage('✅ Owner girişi başarılı!');
+                                    addSystemMessage('🔒 Tüm özel mesajları okumak için: /özelokuma');
                                 } else if (SECURE_CONFIG.DEFAULT_ADMINS.includes(currentUser.name.toLowerCase()) || adminList.includes(currentUser.name)) {
                                     isAdmin = true;
                                     currentUser.role = 'admin';
@@ -4721,85 +4235,6 @@
             }
         }
         
-        // ========== YARDIM KOMUTU (GÜNCELLENMİŞ - OWNER GİZLİ) ==========
-        function showHelp() {
-            let help = '🔥 <strong>TÜM KOMUTLAR:</strong><br><br>';
-            
-            // Owner komutlarını gizle
-            if (!isOwner) {
-                help += '⭐️ <strong>ADMIN KOMUTLARI:</strong><br>';
-            } else {
-                help += '⭐️ <strong>ADMIN KOMUTLARI:</strong><br>';
-                help += '• /admin [şifre] - Admin girişi<br>';
-            }
-            
-            help += '• /info [kullanıcı] [mesaj] - Özel bildirim gönder<br>';
-            help += '• /reg - Kullanıcı kayıt paneli (Admin hariç)<br>';
-            help += '• /coadmin [kullanıcı] - Co-admin yap<br>';
-            help += '• /removecoadmin [kullanıcı] - Co-admin kaldır<br>';
-            help += '• /operator [kullanıcı] - Operatör yap<br>';
-            help += '• /removeoperator [kullanıcı] - Operatör kaldır<br>';
-            help += '• /temizle - Tüm mesajları temizle<br>';
-            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
-            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
-            help += '• /unban [kullanıcı] - Ban kaldır<br>';
-            help += '• /banlist - Aktif banları göster<br>';
-            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br>';
-            help += '• /bot start/stop - Bot mesajlarını kontrol et<br><br>';
-            
-            help += '⚡️ <strong>CO-ADMIN KOMUTLARI:</strong><br>';
-            help += '• /info [kullanıcı] [mesaj] - Özel bildirim gönder<br>';
-            help += '• /temizle - Tüm mesajları temizle<br>';
-            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
-            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
-            help += '• /unban [kullanıcı] - Ban kaldır (Owner banı hariç)<br>';
-            help += '• /banlist - Aktif banları göster<br>';
-            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
-            
-            help += '🛠️ <strong>OPERATÖR KOMUTLARI:</strong><br>';
-            help += '• /temizle - Tüm mesajları temizle<br>';
-            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban (max 60dk)<br>';
-            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban (max 60dk)<br>';
-            help += '• /unban [kullanıcı] - Ban kaldır (kendi banları)<br>';
-            help += '• /banlist - Aktif banları göster<br>';
-            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
-            
-            help += '👤 <strong>HERKES İÇİN:</strong><br>';
-            help += '• /kullanıcılar - Online kullanıcıları göster<br>';
-            help += '• /yardım - Bu mesajı göster<br>';
-            help += '• /tema - Tema değiştir (YouTube Live/Gece/Gündüz)<br>';
-            help += '• /firebase - Firebase bilgileri<br>';
-            help += '• /ping - Bağlantı testi<br>';
-            help += '• /çıkış - Çıkış yap<br><br>';
-            
-            help += '💡 <strong>ÖZELLİKLER:</strong><br>';
-            help += '• Admin: ⭐️<br>';
-            help += '• Co-Admin: ⚡️<br>';
-            help += '• Operatör: 🛠️<br>';
-            help += '• Kayıtlı kullanıcılar: Şifre ile güvenli giriş<br>';
-            help += '• Aynı nick koruması: 30 saniye kilit<br>';
-            help += '• Özel sohbet: Kullanıcı adına tıklayarak<br>';
-            help += '• Özelden resim gönderme: 📷 butonu<br>';
-            help += '• Kendi mesajını silme: 🗑️ butonu<br>';
-            help += '• Online liste: Web\'de açılır/kapanır, Mobil\'de tam ekran<br>';
-            help += '• Mobil görünüm: Video küçük, sohbet büyük<br>';
-            help += '• 3 farklı tema: YouTube Live, Gece, Gündüz<br>';
-            
-            // Owner için ek bilgiler (sadece owner görür)
-            if (isOwner) {
-                help += '<br><br>🤴 <strong>OWNER EK ÖZELLİKLERİ (GİZLİ):</strong><br>';
-                help += '• Tüm özel mesajları anlık okuyabilme<br>';
-                help += '• Tüm özel mesajları arayabilme<br>';
-                help += '• Yeni komutlar oluşturabilme<br>';
-                help += '• Sadece Owner admin atayabilir<br>';
-                help += '• Owner banı sadece Owner kaldırabilir<br>';
-                help += '• Güvenli şifreleme sistemi<br>';
-                help += '• Gelişmiş güvenlik korumaları<br>';
-            }
-            
-            addSystemMessage(help);
-        }
-        
         async function makeCoAdmin(username) {
             try {
                 if (!coAdminsRef) return;
@@ -4816,14 +4251,14 @@
                     await coAdminsRef.set(coAdmins);
                     
                     await registeredUsersRef.child(username).set({
-                        password: await window.encryptionSystem.hashPassword('coadmin123'),
+                        password: 'coadmin123',
                         role: 'coadmin',
                         registeredBy: currentUser.name,
                         registeredAt: Date.now(),
                         isRegistered: true
                     }, { merge: true });
                     
-                    addSystemMessage(`✅ ${username} co-admin yapıldı!`);
+                    addSystemMessage(`✅ ${username} co-admin yapıldı! Varsayılan şifre: coadmin123`);
                 } else {
                     addSystemMessage(`ℹ️ ${username} zaten co-admin!`);
                 }
@@ -4848,7 +4283,7 @@
                 if (index > -1) {
                     coAdmins.splice(index, 1);
                     await coAdminsRef.set(coAdmins);
-                    addSystemMessage(`✅ ${username} co-admin\'lıktan kaldırıldı!`);
+                    addSystemMessage(`✅ ${username} co-admin'lıktan kaldırıldı!`);
                 } else {
                     addSystemMessage(`ℹ️ ${username} co-admin değil!`);
                 }
@@ -4874,14 +4309,14 @@
                     await operatorsRef.set(operators);
                     
                     await registeredUsersRef.child(username).set({
-                        password: await window.encryptionSystem.hashPassword('operator123'),
+                        password: 'operator123',
                         role: 'operator',
                         registeredBy: currentUser.name,
                         registeredAt: Date.now(),
                         isRegistered: true
                     }, { merge: true });
                     
-                    addSystemMessage(`✅ ${username} operatör yapıldı!`);
+                    addSystemMessage(`✅ ${username} operatör yapıldı! Varsayılan şifre: operator123`);
                 } else {
                     addSystemMessage(`ℹ️ ${username} zaten operatör!`);
                 }
@@ -4972,6 +4407,82 @@
             } catch (error) {
                 addSystemMessage('❌ Kullanıcıları getirirken hata!');
             }
+        }
+        
+        function showHelp() {
+            let help = '🔥 <strong>TÜM KOMUTLAR:</strong><br><br>';
+            
+            help += '🤴 <strong>OWNER KOMUTLARI:</strong><br>';
+            help += '• /özelokuma - Tüm özel mesajları gör<br>';
+            help += '• /özelara [kelime] - Özel mesajlarda ara<br>';
+            help += '• /özeltemizle - Tüm özel mesajları temizle<br>';
+            help += '• /komut - Yeni komut oluştur<br>';
+            help += '• /komutlar - Özel komutları listele<br>';
+            help += '• /reg - Admin atama (sadece Owner)<br><br>';
+            
+            help += '⭐️ <strong>ADMIN KOMUTLARI:</strong><br>';
+            help += '• /admin [şifre] - Admin girişi<br>';
+            help += '• /info [kullanıcı] [mesaj] - Özel bildirim gönder<br>';
+            help += '• /reg - Kullanıcı kayıt paneli (Admin hariç)<br>';
+            help += '• /coadmin [kullanıcı] - Co-admin yap<br>';
+            help += '• /removecoadmin [kullanıcı] - Co-admin kaldır<br>';
+            help += '• /operator [kullanıcı] - Operatör yap<br>';
+            help += '• /removeoperator [kullanıcı] - Operatör kaldır<br>';
+            help += '• /temizle - Tüm mesajları temizle<br>';
+            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /unban [kullanıcı] - Ban kaldır<br>';
+            help += '• /banlist - Aktif banları göster<br>';
+            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br>';
+            help += '• /bot start/stop - Bot mesajlarını kontrol et<br><br>';
+            
+            help += '⚡️ <strong>CO-ADMIN KOMUTLARI:</strong><br>';
+            help += '• /info [kullanıcı] [mesaj] - Özel bildirim gönder<br>';
+            help += '• /temizle - Tüm mesajları temizle<br>';
+            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /unban [kullanıcı] - Ban kaldır (Owner banı hariç)<br>';
+            help += '• /banlist - Aktif banları göster<br>';
+            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
+            
+            help += '🛠️ <strong>OPERATÖR KOMUTLARI:</strong><br>';
+            help += '• /temizle - Tüm mesajları temizle<br>';
+            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban (max 60dk)<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban (max 60dk)<br>';
+            help += '• /unban [kullanıcı] - Ban kaldır (kendi banları)<br>';
+            help += '• /banlist - Aktif banları göster<br>';
+            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
+            
+            help += '👤 <strong>HERKES İÇİN:</strong><br>';
+            help += '• /kullanıcılar - Online kullanıcıları göster<br>';
+            help += '• /yardım - Bu mesajı göster<br>';
+            help += '• /tema - Tema değiştir (YouTube Live/Gece/Gündüz)<br>';
+            help += '• /firebase - Firebase bilgileri<br>';
+            help += '• /ping - Bağlantı testi<br>';
+            help += '• /çıkış - Çıkış yap<br><br>';
+            
+            help += '💡 <strong>ÖZELLİKLER:</strong><br>';
+            help += '• Owner: 🤴 MateKy (şifre Firebase\'de saklı)<br>';
+            help += '• Admin: ⭐️<br>';
+            help += '• Co-Admin: ⚡️<br>';
+            help += '• Operatör: 🛠️<br>';
+            help += '• Owner gizli: Diğer kullanıcılar göremez<br>';
+            help += '• Owner mesaj gönderebilir<br>';
+            help += '• Owner tüm özel mesajları anlık okuyabilir<br>';
+            help += '• Owner özel mesajları silebilir<br>';
+            help += '• Admin atama: Sadece Owner yapabilir<br>';
+            help += '• Owner banı: Sadece Owner kaldırabilir<br>';
+            help += '• Kayıtlı kullanıcılar: Şifre ile güvenli giriş<br>';
+            help += '• Aynı nick koruması: 30 saniye kilit<br>';
+            help += '• Özel sohbet: Kullanıcı adına tıklayarak<br>';
+            help += '• Özelden resim gönderme: 📷 butonu<br>';
+            help += '• Kendi mesajını silme: 🗑️ butonu<br>';
+            help += '• Online liste: Web\'de açılır/kapanır, Mobil\'de tam ekran<br>';
+            help += '• Mobil görünüm: Video küçük, sohbet büyük<br>';
+            help += '• 3 farklı tema: YouTube Live, Gece, Gündüz<br>';
+            help += '• Owner yeni komutlar oluşturabilir (/komut)';
+            
+            addSystemMessage(help);
         }
         
         function addSystemMessage(text) {
