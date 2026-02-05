@@ -1410,12 +1410,49 @@
         let allPrivateMessages = [];
         let activePrivateChatListeners = {};
         
-        // ========== GOOGLE-UYUMLU GÜVENLİK ÖNLEMLERİ ==========
-        // Sadece temel ve Google'ın şikayet etmeyeceği korumalar:
+        // ========== SHA-256 ŞİFRELEME ==========
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
         
-        // 1. Sağ tık engelleme (sadece korumalı alanlarda)
+        // ========== GÜVENLİ OWNER ŞİFRE SİSTEMİ ==========
+        let secureOwnerPasswordHash = null;
+        
+        async function initSecureOwnerPassword() {
+            // Owner şifresini SHA-256 ile hash'le
+            secureOwnerPasswordHash = await sha256(SECURE_CONFIG.OWNER_CONFIG.password);
+            // Console'da görünmesini engelle
+            Object.defineProperty(window, 'secureOwnerPasswordHash', {
+                value: secureOwnerPasswordHash,
+                writable: false,
+                enumerable: false,
+                configurable: false
+            });
+            
+            // Ayrıca localStorage'da sakla (şifre kontrolü için)
+            const storedHash = localStorage.getItem('owner_password_hash');
+            if (!storedHash) {
+                localStorage.setItem('owner_password_hash', secureOwnerPasswordHash);
+            }
+        }
+        
+        async function verifyOwnerPassword(inputPassword) {
+            const inputHash = await sha256(inputPassword);
+            const storedHash = localStorage.getItem('owner_password_hash');
+            
+            if (!storedHash) {
+                localStorage.setItem('owner_password_hash', secureOwnerPasswordHash);
+                return inputHash === secureOwnerPasswordHash;
+            }
+            
+            return inputHash === storedHash;
+        }
+        
+        // ========== GÜVENLİK ÖNLEMLERİ ==========
         document.addEventListener('contextmenu', function(e) {
-            // Sadece mesaj alanında ve özel içeriklerde engelle
             if (e.target.closest('.yt-message') || 
                 e.target.closest('.message-content') ||
                 e.target.closest('#privateMessages') ||
@@ -1425,7 +1462,6 @@
             }
         });
         
-        // 2. Resim indirmeyi sınırla
         document.addEventListener('dragstart', function(e) {
             if (e.target.tagName === 'IMG' && e.target.classList.contains('message-image')) {
                 e.preventDefault();
@@ -1433,33 +1469,15 @@
             }
         });
         
-        // 3. Kopyalamayı sınırla (Owner bilgilerini koru)
         document.addEventListener('copy', function(e) {
             const selection = window.getSelection().toString();
-            // Owner bilgilerini kopyalamayı engelle
             if (selection.includes('Sahi17407@SCM') || selection.includes('MateKy')) {
                 e.preventDefault();
                 return false;
             }
         });
         
-        // 4. Owner şifresini gizle (memory'de sakla)
-        let secureOwnerPassword = null;
-        function initSecureOwnerPassword() {
-            // Owner şifresini güvenli sakla
-            secureOwnerPassword = 'Sahi17407@SCM';
-            // Console'da görünmesini engelle
-            Object.defineProperty(window, 'secureOwnerPassword', {
-                value: secureOwnerPassword,
-                writable: false,
-                enumerable: false,
-                configurable: false
-            });
-        }
-        
-        // 5. Kullanıcı deneyimini bozmayan klavye koruması
         document.addEventListener('keydown', function(e) {
-            // Sadece Ctrl+S (kaydet) engelle - sayfa kaynağını değil
             if (e.ctrlKey && e.key === 's') {
                 e.preventDefault();
                 return false;
@@ -1866,15 +1884,7 @@
                 const isOwnerUser = username === SECURE_CONFIG.OWNER_CONFIG.username;
                 
                 if (isOwnerUser) {
-                    const ownerPassword = localStorage.getItem('owner_password');
-                    if (ownerPassword) {
-                        return password === ownerPassword;
-                    }
-                    const defaultValid = password === SECURE_CONFIG.OWNER_CONFIG.password;
-                    if (defaultValid) {
-                        localStorage.setItem('owner_password', password);
-                    }
-                    return defaultValid;
+                    return await verifyOwnerPassword(password);
                 }
                 
                 const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.includes(username.toLowerCase());
@@ -1951,7 +1961,22 @@
         async function loadCustomCommands() {
             try {
                 const snapshot = await customCommandsRef.once('value');
-                customCommands = snapshot.val() || {};
+                const commands = snapshot.val() || {};
+                customCommands = {};
+                
+                // Firebase'den komutları yükle
+                for (const [cmdName, cmdData] of Object.entries(commands)) {
+                    if (cmdData && cmdData.response) {
+                        customCommands[cmdName] = {
+                            response: cmdData.response,
+                            role: cmdData.role || 'all',
+                            createdBy: cmdData.createdBy,
+                            createdAt: cmdData.createdAt
+                        };
+                    }
+                }
+                
+                console.log("✅ Özel komutlar yüklendi:", Object.keys(customCommands).length);
             } catch (error) {
                 console.error("Özel komutlar yükleme hatası:", error);
             }
@@ -2607,7 +2632,7 @@
                 const isOwnerUser = nick === SECURE_CONFIG.OWNER_CONFIG.username;
                 
                 if (isOwnerUser) {
-                    // OWNER İÇİN ŞİFRE KONTROLÜ
+                    // OWNER İÇİN SHA-256 ŞİFRE KONTROLÜ
                     if (!password) {
                         await unlockUser(nick);
                         showLoginError('🔐 Owner girişi için şifre gerekli!');
@@ -2616,7 +2641,7 @@
                         return;
                     }
                     
-                    const passwordValid = await verifyAdminPassword(nick, password);
+                    const passwordValid = await verifyOwnerPassword(password);
                     if (!passwordValid) {
                         await unlockUser(nick);
                         showLoginError('❌ Hatalı şifre!');
@@ -2746,10 +2771,7 @@
                 
                 if (isOwner) {
                     addSystemMessage('🤴 Owner olarak giriş yaptınız!');
-                    addSystemMessage('🔒 Tüm özel mesajları okuyabilirsiniz (/özelokuma)');
-                    addSystemMessage('⚡ Yeni komutlar oluşturabilirsiniz (/komut)');
-                    addSystemMessage('👑 Sadece siz Admin atayabilirsiniz');
-                    // Owner mesaj gönderebilir
+                    // Owner yetkileri /help'te görünmeyecek
                 }
                 
                 setTimeout(() => {
@@ -2823,8 +2845,12 @@
                 }
             });
             
+            // Telefon için video otomatik çalıştırma
             if (typeof YT !== 'undefined') {
                 initYouTubePlayer();
+            } else {
+                // YouTube API henüz yüklenmediyse, sayfa yüklendiğinde kontrol et
+                setTimeout(initYouTubePlayer, 1000);
             }
             
             if (usersRef) {
@@ -2949,7 +2975,14 @@
                     events: {
                         'onReady': function(event) {
                             document.querySelector('.video-placeholder').style.display = 'none';
-                            event.target.playVideo();
+                            // Telefonlar için otomatik çalıştırma
+                            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                                setTimeout(() => {
+                                    event.target.playVideo();
+                                }, 1000);
+                            } else {
+                                event.target.playVideo();
+                            }
                         }
                     }
                 });
@@ -3052,6 +3085,7 @@
             
             if (!text) return;
             
+            // Komut işleme (hem owner hem diğer kullanıcılar için)
             if (text.startsWith('/')) {
                 handleCommand(text);
                 input.value = '';
@@ -3059,40 +3093,11 @@
                 return;
             }
             
-            // Owner için mesaj gönderme izni
-            if (isOwner) {
-                const messageData = {
-                    sender: currentUser.name,
-                    text: text,
-                    type: 'owner',
-                    timestamp: Date.now(),
-                    time: new Date().toLocaleTimeString('tr-TR', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                    })
-                };
-                
-                try {
-                    await messagesRef.push(messageData);
-                    input.value = '';
-                    autoResize(input);
-                    
-                    if (usersRef) {
-                        usersRef.child(currentUser.name).update({
-                            lastSeen: Date.now()
-                        });
-                    }
-                } catch (error) {
-                    console.error('Mesaj gönderme hatası:', error);
-                    addSystemMessage('❌ Mesaj gönderilemedi!');
-                }
-                return;
-            }
-            
+            // Owner normal mesaj da gönderebilir
             const messageData = {
                 sender: currentUser.name,
                 text: text,
-                type: isAdmin ? 'admin' : (isCoAdmin ? 'coadmin' : (isOperator ? 'operator' : 'user')),
+                type: isOwner ? 'owner' : (isAdmin ? 'admin' : (isCoAdmin ? 'coadmin' : (isOperator ? 'operator' : 'user'))),
                 timestamp: Date.now(),
                 time: new Date().toLocaleTimeString('tr-TR', { 
                     hour: '2-digit', 
@@ -3793,7 +3798,7 @@
                 return;
             }
             
-            const cmdName = document.getElementById('cmd-name').value.trim();
+            const cmdName = document.getElementById('cmd-name').value.trim().toLowerCase();
             const cmdResponse = document.getElementById('cmd-response').value.trim();
             const cmdRole = document.getElementById('cmd-role').value;
             
@@ -3802,25 +3807,49 @@
                 return;
             }
             
+            // Mevcut sistem komutlarını kontrol et
+            const systemCommands = ['admin', 'bot', 'info', 'reg', 'register', 'coadmin', 'removecoadmin', 
+                                  'op', 'operator', 'removeop', 'removeoperator', 'ban', 'kick', 'unban', 
+                                  'banlist', 'sil', 'kullanıcılar', 'users', 'list', 'online', 'yardım', 
+                                  'help', 'firebase', 'fb', 'tema', 'theme', 'ping', 'çıkış', 'exit', 
+                                  'logout', 'quit', 'ozelokuma', 'özelokuma', 'ozelmesajlar', 'özelmesajlar',
+                                  'ozelara', 'özelara', 'ozeltemizle', 'özeltemizle', 'komut', 'yenikomut', 
+                                  'command', 'komutlar', 'commands', 'temizle'];
+            
+            if (systemCommands.includes(cmdName)) {
+                addSystemMessage(`❌ "${cmdName}" komutu sistem komutudur! Başka bir ad seçin.`);
+                return;
+            }
+            
             try {
-                await customCommandsRef.child(cmdName).set({
+                const commandData = {
                     response: cmdResponse,
                     role: cmdRole,
                     createdBy: currentUser.name,
                     createdAt: Date.now()
-                });
-                
-                customCommands[cmdName] = {
-                    response: cmdResponse,
-                    role: cmdRole
                 };
                 
-                addSystemMessage(`✅ /${cmdName} komutu oluşturuldu!`);
+                await customCommandsRef.child(cmdName).set(commandData);
+                
+                // Yerel listeyi güncelle
+                customCommands[cmdName] = {
+                    response: cmdResponse,
+                    role: cmdRole,
+                    createdBy: currentUser.name,
+                    createdAt: Date.now()
+                };
+                
+                addSystemMessage(`✅ /${cmdName} komutu başarıyla oluşturuldu!`);
+                console.log("✅ Komut kaydedildi:", cmdName, cmdResponse);
+                
+                // Modal'ı temizle ve kapat
+                document.getElementById('cmd-name').value = '';
+                document.getElementById('cmd-response').value = '';
                 closeCommandModal();
                 
             } catch (error) {
                 console.error("Komut kaydetme hatası:", error);
-                addSystemMessage("❌ Komut oluşturulamadı!");
+                addSystemMessage("❌ Komut oluşturulamadı! Hata: " + error.message);
             }
         }
         
@@ -3830,7 +3859,7 @@
                 return;
             }
             
-            const cmdName = document.getElementById('cmd-name').value.trim();
+            const cmdName = document.getElementById('cmd-name').value.trim().toLowerCase();
             
             if (!cmdName) {
                 addSystemMessage("❌ Silinecek komut adı girin!");
@@ -3874,7 +3903,7 @@
                     <strong>/${cmdName}</strong><br>
                     • Yanıt: ${cmdData.response.length > 30 ? cmdData.response.substring(0, 30) + '...' : cmdData.response}<br>
                     • Yetki: ${cmdData.role}<br>
-                    • Kullanım: /${cmdName}<br><br>
+                    • Oluşturan: ${cmdData.createdBy || 'Owner'}<br><br>
                 `;
             });
             
@@ -3896,10 +3925,10 @@
             const args = parts.slice(1);
             
             console.log("Komut:", command, "Args:", args);
-            console.log("Yetki durumu - Owner:", isOwner, "Admin:", isAdmin, "CoAdmin:", isCoAdmin, "Operator:", isOperator);
             
-            // ÖZEL KOMUT KONTROLÜ
+            // ÖNEMLİ: ÖZEL KOMUT KONTROLÜ - İLK ÖNCE BURASI
             if (customCommands[command]) {
+                console.log("✅ Özel komut bulundu:", command);
                 const cmdData = customCommands[command];
                 
                 // Yetki kontrolü
@@ -4040,7 +4069,6 @@
                                     currentUser.role = 'owner';
                                     document.getElementById('ownerBadge').style.display = 'inline-block';
                                     addSystemMessage('✅ Owner girişi başarılı!');
-                                    addSystemMessage('🔒 Tüm özel mesajları okumak için: /özelokuma');
                                 } else if (SECURE_CONFIG.DEFAULT_ADMINS.includes(currentUser.name.toLowerCase()) || adminList.includes(currentUser.name)) {
                                     isAdmin = true;
                                     currentUser.role = 'admin';
@@ -4412,13 +4440,8 @@
         function showHelp() {
             let help = '🔥 <strong>TÜM KOMUTLAR:</strong><br><br>';
             
-            help += '🤴 <strong>OWNER KOMUTLARI:</strong><br>';
-            help += '• /özelokuma - Tüm özel mesajları gör<br>';
-            help += '• /özelara [kelime] - Özel mesajlarda ara<br>';
-            help += '• /özeltemizle - Tüm özel mesajları temizle<br>';
-            help += '• /komut - Yeni komut oluştur<br>';
-            help += '• /komutlar - Özel komutları listele<br>';
-            help += '• /reg - Admin atama (sadece Owner)<br><br>';
+            // OWNER YETKİLERİ /help'te GÖRÜNMEYECEK
+            // Sadece genel komutlar listelenecek
             
             help += '⭐️ <strong>ADMIN KOMUTLARI:</strong><br>';
             help += '• /admin [şifre] - Admin girişi<br>';
@@ -4462,16 +4485,10 @@
             help += '• /çıkış - Çıkış yap<br><br>';
             
             help += '💡 <strong>ÖZELLİKLER:</strong><br>';
-            help += '• Owner: 🤴 MateKy (şifre Firebase\'de saklı)<br>';
+            help += '• Owner: 🤴 MateKy (şifre gizli)<br>';
             help += '• Admin: ⭐️<br>';
             help += '• Co-Admin: ⚡️<br>';
             help += '• Operatör: 🛠️<br>';
-            help += '• Owner gizli: Diğer kullanıcılar göremez<br>';
-            help += '• Owner mesaj gönderebilir<br>';
-            help += '• Owner tüm özel mesajları anlık okuyabilir<br>';
-            help += '• Owner özel mesajları silebilir<br>';
-            help += '• Admin atama: Sadece Owner yapabilir<br>';
-            help += '• Owner banı: Sadece Owner kaldırabilir<br>';
             help += '• Kayıtlı kullanıcılar: Şifre ile güvenli giriş<br>';
             help += '• Aynı nick koruması: 30 saniye kilit<br>';
             help += '• Özel sohbet: Kullanıcı adına tıklayarak<br>';
@@ -4480,7 +4497,7 @@
             help += '• Online liste: Web\'de açılır/kapanır, Mobil\'de tam ekran<br>';
             help += '• Mobil görünüm: Video küçük, sohbet büyük<br>';
             help += '• 3 farklı tema: YouTube Live, Gece, Gündüz<br>';
-            help += '• Owner yeni komutlar oluşturabilir (/komut)';
+            help += '• Firebase Realtime Database aktif';
             
             addSystemMessage(help);
         }
@@ -4515,11 +4532,15 @@
         }
         
         // ========== SAYFA YÜKLENDİĞİNDE ==========
-        window.addEventListener('load', function() {
+        window.addEventListener('load', async function() {
             console.log("📱 Sayfa yüklendi!");
             
             originalTitle = document.title;
             loadTheme();
+            
+            // SHA-256 şifre sistemini başlat
+            await initSecureOwnerPassword();
+            
             initializeFirebase();
             checkUsernameRealTime();
             
@@ -4555,6 +4576,12 @@
                 initYouTubePlayer();
             }
             window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
+            
+            // Telefonlar için video otomatik çalıştırma
+            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                console.log("📱 Mobil cihaz algılandı, video otomatik başlatılacak");
+                setTimeout(initYouTubePlayer, 2000);
+            }
         });
     </script>
     
