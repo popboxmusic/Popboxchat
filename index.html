@@ -2331,6 +2331,120 @@
             }
         }
         
+        // ========== NICK NORMALİZASYON FONKSİYONU ==========
+        function normalizeNick(nick) {
+            return nick ? nick.toLowerCase().trim() : '';
+        }
+        
+        // ========== BENZER KULLANICI KONTROLÜ ==========
+        async function checkExistingUsers(inputNick) {
+            if (!usersRef) return [];
+            
+            try {
+                const snapshot = await usersRef.once('value');
+                const users = snapshot.val() || {};
+                const similarUsers = [];
+                
+                const normalizedInput = normalizeNick(inputNick);
+                
+                Object.keys(users).forEach(username => {
+                    if (normalizeNick(username) === normalizedInput) {
+                        similarUsers.push(username);
+                    }
+                });
+                
+                return similarUsers;
+            } catch (error) {
+                console.error('Benzer kullanıcı kontrol hatası:', error);
+                return [];
+            }
+        }
+        
+        // ========== NICK ÖNERİ SİSTEMİ ==========
+        async function suggestAvailableNick(nick) {
+            if (!usersRef) return nick;
+            
+            try {
+                const snapshot = await usersRef.once('value');
+                const users = snapshot.val() || {};
+                
+                const baseNick = nick.toLowerCase();
+                let suggestedNick = nick;
+                let counter = 1;
+                
+                // Mevcut tüm nick'leri normalize et
+                const existingNicks = Object.keys(users).map(u => normalizeNick(u));
+                
+                // Aynı normalize edilmiş nick var mı kontrol et
+                while (existingNicks.includes(normalizeNick(suggestedNick))) {
+                    suggestedNick = `${baseNick}${counter}`;
+                    counter++;
+                    
+                    if (counter > 100) {
+                        suggestedNick = `${baseNick}_${Date.now().toString().slice(-4)}`;
+                        break;
+                    }
+                }
+                
+                return suggestedNick;
+            } catch (error) {
+                console.error('Nick öneri hatası:', error);
+                return nick;
+            }
+        }
+        
+        // ========== GÜVENLİ KAYITLI KULLANICI KONTROLÜ ==========
+        async function isRegisteredUserSecure(username) {
+            try {
+                const normalized = normalizeNick(username);
+                const snapshot = await registeredUsersRef.once('value');
+                const users = snapshot.val() || {};
+                
+                for (const [dbUsername, userData] of Object.entries(users)) {
+                    if (normalizeNick(dbUsername) === normalized) {
+                        return {
+                            originalName: dbUsername,
+                            ...userData,
+                            isRegistered: true
+                        };
+                    }
+                }
+                return null;
+            } catch (error) {
+                return null;
+            }
+        }
+        
+        // ========== GÜVENLİ BAN KONTROLÜ ==========
+        async function checkIfBannedSecure(username) {
+            try {
+                if (!bansRef) return { isBanned: false };
+                
+                const normalized = normalizeNick(username);
+                const banSnapshot = await bansRef.once('value');
+                const bans = banSnapshot.val() || {};
+                
+                for (const [bannedUser, banData] of Object.entries(bans)) {
+                    if (normalizeNick(bannedUser) === normalized) {
+                        if (banData.bannedUntil > Date.now()) {
+                            return {
+                                isBanned: true,
+                                banData: banData,
+                                originalName: bannedUser
+                            };
+                        } else {
+                            await bansRef.child(bannedUser).remove();
+                        }
+                    }
+                }
+                
+                return { isBanned: false };
+            } catch (error) {
+                console.error("Ban kontrol hatası:", error);
+                return { isBanned: false };
+            }
+        }
+        
         // ========== FIREBASE BAŞLATMA ==========
         function initializeFirebase() {
             try {
@@ -3357,24 +3471,22 @@
         
         // ========== BİLDİRİM SİSTEMİ ==========
         function toggleNotificationPanel(e) {
-    // Bu satırı EKLE:
-    if (e) e.stopPropagation();
-    
-    const panel = document.getElementById('notificationPanel');
-    notificationPanelOpen = !notificationPanelOpen;
-    
-    if (notificationPanelOpen) {
-        panel.classList.add('active');
-        updateNotificationPanel();
-        
-        // Diğer panel açıksa kapat
-        if (reportPanelOpen) {
-            closeReportPanel();
+            if (e) e.stopPropagation();
+            
+            const panel = document.getElementById('notificationPanel');
+            notificationPanelOpen = !notificationPanelOpen;
+            
+            if (notificationPanelOpen) {
+                panel.classList.add('active');
+                updateNotificationPanel();
+                
+                if (reportPanelOpen) {
+                    closeReportPanel();
+                }
+            } else {
+                panel.classList.remove('active');
+            }
         }
-    } else {
-        panel.classList.remove('active');
-    }
-}
         
         function closeNotificationPanel() {
             const panel = document.getElementById('notificationPanel');
@@ -3687,29 +3799,39 @@
         }
         
         // ========== GÜVENLİ ŞİFRE SİSTEMİ ==========
-        async function verifyAdminPassword(username, password) {
+        async function verifyAdminPasswordSecure(username, password) {
             try {
-                const isOwnerUser = username === SECURE_CONFIG.OWNER_CONFIG.username;
+                const normalized = normalizeNick(username);
+                const isOwnerUser = normalized === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
                 
                 if (isOwnerUser) {
                     return await verifyOwnerPassword(password);
                 }
                 
-                const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.includes(username.toLowerCase());
+                // Case-insensitive default admin kontrolü
+                const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                    normalizeNick(admin) === normalized
+                );
                 
                 if (isDefaultAdmin) {
-                    const snapshot = await adminPasswordsRef.child(username).once('value');
+                    // Orjinal admin adını bul
+                    const originalAdmin = SECURE_CONFIG.DEFAULT_ADMINS.find(admin => 
+                        normalizeNick(admin) === normalized
+                    );
+                    
+                    const snapshot = await adminPasswordsRef.child(originalAdmin).once('value');
                     const storedPassword = snapshot.val();
                     
                     if (!storedPassword) {
-                        await adminPasswordsRef.child(username).set(password);
+                        await adminPasswordsRef.child(originalAdmin).set(password);
                         return true;
                     }
                     
                     return password === storedPassword;
                 }
                 
-                const userRegistered = await isRegisteredUser(username);
+                // Kayıtlı kullanıcı kontrolü (case-insensitive)
+                const userRegistered = await isRegisteredUserSecure(username);
                 if (userRegistered && userRegistered.password === password) {
                     return true;
                 }
@@ -3790,7 +3912,7 @@
             }
         }
         
-        // ========== KULLANICI ADI REAL-TIME KONTROLÜ ==========
+        // ========== KULLANICI ADI REAL-TIME KONTROLÜ GÜNCELLENMİŞ ==========
         function checkUsernameRealTime() {
             const nickInput = document.getElementById('login-nick');
             const passwordInput = document.getElementById('login-password');
@@ -3806,25 +3928,40 @@
                 }
                 
                 try {
-                    if (nick === SECURE_CONFIG.OWNER_CONFIG.username) {
+                    const normalizedNick = normalizeNick(nick);
+                    
+                    // Owner kontrolü (case-insensitive)
+                    const isOwnerUser = normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+                    
+                    if (isOwnerUser) {
                         passwordInput.style.display = 'block';
                         passwordInfo.style.display = 'block';
-                        passwordInput.placeholder = 'Şifre';
-                        passwordInfo.innerHTML = `🔐 Şifre gerekli`;
+                        passwordInput.placeholder = 'Owner şifresi';
+                        passwordInfo.innerHTML = `🔐 Owner girişi - Şifre gerekli`;
                         return;
                     }
                     
-                    const userRegistered = await isRegisteredUser(nick);
+                    // Kayıtlı kullanıcı kontrolü (case-insensitive)
+                    const userRegistered = await isRegisteredUserSecure(nick);
                     
                     if (userRegistered && userRegistered.isRegistered) {
                         passwordInput.style.display = 'block';
                         passwordInfo.style.display = 'block';
                         passwordInput.placeholder = `Şifre`;
-                        passwordInfo.innerHTML = `🔐 Şifre gerekli`;
+                        passwordInfo.innerHTML = `🔐 ${userRegistered.originalName} için şifre gerekli`;
                     } else {
                         passwordInput.style.display = 'none';
                         passwordInfo.style.display = 'none';
                     }
+                    
+                    // Benzer kullanıcı kontrolü
+                    const similarUsers = await checkExistingUsers(nick);
+                    if (similarUsers.length > 0 && !userRegistered) {
+                        passwordInfo.innerHTML = `⚠️ Bu nick zaten kullanımda: ${similarUsers.join(', ')}`;
+                        passwordInfo.style.display = 'block';
+                        passwordInfo.style.color = 'var(--coadmin)';
+                    }
+                    
                 } catch (error) {
                     console.error('Kullanıcı kontrol hatası:', error);
                 }
@@ -3871,8 +4008,16 @@
                 return;
             }
             
-            if (SECURE_CONFIG.DEFAULT_ADMINS.includes(username.toLowerCase()) || 
-                username === SECURE_CONFIG.OWNER_CONFIG.username) {
+            // Case-insensitive admin kontrolü
+            const normalizedUsername = normalizeNick(username);
+            const isTargetOwner = normalizedUsername === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+            const isTargetAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                normalizeNick(admin) === normalizedUsername
+            ) || adminList.some(admin => 
+                normalizeNick(admin) === normalizedUsername
+            );
+            
+            if (isTargetOwner || isTargetAdmin) {
                 addSystemMessage("⛔ Admin ve Owner kullanıcıları banlayamazsınız!");
                 return;
             }
@@ -3939,32 +4084,44 @@
             }
             
             try {
-                const snapshot = await bansRef.child(username).once('value');
-                const banData = snapshot.val();
+                // Case-insensitive ban arama
+                const banSnapshot = await bansRef.once('value');
+                const bans = banSnapshot.val() || {};
                 
-                if (!banData) {
+                let foundBan = null;
+                let originalName = username;
+                
+                for (const [bannedUser, banData] of Object.entries(bans)) {
+                    if (normalizeNick(bannedUser) === normalizeNick(username)) {
+                        foundBan = banData;
+                        originalName = bannedUser;
+                        break;
+                    }
+                }
+                
+                if (!foundBan) {
                     addSystemMessage(`❌ ${username} kullanıcısı banlı değil!`);
                     return;
                 }
                 
-                if (banData.bannedByRole === 'owner' && !isOwner) {
+                if (foundBan.bannedByRole === 'owner' && !isOwner) {
                     addSystemMessage("⛔ Bu banı sadece Owner kaldırabilir!");
                     return;
                 }
                 
-                if (banData.bannedByRole === 'admin' && isCoAdmin && !isAdmin && !isOwner) {
+                if (foundBan.bannedByRole === 'admin' && isCoAdmin && !isAdmin && !isOwner) {
                     addSystemMessage("⛔ Admin'in attığı banı sadece Admin veya Owner kaldırabilir!");
                     return;
                 }
                 
-                if (banData.bannedByRole === 'operator' && isOperator && 
-                    banData.bannedBy !== currentUser.name && !isAdmin && !isCoAdmin && !isOwner) {
+                if (foundBan.bannedByRole === 'operator' && isOperator && 
+                    foundBan.bannedBy !== currentUser.name && !isAdmin && !isCoAdmin && !isOwner) {
                     addSystemMessage("⛔ Başka operatörün attığı banı kaldıramazsınız!");
                     return;
                 }
                 
-                await bansRef.child(username).remove();
-                addSystemMessage(`✅ ${username} kullanıcısının banı kaldırıldı!`);
+                await bansRef.child(originalName).remove();
+                addSystemMessage(`✅ ${originalName} kullanıcısının banı kaldırıldı!`);
                 await updateBannedUsers();
                 
             } catch (error) {
@@ -4327,20 +4484,20 @@
             addSystemMessage(resultList);
         }
         
-        // ========== GİRİŞ SİSTEMİ ==========
+        // ========== GİRİŞ SİSTEMİ GÜNCELLENMİŞ ==========
         async function login() {
             const nickInput = document.getElementById('login-nick');
             const passwordInput = document.getElementById('login-password');
-            const nick = nickInput.value.trim();
+            const rawNick = nickInput.value.trim();
             const password = passwordInput.value;
             const loginBtn = document.getElementById('login-btn');
             
-            if (!nick) {
+            if (!rawNick) {
                 showLoginError('❌ Lütfen bir kullanıcı adı girin!');
                 return;
             }
             
-            if (nick.length < 2 || nick.length > 20) {
+            if (rawNick.length < 2 || rawNick.length > 20) {
                 showLoginError('❌ Kullanıcı adı 2-20 karakter arasında olmalı!');
                 return;
             }
@@ -4356,7 +4513,35 @@
             showLoginSuccess('');
             
             try {
-                const lockCheck = await checkUserLock(nick);
+                const normalizedNick = normalizeNick(rawNick);
+                
+                // Owner kontrolü (case-insensitive)
+                const isOwnerUser = normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+                
+                // Benzer kullanıcıları kontrol et
+                const similarUsers = await checkExistingUsers(rawNick);
+                const hasSimilar = similarUsers.length > 0;
+                
+                // Eğer benzer kullanıcı varsa ve bu bir kayıtlı kullanıcı değilse
+                if (hasSimilar && !isOwnerUser) {
+                    const userRegistered = await isRegisteredUserSecure(rawNick);
+                    if (!userRegistered) {
+                        const availableNick = await suggestAvailableNick(rawNick);
+                        showLoginError(
+                            `⚠️ BU NICK ZATEN KULLANIMDA!\n\n` +
+                            `Mevcut benzer kullanıcılar: ${similarUsers.join(', ')}\n\n` +
+                            `💡 Önerilen kullanıcı adı: ${availableNick}\n` +
+                            `💡 Şu anda kullanıcı sayısı: ${similarUsers.length}\n` +
+                            `(Eğer bu sizseniz, lütfen doğru nick ile giriş yapın)`
+                        );
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Sohbete Katıl';
+                        nickInput.value = availableNick;
+                        return;
+                    }
+                }
+                
+                const lockCheck = await checkUserLock(normalizedNick);
                 if (lockCheck && lockCheck.expiresAt > Date.now()) {
                     const secondsLeft = Math.ceil((lockCheck.expiresAt - Date.now()) / 1000);
                     showLoginError(
@@ -4370,7 +4555,7 @@
                 }
                 
                 const userId = generateUserId();
-                const locked = await lockUserForLogin(nick, userId);
+                const locked = await lockUserForLogin(normalizedNick, userId);
                 if (!locked) {
                     showLoginError('❌ Giriş işlemi başaratılamadı! Lütfen tekrar deneyin.');
                     loginBtn.disabled = false;
@@ -4378,55 +4563,13 @@
                     return;
                 }
                 
-                const isOwnerUser = nick === SECURE_CONFIG.OWNER_CONFIG.username;
-                
-                if (isOwnerUser) {
-                    if (!password) {
-                        await unlockUser(nick);
-                        showLoginError('🔐 Şifre gerekli!');
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = 'Sohbete Katıl';
-                        return;
-                    }
-                    
-                    const passwordValid = await verifyOwnerPassword(password);
-                    if (!passwordValid) {
-                        await unlockUser(nick);
-                        showLoginError('❌ Hatalı şifre!');
-                        loginBtn.disabled = false;
-                        loginBtn.textContent = 'Sohbete Katıl';
-                        return;
-                    }
-                } else {
-                    const userRegistered = await isRegisteredUser(nick);
-                    
-                    if (userRegistered && userRegistered.isRegistered) {
-                        if (!password) {
-                            await unlockUser(nick);
-                            showLoginError('🔐 Bu kullanıcı kayıtlıdır! Lütfen şifrenizi girin.');
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = 'Sohbete Katıl';
-                            return;
-                        }
-                        
-                        const passwordValid = await verifyAdminPassword(nick, password);
-                        if (!passwordValid) {
-                            await unlockUser(nick);
-                            showLoginError('❌ Hatalı şifre! Lütfen doğru şifreyi girin.');
-                            loginBtn.disabled = false;
-                            loginBtn.textContent = 'Sohbete Katıl';
-                            return;
-                        }
-                    }
-                }
-                
-                const banCheck = await checkIfBanned(nick);
+                const banCheck = await checkIfBannedSecure(rawNick);
                 if (banCheck.isBanned) {
-                    await unlockUser(nick);
+                    await unlockUser(normalizedNick);
                     const remaining = Math.ceil((banCheck.banData.bannedUntil - Date.now()) / 60000);
                     showLoginError(
                         `🚫 BU KULLANICI BANLI!\n\n` +
-                        `Kullanıcı: ${nick}\n` +
+                        `Kullanıcı: ${banCheck.originalName}\n` +
                         `Ban Süresi: ${remaining} dakika kaldı\n` +
                         `Banlayan: ${banCheck.banData.bannedBy || 'Admin'}\n` +
                         `Sebep: ${banCheck.banData.reason || 'Belirtilmemiş'}`
@@ -4436,100 +4579,61 @@
                     return;
                 }
                 
-                const snapshot = await usersRef.child(nick).once('value');
-                const existingUser = snapshot.val();
-                
-                if (existingUser) {
-                    const now = Date.now();
-                    const lastSeen = existingUser.lastSeen || 0;
-                    const timeDiff = now - lastSeen;
-                    
-                    if (timeDiff < 30000) {
-                        await unlockUser(nick);
-                        const seconds = Math.floor(timeDiff / 1000);
-                        showLoginError(
-                            `⛔ "${nick}" kullanıcısı ŞU ANDA AKTİF!\n\n` +
-                            `Son aktivite: ${seconds} saniye önce\n` +
-                            `💡 Lütfen başka bir kullanıcı adı seçin veya ${30-seconds} sn bekleyin`
-                        );
-                        
+                if (isOwnerUser) {
+                    // Owner girişi
+                    if (!password) {
+                        await unlockUser(normalizedNick);
+                        showLoginError('🔐 Şifre gerekli!');
                         loginBtn.disabled = false;
                         loginBtn.textContent = 'Sohbete Katıl';
                         return;
                     }
-                }
-                
-                const userRegisteredFinal = await isRegisteredUser(nick);
-                
-                const userData = {
-                    name: nick,
-                    lastSeen: Date.now(),
-                    joinedAt: Date.now(),
-                    ip: generateFakeIP(),
-                    userAgent: navigator.userAgent.substring(0, 80),
-                    isOnline: true,
-                    timestamp: Date.now(),
-                    role: isOwnerUser ? 'owner' : (userRegisteredFinal ? userRegisteredFinal.role : 'user'),
-                    isRegistered: !!userRegisteredFinal || isOwnerUser,
-                    isHidden: isOwnerUser ? true : false
-                };
-                
-                await usersRef.child(nick).set(userData);
-                await unlockUser(nick);
-                
-                currentUser = {
-                    name: nick,
-                    role: userData.role,
-                    isRegistered: !!userRegisteredFinal || isOwnerUser,
-                    isOwnerUser: isOwnerUser,
-                    data: userData
-                };
-                
-                if (isOwnerUser) {
-                    currentUser.role = 'owner';
-                    isOwner = true;
-                    document.getElementById('ownerBadge').style.display = 'inline-block';
-                    currentUser.isHidden = true;
-                } else if (userRegisteredFinal && userRegisteredFinal.role === 'admin') {
-                    isAdmin = true;
-                    currentUser.role = 'admin';
-                    document.getElementById('adminBadge').style.display = 'inline-block';
-                } else if (userRegisteredFinal && userRegisteredFinal.role === 'coadmin') {
-                    isCoAdmin = true;
-                    currentUser.role = 'coadmin';
-                    document.getElementById('coadminBadge').style.display = 'inline-block';
-                } else if (userRegisteredFinal && userRegisteredFinal.role === 'operator') {
-                    isOperator = true;
-                    currentUser.role = 'operator';
-                    document.getElementById('operatorBadge').style.display = 'inline-block';
-                } else if (SECURE_CONFIG.DEFAULT_ADMINS.includes(nick.toLowerCase())) {
-                    currentUser.role = 'admin';
-                    isAdmin = true;
-                    document.getElementById('adminBadge').style.display = 'inline-block';
-                }
-                
-                usersRef.child(nick).onDisconnect().remove();
-                
-                document.getElementById('login-screen').style.display = 'none';
-                
-                initApp();
-                
-                addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}!`);
-                
-                if (currentUser.isRegistered) {
-                    addSystemMessage('✅ Kayıtlı kullanıcı olarak giriş yaptınız!');
-                }
-                
-                if (isOwner) {
-                    addSystemMessage('🤴 Owner olarak giriş yaptınız!');
-                    document.getElementById('storyBadge').style.display = 'inline-block';
-                }
-                
-                setTimeout(() => {
-                    if (!isOwner) {
-                        popboxBot.sendWelcome(nick);
+                    
+                    const passwordValid = await verifyOwnerPassword(password);
+                    if (!passwordValid) {
+                        await unlockUser(normalizedNick);
+                        showLoginError('❌ Hatalı şifre!');
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Sohbete Katıl';
+                        return;
                     }
-                }, 1000);
+                    
+                    // Gerçek owner nick'i kullan
+                    const realOwnerNick = SECURE_CONFIG.OWNER_CONFIG.username;
+                    await completeLogin(realOwnerNick, 'owner', true, null);
+                    
+                } else {
+                    // Kayıtlı kullanıcı kontrolü (case-insensitive)
+                    const userRegistered = await isRegisteredUserSecure(rawNick);
+                    
+                    if (userRegistered && userRegistered.isRegistered) {
+                        if (!password) {
+                            await unlockUser(normalizedNick);
+                            showLoginError('🔐 Bu kullanıcı kayıtlıdır! Lütfen şifrenizi girin.');
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = 'Sohbete Katıl';
+                            return;
+                        }
+                        
+                        // Orijinal nick ile şifre kontrolü
+                        const passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
+                        if (!passwordValid) {
+                            await unlockUser(normalizedNick);
+                            showLoginError('❌ Hatalı şifre! Lütfen doğru şifreyi girin.');
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = 'Sohbete Katıl';
+                            return;
+                        }
+                        
+                        // Orijinal nick ile giriş yap
+                        await completeLogin(userRegistered.originalName, userRegistered.role, true, userRegistered);
+                        
+                    } else {
+                        // Normal kullanıcı - benzer kontrol
+                        const finalNick = await getAvailableNick(rawNick);
+                        await completeLogin(finalNick, 'user', false, null);
+                    }
+                }
                 
             } catch (error) {
                 console.error('Giriş hatası:', error);
@@ -4538,11 +4642,125 @@
                 loginBtn.textContent = 'Sohbete Katıl';
                 
                 try {
-                    await unlockUser(nick);
+                    const normalizedNick = normalizeNick(rawNick);
+                    await unlockUser(normalizedNick);
                 } catch (e) {
                     console.error('Kilit temizleme hatası:', e);
                 }
             }
+        }
+        
+        async function getAvailableNick(proposedNick) {
+            const snapshot = await usersRef.once('value');
+            const users = snapshot.val() || {};
+            
+            const normalizedProposed = normalizeNick(proposedNick);
+            let finalNick = proposedNick;
+            
+            // Aynı normalized nick var mı kontrol et
+            const existingNicks = Object.keys(users).map(u => normalizeNick(u));
+            
+            if (existingNicks.includes(normalizedProposed)) {
+                // Benzer nick bul, orijinalini göster
+                for (const [username, userData] of Object.entries(users)) {
+                    if (normalizeNick(username) === normalizedProposed) {
+                        throw new Error(`Bu nick (${username}) zaten kullanımda!`);
+                    }
+                }
+            }
+            
+            return proposedNick;
+        }
+        
+        async function completeLogin(username, role, isRegistered, userData) {
+            const existingSnapshot = await usersRef.child(username).once('value');
+            const existingUser = existingSnapshot.val();
+            
+            const now = Date.now();
+            
+            if (existingUser) {
+                const lastSeen = existingUser.lastSeen || 0;
+                const timeDiff = now - lastSeen;
+                
+                if (timeDiff < 30000) {
+                    const normalizedNick = normalizeNick(username);
+                    await unlockUser(normalizedNick);
+                    const seconds = Math.floor(timeDiff / 1000);
+                    showLoginError(
+                        `⛔ "${username}" kullanıcısı ŞU ANDA AKTİF!\n\n` +
+                        `Son aktivite: ${seconds} saniye önce\n` +
+                        `💡 Lütfen başka bir kullanıcı adı seçin veya ${30-seconds} sn bekleyin`
+                    );
+                    
+                    const loginBtn = document.getElementById('login-btn');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sohbete Katıl';
+                    return;
+                }
+            }
+            
+            const userInfo = {
+                name: username,
+                lastSeen: now,
+                joinedAt: now,
+                ip: generateFakeIP(),
+                userAgent: navigator.userAgent.substring(0, 80),
+                isOnline: true,
+                timestamp: now,
+                role: role,
+                isRegistered: isRegistered,
+                isHidden: role === 'owner'
+            };
+            
+            await usersRef.child(username).set(userInfo);
+            
+            const normalizedNick = normalizeNick(username);
+            await unlockUser(normalizedNick);
+            
+            currentUser = {
+                name: username,
+                role: role,
+                isRegistered: isRegistered,
+                data: userInfo
+            };
+            
+            // Yetki badge'leri
+            if (role === 'owner') {
+                isOwner = true;
+                document.getElementById('ownerBadge').style.display = 'inline-block';
+            } else if (role === 'admin') {
+                isAdmin = true;
+                document.getElementById('adminBadge').style.display = 'inline-block';
+            } else if (role === 'coadmin') {
+                isCoAdmin = true;
+                document.getElementById('coadminBadge').style.display = 'inline-block';
+            } else if (role === 'operator') {
+                isOperator = true;
+                document.getElementById('operatorBadge').style.display = 'inline-block';
+            }
+            
+            usersRef.child(username).onDisconnect().remove();
+            
+            document.getElementById('login-screen').style.display = 'none';
+            
+            initApp();
+            
+            addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}!`);
+            
+            if (currentUser.isRegistered) {
+                addSystemMessage('✅ Kayıtlı kullanıcı olarak giriş yaptınız!');
+            }
+            
+            if (isOwner) {
+                addSystemMessage('🤴 Owner olarak giriş yaptınız!');
+                document.getElementById('storyBadge').style.display = 'inline-block';
+            }
+            
+            setTimeout(() => {
+                if (!isOwner) {
+                    popboxBot.sendWelcome(username);
+                }
+            }, 1000);
         }
         
         function generateUserId() {
@@ -4728,8 +4946,22 @@
         }
         
         function checkAdminStatus() {
-            if (currentUser && adminList.includes(currentUser.name)) {
+            if (!currentUser) return;
+            
+            const normalizedName = normalizeNick(currentUser.name);
+            
+            // Case-insensitive admin kontrolü
+            const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                normalizeNick(admin) === normalizedName
+            );
+            
+            const isInAdminList = adminList.some(admin =>
+                normalizeNick(admin) === normalizedName
+            );
+            
+            if (isDefaultAdmin || isInAdminList) {
                 isAdmin = true;
+                currentUser.role = 'admin';
                 document.getElementById('adminBadge').style.display = 'inline-block';
                 updateReportPanelVisibility();
             }
@@ -4836,7 +5068,12 @@
                 const isCurrentUser = user.username === (currentUser?.name || '');
                 const statusClass = user.secondsAgo > 10 ? 'idle' : '';
                 const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
-                const isAdminUser = SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username.toLowerCase()) || adminList.includes(user.username);
+                const normalizedUser = normalizeNick(user.username);
+                const isAdminUser = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                    normalizeNick(admin) === normalizedUser
+                ) || adminList.some(admin => 
+                    normalizeNick(admin) === normalizedUser
+                );
                 const isCoAdminUser = coAdminList.includes(user.username) || (registeredUsers[user.username] && registeredUsers[user.username].role === 'coadmin');
                 const isOperatorUser = operatorList.includes(user.username) || (registeredUsers[user.username] && registeredUsers[user.username].role === 'operator');
                 const isBanned = bannedUsers[user.username] && bannedUsers[user.username].bannedUntil > Date.now();
@@ -5396,8 +5633,17 @@
                 return;
             }
             
-            if (username === SECURE_CONFIG.OWNER_CONFIG.username) {
+            // Case-insensitive kontrol
+            const normalizedUsername = normalizeNick(username);
+            if (normalizedUsername === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
                 addSystemMessage("⛔ Owner kullanıcısı oluşturulamaz!");
+                return;
+            }
+            
+            // Aynı kullanıcı var mı kontrol et (case-insensitive)
+            const existingUsers = await checkExistingUsers(username);
+            if (existingUsers.length > 0) {
+                addSystemMessage(`⚠️ ${existingUsers[0]} kullanıcısı zaten kayıtlı!`);
                 return;
             }
             
@@ -5420,7 +5666,7 @@
                     }
                 }
                 
-                addSystemMessage(`✅ ${username} kullanıcısı ${role} rolü ile kaydedildi! Şifre: ${password}`);
+                addSystemMessage(`✅ ${username} kullanıcısı ${role} rolü ile kaydedildi!`);
                 closeAdminModal();
                 
             } catch (error) {
@@ -5479,8 +5725,14 @@
                 return;
             }
             
-            if (SECURE_CONFIG.DEFAULT_ADMINS.includes(username.toLowerCase()) || 
-                username === SECURE_CONFIG.OWNER_CONFIG.username) {
+            // Case-insensitive kontrol
+            const normalizedUsername = normalizeNick(username);
+            const isTargetOwner = normalizedUsername === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+            const isTargetAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                normalizeNick(admin) === normalizedUsername
+            );
+            
+            if (isTargetOwner || isTargetAdmin) {
                 addSystemMessage("⛔ Varsayılan admin ve owner kullanıcıları silemezsiniz!");
                 return;
             }
@@ -5490,23 +5742,38 @@
             }
             
             try {
-                const userSnapshot = await registeredUsersRef.child(username).once('value');
-                const userData = userSnapshot.val();
+                // Case-insensitive arama
+                const userSnapshot = await registeredUsersRef.once('value');
+                const users = userSnapshot.val() || {};
                 
-                if (userData) {
-                    if (userData.role === 'coadmin') {
-                        await removeFromCoAdminList(username);
-                    } else if (userData.role === 'operator') {
-                        await removeFromOperatorList(username);
-                    } else if (userData.role === 'admin' && isOwner) {
-                        await removeFromAdminList(username);
+                let foundUser = null;
+                let originalName = username;
+                
+                for (const [dbUsername, userData] of Object.entries(users)) {
+                    if (normalizeNick(dbUsername) === normalizedUsername) {
+                        foundUser = userData;
+                        originalName = dbUsername;
+                        break;
                     }
                 }
                 
-                await registeredUsersRef.child(username).remove();
-                await usersRef.child(username).remove();
+                if (!foundUser) {
+                    addSystemMessage(`❌ ${username} kullanıcısı bulunamadı!`);
+                    return;
+                }
                 
-                addSystemMessage(`✅ ${username} kullanıcısı silindi!`);
+                if (foundUser.role === 'coadmin') {
+                    await removeFromCoAdminList(originalName);
+                } else if (foundUser.role === 'operator') {
+                    await removeFromOperatorList(originalName);
+                } else if (foundUser.role === 'admin' && isOwner) {
+                    await removeFromAdminList(originalName);
+                }
+                
+                await registeredUsersRef.child(originalName).remove();
+                await usersRef.child(originalName).remove();
+                
+                addSystemMessage(`✅ ${originalName} kullanıcısı silindi!`);
                 closeAdminModal();
                 
             } catch (error) {
@@ -5875,23 +6142,45 @@
                 switch(command) {
                     case 'admin':
                         if (args.length === 1) {
-                            const passwordValid = await verifyAdminPassword(currentUser.name, args[0]);
-                            if (passwordValid) {
-                                if (currentUser.name === SECURE_CONFIG.OWNER_CONFIG.username) {
+                            const normalizedName = normalizeNick(currentUser.name);
+                            
+                            // Owner kontrolü
+                            const isOwnerUser = normalizedName === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+                            
+                            if (isOwnerUser) {
+                                const passwordValid = await verifyOwnerPassword(args[0]);
+                                if (passwordValid) {
                                     isOwner = true;
                                     currentUser.role = 'owner';
                                     document.getElementById('ownerBadge').style.display = 'inline-block';
                                     addSystemMessage('✅ Owner girişi başarılı!');
-                                } else if (SECURE_CONFIG.DEFAULT_ADMINS.includes(currentUser.name.toLowerCase()) || adminList.includes(currentUser.name)) {
+                                } else {
+                                    addSystemMessage('❌ Hatalı şifre!');
+                                }
+                                break;
+                            }
+                            
+                            // Admin kontrolü (case-insensitive)
+                            const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                                normalizeNick(admin) === normalizedName
+                            );
+                            
+                            const isInAdminList = adminList.some(admin =>
+                                normalizeNick(admin) === normalizedName
+                            );
+                            
+                            if (isDefaultAdmin || isInAdminList) {
+                                const passwordValid = await verifyAdminPasswordSecure(currentUser.name, args[0]);
+                                if (passwordValid) {
                                     isAdmin = true;
                                     currentUser.role = 'admin';
                                     document.getElementById('adminBadge').style.display = 'inline-block';
                                     addSystemMessage('✅ Admin girişi başarılı!');
                                 } else {
-                                    addSystemMessage('❌ Bu kullanıcı admin değil!');
+                                    addSystemMessage('❌ Hatalı şifre!');
                                 }
                             } else {
-                                addSystemMessage('❌ Hatalı şifre!');
+                                addSystemMessage('❌ Bu kullanıcı admin değil!');
                             }
                         } else {
                             addSystemMessage('Kullanım: /admin [şifre]');
@@ -6264,7 +6553,12 @@
                         onlineCount++;
                         const status = secondsAgo < 10 ? '🟢' : '🟡';
                         const isOwnerUser = username === SECURE_CONFIG.OWNER_CONFIG.username;
-                        const isAdminUser = SECURE_CONFIG.DEFAULT_ADMINS.includes(username.toLowerCase()) || adminList.includes(username);
+                        const normalizedUser = normalizeNick(username);
+                        const isAdminUser = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                            normalizeNick(admin) === normalizedUser
+                        ) || adminList.some(admin => 
+                            normalizeNick(admin) === normalizedUser
+                        );
                         const isCoAdminUser = coAdminList.includes(username) || (registeredUsers[username] && registeredUsers[username].role === 'coadmin');
                         const isOperatorUser = operatorList.includes(username) || (registeredUsers[username] && registeredUsers[username].role === 'operator');
                         const isBanned = bannedUsers[username] && bannedUsers[username].bannedUntil > now;
@@ -6354,7 +6648,8 @@
             help += '• Story Düzenleme/Silme<br>';
             help += '• Story Şikayet Etme<br>';
             help += '• Kayıtlı kullanıcılar: Şifre ile güvenli giriş<br>';
-            help += '• Aynı nick koruması: 30 saniye kilit<br>';
+            help += '• Aynı nick koruması: Büyük/küçük harf duyarlı değil<br>';
+            help += '• Otomatik nick öneri sistemi<br>';
             help += '• Özel sohbet: Kullanıcı adına tıklayarak<br>';
             help += '• Özelden resim gönderme: 📷 butonu<br>';
             help += '• Kendi mesajını silme: 🗑️ butonu<br>';
