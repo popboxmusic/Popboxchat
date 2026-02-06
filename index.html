@@ -190,6 +190,38 @@
         .badge.operator { background: var(--operator); }
         .badge.owner { background: var(--owner); }
         
+        /* BİLDİRİM İKONU */
+        .notification-icon {
+            position: relative;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .notification-badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: #ff0000;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            min-width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            display: none;
+        }
+        
         /* ANA LAYOUT */
         .main-container {
             display: flex;
@@ -861,8 +893,8 @@
             color: white;
         }
         
-        /* NOTIFICATION SİSTEM */
-        .notification-container {
+        /* NOTIFICATION SİSTEM - YOUTUBE STİLİ */
+        .notification-popup {
             position: fixed;
             top: 70px;
             right: 16px;
@@ -1013,6 +1045,12 @@
                 cursor: pointer;
                 padding: 8px;
             }
+            
+            .notification-popup {
+                top: 60px;
+                right: 8px;
+                max-width: 300px;
+            }
         }
         
         @media (min-width: 769px) {
@@ -1122,6 +1160,10 @@
             </div>
         </div>
         <div class="header-right">
+            <button class="notification-icon" onclick="showNotifications()" title="Bildirimler">
+                🔔
+                <span class="notification-badge" id="notificationBadge">0</span>
+            </button>
             <button class="online-list-btn" onclick="toggleUserList()">
                 <span>👥</span>
                 <span id="onlineCount">0</span>
@@ -1325,8 +1367,8 @@
     <!-- OVERLAY -->
     <div id="overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2999;"></div>
     
-    <!-- BİLDİRİM ALANI -->
-    <div class="notification-container" id="notificationContainer"></div>
+    <!-- BİLDİRİM POPUP ALANI -->
+    <div class="notification-popup" id="notificationContainer"></div>
     
     <!-- FIREBASE BADGE -->
     <div class="firebase-badge">
@@ -1344,7 +1386,7 @@
             DEFAULT_ADMINS: ['popbox', 'popboxmusic'],
             OWNER_CONFIG: {
                 username: 'MateKy',
-                password: '', // BOŞ BIRAKILDI - Firebase'den gelecek veya default
+                password: '', // SHA-256 ile şifrelenecek
                 role: 'owner',
                 isHidden: true
             },
@@ -1411,6 +1453,10 @@
         let activePrivateChatListeners = {};
         let ownerPasswordHash = null;
         
+        // ========== BİLDİRİM SİSTEMİ DEĞİŞKENLERİ ==========
+        let notificationCount = 0;
+        let notifications = [];
+        
         // ========== SHA-256 ŞİFRELEME ==========
         async function sha256(message) {
             const msgBuffer = new TextEncoder().encode(message);
@@ -1435,7 +1481,7 @@
                 }
                 
                 // Firebase'de yoksa, default şifreyi hash'le ve Firebase'e kaydet
-                const defaultPassword = "";
+                const defaultPassword = "Sahi17407@SCM";
                 const defaultHash = await sha256(defaultPassword);
                 
                 if (adminPasswordsRef) {
@@ -1447,7 +1493,7 @@
             } catch (error) {
                 console.error("Owner şifresi yükleme hatası:", error);
                 // Hata durumunda default hash
-                const defaultPassword = "";
+                const defaultPassword = "Sahi17407@SCM";
                 ownerPasswordHash = await sha256(defaultPassword);
             }
         }
@@ -1465,6 +1511,189 @@
                 return false;
             }
         }
+        
+        // ========== BİLDİRİM SİSTEMİ ==========
+        function updateNotificationBadge() {
+            const badge = document.getElementById('notificationBadge');
+            if (notificationCount > 0) {
+                badge.textContent = notificationCount > 99 ? '99+' : notificationCount;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+        
+        function addNotification(sender, message, type = 'private') {
+            notificationCount++;
+            const notification = {
+                id: 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                sender: sender,
+                message: message,
+                type: type,
+                time: new Date().toLocaleTimeString('tr-TR', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                }),
+                timestamp: Date.now(),
+                read: false
+            };
+            
+            notifications.unshift(notification); // En yeni başa ekle
+            updateNotificationBadge();
+            
+            // Eğer kullanıcı sohbette değilse, sayfa başlığını değiştir
+            if (document.hidden || !document.hasFocus()) {
+                document.title = `(${notificationCount}) ${originalTitle}`;
+            }
+            
+            // Ses çal
+            playNotificationSound();
+            
+            // Bildirimi popup olarak göster
+            showNotificationPopup(notification);
+            
+            // En fazla 100 bildirim sakla
+            if (notifications.length > 100) {
+                notifications.pop();
+            }
+        }
+        
+        function showNotificationPopup(notification) {
+            const container = document.getElementById('notificationContainer');
+            
+            const notificationDiv = document.createElement('div');
+            notificationDiv.className = 'notification';
+            notificationDiv.id = notification.id;
+            notificationDiv.dataset.sender = notification.sender;
+            
+            let icon = '🔔';
+            let borderColor = 'var(--primary)';
+            
+            if (notification.type === 'private') {
+                icon = '🔒';
+                borderColor = 'var(--private)';
+            } else if (notification.type === 'owner') {
+                icon = '🤴';
+                borderColor = 'var(--owner)';
+            } else if (notification.type === 'admin') {
+                icon = '⭐️';
+                borderColor = 'var(--secondary)';
+            } else if (notification.type === 'system') {
+                icon = 'ℹ️';
+                borderColor = 'var(--online)';
+            }
+            
+            notificationDiv.style.borderLeftColor = borderColor;
+            
+            notificationDiv.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span>${icon}</span>
+                        <strong>${notification.sender}</strong>
+                    </div>
+                    <button onclick="removeNotification('${notification.id}')" style="background: none; border: none; color: var(--text-primary); cursor: pointer;">×</button>
+                </div>
+                <div style="font-size: 14px; margin-bottom: 4px;">${notification.message}</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">${notification.time}</div>
+            `;
+            
+            notificationDiv.onclick = () => {
+                removeNotification(notification.id);
+                
+                if (notification.type === 'private') {
+                    openPrivateChat(notification.sender);
+                }
+            };
+            
+            container.insertBefore(notificationDiv, container.firstChild);
+            
+            // 10 saniye sonra otomatik kaldır
+            setTimeout(() => {
+                removeNotification(notification.id);
+            }, 10000);
+        }
+        
+        function removeNotification(notificationId) {
+            const notification = document.getElementById(notificationId);
+            if (notification) {
+                notification.remove();
+                
+                const index = notifications.findIndex(n => n.id === notificationId);
+                if (index !== -1) {
+                    notifications.splice(index, 1);
+                    notificationCount = Math.max(0, notificationCount - 1);
+                    updateNotificationBadge();
+                    
+                    // Eğer bildirim kalmadıysa, başlığı eski haline getir
+                    if (notificationCount === 0) {
+                        document.title = originalTitle;
+                    }
+                }
+            }
+        }
+        
+        function clearAllNotifications() {
+            const container = document.getElementById('notificationContainer');
+            container.innerHTML = '';
+            notifications = [];
+            notificationCount = 0;
+            updateNotificationBadge();
+            document.title = originalTitle;
+        }
+        
+        function showNotifications() {
+            if (notificationCount === 0) {
+                addSystemMessage("🔔 Henüz bildiriminiz yok!");
+                return;
+            }
+            
+            let notificationList = "🔔 <strong>BİLDİRİMLERİNİZ:</strong><br><br>";
+            
+            notifications.slice(0, 10).forEach((notif, index) => {
+                let icon = '🔔';
+                if (notif.type === 'private') icon = '🔒';
+                else if (notif.type === 'owner') icon = '🤴';
+                else if (notif.type === 'admin') icon = '⭐️';
+                else if (notif.type === 'system') icon = 'ℹ️';
+                
+                notificationList += `
+                    <div style="margin-bottom: 10px; padding: 8px; background: var(--message-user-bg); border-radius: 8px; cursor: pointer;" 
+                         onclick="removeNotification('${notif.id}'); ${notif.type === 'private' ? `openPrivateChat('${notif.sender}')` : ''}">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                            ${icon}
+                            <strong>${notif.sender}</strong>
+                            <small style="color: var(--text-secondary); margin-left: auto;">${notif.time}</small>
+                        </div>
+                        <div style="font-size: 13px;">${notif.message.length > 50 ? notif.message.substring(0, 50) + '...' : notif.message}</div>
+                    </div>
+                `;
+            });
+            
+            if (notifications.length > 10) {
+                notificationList += `<br><em>+ ${notifications.length - 10} daha...</em>`;
+            }
+            
+            notificationList += `<br><button onclick="clearAllNotifications()" style="background: var(--secondary); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-top: 10px;">Tümünü Temizle</button>`;
+            
+            addSystemMessage(notificationList);
+        }
+        
+        function playNotificationSound() {
+            try {
+                const sound = document.getElementById('notificationSound');
+                sound.currentTime = 0;
+                sound.play().catch(e => console.log("Ses çalınamadı:", e));
+            } catch (error) {
+                console.log("Ses çalma hatası:", error);
+            }
+        }
+        
+        // Sayfa görünür olduğunda bildirim sayacını sıfırla
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && document.hasFocus()) {
+                document.title = originalTitle;
+            }
+        });
         
         // ========== GÜVENLİK ÖNLEMLERİ ==========
         document.addEventListener('contextmenu', function(e) {
@@ -1613,152 +1842,6 @@
         }
         
         let popboxBot = new PopboxChatBot();
-        
-        // ========== BİLDİRİM SİSTEMİ ==========
-        class NotificationSystem {
-            constructor() {
-                this.notifications = [];
-                this.isFocus = true;
-                this.titleBlinkInterval = null;
-                this.notificationCheckInterval = null;
-                this.lastCheckedTime = Date.now();
-                this.notificationCooldown = {};
-                this.init();
-            }
-            
-            init() {
-                window.addEventListener('focus', () => {
-                    this.isFocus = true;
-                    this.clearTitleBlink();
-                    document.title = originalTitle;
-                });
-                
-                window.addEventListener('blur', () => {
-                    this.isFocus = false;
-                });
-                
-                document.addEventListener('visibilitychange', () => {
-                    if (document.hidden) {
-                        this.isFocus = false;
-                    } else {
-                        this.isFocus = true;
-                        this.clearTitleBlink();
-                        document.title = originalTitle;
-                    }
-                });
-            }
-            
-            showPrivateMessageNotification(sender, message, timestamp) {
-                if (sender === currentUser?.name) return;
-                
-                const now = Date.now();
-                if (this.notificationCooldown[sender] && 
-                    (now - this.notificationCooldown[sender]) < 10000) {
-                    return;
-                }
-                
-                this.notificationCooldown[sender] = now;
-                
-                const notificationId = 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                
-                const notification = {
-                    id: notificationId,
-                    sender: sender,
-                    message: message,
-                    timestamp: timestamp,
-                    time: new Date().toLocaleTimeString('tr-TR', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                    })
-                };
-                
-                this.renderNotification(notification);
-                this.playNotificationSound();
-                
-                if (!this.isFocus || document.hidden) {
-                    this.startTitleBlink(sender);
-                }
-                
-                setTimeout(() => {
-                    this.removeNotification(notificationId);
-                }, 10000);
-            }
-            
-            renderNotification(notification) {
-                const container = document.getElementById('notificationContainer');
-                
-                const notificationDiv = document.createElement('div');
-                notificationDiv.className = 'notification';
-                notificationDiv.id = notification.id;
-                notificationDiv.dataset.sender = notification.sender;
-                
-                notificationDiv.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span>🔒</span>
-                            <strong>${notification.sender}</strong>
-                        </div>
-                        <button onclick="notificationSystem.removeNotification('${notification.id}')" style="background: none; border: none; color: var(--text-primary); cursor: pointer;">×</button>
-                    </div>
-                    <div style="font-size: 14px; margin-bottom: 4px;">${notification.message}</div>
-                    <div style="font-size: 12px; color: var(--text-secondary);">${notification.time}</div>
-                `;
-                
-                notificationDiv.onclick = () => {
-                    this.removeNotification(notification.id);
-                    openPrivateChat(notification.sender);
-                };
-                
-                container.appendChild(notificationDiv);
-            }
-            
-            removeNotification(notificationId) {
-                const notification = document.getElementById(notificationId);
-                if (notification) {
-                    notification.classList.add('hiding');
-                    setTimeout(() => {
-                        if (notification.parentNode) {
-                            notification.parentNode.removeChild(notification);
-                        }
-                        this.notifications = this.notifications.filter(n => n.id !== notificationId);
-                    }, 300);
-                }
-            }
-            
-            playNotificationSound() {
-                try {
-                    const sound = document.getElementById('notificationSound');
-                    sound.currentTime = 0;
-                    sound.play().catch(e => console.log("Ses çalınamadı:", e));
-                } catch (error) {
-                    console.log("Ses çalma hatası:", error);
-                }
-            }
-            
-            startTitleBlink(sender) {
-                this.clearTitleBlink();
-                
-                let blink = true;
-                this.titleBlinkInterval = setInterval(() => {
-                    if (blink) {
-                        document.title = `🔔 ${sender}'den mesaj! - Popbox Live`;
-                    } else {
-                        document.title = originalTitle;
-                    }
-                    blink = !blink;
-                }, 1000);
-            }
-            
-            clearTitleBlink() {
-                if (this.titleBlinkInterval) {
-                    clearInterval(this.titleBlinkInterval);
-                    this.titleBlinkInterval = null;
-                }
-                document.title = originalTitle;
-            }
-        }
-        
-        let notificationSystem = new NotificationSystem();
         
         // ========== TEMEL FONKSİYONLAR ==========
         function autoResize(textarea) {
@@ -2004,8 +2087,8 @@
                     if (nick === SECURE_CONFIG.OWNER_CONFIG.username) {
                         passwordInput.style.display = 'block';
                         passwordInfo.style.display = 'block';
-                        passwordInput.placeholder = 'Şifre (Owner)';
-                        passwordInfo.innerHTML = `🔐 <strong>${nick}</strong> Owner hesabıdır. Lütfen şifrenizi girin.`;
+                        passwordInput.placeholder = 'Şifre';
+                        passwordInfo.innerHTML = `🔐 Şifre gerekli`;
                         return;
                     }
                     
@@ -2014,8 +2097,8 @@
                     if (userRegistered && userRegistered.isRegistered) {
                         passwordInput.style.display = 'block';
                         passwordInfo.style.display = 'block';
-                        passwordInput.placeholder = `Şifre (${userRegistered.role} kullanıcısı)`;
-                        passwordInfo.innerHTML = `🔐 <strong>${nick}</strong> kayıtlı bir ${userRegistered.role} kullanıcısıdır. Lütfen şifrenizi girin.`;
+                        passwordInput.placeholder = `Şifre`;
+                        passwordInfo.innerHTML = `🔐 Şifre gerekli`;
                     } else {
                         passwordInput.style.display = 'none';
                         passwordInfo.style.display = 'none';
@@ -2350,7 +2433,11 @@
                 }
                 
                 // Bildirim göster
-                showOwnerPrivateNotification(user1, user2, message);
+                addNotification(
+                    `${user1} ↔ ${user2}`, 
+                    `${message.sender}: ${message.image ? '📸 Resim gönderdi' : message.text.substring(0, 50)}`,
+                    'owner'
+                );
             }
         }
         
@@ -2419,52 +2506,6 @@
                 console.error('Owner mesaj silme hatası:', error);
                 addSystemMessage('❌ Mesaj silinemedi!');
             }
-        }
-        
-        function showOwnerPrivateNotification(user1, user2, message) {
-            if (!isOwner) return;
-            
-            const sender = message.sender;
-            const receiver = sender === user1 ? user2 : user1;
-            
-            const notificationId = 'owner_notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            
-            const container = document.getElementById('notificationContainer');
-            
-            const notificationDiv = document.createElement('div');
-            notificationDiv.className = 'notification';
-            notificationDiv.id = notificationId;
-            notificationDiv.style.borderLeftColor = 'var(--owner)';
-            notificationDiv.style.background = 'var(--message-owner-bg)';
-            
-            let messageText = message.text;
-            if (message.image) {
-                messageText = '📸 Resim gönderdi';
-            }
-            
-            notificationDiv.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="color: var(--owner)">👁️</span>
-                        <strong>${sender} → ${receiver}</strong>
-                    </div>
-                    <button onclick="document.getElementById('${notificationId}').remove()" style="background: none; border: none; color: var(--text-primary); cursor: pointer;">×</button>
-                </div>
-                <div style="font-size: 14px; margin-bottom: 4px;">${messageText.length > 50 ? messageText.substring(0, 50) + '...' : messageText}</div>
-                <div style="font-size: 12px; color: var(--text-secondary);">${message.time || '--:--'}</div>
-            `;
-            
-            notificationDiv.onclick = () => {
-                document.getElementById(notificationId).remove();
-                openOwnerPrivateMessages(user1, user2);
-            };
-            
-            container.appendChild(notificationDiv);
-            
-            setTimeout(() => {
-                const notif = document.getElementById(notificationId);
-                if (notif) notif.remove();
-            }, 10000);
         }
         
         // OWNER ÖZEL KOMUTU: Tüm özel mesajları görüntüle
@@ -2638,7 +2679,7 @@
                     // OWNER İÇİN SHA-256 ŞİFRE KONTROLÜ
                     if (!password) {
                         await unlockUser(nick);
-                        showLoginError('🔐 Owner girişi için şifre gerekli!');
+                        showLoginError('🔐 Şifre gerekli!');
                         loginBtn.disabled = false;
                         loginBtn.textContent = 'Sohbete Katıl';
                         return;
@@ -2747,12 +2788,15 @@
                     currentUser.isHidden = true;
                 } else if (userRegisteredFinal && userRegisteredFinal.role === 'admin') {
                     isAdmin = true;
+                    currentUser.role = 'admin';
                     document.getElementById('adminBadge').style.display = 'inline-block';
                 } else if (userRegisteredFinal && userRegisteredFinal.role === 'coadmin') {
                     isCoAdmin = true;
+                    currentUser.role = 'coadmin';
                     document.getElementById('coadminBadge').style.display = 'inline-block';
                 } else if (userRegisteredFinal && userRegisteredFinal.role === 'operator') {
                     isOperator = true;
+                    currentUser.role = 'operator';
                     document.getElementById('operatorBadge').style.display = 'inline-block';
                 } else if (SECURE_CONFIG.DEFAULT_ADMINS.includes(nick.toLowerCase())) {
                     currentUser.role = 'admin';
@@ -3278,9 +3322,25 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:20px;">Özel mesajlar yükleniyor...</div>';
             
+            // Dinleme işlemini başlat
             privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('value', (snapshot) => {
                 const messages = snapshot.val();
                 updatePrivateMessages(messages);
+            });
+            
+            // Yeni mesaj geldiğinde bildirim gösterme
+            privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                if (message && message.sender !== currentUser.name) {
+                    // Sadece owner değilse bildirim göster
+                    if (!isOwner) {
+                        addNotification(
+                            message.sender,
+                            message.image ? '📸 Resim gönderdi' : message.text,
+                            'private'
+                        );
+                    }
+                }
             });
         }
         
@@ -3816,19 +3876,8 @@
                 return;
             }
             
-            // Mevcut sistem komutlarını kontrol et
-            const systemCommands = ['admin', 'bot', 'info', 'reg', 'register', 'coadmin', 'removecoadmin', 
-                                  'op', 'operator', 'removeop', 'removeoperator', 'ban', 'kick', 'unban', 
-                                  'banlist', 'sil', 'kullanıcılar', 'users', 'list', 'online', 'yardım', 
-                                  'help', 'firebase', 'fb', 'tema', 'theme', 'ping', 'çıkış', 'exit', 
-                                  'logout', 'quit', 'ozelokuma', 'özelokuma', 'ozelmesajlar', 'özelmesajlar',
-                                  'ozelara', 'özelara', 'ozeltemizle', 'özeltemizle', 'komut', 'yenikomut', 
-                                  'command', 'komutlar', 'commands', 'temizle'];
-            
-            if (systemCommands.includes(cmdName)) {
-                addSystemMessage(`❌ "${cmdName}" komutu sistem komutudur! Başka bir ad seçin.`);
-                return;
-            }
+            // Tüm IRC benzeri komutları ekleme izni
+            // Owner her türlü komut oluşturabilir
             
             try {
                 const commandData = {
