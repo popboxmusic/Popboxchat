@@ -11,18 +11,20 @@
 
   <style>
     :root {
-      --bg: #000;
-      --text: #fff;
-      --input: #222;
+      --bg: #0f0f0f;
+      --text: #f1f1f1;
+      --input: #272727;
       --primary: #ff0000;
       --system: #0f0;
+      --border: #333;
+      --owner: #ff4081;
     }
     body {
-      margin:0; background:var(--bg); color:var(--text); font-family:Arial; height:100vh; overflow:hidden;
+      margin:0; background:var(--bg); color:var(--text); font-family:Arial,sans-serif; height:100vh; overflow:hidden;
       display:flex; flex-direction:column;
     }
     header {
-      height:50px; background:#111; display:flex; align-items:center; justify-content:space-between; padding:0 15px; border-bottom:1px solid #333;
+      height:50px; background:#000; display:flex; align-items:center; justify-content:space-between; padding:0 15px; border-bottom:1px solid var(--border);
     }
     #messages { flex:1; overflow-y:auto; padding:10px; }
     .message { margin:8px 0; padding:10px; border-radius:8px; background:#222; }
@@ -32,7 +34,7 @@
     #message-input { flex:1; padding:12px; border:none; border-radius:20px; background:var(--input); color:white; }
     button { padding:10px 16px; background:var(--primary); color:white; border:none; border-radius:20px; cursor:pointer; }
     #login-screen { position:fixed; inset:0; background:#000; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:15px; z-index:1000; }
-    input { padding:12px; width:90%; max-width:350px; border-radius:6px; background:#222; color:white; border:none; }
+    input, textarea { padding:12px; width:90%; max-width:350px; border-radius:6px; background:#222; color:white; border:none; }
     .hidden { display:none !important; }
     .owner-panel { position:fixed; inset:0; background:rgba(0,0,0,0.95); color:white; padding:20px; overflow-y:auto; z-index:999; }
     .story-bar { height:70px; overflow-x:auto; display:flex; gap:12px; padding:10px; background:rgba(0,0,0,0.7); }
@@ -88,15 +90,18 @@
   <button onclick="openStoryModal()">Yeni Story</button>
   <hr>
   <button onclick="sikayetleriGoster()">Şikayetler</button>
-  <hr>
   <div id="sikayetListesi"></div>
+  <hr>
+  <input id="komutAd" placeholder="Komut adı (ör: selam)">
+  <input id="komutYanit" placeholder="Yanıt (ör: Merhaba!)">
+  <button onclick="komutEkle()">Komut Ekle</button>
 </div>
 
 <!-- Story Oluşturma Modal -->
 <div id="storyModal" class="modal hidden">
   <div class="modal-content">
     <h3>Yeni Story</h3>
-    <textarea id="storyText" placeholder="Metin..." style="width:100%; height:80px;"></textarea>
+    <textarea id="storyText" placeholder="Metin..."></textarea>
     <input type="file" id="storyImage" accept="image/*">
     <button onclick="createStory()">Yayınla</button>
     <button onclick="closeStoryModal()">Kapat</button>
@@ -132,7 +137,7 @@ function girisYap() {
   const nick = document.getElementById('nick').value.trim();
   const pass = document.getElementById('password').value;
 
-  if (!nick) return alert("Nick gir");
+  if (!nick) return document.getElementById('hata').textContent = "Nick gir";
 
   if (nick.toLowerCase() === OWNER && pass === SIFRE) {
     user = {nick: "MateKy", isOwner: true};
@@ -160,7 +165,6 @@ function girisYap() {
   });
 
   storiesRef.on('value', updateStories);
-  loadCommands();
 }
 
 function mesajGonder() {
@@ -179,19 +183,20 @@ function mesajGonder() {
 function handleCommand(text) {
   const parts = text.substring(1).split(' ');
   const cmd = parts[0].toLowerCase();
+  const arg = parts.slice(1).join(' ');
 
   if (cmd === 'komut' && user.isOwner) {
-    const name = prompt("Komut adı:");
-    const response = prompt("Yanıt:");
-    if (name && response) commandsRef.child(name).set(response);
+    const [name, ...response] = arg.split(' ');
+    if (name && response.length) {
+      commandsRef.child(name).set(response.join(' '));
+      mesajEkle("Sistem", `Komut eklendi: /${name}`);
+    }
   } else if (cmd === 'komutlar') {
     commandsRef.once('value', snap => {
-      let list = "Komutlar:\n";
-      snap.forEach(c => list += "/" + c.key + "\n");
-      alert(list || "Yok");
+      let list = 'Komutlar:\n';
+      snap.forEach(c => list += `/${c.key}\n`);
+      mesajEkle("Sistem", list || "Komut yok");
     });
-  } else if (cmd === 'temizle' && user.isOwner) {
-    if (confirm("Tüm mesajları sil?")) messagesRef.remove();
   } else {
     commandsRef.child(cmd).once('value', snap => {
       const response = snap.val();
@@ -251,7 +256,7 @@ function updateStories(snapshot) {
     if (s.expires > Date.now()) {
       const item = document.createElement('div');
       item.className = 'story-item';
-      if (s.image) item.style.backgroundImage = `url(${s.image})`;
+      item.style.backgroundImage = s.image ? `url(${s.image})` : 'none';
       item.innerHTML = s.image ? '' : s.sender[0];
       item.onclick = () => showStory(s);
       bar.appendChild(item);
@@ -275,7 +280,7 @@ function showStory(s) {
 }
 
 function sikayetEt(sender, content) {
-  const reason = prompt("Şikayet sebebibi:");
+  const reason = prompt("Şikayet sebebibibi:");
   if (reason) {
     reportsRef.push({sender: user.nick, reported: sender, content, reason, time: Date.now()});
     alert("Şikayet edildi");
@@ -284,12 +289,12 @@ function sikayetEt(sender, content) {
 
 function sikayetleriGoster() {
   reportsRef.once('value', snap => {
-    let list = "Şikayetler:\n";
+    let html = '<h3>Şikayetler</h3>';
     snap.forEach(r => {
       const v = r.val();
-      list += `${v.reported} - ${v.reason} (by ${v.sender})\n`;
+      html += `<p><strong>${v.reported}</strong> - ${v.reason}<br><small>${v.sender} • ${new Date(v.time).toLocaleString()}</small></p>`;
     });
-    alert(list || "Yok");
+    document.getElementById('sikayetListesi').innerHTML = html || '<p>Henüz şikayet yok</p>';
   });
 }
 
@@ -304,7 +309,7 @@ function dosyaYukle() {
 }
 
 function cikisYap() {
-  onlineRef.child(mevcutKullanici.nick.toLowerCase()).remove();
+  onlineRef.child(user.nick.toLowerCase()).remove();
   location.reload();
 }
 </script>
