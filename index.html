@@ -2225,7 +2225,7 @@
                 <div class="profile-section">
                     <div class="profile-section-title">Hesap</div>
                     <div class="profile-actions">
-                        <button class="profile-btn" onclick="openSubscribeModal()" id="subscribeBtn">
+                        <button class="profile-btn" onclick="subscribeUser()" id="subscribeBtn">
                             <span>🔔 Abone Ol</span>
                             <span id="subscribeStatus">Ücretsiz</span>
                         </button>
@@ -2782,8 +2782,8 @@
         <div class="modal-body">
             <div style="text-align: center; margin-bottom: 20px;">
                 <div style="font-size: 48px; color: var(--subscribe); margin-bottom: 10px;">🔔</div>
-                <h3 style="margin-bottom: 8px;">Premium Abonelik</h3>
-                <p style="color: var(--text-secondary); font-size: 14px;">YouTube benzeri abonelik sistemi</p>
+                <h3 style="margin-bottom: 8px;">ÜCRETSİZ ABONELİK</h3>
+                <p style="color: var(--text-secondary); font-size: 14px;">YouTube tarzı ücretsiz abonelik sistemi</p>
             </div>
             
             <div class="subscribe-benefits">
@@ -2810,12 +2810,12 @@
             </div>
             
             <div style="margin: 20px 0; text-align: center;">
-                <div style="font-size: 32px; font-weight: bold; color: var(--subscribe);">₺19.90<span style="font-size: 14px; color: var(--text-secondary);">/ay</span></div>
-                <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">*Otomatik yenilenir. İstediğiniz zaman iptal edebilirsiniz.</p>
+                <div style="font-size: 32px; font-weight: bold; color: var(--subscribe);">ÜCRETSİZ</div>
+                <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">*YouTube tarzı ücretsiz abonelik</p>
             </div>
             
             <button class="subscribe-button" onclick="subscribeUser()" id="subscribeActionBtn">
-                ABONE OL
+                ÜCRETSİZ ABONE OL
             </button>
             
             <div style="text-align: center; margin-top: 16px;">
@@ -3197,6 +3197,7 @@
         
         // ========== ABONELİK SİSTEMİ ==========
         let subscribers = [];
+        let subscriberCounts = {};
         let currentUsers = {};
         
         // ========== TEMEL FONKSİYONLAR ==========
@@ -3284,7 +3285,7 @@
             
             if (isSubscriber) {
                 subscribeBtn.innerHTML = '<span>🔔 Abone</span><span>✓</span>';
-                subscribeStatus.textContent = 'Aktif';
+                subscribeStatus.textContent = subscriberCounts[currentUser.name] || '1';
                 subscribeBtn.style.background = 'var(--subscribe)';
                 subscribeBtn.style.color = 'white';
                 subscribeBtn.style.borderColor = 'var(--subscribe)';
@@ -3312,10 +3313,84 @@
             }
         }
         
-        // ========== ABONELİK SİSTEMİ ==========
+        // ========== YOUTUBE TARZI ÜCRETSİZ ABONELİK SİSTEMİ ==========
+        async function subscribeUser() {
+            if (!currentUser) return;
+            
+            try {
+                const username = currentUser.name;
+                
+                // Abone sayısını güncelle
+                const currentCount = subscriberCounts[username] || 0;
+                const newCount = currentCount + 1;
+                
+                // Firebase'e kaydet
+                await subscribersRef.child(username).set({
+                    subscribedAt: Date.now(),
+                    subscriberCount: newCount,
+                    isSubscriber: true,
+                    lastUpdate: Date.now()
+                });
+                
+                // Yerel değişkenleri güncelle
+                isSubscriber = true;
+                subscriberCounts[username] = newCount;
+                
+                // Kullanıcıyı abone listesine ekle (eğer yoksa)
+                if (!subscribers.includes(username)) {
+                    subscribers.push(username);
+                }
+                
+                // Badge'leri güncelle
+                document.getElementById('subscriberBadge').style.display = 'inline-block';
+                document.getElementById('subscriberBadge').textContent = `SUBSCRIBER 🔔${newCount > 1 ? ' x' + newCount : ''}`;
+                
+                // Profil panelini güncelle
+                updateProfilePanel();
+                
+                // Sistem mesajı gönder
+                addSystemMessage(`🎉 ${username}, YouTube tarzı ücretsiz aboneliğiniz aktif edildi! Toplam abonelik: ${newCount}`);
+                mateBot.sendBotMessage(`🔔 ${username} kullanıcısı YouTube tarzı ücretsiz aboneliğe kaydoldu! Toplam: ${newCount}`, 'system');
+                
+                // Abonelik modalını kapat
+                closeSubscribeModal();
+                
+            } catch (error) {
+                console.error('Abonelik hatası:', error);
+                addSystemMessage('❌ Abonelik işlemi başarısız oldu!');
+            }
+        }
+        
+        async function loadSubscribers() {
+            try {
+                const snapshot = await subscribersRef.once('value');
+                const subs = snapshot.val() || {};
+                subscribers = [];
+                subscriberCounts = {};
+                
+                Object.entries(subs).forEach(([username, subData]) => {
+                    if (subData && subData.isSubscriber) {
+                        subscribers.push(username);
+                        subscriberCounts[username] = subData.subscriberCount || 1;
+                    }
+                });
+                
+                if (currentUser && subscribers.includes(currentUser.name)) {
+                    isSubscriber = true;
+                    document.getElementById('subscriberBadge').style.display = 'inline-block';
+                    const count = subscriberCounts[currentUser.name] || 1;
+                    document.getElementById('subscriberBadge').textContent = `SUBSCRIBER 🔔${count > 1 ? ' x' + count : ''}`;
+                }
+                
+            } catch (error) {
+                console.error('Abone listesi yükleme hatası:', error);
+            }
+        }
+        
         function openSubscribeModal() {
             if (isSubscriber) {
-                addSystemMessage('✅ Zaten abonesiniz!');
+                const count = subscriberCounts[currentUser.name] || 1;
+                addSystemMessage(`✅ Zaten abonesiniz! Toplam ${count} aboneliğiniz var.`);
                 return;
             }
             
@@ -3326,34 +3401,6 @@
         function closeSubscribeModal() {
             document.getElementById('subscribeModal').style.display = 'none';
             document.getElementById('overlay').style.display = 'none';
-        }
-        
-        async function subscribeUser() {
-            if (!currentUser) return;
-            
-            try {
-                await subscribersRef.child(currentUser.name).set({
-                    subscribedAt: Date.now(),
-                    expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000),
-                    plan: 'premium',
-                    status: 'active'
-                });
-                
-                isSubscriber = true;
-                
-                document.getElementById('subscriberBadge').style.display = 'inline-block';
-                
-                updateProfilePanel();
-                
-                addSystemMessage('🎉 Tebrikler! YouTube Premium aboneliğiniz aktif edildi!');
-                mateBot.sendBotMessage(`🔔 ${currentUser.name} kullanıcısı abone oldu!`, 'system');
-                
-                closeSubscribeModal();
-                
-            } catch (error) {
-                console.error('Abonelik hatası:', error);
-                addSystemMessage('❌ Abonelik işlemi başarısız oldu!');
-            }
         }
         
         // ========== OWNER TIM PANEL ==========
@@ -4004,27 +4051,50 @@
             }
         }
         
-        // ========== ABONELİK LİSTESİ YÜKLEME ==========
-        async function loadSubscribers() {
+        // ========== BAN SİSTEMİ GÜNCELLEME ==========
+        async function updateBannedUsers() {
             try {
-                const snapshot = await subscribersRef.once('value');
-                const subs = snapshot.val() || {};
-                subscribers = [];
-                
-                Object.entries(subs).forEach(([username, subData]) => {
-                    if (subData && subData.expiresAt > Date.now()) {
-                        subscribers.push(username);
-                    }
-                });
-                
-                if (currentUser && subscribers.includes(currentUser.name)) {
-                    isSubscriber = true;
-                    document.getElementById('subscriberBadge').style.display = 'inline-block';
-                }
-                
+                const snapshot = await bansRef.once('value');
+                bannedUsers = snapshot.val() || {};
             } catch (error) {
-                console.error('Abone listesi yükleme hatası:', error);
+                console.error('Ban listesi yükleme hatası:', error);
             }
+        }
+        
+        async function checkIfBanned(username) {
+            try {
+                const normalized = normalizeNick(username);
+                
+                for (const [bannedUser, banData] of Object.entries(bannedUsers)) {
+                    if (normalizeNick(bannedUser) === normalized) {
+                        if (banData.bannedUntil > Date.now()) {
+                            return { isBanned: true, banData };
+                        } else {
+                            await bansRef.child(bannedUser).remove();
+                        }
+                    }
+                }
+                return { isBanned: false };
+            } catch (error) {
+                console.error('Ban kontrol hatası:', error);
+                return { isBanned: false };
+            }
+        }
+        
+        function startBanMonitoring() {
+            setInterval(async () => {
+                try {
+                    const now = Date.now();
+                    for (const [username, banData] of Object.entries(bannedUsers)) {
+                        if (banData && banData.bannedUntil < now) {
+                            await bansRef.child(username).remove();
+                            delete bannedUsers[username];
+                        }
+                    }
+                } catch (error) {
+                    console.error('Ban izleme hatası:', error);
+                }
+            }, 60000);
         }
         
         // ========== GİRİŞ SİSTEMİ ==========
@@ -4103,13 +4173,13 @@
                     return;
                 }
                 
-                const banCheck = await checkIfBannedSecure(rawNick);
+                const banCheck = await checkIfBanned(rawNick);
                 if (banCheck.isBanned) {
                     await unlockUser(normalizedNick);
                     const remaining = Math.ceil((banCheck.banData.bannedUntil - Date.now()) / 60000);
                     showLoginError(
                         `🚫 BU KULLANICI BANLI!\n\n` +
-                        `Kullanıcı: ${banCheck.originalName}\n` +
+                        `Kullanıcı: ${rawNick}\n` +
                         `Ban Süresi: ${remaining} dakika kaldı\n` +
                         `Banlayan: ${banCheck.banData.bannedBy || 'Admin'}\n` +
                         `Sebep: ${banCheck.banData.reason || 'Belirtilmemiş'}`
@@ -4262,6 +4332,7 @@
                 isOwner = true;
                 document.getElementById('ownerBadge').style.display = 'inline-block';
                 document.getElementById('mateBotBadge').style.display = 'inline-block';
+                document.getElementById('storyBadge').style.display = 'inline-block';
             } else if (role === 'admin') {
                 isAdmin = true;
                 document.getElementById('adminBadge').style.display = 'inline-block';
@@ -4277,6 +4348,8 @@
             if (subscribers.includes(username)) {
                 isSubscriber = true;
                 document.getElementById('subscriberBadge').style.display = 'inline-block';
+                const count = subscriberCounts[username] || 1;
+                document.getElementById('subscriberBadge').textContent = `SUBSCRIBER 🔔${count > 1 ? ' x' + count : ''}`;
             }
             
             usersRef.child(username).onDisconnect().remove();
@@ -4296,11 +4369,10 @@
             
             if (isOwner) {
                 addSystemMessage('🤴 Owner olarak giriş yaptınız! Owner TIM aktif.');
-                document.getElementById('storyBadge').style.display = 'inline-block';
             }
             
             if (isSubscriber) {
-                addSystemMessage('🔔 Premium abone olarak giriş yaptınız!');
+                addSystemMessage(`🔔 ${subscriberCounts[username] || 1} abonelikle giriş yaptınız!`);
             }
         }
         
@@ -4446,33 +4518,66 @@
             }
         }
         
-        // ========== GÜVENLİ BAN KONTROLÜ ==========
-        async function checkIfBannedSecure(username) {
+        // ========== ÖZEL KOMUT SİSTEMİ ==========
+        async function loadCustomCommands() {
             try {
-                if (!bansRef) return { isBanned: false };
-                
-                const normalized = normalizeNick(username);
-                const banSnapshot = await bansRef.once('value');
-                const bans = banSnapshot.val() || {};
-                
-                for (const [bannedUser, banData] of Object.entries(bans)) {
-                    if (normalizeNick(bannedUser) === normalized) {
-                        if (banData.bannedUntil > Date.now()) {
-                            return {
-                                isBanned: true,
-                                banData: banData,
-                                originalName: bannedUser
-                            };
-                        } else {
-                            await bansRef.child(bannedUser).remove();
-                        }
-                    }
-                }
-                
-                return { isBanned: false };
+                const snapshot = await customCommandsRef.once('value');
+                customCommands = snapshot.val() || {};
             } catch (error) {
-                console.error("Ban kontrol hatası:", error);
-                return { isBanned: false };
+                console.error('Özel komutlar yükleme hatası:', error);
+            }
+        }
+        
+        async function loadRegisteredUsers() {
+            try {
+                const snapshot = await registeredUsersRef.once('value');
+                registeredUsers = snapshot.val() || {};
+            } catch (error) {
+                console.error('Kayıtlı kullanıcılar yükleme hatası:', error);
+            }
+        }
+        
+        async function loadOperators() {
+            try {
+                const snapshot = await operatorsRef.once('value');
+                operatorList = snapshot.val() || [];
+            } catch (error) {
+                console.error('Operatör listesi yükleme hatası:', error);
+            }
+        }
+        
+        async function loadAdminList() {
+            try {
+                const snapshot = await adminListRef.once('value');
+                adminList = snapshot.val() || [];
+            } catch (error) {
+                console.error('Admin listesi yükleme hatası:', error);
+            }
+        }
+        
+        function checkAdminStatus() {
+            if (currentUser) {
+                isAdmin = adminList.includes(currentUser.name);
+                isCoAdmin = coAdminList.includes(currentUser.name);
+                isOperator = operatorList.includes(currentUser.name);
+                
+                if (isAdmin) document.getElementById('adminBadge').style.display = 'inline-block';
+                if (isCoAdmin) document.getElementById('coadminBadge').style.display = 'inline-block';
+                if (isOperator) document.getElementById('operatorBadge').style.display = 'inline-block';
+            }
+        }
+        
+        function checkCoAdminStatus() {
+            if (currentUser) {
+                isCoAdmin = coAdminList.includes(currentUser.name);
+                if (isCoAdmin) document.getElementById('coadminBadge').style.display = 'inline-block';
+            }
+        }
+        
+        function checkOperatorStatus() {
+            if (currentUser) {
+                isOperator = operatorList.includes(currentUser.name);
+                if (isOperator) document.getElementById('operatorBadge').style.display = 'inline-block';
             }
         }
         
@@ -4513,6 +4618,24 @@
                 
             } catch (error) {
                 console.error("Story yükleme hatası:", error);
+            }
+        }
+        
+        async function loadStoryLikes() {
+            try {
+                const snapshot = await storyLikesRef.once('value');
+                storyLikes = snapshot.val() || {};
+            } catch (error) {
+                console.error("Story likes yükleme hatası:", error);
+            }
+        }
+        
+        async function loadStoryReports() {
+            try {
+                const snapshot = await storyReportsRef.once('value');
+                storyReports = snapshot.val() || {};
+            } catch (error) {
+                console.error("Story reports yükleme hatası:", error);
             }
         }
         
@@ -5206,7 +5329,7 @@
                     if (!isCurrentUser) {
                         addNotification(
                             msg.sender,
-                            `🔒 Özel mesaj: ${msg.text.substring(0, 50)}...`,
+                            `🔒 Özel mesaj: ${msg.text ? msg.text.substring(0, 50) : 'Resim'}...`,
                             'private'
                         );
                     }
@@ -5453,7 +5576,7 @@
             if (!currentUser || !bansRef) return true;
             
             try {
-                const banCheck = await checkIfBannedSecure(currentUser.name);
+                const banCheck = await checkIfBanned(currentUser.name);
                 if (banCheck.isBanned) {
                     addSystemMessage('🚫 MATE Bot: BANLANDINIZ! Mesaj gönderemezsiniz.');
                     return false;
@@ -5465,7 +5588,7 @@
             }
         }
         
-        // ========== KOMUT İŞLEME ==========
+        // ========== KOMUT İŞLEME (GÜNCELLENDİ - /temizle eklendi) ==========
         async function handleCommand(cmd) {
             if (!isFirebaseConnected) {
                 addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
@@ -5506,6 +5629,15 @@
                 return;
             }
             
+            if (command === 'temizle' || command === 'clear') {
+                if (isOwner || isAdmin || isCoAdmin) {
+                    await clearChat();
+                } else {
+                    addSystemMessage('⛔ Yetkiniz yok!');
+                }
+                return;
+            }
+            
             if (command === 'tim' || command === 'ownertim') {
                 if (isOwner) {
                     openOwnerTimPanel();
@@ -5516,7 +5648,7 @@
             }
             
             if (command === 'sub' || command === 'subscribe' || command === 'abone') {
-                openSubscribeModal();
+                subscribeUser();
                 return;
             }
             
@@ -5576,15 +5708,6 @@
                 return;
             }
             
-            if (command === 'clear' || command === 'temizle') {
-                if (isOwner || isAdmin || isCoAdmin) {
-                    clearChat();
-                } else {
-                    addSystemMessage('⛔ Yetkiniz yok!');
-                }
-                return;
-            }
-            
             if (command === 'admin' || command === 'yönetim') {
                 if (isOwner || isAdmin) {
                     openAdminPanel();
@@ -5613,6 +5736,60 @@
             addSystemMessage('❌ Bilinmeyen komut! /yardım yazarak tüm komutları görebilirsiniz.');
         }
         
+        // ========== SOHBET TEMİZLEME (GÜNCELLENDİ) ==========
+        async function clearChat() {
+            if (!isOwner && !isAdmin && !isCoAdmin) {
+                addSystemMessage('⛔ Yetkiniz yok!');
+                return;
+            }
+            
+            try {
+                // Tüm mesajları Firebase'den sil
+                await messagesRef.remove();
+                
+                // Yerel mesajları temizle
+                const messagesArea = document.getElementById('messages');
+                messagesArea.innerHTML = '';
+                
+                // Sistem mesajlarını ekle
+                const welcomeMsg = document.createElement('div');
+                welcomeMsg.className = 'yt-message system';
+                welcomeMsg.textContent = '🎉 Popbox Music Live\'e hoş geldiniz! MATE Bot güvenliğiniz için burada. Canlı sohbete katılın.';
+                messagesArea.appendChild(welcomeMsg);
+                
+                const mateBotCard = document.createElement('div');
+                mateBotCard.className = 'mate-bot-card';
+                mateBotCard.id = 'mateBotWelcome';
+                mateBotCard.innerHTML = `
+                    <div class="mate-bot-header">
+                        <div class="mate-bot-avatar">M</div>
+                        <div>
+                            <div style="font-weight: bold; color: var(--mate-bot);">MATE Güvenlik Botu</div>
+                            <div style="font-size: 12px; color: var(--text-secondary);">Güvenlik ve moderasyon sistemleri aktif</div>
+                        </div>
+                    </div>
+                    <div style="font-size: 14px;">
+                        ✅ <strong>Güvenlik Özellikleri:</strong><br>
+                        • Otomatik spam koruması<br>
+                        • Şüpheli aktivite tespiti<br>
+                        • Anlık şikayet bildirimi<br>
+                        • Owner TIM izleme sistemi
+                    </div>
+                `;
+                messagesArea.appendChild(mateBotCard);
+                
+                // Sistem mesajı gönder
+                addSystemMessage(`✅ Sohbet ${currentUser.name} tarafından temizlendi!`);
+                
+                // MATE Bot mesajı
+                mateBot.sendBotMessage(`📢 Sohbet ${currentUser.name} tarafından temizlendi!`, 'system');
+                
+            } catch (error) {
+                console.error('Sohbet temizleme hatası:', error);
+                addSystemMessage('❌ Sohbet temizlenirken hata oluştu!');
+            }
+        }
+        
         function showHelp() {
             let helpMessage = '📖 <strong>TÜM KOMUTLAR:</strong><br><br>';
             
@@ -5622,7 +5799,7 @@
             helpMessage += '• /online - Online kullanıcıları göster<br>';
             helpMessage += '• /story - Yeni story oluştur<br>';
             helpMessage += '• /mate stats - MATE Bot istatistikleri<br>';
-            helpMessage += '• /abone - Abonelik sistemi<br><br>';
+            helpMessage += '• /abone - YouTube tarzı ücretsiz abonelik<br><br>';
             
             helpMessage += '<strong>Özel Komutlar:</strong><br>';
             helpMessage += '• /özel kullanıcı - Özel sohbet başlat<br><br>';
@@ -5634,15 +5811,15 @@
                 if (isCoAdmin || isAdmin || isOwner) {
                     helpMessage += '• /ban kullanıcı - Kullanıcıyı banla<br>';
                     helpMessage += '• /kick kullanıcı - Kullanıcıyı at<br>';
+                    helpMessage += '• /temizle - Sohbeti temizle (tüm mesajları sil)<br>';
                 }
                 
                 if (isAdmin || isOwner) {
-                    helpMessage += '• /temizle - Sohbeti temizle<br>';
+                    helpMessage += '• /admin - Admin paneli<br>';
                 }
                 
                 if (isOwner) {
                     helpMessage += '• /tim - Owner TIM paneli<br>';
-                    helpMessage += '• /admin - Admin paneli<br>';
                 }
             }
             
@@ -5902,10 +6079,6 @@
                 });
             }
             
-            loadRegisteredUsers();
-            loadOperators();
-            loadAdminList();
-            
             // MATE Bot welcome messages
             if (usersRef && !isOwner) {
                 usersRef.on('child_added', (snapshot) => {
@@ -6101,6 +6274,93 @@
             location.reload();
         }
         
+        // ========== YARDIMCI FONKSİYONLAR ==========
+        function showLoginError(message) {
+            const errorDiv = document.getElementById('login-error');
+            if (message) {
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+            } else {
+                errorDiv.style.display = 'none';
+            }
+        }
+        
+        function showLoginSuccess(message) {
+            const successDiv = document.getElementById('login-success');
+            if (message) {
+                successDiv.textContent = message;
+                successDiv.style.display = 'block';
+            } else {
+                successDiv.style.display = 'none';
+            }
+        }
+        
+        function openAdminPanel() {
+            document.getElementById('adminRegisterModal').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+        }
+        
+        function closeAdminModal() {
+            document.getElementById('adminRegisterModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+        
+        function openBanModal(username) {
+            // Ban modalı implementasyonu
+            addSystemMessage(`⏳ Ban sistemi yakında eklenecek! Kullanıcı: ${username}`);
+        }
+        
+        function openKickModal(username) {
+            // Kick modalı implementasyonu
+            addSystemMessage(`⏳ Kick sistemi yakında eklenecek! Kullanıcı: ${username}`);
+        }
+        
+        function openReportModal(username) {
+            // Report modalı implementasyonu
+            addSystemMessage(`⏳ Şikayet sistemi yakında eklenecek! Kullanıcı: ${username}`);
+        }
+        
+        function toggleProfileEdit() {
+            addSystemMessage('✏️ Profil düzenleme özelliği yakında eklenecek!');
+        }
+        
+        function openSettings() {
+            addSystemMessage('⚙️ Ayarlar menüsü yakında eklenecek!');
+        }
+        
+        function openImagePreview(imageUrl) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                z-index: 5000;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            `;
+            
+            modal.innerHTML = `
+                <img src="${imageUrl}" style="max-width: 90%; max-height: 90%; border-radius: 12px;">
+                <button onclick="this.parentElement.remove()" style="position: absolute; top: 20px; right: 20px; background: none; border: none; color: white; font-size: 30px; cursor: pointer;">×</button>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.remove();
+                }
+            });
+        }
+        
+        function openUserInfo(username) {
+            addSystemMessage(`👤 Kullanıcı bilgileri: ${username}`);
+        }
+        
         // ========== SAYFA YÜKLENDİĞİNDE ==========
         window.addEventListener('load', async function() {
             console.log("📱 Sayfa yüklendi! MATE Bot aktif.");
@@ -6133,7 +6393,6 @@
             });
             
             document.addEventListener('click', function(e) {
-                // Panelleri kapatma
                 const panels = [
                     { panel: 'usersSidebar', btn: '.mobile-menu-btn' },
                     { panel: 'notificationPanel', btn: '.notification-icon' },
@@ -6180,79 +6439,6 @@
                 }
             }, 5000);
         });
-        
-        // ========== YARDIMCI FONKSİYONLAR ==========
-        function showLoginError(message) {
-            const errorDiv = document.getElementById('login-error');
-            if (message) {
-                errorDiv.textContent = message;
-                errorDiv.style.display = 'block';
-            } else {
-                errorDiv.style.display = 'none';
-            }
-        }
-        
-        function showLoginSuccess(message) {
-            const successDiv = document.getElementById('login-success');
-            if (message) {
-                successDiv.textContent = message;
-                successDiv.style.display = 'block';
-            } else {
-                successDiv.style.display = 'none';
-            }
-        }
-        
-        function openAdminPanel() {
-            document.getElementById('adminRegisterModal').style.display = 'block';
-            document.getElementById('overlay').style.display = 'block';
-        }
-        
-        function closeAdminModal() {
-            document.getElementById('adminRegisterModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
-        }
-        
-        async function registerUser() {
-            // Bu fonksiyon admin kayıt sistemi için
-        }
-        
-        function toggleProfileEdit() {
-            addSystemMessage('✏️ Profil düzenleme özelliği yakında eklenecek!');
-        }
-        
-        function openSettings() {
-            addSystemMessage('⚙️ Ayarlar menüsü yakında eklenecek!');
-        }
-        
-        function openImagePreview(imageUrl) {
-            // Resim önizleme için modal açılabilir
-            const modal = document.createElement('div');
-            modal.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0,0,0,0.9);
-                z-index: 5000;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-            `;
-            
-            modal.innerHTML = `
-                <img src="${imageUrl}" style="max-width: 90%; max-height: 90%; border-radius: 12px;">
-                <button onclick="this.parentElement.remove()" style="position: absolute; top: 20px; right: 20px; background: none; border: none; color: white; font-size: 30px; cursor: pointer;">×</button>
-            `;
-            
-            document.body.appendChild(modal);
-            
-            modal.addEventListener('click', function(e) {
-                if (e.target === this) {
-                    this.remove();
-                }
-            });
-        }
     </script>
     
     <!-- YouTube IFrame API -->
