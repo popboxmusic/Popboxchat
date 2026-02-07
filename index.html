@@ -1,321 +1,2178 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Popbox Music Chat</title>
-
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
-
-  <style>
-    :root {
-      --bg: #0f0f0f;
-      --text: #f1f1f1;
-      --input: #272727;
-      --primary: #ff0000;
-      --system: #0f0;
-      --border: #333;
-      --owner: #ff4081;
-      --private: #9c27b0;
-    }
-    body {
-      margin:0; background:var(--bg); color:var(--text); font-family:Arial,sans-serif; height:100vh; overflow:hidden;
-      display:flex; flex-direction:column;
-    }
-    header {
-      height:50px; background:#000; display:flex; align-items:center; justify-content:space-between; padding:0 15px; border-bottom:1px solid var(--border);
-    }
-    #messages { flex:1; overflow-y:auto; padding:10px; }
-    .message { margin:8px 0; padding:10px; border-radius:8px; background:#222; }
-    .message.own { background:#065fd4; margin-left:auto; margin-right:10px; }
-    .message.system { background:#333; color:var(--system); text-align:center; }
-    .message.private { background:var(--private); }
-    #input-area { padding:10px; background:#111; display:flex; gap:8px; }
-    #message-input { flex:1; padding:12px; border:none; border-radius:20px; background:var(--input); color:white; }
-    button { padding:10px 16px; background:var(--primary); color:white; border:none; border-radius:20px; cursor:pointer; }
-    #login-screen { position:fixed; inset:0; background:#000; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:15px; z-index:1000; }
-    input, textarea { padding:12px; width:90%; max-width:350px; border-radius:6px; background:#222; color:white; border:none; }
-    .hidden { display:none !important; }
-    .owner-panel { position:fixed; inset:0; background:rgba(0,0,0,0.95); color:white; padding:20px; overflow-y:auto; z-index:999; }
-    .story-bar { height:70px; overflow-x:auto; display:flex; gap:12px; padding:10px; background:rgba(0,0,0,0.7); }
-    .story-item { width:55px; height:55px; border-radius:50%; background:#ff6b6b; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; cursor:pointer; background-size:cover; background-position:center; }
-    .modal { position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:1000; display:flex; justify-content:center; align-items:center; }
-    .modal-content { background:#222; padding:25px; border-radius:12px; width:90%; max-width:420px; max-height:90vh; overflow-y:auto; }
-    .night-mode { --bg:#0d1117; --text:#c9d1d9; --input:#161b22; }
-    .night-mode .message { background:#161b22; }
-    .night-mode header { background:#010409; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Popbox Music Chat - Ultimate Platform</title>
+    
+    <!-- FIREBASE SDK v8 -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* MODERN TASARIM - YouTube Music Teması */
+        :root {
+            /* Ana Renkler */
+            --primary: #FF0000;
+            --primary-dark: #CC0000;
+            --primary-light: #FF3333;
+            --secondary: #9146FF;
+            --accent: #00B2FF;
+            --success: #00C853;
+            --warning: #FF9100;
+            --danger: #FF5252;
+            
+            /* Arkaplan Renkleri */
+            --bg-primary: #0F0F0F;
+            --bg-secondary: #1F1F1F;
+            --bg-tertiary: #2D2D2D;
+            --bg-card: rgba(255, 255, 255, 0.05);
+            
+            /* Metin Renkleri */
+            --text-primary: #FFFFFF;
+            --text-secondary: #AAAAAA;
+            --text-muted: #888888;
+            
+            /* Border & Shadow */
+            --border-color: rgba(255, 255, 255, 0.1);
+            --border-radius: 12px;
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            --glow: 0 0 20px rgba(255, 0, 0, 0.2);
+            
+            /* Mesaj Renkleri */
+            --message-user: rgba(255, 255, 255, 0.05);
+            --message-admin: rgba(255, 0, 0, 0.1);
+            --message-owner: rgba(145, 70, 255, 0.15);
+            --message-meta: rgba(0, 178, 255, 0.1);
+            --message-system: rgba(0, 200, 83, 0.1);
+            
+            /* Boyutlar */
+            --header-height: 60px;
+            --sidebar-width: 280px;
+            --chat-width: 400px;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        html, body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+        
+        body {
+            display: flex;
+            flex-direction: column;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        /* LOADER */
+        #loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.3s;
+        }
+        
+        .loader-content {
+            text-align: center;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* HEADER */
+        .header {
+            height: var(--header-height);
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 20px;
+            font-weight: bold;
+            color: var(--primary);
+        }
+        
+        .logo i {
+            font-size: 24px;
+        }
+        
+        /* HİKAYE/HERO SECTION */
+        .story-hero {
+            position: fixed;
+            top: var(--header-height);
+            left: 0;
+            right: 0;
+            height: 100px;
+            background: linear-gradient(180deg, rgba(15,15,15,0.95) 0%, rgba(15,15,15,0.7) 100%);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 900;
+            transition: all 0.3s ease;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 10px 0;
+        }
+        
+        .story-hero.collapsed {
+            height: 0;
+            padding: 0;
+            border: none;
+        }
+        
+        .story-toggle {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            z-index: 901;
+        }
+        
+        .story-container {
+            display: flex;
+            gap: 15px;
+            padding: 0 20px;
+            height: 100%;
+        }
+        
+        .story-item {
+            flex-shrink: 0;
+            width: 70px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .story-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            padding: 3px;
+            margin-bottom: 8px;
+        }
+        
+        .story-avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--bg-secondary);
+        }
+        
+        .story-avatar.seen {
+            background: var(--text-muted);
+        }
+        
+        .story-user {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-align: center;
+            max-width: 70px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* MAIN LAYOUT */
+        .main-container {
+            display: flex;
+            height: calc(100vh - var(--header-height));
+            margin-top: var(--header-height);
+            transition: margin-top 0.3s;
+        }
+        
+        .main-container.with-story {
+            margin-top: calc(var(--header-height) + 100px);
+        }
+        
+        /* SIDEBAR - KANAL LİSTESİ */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .sidebar-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--text-primary);
+        }
+        
+        .create-channel-btn {
+            width: 100%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            padding: 10px;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+        
+        .create-channel-btn:hover {
+            background: var(--primary-dark);
+        }
+        
+        .channel-search {
+            width: 100%;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 10px 15px;
+            color: var(--text-primary);
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        .channel-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        
+        .channel-item {
+            padding: 12px 15px;
+            border-radius: var(--border-radius);
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border: 1px solid transparent;
+        }
+        
+        .channel-item:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .channel-item.active {
+            background: var(--bg-tertiary);
+            border-color: var(--primary);
+        }
+        
+        .channel-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .channel-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        /* VİDEO CONTAINER */
+        .video-container {
+            flex: 1;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #youtube-player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .video-placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .video-placeholder i {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        
+        /* CHAT CONTAINER */
+        .chat-container {
+            width: var(--chat-width);
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .chat-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .channel-info {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .channel-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .channel-status {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .online-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            display: inline-block;
+        }
+        
+        /* MESAJLAR ALANI */
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .message {
+            padding: 12px 16px;
+            border-radius: var(--border-radius);
+            background: var(--bg-card);
+            border-left: 4px solid transparent;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message.user {
+            border-left-color: var(--primary);
+        }
+        
+        .message.admin {
+            border-left-color: var(--danger);
+            background: var(--message-admin);
+        }
+        
+        .message.owner {
+            border-left-color: var(--secondary);
+            background: var(--message-owner);
+        }
+        
+        .message.meta {
+            border-left-color: var(--accent);
+            background: var(--message-meta);
+        }
+        
+        .message.system {
+            border-left-color: var(--success);
+            background: var(--message-system);
+        }
+        
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .message-sender {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+        
+        .message-time {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        .message-content {
+            word-break: break-word;
+        }
+        
+        .message-image {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 8px;
+            margin-top: 8px;
+            cursor: pointer;
+        }
+        
+        /* CHAT INPUT */
+        .chat-input-container {
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+        
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        
+        #chat-input {
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 12px 16px;
+            color: var(--text-primary);
+            font-size: 14px;
+            resize: none;
+            min-height: 44px;
+            max-height: 120px;
+            line-height: 1.4;
+        }
+        
+        #chat-input::placeholder {
+            color: var(--text-muted);
+        }
+        
+        .send-btn {
+            width: 44px;
+            height: 44px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        
+        .send-btn:hover {
+            background: var(--primary-dark);
+        }
+        
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* BİLDİRİM SİSTEMİ */
+        .notification-bell {
+            position: relative;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: background 0.2s;
+        }
+        
+        .notification-bell:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .notification-badge {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: var(--danger);
+            color: white;
+            font-size: 10px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        
+        .notification-panel {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            width: 350px;
+            max-height: 500px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            z-index: 1001;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .notification-panel.active {
+            display: flex;
+        }
+        
+        .notification-header {
+            padding: 15px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .notification-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        
+        .notification-item {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            background: var(--bg-card);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .notification-item:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .notification-item.unread {
+            border-left: 3px solid var(--primary);
+        }
+        
+        /* HİKAYE MODAL */
+        .story-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 2000;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .story-content {
+            max-width: 90%;
+            max-height: 80%;
+            background: var(--bg-secondary);
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .story-media {
+            max-width: 100%;
+            max-height: 70vh;
+            display: block;
+        }
+        
+        /* ADMIN PANEL - ÖZEL GÖZETLEME */
+        .admin-spy-panel {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            width: 400px;
+            max-height: 600px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            z-index: 999;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .admin-spy-panel.active {
+            display: flex;
+        }
+        
+        .spy-header {
+            padding: 15px;
+            background: var(--danger);
+            color: white;
+            border-radius: var(--border-radius) var(--border-radius) 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .spy-controls {
+            padding: 15px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            gap: 10px;
+        }
+        
+        .spy-controls select,
+        .spy-controls input {
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 8px 12px;
+            color: var(--text-primary);
+        }
+        
+        .spy-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+        
+        /* MODALLAR */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1999;
+            display: none;
+        }
+        
+        .modal-overlay.active {
+            display: block;
+        }
+        
+        .modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            z-index: 2000;
+            display: none;
+            min-width: 400px;
+        }
+        
+        .modal.active {
+            display: block;
+        }
+        
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .modal-footer {
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        
+        .form-control {
+            width: 100%;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 10px 12px;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: var(--border-radius);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+        
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+        
+        .btn-secondary:hover {
+            background: var(--bg-card);
+        }
+        
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #FF3333;
+        }
+        
+        /* USER BADGES */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .badge.admin {
+            background: var(--danger);
+            color: white;
+        }
+        
+        .badge.owner {
+            background: var(--secondary);
+            color: white;
+        }
+        
+        .badge.meta {
+            background: var(--accent);
+            color: white;
+        }
+        
+        /* UTILITIES */
+        .hidden {
+            display: none !important;
+        }
+        
+        .flex-center {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .text-success {
+            color: var(--success);
+        }
+        
+        .text-warning {
+            color: var(--warning);
+        }
+        
+        .text-danger {
+            color: var(--danger);
+        }
+        
+        /* SCROLLBAR */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+        
+        /* RESPONSIVE */
+        @media (max-width: 1200px) {
+            :root {
+                --sidebar-width: 250px;
+                --chat-width: 350px;
+            }
+        }
+        
+        @media (max-width: 992px) {
+            .main-container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: 200px;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+            }
+            
+            .chat-container {
+                width: 100%;
+                height: 400px;
+            }
+            
+            .video-container {
+                flex: 1;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            :root {
+                --header-height: 56px;
+            }
+            
+            .header {
+                padding: 0 10px;
+            }
+            
+            .story-hero {
+                height: 80px;
+            }
+            
+            .story-avatar {
+                width: 48px;
+                height: 48px;
+            }
+            
+            .admin-spy-panel {
+                width: calc(100% - 40px);
+                right: 10px;
+            }
+        }
+        
+        /* ANIMATIONS */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+    </style>
 </head>
 <body>
-
-<div id="login-screen">
-  <h2 style="color:#ff0000">Popbox Music Chat</h2>
-  <input id="nick" placeholder="Nick">
-  <input id="password" type="password" placeholder="Şifre (sadece MateKy için)">
-  <button onclick="girisYap()">Giriş</button>
-  <p id="hata" style="color:#ff4444"></p>
-</div>
-
-<div id="main" class="hidden">
-  <header>
-    <div>Popbox Music Chat</div>
-    <div>Online: <span id="online-count">0</span></div>
-    <button onclick="document.body.classList.toggle('night-mode')">🌙</button>
-    <button onclick="document.getElementById('owner-panel').classList.toggle('hidden')">Owner</button>
-    <button onclick="cikisYap()">Çıkış</button>
-  </header>
-
-  <div id="story-bar" class="story-bar"></div>
-
-  <div id="messages">
-    <div class="message system">Hoş geldin!</div>
-  </div>
-
-  <div id="input-area">
-    <input id="message-input" placeholder="Mesaj yaz...">
-    <button onclick="mesajGonder()">Gönder</button>
-    <input type="file" id="dosyaSec" accept="image/*,video/*" style="display:none" onchange="dosyaYukle()">
-    <button onclick="document.getElementById('dosyaSec').click()">📎</button>
-  </div>
-</div>
-
-<!-- Owner Panel -->
-<div id="owner-panel" class="owner-panel hidden">
-  <h2>Owner Panel (MateKy)</h2>
-  <button onclick="document.getElementById('owner-panel').classList.add('hidden')">Kapat</button>
-  <hr>
-  <textarea id="sistem-mesaj" placeholder="Sistem mesajı..."></textarea>
-  <button onclick="sistemMesajGonder()">Gönder</button>
-  <hr>
-  <button onclick="openStoryModal()">Yeni Story</button>
-  <hr>
-  <button onclick="sikayetleriGoster()">Şikayetler</button>
-  <div id="sikayetListesi"></div>
-  <hr>
-  <input id="komutAd" placeholder="Komut adı">
-  <input id="komutYanit" placeholder="Yanıt">
-  <button onclick="komutEkle()">Komut Ekle</button>
-</div>
-
-<!-- Story Modal -->
-<div id="storyModal" class="modal hidden">
-  <div class="modal-content">
-    <h3>Yeni Story</h3>
-    <textarea id="storyText" placeholder="Metin..."></textarea>
-    <input type="file" id="storyImage" accept="image/*">
-    <button onclick="createStory()">Yayınla</button>
-    <button onclick="closeStoryModal()">Kapat</button>
-  </div>
-</div>
-
-<script>
-const firebaseConfig = {
-  apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
-  authDomain: "popboxmusicchat.firebaseapp.com",
-  databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
-  projectId: "popboxmusicchat",
-  storageBucket: "popboxmusicchat.firebasestorage.app",
-  messagingSenderId: "206625719024",
-  appId: "1:206625719024:web:d28f478a2c96d10412f835"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-const storage = firebase.storage();
-
-const messagesRef = db.ref('messages');
-const onlineRef = db.ref('online');
-const storiesRef = db.ref('stories');
-const reportsRef = db.ref('reports');
-const commandsRef = db.ref('commands');
-const privateRef = db.ref('private');
-const aboneRef = db.ref('abone');
-
-let user = null;
-const OWNER = "mateky";
-const SIFRE = "sahil7407@SCM";
-
-function girisYap() {
-  const nick = document.getElementById('nick').value.trim();
-  const pass = document.getElementById('password').value;
-
-  if (!nick) return document.getElementById('hata').textContent = "Nick gir";
-
-  if (nick.toLowerCase() === OWNER && pass === SIFRE) {
-    user = {nick: "MateKy", isOwner: true};
-  } else {
-    user = {nick, isOwner: false};
-  }
-
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('main').classList.remove('hidden');
-
-  onlineRef.child(nick.toLowerCase()).set(true);
-  onlineRef.child(nick.toLowerCase()).onDisconnect().remove();
-
-  messagesRef.on('child_added', snap => {
-    const msg = snap.val();
-    const div = document.createElement('div');
-    div.className = 'message' + (msg.system ? ' system' : (msg.private ? ' private' : ''));
-    div.textContent = msg.text;
-    document.getElementById('messages').appendChild(div);
-    div.scrollIntoView();
-  });
-
-  onlineRef.on('value', snap => {
-    document.getElementById('online-count').textContent = snap.numChildren();
-  });
-
-  storiesRef.on('value', updateStories);
-}
-
-function mesajGonder() {
-  const input = document.getElementById('message-input');
-  let text = input.value.trim();
-  if (!text) return;
-
-  if (text.startsWith('/')) {
-    handleCommand(text);
-  } else {
-    messagesRef.push({text, timestamp: Date.now(), sender: user.nick});
-  }
-  input.value = '';
-}
-
-function handleCommand(text) {
-  const parts = text.substring(1).split(' ');
-  const cmd = parts[0].toLowerCase();
-  const arg = parts.slice(1).join(' ');
-
-  if (cmd === 'komut' && user.isOwner) {
-    const [name, ...response] = arg.split(' ');
-    if (name && response.length) {
-      commandsRef.child(name).set(response.join(' '));
-      mesajEkle("Sistem", `Komut eklendi: /${name}`);
-    }
-  } else if (cmd === 'komutlar') {
-    commandsRef.once('value', snap => {
-      let list = 'Komutlar:\n';
-      snap.forEach(c => list += `/${c.key}\n`);
-      mesajEkle("Sistem", list || "Komut yok");
-    });
-  } else {
-    commandsRef.child(cmd).once('value', snap => {
-      const response = snap.val();
-      if (response) mesajEkle("Komut", response);
-    });
-  }
-}
-
-function sistemMesajGonder() {
-  const text = document.getElementById('sistem-mesaj').value.trim();
-  if (text) {
-    messagesRef.push({text: "[SİSTEM] " + text, system: true});
-    document.getElementById('sistem-mesaj').value = '';
-  }
-}
-
-function openStoryModal() {
-  document.getElementById('storyModal').classList.remove('hidden');
-}
-
-function closeStoryModal() {
-  document.getElementById('storyModal').classList.add('hidden');
-}
-
-function createStory() {
-  const text = document.getElementById('storyText').value.trim();
-  const file = document.getElementById('storyImage').files[0];
-
-  if (!text && !file) return alert("Metin veya resim ekle");
-
-  const data = {
-    sender: user.nick,
-    text,
-    timestamp: Date.now(),
-    expires: Date.now() + 86400000
-  };
-
-  if (file) {
-    const ref = storage.ref('stories/' + Date.now() + '_' + file.name);
-    ref.put(file).then(() => ref.getDownloadURL().then(url => {
-      data.image = url;
-      storiesRef.push(data);
-      closeStoryModal();
-    }));
-  } else {
-    storiesRef.push(data);
-    closeStoryModal();
-  }
-}
-
-function updateStories(snapshot) {
-  const bar = document.getElementById('story-bar');
-  bar.innerHTML = '';
-  const stories = snapshot.val() || {};
-
-  Object.entries(stories).forEach(([id, s]) => {
-    if (s.expires > Date.now()) {
-      const item = document.createElement('div');
-      item.className = 'story-item';
-      item.style.backgroundImage = s.image ? `url(${s.image})` : 'none';
-      item.innerHTML = s.image ? '' : s.sender[0];
-      item.onclick = () => showStory(s);
-      bar.appendChild(item);
-    }
-  });
-}
-
-function showStory(s) {
-  const modal = document.createElement('div');
-  modal.className = 'modal';
-  modal.innerHTML = `
-    <div class="modal-content">
-      <h3>${s.sender}</h3>
-      ${s.image ? `<img src="${s.image}" style="max-width:100%; border-radius:8px;">` : ''}
-      <p>${s.text || ''}</p>
-      <button onclick="sikayetEt('${s.sender}', '${s.text || 'resim'}')">Şikayet Et</button>
-      <button onclick="this.parentElement.parentElement.remove()">Kapat</button>
+    <!-- LOADER -->
+    <div id="loader">
+        <div class="loader-content">
+            <div class="spinner"></div>
+            <h2 style="margin-bottom: 10px; color: var(--primary)">Popbox Music Chat</h2>
+            <p style="color: var(--text-secondary)">Yükleniyor...</p>
+        </div>
     </div>
-  `;
-  document.body.appendChild(modal);
-}
 
-function sikayetEt(sender, content) {
-  const reason = prompt("Şikayet sebebibi:");
-  if (reason) {
-    reportsRef.push({sender: user.nick, reported: sender, content, reason, time: Date.now()});
-    alert("Şikayet edildi");
-  }
-}
+    <!-- HEADER -->
+    <div class="header">
+        <div class="logo">
+            <i class="fas fa-music"></i>
+            <span>Popbox Music</span>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <!-- HİKAYE TOGGLE -->
+            <button class="story-toggle" id="storyToggle">
+                <i class="fas fa-caret-down" id="storyIcon"></i>
+                <span>Hikayeler</span>
+            </button>
+            
+            <!-- BİLDİRİMLER -->
+            <div style="position: relative;">
+                <button class="notification-bell" id="notificationBell">
+                    <i class="fas fa-bell"></i>
+                    <span class="notification-badge" id="notificationCount">0</span>
+                </button>
+                
+                <div class="notification-panel" id="notificationPanel">
+                    <div class="notification-header">
+                        <h3>Bildirimler</h3>
+                        <button onclick="clearNotifications()" style="background:none;border:none;color:var(--text-primary);cursor:pointer;">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="notification-list" id="notificationList">
+                        <!-- Bildirimler buraya eklenecek -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ADMIN PANEL TOGGLE -->
+            <button class="btn btn-secondary" id="adminPanelToggle" style="display: none;">
+                <i class="fas fa-eye"></i>
+                <span>Admin Gözetleme</span>
+            </button>
+            
+            <!-- ÇIKIŞ -->
+            <button class="btn btn-danger" onclick="logout()" id="logoutBtn" style="display: none;">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </div>
 
-function sikayetleriGoster() {
-  reportsRef.once('value', snap => {
-    let html = '<h3>Şikayetler</h3>';
-    snap.forEach(r => {
-      const v = r.val();
-      html += `<p><strong>${v.reported}</strong> - ${v.reason}<br><small>${v.sender} • ${new Date(v.time).toLocaleString()}</small></p>`;
-    });
-    document.getElementById('sikayetListesi').innerHTML = html || '<p>Henüz şikayet yok</p>';
-  });
-}
+    <!-- HİKAYE/HERO SECTION -->
+    <div class="story-hero" id="storyHero">
+        <div class="story-container" id="storyContainer">
+            <!-- Hikayeler buraya eklenecek -->
+        </div>
+    </div>
 
-function dosyaYukle() {
-  const file = document.getElementById('dosyaSec').files[0];
-  if (!file) return;
+    <!-- MAIN CONTAINER -->
+    <div class="main-container" id="mainContainer">
+        <!-- SIDEBAR - KANAL LİSTESİ -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h3 class="sidebar-title">Kanallar</h3>
+                <button class="create-channel-btn" id="createChannelBtn">
+                    <i class="fas fa-plus"></i>
+                    <span>Kanal Oluştur</span>
+                </button>
+                <input type="text" class="channel-search" id="channelSearch" placeholder="Kanal ara...">
+            </div>
+            
+            <div class="channel-list" id="channelList">
+                <!-- Kanallar buraya eklenecek -->
+            </div>
+        </div>
 
-  const ref = storage.ref('media/' + Date.now() + '_' + file.name);
-  ref.put(file).then(() => ref.getDownloadURL().then(url => {
-    messagesRef.push({text: url, timestamp: Date.now()});
-  }));
-}
+        <!-- VİDEO CONTAINER -->
+        <div class="video-container">
+            <div id="youtube-player"></div>
+            <div class="video-placeholder" id="videoPlaceholder">
+                <i class="fas fa-play-circle"></i>
+                <h2>Popbox Music</h2>
+                <p>Video başlatmak için bir kanal seçin</p>
+            </div>
+        </div>
 
-function cikisYap() {
-  onlineRef.child(user.nick.toLowerCase()).remove();
-  location.reload();
-}
-</script>
+        <!-- CHAT CONTAINER -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <div class="channel-info">
+                    <h3 class="channel-title" id="currentChannel">Kanal Seçin</h3>
+                    <div class="channel-status">
+                        <span class="online-dot"></span>
+                        <span id="onlineCount">0</span> çevrimiçi
+                    </div>
+                </div>
+            </div>
+            
+            <div class="messages-container" id="messagesContainer">
+                <!-- Mesajlar buraya eklenecek -->
+            </div>
+            
+            <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                    <textarea 
+                        id="chat-input" 
+                        placeholder="Mesaj yazın... (Enter gönder, Shift+Enter yeni satır)"
+                        rows="1"
+                    ></textarea>
+                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADMIN GÖZETLEME PANELİ -->
+    <div class="admin-spy-panel" id="adminSpyPanel">
+        <div class="spy-header">
+            <h3><i class="fas fa-eye"></i> Admin Gözetleme</h3>
+            <button onclick="toggleSpyPanel()" style="background:none;border:none;color:white;cursor:pointer;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="spy-controls">
+            <select id="spyChannelSelect">
+                <option value="all">Tüm Kanallar</option>
+                <option value="private">Özel Mesajlar</option>
+            </select>
+            <input type="text" id="spySearch" placeholder="Kullanıcı ara...">
+        </div>
+        
+        <div class="spy-messages" id="spyMessages">
+            <!-- Gözetleme mesajları buraya eklenecek -->
+        </div>
+    </div>
+
+    <!-- MODALLAR -->
+    <div class="modal-overlay" id="modalOverlay"></div>
+
+    <!-- GİRİŞ MODALI -->
+    <div class="modal" id="loginModal">
+        <div class="modal-header">
+            <h2><i class="fas fa-sign-in-alt"></i> Giriş Yap</h2>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">Kullanıcı Adı</label>
+                <input type="text" class="form-control" id="loginUsername" placeholder="Kullanıcı adınız">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Şifre (sadece kayıtlı kullanıcılar)</label>
+                <input type="password" class="form-control" id="loginPassword" placeholder="Şifre">
+            </div>
+            <div id="loginError" class="text-danger" style="margin-top: 10px; display: none;"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal()">İptal</button>
+            <button class="btn btn-primary" onclick="login()">Giriş Yap</button>
+        </div>
+    </div>
+
+    <!-- KANAL OLUŞTURMA MODALI -->
+    <div class="modal" id="createChannelModal">
+        <div class="modal-header">
+            <h2><i class="fas fa-plus-circle"></i> Yeni Kanal</h2>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">Kanal Adı</label>
+                <input type="text" class="form-control" id="channelName" placeholder="Kanal adı">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Açıklama</label>
+                <textarea class="form-control" id="channelDescription" placeholder="Kanal açıklaması" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Kanal Türü</label>
+                <select class="form-control" id="channelType">
+                    <option value="public">Herkese Açık</option>
+                    <option value="private">Özel Kanal</option>
+                </select>
+            </div>
+            <div id="channelError" class="text-danger" style="margin-top: 10px; display: none;"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal()">İptal</button>
+            <button class="btn btn-primary" onclick="createChannel()">Oluştur</button>
+        </div>
+    </div>
+
+    <!-- HİKAYE OLUŞTURMA MODALI -->
+    <div class="modal" id="createStoryModal">
+        <div class="modal-header">
+            <h2><i class="fas fa-camera"></i> Yeni Hikaye</h2>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">Metin</label>
+                <textarea class="form-control" id="storyText" placeholder="Hikaye metni (isteğe bağlı)" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Resim Yükle</label>
+                <input type="file" class="form-control" id="storyImage" accept="image/*">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Görünürlük</label>
+                <select class="form-control" id="storyVisibility">
+                    <option value="public">Herkese Açık</option>
+                    <option value="friends">Sadece Arkadaşlar</option>
+                    <option value="private">Sadece Ben</option>
+                </select>
+            </div>
+            <div id="storyImagePreview" style="margin-top: 10px; display: none;">
+                <img id="previewImage" style="max-width: 100%; border-radius: 8px;">
+            </div>
+            <div id="storyError" class="text-danger" style="margin-top: 10px; display: none;"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal()">İptal</button>
+            <button class="btn btn-primary" onclick="createStory()">Paylaş</button>
+        </div>
+    </div>
+
+    <!-- VİDEO EKLEME MODALI -->
+    <div class="modal" id="addVideoModal">
+        <div class="modal-header">
+            <h2><i class="fas fa-video"></i> Video Ekle</h2>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">YouTube Video Linki</label>
+                <input type="text" class="form-control" id="videoUrl" placeholder="https://www.youtube.com/watch?v=...">
+            </div>
+            <div id="videoPreview" style="margin-top: 10px; display: none;">
+                <img id="videoThumbnail" style="width: 100%; border-radius: 8px;">
+                <div id="videoInfo" style="margin-top: 10px;"></div>
+            </div>
+            <div id="videoError" class="text-danger" style="margin-top: 10px; display: none;"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal()">İptal</button>
+            <button class="btn btn-primary" onclick="addVideo()">Ekle</button>
+        </div>
+    </div>
+
+    <!-- HİKAYE MODAL -->
+    <div class="story-modal" id="storyModal">
+        <div class="story-content" id="storyContent">
+            <!-- Hikaye içeriği buraya eklenecek -->
+        </div>
+        <div class="story-info" id="storyInfo">
+            <!-- Hikaye bilgileri buraya eklenecek -->
+        </div>
+    </div>
+
+    <!-- SES ELEMANI -->
+    <audio id="notificationSound" preload="auto">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-correct-answer-tone-2870.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        // ========== KONFİGÜRASYON ==========
+        const CONFIG = {
+            firebase: {
+                apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
+                authDomain: "popboxmusicchat.firebaseapp.com",
+                databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
+                projectId: "popboxmusicchat",
+                storageBucket: "popboxmusicchat.firebasestorage.app",
+                messagingSenderId: "206625719024",
+                appId: "1:206625719024:web:d28f478a2c96d10412f835",
+                measurementId: "G-SB1K22FLEX"
+            },
+            
+            defaultAdmins: ['admin', 'moderator', 'system'],
+            adminPassword: 'admin123', // Gerçek projede güvenli hash kullan
+            
+            metaBot: {
+                name: 'META Bot',
+                avatar: '🤖',
+                rules: [
+                    "⏱️ Spam yapmayın! 10 saniye bekleme süresi var.",
+                    "🔇 Küfür ve hakaret yasak!",
+                    "🔠 CAPS LOCK kullanmayın!",
+                    "📎 Sadece YouTube linkleri paylaşabilirsiniz.",
+                    "👮‍♂️ Kurallara uymayanlar banlanır!"
+                ],
+                checkInterval: 60000, // 1 dakika
+                maxMessagesPerMinute: 5,
+                maxCapsRatio: 0.7 // %70'den fazla CAPS engelle
+            },
+            
+            bannedWords: [
+                'küfür1', 'küfür2', 'küfür3', // Gerçek projede kapsamlı liste
+                'spam', 'reklam', 'phishing'
+            ]
+        };
+
+        // ========== GLOBAL DEĞİŞKENLER ==========
+        let firebaseApp, database;
+        let currentUser = null;
+        let currentChannel = null;
+        let channels = {};
+        let stories = [];
+        let notifications = [];
+        let spyMessages = [];
+        let metaBotTimer = null;
+        let player = null;
+        
+        // Firebase referansları
+        let usersRef, channelsRef, messagesRef, storiesRef, notificationsRef, spyRef;
+
+        // ========== BAŞLATMA ==========
+        async function initialize() {
+            try {
+                // Firebase başlat
+                firebaseApp = firebase.initializeApp(CONFIG.firebase);
+                database = firebase.database();
+                
+                // Referansları oluştur
+                usersRef = database.ref('users');
+                channelsRef = database.ref('channels');
+                messagesRef = database.ref('messages');
+                storiesRef = database.ref('stories');
+                notificationsRef = database.ref('notifications');
+                spyRef = database.ref('spyLog');
+                
+                // Loader'ı kaldır
+                setTimeout(() => {
+                    document.getElementById('loader').style.opacity = '0';
+                    setTimeout(() => {
+                        document.getElementById('loader').style.display = 'none';
+                        showLoginModal();
+                    }, 300);
+                }, 1000);
+                
+            } catch (error) {
+                console.error('Başlatma hatası:', error);
+                alert('Sistem başlatılamadı!');
+            }
+        }
+
+        // ========== GİRİŞ/ÇIKIŞ ==========
+        function showLoginModal() {
+            openModal('loginModal');
+        }
+
+        async function login() {
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            
+            if (!username) {
+                showError('loginError', 'Kullanıcı adı gerekli!');
+                return;
+            }
+            
+            try {
+                // Kullanıcı kontrolü
+                const userSnapshot = await usersRef.child(username).once('value');
+                const userData = userSnapshot.val();
+                
+                if (userData && userData.isRegistered) {
+                    // Kayıtlı kullanıcı - şifre kontrolü
+                    if (password !== userData.password) {
+                        showError('loginError', 'Hatalı şifre!');
+                        return;
+                    }
+                } else if (CONFIG.defaultAdmins.includes(username.toLowerCase())) {
+                    // Admin girişi
+                    if (password !== CONFIG.adminPassword) {
+                        showError('loginError', 'Hatalı admin şifresi!');
+                        return;
+                    }
+                } else {
+                    // Yeni kullanıcı - kayıt
+                    await usersRef.child(username).set({
+                        username: username,
+                        isRegistered: false,
+                        joinedAt: Date.now(),
+                        role: 'user'
+                    });
+                }
+                
+                // Giriş başarılı
+                currentUser = {
+                    username: username,
+                    isAdmin: CONFIG.defaultAdmins.includes(username.toLowerCase()),
+                    isRegistered: userData?.isRegistered || false,
+                    role: userData?.role || 'user'
+                };
+                
+                closeModal();
+                startSession();
+                
+            } catch (error) {
+                showError('loginError', 'Giriş hatası: ' + error.message);
+            }
+        }
+
+        function startSession() {
+            // Kullanıcıyı online olarak işaretle
+            usersRef.child(currentUser.username).update({
+                isOnline: true,
+                lastSeen: Date.now()
+            });
+            
+            // Sayfayı hazırla
+            document.getElementById('logoutBtn').style.display = 'block';
+            if (currentUser.isAdmin) {
+                document.getElementById('adminPanelToggle').style.display = 'block';
+            }
+            
+            // Verileri yükle
+            loadChannels();
+            loadStories();
+            loadNotifications();
+            startMetaBot();
+            
+            // Event listener'ları ekle
+            setupEventListeners();
+        }
+
+        function logout() {
+            if (currentUser) {
+                usersRef.child(currentUser.username).update({
+                    isOnline: false,
+                    lastSeen: Date.now()
+                });
+            }
+            
+            location.reload();
+        }
+
+        // ========== KANAL SİSTEMİ ==========
+        async function loadChannels() {
+            channelsRef.on('value', (snapshot) => {
+                channels = snapshot.val() || {};
+                renderChannels();
+            });
+        }
+
+        function renderChannels() {
+            const container = document.getElementById('channelList');
+            container.innerHTML = '';
+            
+            Object.entries(channels).forEach(([id, channel]) => {
+                // Kullanıcının erişimi kontrol et
+                if (channel.type === 'private' && 
+                    channel.owner !== currentUser.username && 
+                    !channel.members?.includes(currentUser.username) &&
+                    !currentUser.isAdmin) {
+                    return;
+                }
+                
+                const div = document.createElement('div');
+                div.className = `channel-item ${currentChannel === id ? 'active' : ''}`;
+                div.onclick = () => joinChannel(id);
+                
+                div.innerHTML = `
+                    <div class="channel-name">
+                        ${channel.type === 'private' ? '🔒' : '🔓'}
+                        ${channel.name}
+                        ${channel.owner === currentUser.username ? '<span class="badge admin">Sahip</span>' : ''}
+                    </div>
+                    <div class="channel-meta">
+                        <span>👤 ${channel.memberCount || 0}</span>
+                        <span>${channel.owner}</span>
+                    </div>
+                `;
+                
+                container.appendChild(div);
+            });
+            
+            // Eğer hiç kanal yoksa
+            if (Object.keys(channels).length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: var(--text-muted)">
+                        <i class="fas fa-comments" style="font-size: 32px; margin-bottom: 10px;"></i>
+                        <p>Henüz kanal yok. İlk kanalı sen oluştur!</p>
+                    </div>
+                `;
+            }
+        }
+
+        function showCreateChannelModal() {
+            openModal('createChannelModal');
+        }
+
+        async function createChannel() {
+            const name = document.getElementById('channelName').value.trim();
+            const description = document.getElementById('channelDescription').value.trim();
+            const type = document.getElementById('channelType').value;
+            
+            if (!name) {
+                showError('channelError', 'Kanal adı gerekli!');
+                return;
+            }
+            
+            try {
+                const channelId = 'channel_' + Date.now();
+                const channelData = {
+                    id: channelId,
+                    name: name,
+                    description: description,
+                    type: type,
+                    owner: currentUser.username,
+                    createdAt: Date.now(),
+                    memberCount: 1,
+                    members: [currentUser.username],
+                    currentVideo: null
+                };
+                
+                await channelsRef.child(channelId).set(channelData);
+                
+                // META Bot'u kanala ekle
+                await sendSystemMessage(channelId, `${CONFIG.metaBot.name} kanala katıldı!`);
+                
+                closeModal();
+                joinChannel(channelId);
+                
+            } catch (error) {
+                showError('channelError', 'Kanal oluşturma hatası: ' + error.message);
+            }
+        }
+
+        async function joinChannel(channelId) {
+            if (!channels[channelId]) return;
+            
+            currentChannel = channelId;
+            const channel = channels[channelId];
+            
+            // Kullanıcıyı kanala ekle
+            if (!channel.members?.includes(currentUser.username)) {
+                await channelsRef.child(channelId).child('members').push(currentUser.username);
+                await channelsRef.child(channelId).update({
+                    memberCount: (channel.memberCount || 0) + 1
+                });
+                
+                await sendSystemMessage(channelId, `${currentUser.username} kanala katıldı!`);
+            }
+            
+            // UI'ı güncelle
+            document.getElementById('currentChannel').textContent = channel.name;
+            renderMessages(channelId);
+            
+            if (channel.currentVideo) {
+                loadYouTubeVideo(channel.currentVideo);
+            }
+            
+            // Kanal listesini yenile
+            renderChannels();
+        }
+
+        // ========== MESAJ SİSTEMİ ==========
+        async function sendMessage() {
+            if (!currentChannel || !currentUser) return;
+            
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            // Spam kontrolü
+            if (checkSpam(text)) {
+                showNotification('META Bot', 'Spam tespit edildi! Lütfen 10 saniye bekleyin.');
+                return;
+            }
+            
+            // Küfür kontrolü
+            if (checkBannedWords(text)) {
+                showNotification('META Bot', 'Uygunsuz içerik tespit edildi! Mesajınız silindi.');
+                input.value = '';
+                return;
+            }
+            
+            // CAPS kontrolü
+            if (checkCaps(text)) {
+                showNotification('META Bot', 'Lütfen CAPS LOCK kullanmayın!');
+                return;
+            }
+            
+            try {
+                const messageData = {
+                    id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                    channelId: currentChannel,
+                    sender: currentUser.username,
+                    text: text,
+                    timestamp: Date.now(),
+                    type: currentUser.isAdmin ? 'admin' : 'user',
+                    isSystem: false
+                };
+                
+                // Admin için spy log'a kaydet
+                if (currentUser.isAdmin) {
+                    await spyRef.push({
+                        ...messageData,
+                        spyType: 'sent'
+                    });
+                }
+                
+                await messagesRef.child(currentChannel).push(messageData);
+                
+                // Input'u temizle
+                input.value = '';
+                input.style.height = 'auto';
+                
+                // Kullanıcıyı aktif olarak işaretle
+                usersRef.child(currentUser.username).update({
+                    lastSeen: Date.now()
+                });
+                
+            } catch (error) {
+                console.error('Mesaj gönderme hatası:', error);
+            }
+        }
+
+        async function sendSystemMessage(channelId, text) {
+            try {
+                await messagesRef.child(channelId).push({
+                    id: 'sys_' + Date.now(),
+                    sender: CONFIG.metaBot.name,
+                    text: text,
+                    timestamp: Date.now(),
+                    type: 'meta',
+                    isSystem: true
+                });
+            } catch (error) {
+                console.error('Sistem mesajı hatası:', error);
+            }
+        }
+
+        function renderMessages(channelId) {
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = '';
+            
+            if (!channels[channelId]) return;
+            
+            // Mesajları dinle
+            messagesRef.child(channelId).on('value', (snapshot) => {
+                const messages = snapshot.val() || {};
+                const messagesArray = Object.values(messages)
+                    .sort((a, b) => a.timestamp - b.timestamp)
+                    .slice(-100); // Son 100 mesaj
+                
+                container.innerHTML = '';
+                
+                messagesArray.forEach(msg => {
+                    const div = document.createElement('div');
+                    div.className = `message ${msg.type || 'user'} ${msg.isSystem ? 'system' : ''}`;
+                    
+                    const time = new Date(msg.timestamp).toLocaleTimeString('tr-TR', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    
+                    let badge = '';
+                    if (msg.type === 'admin') {
+                        badge = '<span class="badge admin">ADMİN</span>';
+                    } else if (msg.type === 'meta') {
+                        badge = '<span class="badge meta">META</span>';
+                    }
+                    
+                    div.innerHTML = `
+                        <div class="message-header">
+                            <div class="message-sender">
+                                ${msg.sender === CONFIG.metaBot.name ? CONFIG.metaBot.avatar + ' ' : ''}
+                                ${msg.sender}
+                                ${badge}
+                            </div>
+                            <div class="message-time">${time}</div>
+                        </div>
+                        <div class="message-content">${msg.text}</div>
+                    `;
+                    
+                    container.appendChild(div);
+                });
+                
+                // En alta kaydır
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+
+        // ========== META BOT ==========
+        function startMetaBot() {
+            // Kuralları hatırlat
+            metaBotTimer = setInterval(() => {
+                if (currentChannel && Math.random() < 0.3) { // %30 ihtimal
+                    const rule = CONFIG.metaBot.rules[Math.floor(Math.random() * CONFIG.metaBot.rules.length)];
+                    sendSystemMessage(currentChannel, `💡 Hatırlatma: ${rule}`);
+                }
+            }, CONFIG.metaBot.checkInterval);
+        }
+
+        function checkSpam(text) {
+            // Basit spam kontrolü - gerçek projede daha gelişmiş olmalı
+            const now = Date.now();
+            const lastMessageTime = window.lastMessageTime || 0;
+            
+            if (now - lastMessageTime < 10000) { // 10 saniye
+                return true;
+            }
+            
+            window.lastMessageTime = now;
+            return false;
+        }
+
+        function checkBannedWords(text) {
+            const lowerText = text.toLowerCase();
+            return CONFIG.bannedWords.some(word => lowerText.includes(word));
+        }
+
+        function checkCaps(text) {
+            const letters = text.replace(/[^a-zA-ZğüşıöçĞÜŞİÖÇ]/g, '');
+            if (letters.length < 5) return false;
+            
+            const capsCount = (letters.match(/[A-ZĞÜŞİÖÇ]/g) || []).length;
+            const capsRatio = capsCount / letters.length;
+            
+            return capsRatio > CONFIG.metaBot.maxCapsRatio;
+        }
+
+        // ========== HİKAYE SİSTEMİ ==========
+        async function loadStories() {
+            storiesRef.on('value', (snapshot) => {
+                stories = Object.values(snapshot.val() || {}).filter(story => 
+                    story.timestamp > Date.now() - 24 * 60 * 60 * 1000 // 24 saat
+                );
+                renderStories();
+            });
+        }
+
+        function renderStories() {
+            const container = document.getElementById('storyContainer');
+            container.innerHTML = '';
+            
+            // Kendi hikaye oluşturma butonu
+            const createBtn = document.createElement('div');
+            createBtn.className = 'story-item';
+            createBtn.onclick = () => showCreateStoryModal();
+            createBtn.innerHTML = `
+                <div class="story-avatar" style="background: var(--primary);">
+                    <i class="fas fa-plus" style="font-size: 20px; color: white; line-height: 50px;"></i>
+                </div>
+                <div class="story-user">Yeni Hikaye</div>
+            `;
+            container.appendChild(createBtn);
+            
+            // Hikayeler
+            stories.forEach(story => {
+                // Görünürlük kontrolü
+                if (story.visibility === 'private' && story.user !== currentUser.username) return;
+                if (story.visibility === 'friends' && !checkIfFriend(story.user)) return;
+                
+                const div = document.createElement('div');
+                div.className = 'story-item';
+                div.onclick = () => showStory(story);
+                
+                // Görülme kontrolü
+                const seenKey = `story_seen_${story.id}`;
+                const seen = localStorage.getItem(seenKey);
+                
+                div.innerHTML = `
+                    <div class="story-avatar ${seen ? 'seen' : ''}">
+                        <img src="https://ui-avatars.com/api/?name=${story.user}&background=random" alt="${story.user}">
+                    </div>
+                    <div class="story-user">${story.user}</div>
+                `;
+                
+                container.appendChild(div);
+            });
+        }
+
+        function showCreateStoryModal() {
+            openModal('createStoryModal');
+        }
+
+        async function createStory() {
+            const text = document.getElementById('storyText').value.trim();
+            const imageFile = document.getElementById('storyImage').files[0];
+            const visibility = document.getElementById('storyVisibility').value;
+            
+            if (!text && !imageFile) {
+                showError('storyError', 'Metin veya resim gerekli!');
+                return;
+            }
+            
+            try {
+                let imageUrl = null;
+                if (imageFile) {
+                    imageUrl = await uploadImage(imageFile);
+                }
+                
+                const storyData = {
+                    id: 'story_' + Date.now(),
+                    user: currentUser.username,
+                    text: text,
+                    image: imageUrl,
+                    visibility: visibility,
+                    timestamp: Date.now(),
+                    likes: 0,
+                    reports: 0
+                };
+                
+                await storiesRef.push(storyData);
+                
+                closeModal();
+                showNotification('Hikaye', 'Hikayeniz paylaşıldı!');
+                
+            } catch (error) {
+                showError('storyError', 'Hikaye oluşturma hatası: ' + error.message);
+            }
+        }
+
+        function showStory(story) {
+            const modal = document.getElementById('storyModal');
+            const content = document.getElementById('storyContent');
+            
+            // Görüldü olarak işaretle
+            localStorage.setItem(`story_seen_${story.id}`, 'true');
+            
+            if (story.image) {
+                content.innerHTML = `<img src="${story.image}" class="story-media">`;
+            } else {
+                content.innerHTML = `<div style="padding: 40px; text-align: center;">${story.text}</div>`;
+            }
+            
+            modal.style.display = 'flex';
+        }
+
+        // ========== VİDEO SİSTEMİ ==========
+        function showAddVideoModal() {
+            openModal('addVideoModal');
+        }
+
+        async function addVideo() {
+            const url = document.getElementById('videoUrl').value.trim();
+            
+            if (!url || !url.includes('youtube.com') || !url.includes('watch?v=')) {
+                showError('videoError', 'Geçerli bir YouTube linki girin!');
+                return;
+            }
+            
+            try {
+                const videoId = extractYouTubeId(url);
+                if (!videoId) {
+                    showError('videoError', 'YouTube video ID\'si bulunamadı!');
+                    return;
+                }
+                
+                // Kanal sahibi kontrolü
+                if (currentChannel && channels[currentChannel].owner !== currentUser.username && !currentUser.isAdmin) {
+                    showError('videoError', 'Sadece kanal sahibi video ekleyebilir!');
+                    return;
+                }
+                
+                await channelsRef.child(currentChannel).update({
+                    currentVideo: videoId
+                });
+                
+                loadYouTubeVideo(videoId);
+                closeModal();
+                
+                await sendSystemMessage(currentChannel, `${currentUser.username} yeni video ekledi!`);
+                
+            } catch (error) {
+                showError('videoError', 'Video ekleme hatası: ' + error.message);
+            }
+        }
+
+        function extractYouTubeId(url) {
+            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+            return match ? match[1] : null;
+        }
+
+        function loadYouTubeVideo(videoId) {
+            if (!videoId) return;
+            
+            const placeholder = document.getElementById('videoPlaceholder');
+            placeholder.style.display = 'none';
+            
+            if (!player) {
+                player = new YT.Player('youtube-player', {
+                    height: '100%',
+                    width: '100%',
+                    videoId: videoId,
+                    playerVars: {
+                        'autoplay': 1,
+                        'controls': 1,
+                        'rel': 0,
+                        'modestbranding': 1
+                    },
+                    events: {
+                        'onReady': (event) => event.target.playVideo()
+                    }
+                });
+            } else {
+                player.loadVideoById(videoId);
+            }
+        }
+
+        // ========== BİLDİRİM SİSTEMİ ==========
+        async function loadNotifications() {
+            notificationsRef.on('value', (snapshot) => {
+                notifications = Object.values(snapshot.val() || {}).filter(notif => 
+                    notif.user === currentUser.username || notif.user === 'all'
+                );
+                renderNotifications();
+            });
+        }
+
+        function renderNotifications() {
+            const list = document.getElementById('notificationList');
+            const count = document.getElementById('notificationCount');
+            
+            const unread = notifications.filter(n => !n.read).length;
+            count.textContent = unread;
+            
+            if (notifications.length === 0) {
+                list.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: var(--text-muted)">
+                        <i class="fas fa-bell-slash" style="font-size: 32px;"></i>
+                        <p>Henüz bildirim yok</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            list.innerHTML = notifications
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .slice(0, 20)
+                .map(notif => `
+                    <div class="notification-item ${notif.read ? '' : 'unread'}" onclick="markNotificationRead('${notif.id}')">
+                        <div style="display: flex; justify-content: space-between;">
+                            <strong>${notif.title}</strong>
+                            <small style="color: var(--text-muted)">
+                                ${new Date(notif.timestamp).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}
+                            </small>
+                        </div>
+                        <p style="margin-top: 5px; font-size: 13px;">${notif.message}</p>
+                    </div>
+                `)
+                .join('');
+        }
+
+        function showNotification(title, message) {
+            const sound = document.getElementById('notificationSound');
+            sound.currentTime = 0;
+            sound.play().catch(() => {});
+            
+            // Bildirim ekle
+            notificationsRef.push({
+                id: 'notif_' + Date.now(),
+                user: currentUser.username,
+                title: title,
+                message: message,
+                timestamp: Date.now(),
+                read: false
+            });
+        }
+
+        async function markNotificationRead(id) {
+            await notificationsRef.child(id).update({ read: true });
+        }
+
+        function clearNotifications() {
+            notifications.forEach(async (notif) => {
+                if (notif.user === currentUser.username) {
+                    await notificationsRef.child(notif.id).remove();
+                }
+            });
+        }
+
+        // ========== ADMIN GÖZETLEME ==========
+        function toggleSpyPanel() {
+            const panel = document.getElementById('adminSpyPanel');
+            panel.classList.toggle('active');
+            
+            if (panel.classList.contains('active')) {
+                loadSpyMessages();
+            }
+        }
+
+        async function loadSpyMessages() {
+            if (!currentUser.isAdmin) return;
+            
+            spyRef.on('value', (snapshot) => {
+                spyMessages = Object.values(snapshot.val() || {});
+                renderSpyMessages();
+            });
+        }
+
+        function renderSpyMessages() {
+            const container = document.getElementById('spyMessages');
+            const filter = document.getElementById('spyChannelSelect').value;
+            const search = document.getElementById('spySearch').value.toLowerCase();
+            
+            let filtered = spyMessages;
+            
+            if (filter !== 'all') {
+                filtered = filtered.filter(msg => msg.spyType === filter);
+            }
+            
+            if (search) {
+                filtered = filtered.filter(msg => 
+                    msg.sender.toLowerCase().includes(search) || 
+                    msg.text.toLowerCase().includes(search)
+                );
+            }
+            
+            container.innerHTML = filtered
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .slice(0, 50)
+                .map(msg => `
+                    <div class="message ${msg.type}" style="margin-bottom: 10px;">
+                        <div class="message-header">
+                            <div class="message-sender">
+                                ${msg.sender}
+                                <small style="color: var(--text-muted)">[${msg.channelId || 'özel'}]</small>
+                            </div>
+                            <div class="message-time">
+                                ${new Date(msg.timestamp).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}
+                            </div>
+                        </div>
+                        <div class="message-content">${msg.text}</div>
+                    </div>
+                `)
+                .join('');
+        }
+
+        // Admin için tüm özel mesajları okuma
+        async function spyOnPrivateMessages() {
+            if (!currentUser.isAdmin) return;
+            
+            // Tüm özel mesaj kanallarını dinle
+            messagesRef.on('value', (snapshot) => {
+                const allMessages = snapshot.val() || {};
+                Object.entries(allMessages).forEach(([channelId, messages]) => {
+                    if (channelId.includes('private_') || channelId.includes('direct_')) {
+                        Object.values(messages || {}).forEach(msg => {
+                            if (msg.sender !== currentUser.username && !msg.isSystem) {
+                                // Spy log'a kaydet
+                                spyRef.push({
+                                    ...msg,
+                                    spyType: 'private',
+                                    channelId: channelId,
+                                    spyTimestamp: Date.now()
+                                });
+                            }
+                        });
+                    }
+                });
+            });
+        }
+
+        // ========== YARDIMCI FONKSİYONLAR ==========
+        function openModal(modalId) {
+            document.getElementById('modalOverlay').classList.add('active');
+            document.getElementById(modalId).classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('active');
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.classList.remove('active');
+            });
+        }
+
+        function showError(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.style.display = 'block';
+        }
+
+        function checkIfFriend(username) {
+            // Basit arkadaş kontrolü - gerçek projede geliştirilmeli
+            return false;
+        }
+
+        async function uploadImage(file) {
+            // Basit base64 çevirme - gerçek projede Firebase Storage kullan
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // ========== EVENT LISTENER'LAR ==========
+        function setupEventListeners() {
+            // Hikaye toggle
+            document.getElementById('storyToggle').addEventListener('click', () => {
+                const hero = document.getElementById('storyHero');
+                const icon = document.getElementById('storyIcon');
+                const main = document.getElementById('mainContainer');
+                
+                if (hero.classList.contains('collapsed')) {
+                    hero.classList.remove('collapsed');
+                    icon.className = 'fas fa-caret-down';
+                    main.classList.add('with-story');
+                } else {
+                    hero.classList.add('collapsed');
+                    icon.className = 'fas fa-caret-up';
+                    main.classList.remove('with-story');
+                }
+            });
+            
+            // Bildirim panel toggle
+            document.getElementById('notificationBell').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const panel = document.getElementById('notificationPanel');
+                panel.classList.toggle('active');
+            });
+            
+            // Admin panel toggle
+            document.getElementById('adminPanelToggle').addEventListener('click', toggleSpyPanel);
+            
+            // Kanal oluştur butonu
+            document.getElementById('createChannelBtn').addEventListener('click', showCreateChannelModal);
+            
+            // Kanal arama
+            document.getElementById('channelSearch').addEventListener('input', (e) => {
+                const search = e.target.value.toLowerCase();
+                document.querySelectorAll('.channel-item').forEach(item => {
+                    const text = item.textContent.toLowerCase();
+                    item.style.display = text.includes(search) ? 'block' : 'none';
+                });
+            });
+            
+            // Gözetleme arama
+            document.getElementById('spySearch').addEventListener('input', renderSpyMessages);
+            document.getElementById('spyChannelSelect').addEventListener('change', renderSpyMessages);
+            
+            // Chat input
+            const chatInput = document.getElementById('chat-input');
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            
+            chatInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+            
+            // Modal overlay
+            document.getElementById('modalOverlay').addEventListener('click', closeModal);
+            
+            // Hikaye modal kapatma
+            document.getElementById('storyModal').addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) {
+                    e.currentTarget.style.display = 'none';
+                }
+            });
+            
+            // Global click listener
+            document.addEventListener('click', (e) => {
+                // Bildirim paneli kapatma
+                const notificationPanel = document.getElementById('notificationPanel');
+                if (!e.target.closest('.notification-bell') && !e.target.closest('.notification-panel')) {
+                    notificationPanel.classList.remove('active');
+                }
+                
+                // Admin panel kapatma
+                const adminPanel = document.getElementById('adminSpyPanel');
+                if (!e.target.closest('#adminPanelToggle') && !e.target.closest('.admin-spy-panel')) {
+                    adminPanel.classList.remove('active');
+                }
+            });
+        }
+
+        // ========== YOUTUBE API ==========
+        function onYouTubeIframeAPIReady() {
+            console.log('YouTube API hazır');
+        }
+
+        // ========== BAŞLAT ==========
+        window.addEventListener('load', () => {
+            initialize();
+            
+            // YouTube API script'i yükle
+            const tag = document.createElement('script');
+            tag.src = "https://www.youtube.com/iframe_api";
+            const firstScriptTag = document.getElementsByTagName('script')[0];
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        });
+    </script>
 </body>
 </html>
