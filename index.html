@@ -4161,8 +4161,8 @@
                         }
                         
                         await completeLogin(userRegistered.originalName, userRegistered.role, true, userRegistered);
-                        
-                    } else {
+                        } else {
+                        // Normal kullanıcı
                         const finalNick = await getAvailableNick(rawNick);
                         await completeLogin(finalNick, 'user', false, null);
                     }
@@ -4189,9 +4189,11 @@
             
             const normalizedProposed = normalizeNick(proposedNick);
             
+            // Aynı normalized nick var mı kontrol et
             const existingNicks = Object.keys(users).map(u => normalizeNick(u));
             
             if (existingNicks.includes(normalizedProposed)) {
+                // Benzer nick bul, orijinalini göster
                 for (const [username, userData] of Object.entries(users)) {
                     if (normalizeNick(username) === normalizedProposed) {
                         throw new Error(`Bu nick (${username}) zaten kullanımda!`);
@@ -4254,6 +4256,7 @@
                 data: userInfo
             };
             
+            // Yetki badge'leri
             if (role === 'owner') {
                 isOwner = true;
                 document.getElementById('ownerBadge').style.display = 'inline-block';
@@ -4269,6 +4272,7 @@
                 document.getElementById('operatorBadge').style.display = 'inline-block';
             }
             
+            // Abonelik kontrolü
             if (subscribers.includes(username)) {
                 isSubscriber = true;
                 document.getElementById('subscriberBadge').style.display = 'inline-block';
@@ -4280,6 +4284,7 @@
             
             initApp();
             
+            // MATE Bot hoşgeldin mesajı
             mateBot.sendWelcome(username);
             
             addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}! MATE Bot koruması altındasınız.`);
@@ -4609,7 +4614,7 @@
             ).length;
         }
         
-        async function openStoryModal(username) {
+        function openStoryModal(username) {
             if (!currentUser) return;
             
             const userStories = stories.filter(story => 
@@ -4630,26 +4635,162 @@
             startStoryProgress();
         }
         
-        // ========== EKSİK FONKSİYONLAR ==========
+        function showStory(index) {
+            if (index < 0 || index >= currentStories.length) {
+                closeStoryModal();
+                return;
+            }
+            
+            const story = currentStories[index];
+            const content = document.getElementById('storyContent');
+            const info = document.getElementById('storyInfo');
+            
+            let contentHTML = '';
+            if (story.image) {
+                contentHTML = `<img src="${story.image}" style="max-width:100%; border-radius:12px;" alt="Story Resmi">`;
+            }
+            if (story.text) {
+                contentHTML += `<div style="margin-top:20px; font-size:16px;">${story.text}</div>`;
+            }
+            
+            content.innerHTML = contentHTML;
+            
+            const time = new Date(story.timestamp).toLocaleTimeString('tr-TR', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            info.innerHTML = `
+                <strong>${story.sender}</strong>
+                <div style="font-size:12px; margin-top:5px;">${time}</div>
+            `;
+        }
         
-        // STORY FUNCTIONS
+        function createProgressBars() {
+            const progress = document.getElementById('storyProgress');
+            progress.innerHTML = '';
+            
+            for (let i = 0; i < currentStories.length; i++) {
+                const bar = document.createElement('div');
+                bar.style.cssText = `
+                    display: inline-block;
+                    height: 100%;
+                    flex: 1;
+                    margin: 0 2px;
+                    background: ${i === currentStoryIndex ? 'white' : 'rgba(255,255,255,0.3)'};
+                    transition: background 0.3s;
+                `;
+                progress.appendChild(bar);
+            }
+        }
+        
+        function startStoryProgress() {
+            if (storyProgressInterval) {
+                clearInterval(storyProgressInterval);
+            }
+            
+            storyProgressInterval = setInterval(() => {
+                const progress = document.getElementById('storyProgress');
+                const bars = progress.children;
+                
+                if (currentStoryIndex < currentStories.length) {
+                    bars[currentStoryIndex].style.background = 'rgba(255,255,255,0.3)';
+                    currentStoryIndex++;
+                    
+                    if (currentStoryIndex >= currentStories.length) {
+                        closeStoryModal();
+                        return;
+                    }
+                    
+                    bars[currentStoryIndex].style.background = 'white';
+                    showStory(currentStoryIndex);
+                }
+            }, 5000);
+        }
+        
+        function nextStory() {
+            if (storyProgressInterval) clearInterval(storyProgressInterval);
+            
+            const progress = document.getElementById('storyProgress');
+            const bars = progress.children;
+            
+            if (currentStoryIndex < currentStories.length) {
+                bars[currentStoryIndex].style.background = 'rgba(255,255,255,0.3)';
+                currentStoryIndex++;
+                
+                if (currentStoryIndex >= currentStories.length) {
+                    closeStoryModal();
+                    return;
+                }
+                
+                bars[currentStoryIndex].style.background = 'white';
+                showStory(currentStoryIndex);
+                startStoryProgress();
+            }
+        }
+        
+        function prevStory() {
+            if (storyProgressInterval) clearInterval(storyProgressInterval);
+            
+            const progress = document.getElementById('storyProgress');
+            const bars = progress.children;
+            
+            if (currentStoryIndex > 0) {
+                bars[currentStoryIndex].style.background = 'rgba(255,255,255,0.3)';
+                currentStoryIndex--;
+                bars[currentStoryIndex].style.background = 'white';
+                showStory(currentStoryIndex);
+                startStoryProgress();
+            }
+        }
+        
+        function closeStoryModal() {
+            document.getElementById('storyModal').style.display = 'none';
+            if (storyProgressInterval) {
+                clearInterval(storyProgressInterval);
+                storyProgressInterval = null;
+            }
+        }
+        
+        // ========== STORY OLUŞTURMA ==========
+        function openStoryCreateModal() {
+            if (!currentUser) return;
+            
+            document.getElementById('storyCreateModal').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+        }
+        
+        function closeStoryCreateModal() {
+            document.getElementById('storyCreateModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+        
         function selectStoryOption(option) {
             storyVisibility = option;
-            const publicBtn = document.getElementById('publicStoryBtn');
-            const privateBtn = document.getElementById('privateStoryBtn');
+            
+            document.getElementById('publicStoryBtn').classList.remove('active');
+            document.getElementById('privateStoryBtn').classList.remove('active');
             
             if (option === 'public') {
-                publicBtn.classList.add('active');
-                privateBtn.classList.remove('active');
+                document.getElementById('publicStoryBtn').classList.add('active');
             } else {
-                publicBtn.classList.remove('active');
-                privateBtn.classList.add('active');
+                document.getElementById('privateStoryBtn').classList.add('active');
             }
         }
         
         function handleStoryImageUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
+            
+            if (!file.type.startsWith('image/')) {
+                alert('Sadece resim dosyaları yükleyebilirsiniz!');
+                return;
+            }
+            
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Resim boyutu 5MB\'dan küçük olmalıdır!');
+                return;
+            }
             
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -4668,133 +4809,59 @@
         async function createStory() {
             if (!currentUser) return;
             
-            const text = document.getElementById('story-text').value.trim();
-            if (!text) {
-                addSystemMessage('❌ Story metni boş olamaz!');
+            const storyText = document.getElementById('story-text').value.trim();
+            const imageInput = document.getElementById('story-image-upload');
+            
+            if (!storyText && !imageInput.files[0]) {
+                alert('Lütfen bir metin veya resim yükleyin!');
                 return;
             }
             
-            const storyData = {
-                sender: currentUser.name,
-                text: text,
-                timestamp: Date.now(),
-                expiresAt: Date.now() + (24 * 60 * 60 * 1000),
-                visibility: storyVisibility,
-                likes: 0,
-                reports: 0,
-                seenBy: []
-            };
-            
             try {
-                await storiesRef.push(storyData);
+                const storyData = {
+                    sender: currentUser.name,
+                    text: storyText,
+                    visibility: storyVisibility,
+                    timestamp: Date.now(),
+                    expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 saat
+                    likes: 0,
+                    reports: 0
+                };
+                
+                let imageUrl = null;
+                if (imageInput.files[0]) {
+                    const reader = new FileReader();
+                    const imagePromise = new Promise((resolve) => {
+                        reader.onload = function(e) {
+                            imageUrl = e.target.result;
+                            resolve();
+                        };
+                    });
+                    reader.readAsDataURL(imageInput.files[0]);
+                    await imagePromise;
+                    
+                    storyData.image = imageUrl;
+                }
+                
+                const newStoryRef = storiesRef.push();
+                await newStoryRef.set(storyData);
+                
                 userStats.storyCount++;
                 updateProfilePanel();
                 
-                addSystemMessage('✅ Story başarıyla oluşturuldu!');
+                addSystemMessage('📱 Story başarıyla oluşturuldu!');
+                
                 closeStoryCreateModal();
+                document.getElementById('story-text').value = '';
+                removeStoryImage();
                 
             } catch (error) {
                 console.error('Story oluşturma hatası:', error);
-                addSystemMessage('❌ Story oluşturulamadı!');
+                alert('Story oluşturulurken hata oluştu!');
             }
         }
         
-        function openStoryCreateModal() {
-            document.getElementById('storyCreateModal').style.display = 'block';
-            document.getElementById('overlay').style.display = 'block';
-        }
-        
-        function closeStoryCreateModal() {
-            document.getElementById('storyCreateModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
-            document.getElementById('story-text').value = '';
-            removeStoryImage();
-        }
-        
-        function showStory(index) {
-            if (index < 0 || index >= currentStories.length) {
-                closeStoryModal();
-                return;
-            }
-            
-            const story = currentStories[index];
-            const content = document.getElementById('storyContent');
-            const info = document.getElementById('storyInfo');
-            
-            content.innerHTML = `
-                <div style="font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
-                    ${story.text}
-                </div>
-                ${story.image ? `<img src="${story.image}" style="max-width: 100%; max-height: 300px; border-radius: 8px;">` : ''}
-            `;
-            
-            info.innerHTML = `
-                <div style="font-weight: bold; margin-bottom: 5px;">${story.sender}</div>
-                <div style="font-size: 12px; opacity: 0.8;">${formatTime(story.timestamp)}</div>
-            `;
-            
-            currentStoryIndex = index;
-        }
-        
-        function startStoryProgress() {
-            if (storyProgressInterval) {
-                clearInterval(storyProgressInterval);
-            }
-            
-            const progressBar = document.getElementById('storyProgress');
-            progressBar.style.width = '0%';
-            
-            let progress = 0;
-            storyProgressInterval = setInterval(() => {
-                progress += 1;
-                progressBar.style.width = `${progress}%`;
-                
-                if (progress >= 100) {
-                    nextStory();
-                }
-            }, 50); // 5 saniye
-        }
-        
-        function nextStory() {
-            if (currentStoryIndex < currentStories.length - 1) {
-                showStory(currentStoryIndex + 1);
-            } else {
-                closeStoryModal();
-            }
-        }
-        
-        function prevStory() {
-            if (currentStoryIndex > 0) {
-                showStory(currentStoryIndex - 1);
-            }
-        }
-        
-        function closeStoryModal() {
-            document.getElementById('storyModal').style.display = 'none';
-            if (storyProgressInterval) {
-                clearInterval(storyProgressInterval);
-                storyProgressInterval = null;
-            }
-        }
-        
-        function createProgressBars() {
-            const container = document.getElementById('storyProgress');
-            container.innerHTML = '';
-            
-            for (let i = 0; i < currentStories.length; i++) {
-                const bar = document.createElement('div');
-                bar.style.cssText = `
-                    flex: 1;
-                    height: 3px;
-                    background: ${i === currentStoryIndex ? 'white' : 'rgba(255,255,255,0.3)'};
-                    margin: 0 2px;
-                    border-radius: 2px;
-                `;
-                container.appendChild(bar);
-            }
-        }
-        
-        // BİLDİRİM SİSTEMİ
+        // ========== BİLDİRİM SİSTEMİ ==========
         function toggleNotificationPanel(e) {
             if (e) e.stopPropagation();
             
@@ -5002,7 +5069,38 @@
             }
         }
         
-        // TEMA SİSTEMİ
+        function handleNotificationClick(notificationId) {
+            const notification = notifications.find(n => n.id === notificationId);
+            if (!notification) return;
+            
+            notification.read = true;
+            notificationCount = Math.max(0, notificationCount - 1);
+            updateNotificationBadge();
+            updateNotificationPanel();
+            
+            if (notification.type === 'private') {
+                openPrivateChat(notification.sender);
+            }
+        }
+        
+        function clearAllNotifications() {
+            notifications = [];
+            notificationCount = 0;
+            updateNotificationBadge();
+            updateNotificationPanel();
+        }
+        
+        function playNotificationSound() {
+            try {
+                const sound = document.getElementById('notificationSound');
+                sound.currentTime = 0;
+                sound.play();
+            } catch (error) {
+                console.error('Ses çalma hatası:', error);
+            }
+        }
+        
+        // ========== TEMA SİSTEMİ ==========
         function toggleTheme() {
             const body = document.body;
             const themeBtn = document.querySelector('.theme-toggle');
@@ -5050,132 +5148,153 @@
             }
         }
         
-        // YARDIMCI FONKSİYONLAR
-        function showLoginError(message) {
-            const errorDiv = document.getElementById('login-error');
-            errorDiv.textContent = message;
-            errorDiv.style.display = message ? 'block' : 'none';
-        }
-        
-        function showLoginSuccess(message) {
-            const successDiv = document.getElementById('login-success');
-            successDiv.textContent = message;
-            successDiv.style.display = message ? 'block' : 'none';
-        }
-        
-        function addSystemMessage(text) {
-            const messagesArea = document.getElementById('messages');
-            if (!messagesArea) return;
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'yt-message system';
-            messageDiv.innerHTML = `
-                <div class="message-content">${text}</div>
-            `;
-            
-            messagesArea.appendChild(messageDiv);
-            messagesArea.scrollTop = messagesArea.scrollHeight;
-        }
-        
-        function formatTime(timestamp) {
-            const date = new Date(timestamp);
-            return date.toLocaleTimeString('tr-TR', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        }
-        
-        function playNotificationSound() {
-            const audio = document.getElementById('notificationSound');
-            if (audio) {
-                audio.currentTime = 0;
-                audio.play().catch(e => console.log('Ses çalınamadı:', e));
-            }
-        }
-        
-        // ÖZEL MESAJ SİSTEMİ
+        // ========== ÖZEL SOHBET SİSTEMİ ==========
         function openPrivateChat(username) {
-            if (!currentUser || username === currentUser.name) return;
+            if (!currentUser) return;
+            
+            if (username === currentUser.name) {
+                addSystemMessage('❌ Kendinize özel mesaj gönderemezsiniz!');
+                return;
+            }
             
             privateChatWith = username;
             currentPrivateChatId = [currentUser.name, username].sort().join('_');
             
-            document.getElementById('privateWith').textContent = `🔒 Özel Sohbet: ${username}`;
+            document.getElementById('privateWith').textContent = `🔒 ${username} ile Özel Sohbet`;
             document.getElementById('privateModal').style.display = 'flex';
-            document.getElementById('overlay').style.display = 'block';
             
             loadPrivateMessages();
         }
         
         function closePrivateChat() {
-            document.getElementById('privateModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
             privateChatWith = null;
             currentPrivateChatId = null;
+            document.getElementById('privateModal').style.display = 'none';
+            document.getElementById('privateMessages').innerHTML = '';
+            document.getElementById('private-input').value = '';
         }
         
         async function loadPrivateMessages() {
-            if (!privateChatsRef || !currentPrivateChatId) return;
+            if (!currentPrivateChatId || !privateChatsRef) return;
             
             const messagesContainer = document.getElementById('privateMessages');
             messagesContainer.innerHTML = '';
             
             try {
-                const snapshot = await privateChatsRef.child(currentPrivateChatId).once('value');
+                const snapshot = await privateChatsRef.child(currentPrivateChatId).limitToLast(50).once('value');
                 const messages = snapshot.val() || {};
                 
                 Object.values(messages).forEach(msg => {
                     if (!msg) return;
                     
-                    const messageDiv = document.createElement('div');
-                    messageDiv.className = `yt-message ${msg.sender === currentUser.name ? 'private-msg' : ''}`;
-                    messageDiv.innerHTML = `
-                        <div class="message-header">
-                            <div class="message-user">${msg.sender}</div>
-                            <div class="message-time">${formatTime(msg.timestamp)}</div>
-                        </div>
-                        <div class="message-content">${msg.text}</div>
-                        ${msg.image ? `<img src="${msg.image}" class="message-image">` : ''}
-                    `;
-                    messagesContainer.appendChild(messageDiv);
+                    const isCurrentUser = msg.sender === currentUser.name;
+                    const messageElement = createPrivateMessageElement(msg, isCurrentUser);
+                    messagesContainer.appendChild(messageElement);
                 });
                 
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                
+                privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
+                    const msg = snapshot.val();
+                    if (!msg) return;
+                    
+                    const isCurrentUser = msg.sender === currentUser.name;
+                    const messageElement = createPrivateMessageElement(msg, isCurrentUser);
+                    messagesContainer.appendChild(messageElement);
+                    
+                    if (!isCurrentUser) {
+                        addNotification(
+                            msg.sender,
+                            `🔒 Özel mesaj: ${msg.text.substring(0, 50)}...`,
+                            'private'
+                        );
+                    }
+                    
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                });
                 
             } catch (error) {
                 console.error('Özel mesaj yükleme hatası:', error);
             }
         }
         
+        function createPrivateMessageElement(msg, isCurrentUser) {
+            const div = document.createElement('div');
+            div.className = `yt-message private-msg ${isCurrentUser ? 'sent' : 'received'}`;
+            
+            const time = new Date(msg.timestamp).toLocaleTimeString('tr-TR', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            let content = msg.text || '';
+            if (msg.image) {
+                content = `<img src="${msg.image}" class="message-image" onclick="openImagePreview('${msg.image}')" alt="Resim"><br>${content}`;
+            }
+            
+            div.innerHTML = `
+                <div class="message-header">
+                    <div class="message-user" onclick="${isCurrentUser ? '' : `openPrivateChat('${msg.sender}')`}">
+                        ${isCurrentUser ? 'Siz' : msg.sender}
+                    </div>
+                    <div class="message-time">${time}</div>
+                </div>
+                <div class="message-content">${content}</div>
+            `;
+            
+            return div;
+        }
+        
         async function sendPrivateMessage() {
-            if (!privateChatWith || !privateChatsRef || !currentPrivateChatId) return;
+            if (!privateChatWith || !currentPrivateChatId) return;
             
             const input = document.getElementById('private-input');
             const text = input.value.trim();
+            const imageFile = document.getElementById('imageUpload').files[0];
             
-            if (!text) return;
-            
-            const messageData = {
-                sender: currentUser.name,
-                receiver: privateChatWith,
-                text: text,
-                timestamp: Date.now(),
-                time: formatTime(Date.now())
-            };
+            if (!text && !imageFile) return;
             
             try {
-                await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                input.value = '';
+                const messageData = {
+                    sender: currentUser.name,
+                    receiver: privateChatWith,
+                    text: text,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    })
+                };
                 
-                // Owner'a bildirim gönder
-                if (isOwner) {
+                let imageUrl = null;
+                if (imageFile) {
+                    const reader = new FileReader();
+                    const imagePromise = new Promise((resolve) => {
+                        reader.onload = function(e) {
+                            imageUrl = e.target.result;
+                            resolve();
+                        };
+                    });
+                    reader.readAsDataURL(imageFile);
+                    await imagePromise;
+                    
+                    messageData.image = imageUrl;
+                }
+                
+                await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                
+                input.value = '';
+                document.getElementById('imageUpload').value = '';
+                
+                if (privateChatWith !== currentUser.name) {
                     allPrivateMessages.push({
                         key: currentPrivateChatId,
                         ...messageData
                     });
                 }
                 
-                loadPrivateMessages();
+                userStats.messageCount++;
+                updateProfilePanel();
                 
             } catch (error) {
                 console.error('Özel mesaj gönderme hatası:', error);
@@ -5183,72 +5302,370 @@
             }
         }
         
-        // OWNER ÖZEL MESAJ İZLEME
+        function openPrivateImageUpload() {
+            document.getElementById('imageUpload').click();
+        }
+        
+        // ========== OWNER ÖZEL MESAJ İZLEME ==========
         function openOwnerPrivateMessages(user1, user2) {
             const chatId = [user1, user2].sort().join('_');
             
             document.getElementById('ownerPrivateModal').style.display = 'flex';
-            document.getElementById('overlay').style.display = 'block';
-            
             loadOwnerPrivateMessages(chatId);
         }
         
         function closeOwnerPrivateModal() {
             document.getElementById('ownerPrivateModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('ownerPrivateMessages').innerHTML = '';
         }
         
         async function loadOwnerPrivateMessages(chatId) {
-            if (!privateChatsRef || !chatId) return;
+            if (!privateChatsRef) return;
             
             const messagesContainer = document.getElementById('ownerPrivateMessages');
-            messagesContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary);">Özel mesajlar yükleniyor...</div>';
+            messagesContainer.innerHTML = '';
             
             try {
-                const snapshot = await privateChatsRef.child(chatId).once('value');
+                const snapshot = await privateChatsRef.child(chatId).limitToLast(50).once('value');
                 const messages = snapshot.val() || {};
                 
-                let html = '';
                 Object.values(messages).forEach(msg => {
                     if (!msg) return;
                     
-                    html += `
-                        <div class="yt-message ${msg.sender === currentUser.name ? 'private-msg' : ''}">
-                            <div class="message-header">
-                                <div class="message-user">${msg.sender} → ${msg.receiver}</div>
-                                <div class="message-time">${formatTime(msg.timestamp)}</div>
+                    const div = document.createElement('div');
+                    div.className = 'yt-message private-msg';
+                    
+                    const time = new Date(msg.timestamp).toLocaleTimeString('tr-TR', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    
+                    let content = msg.text || '';
+                    if (msg.image) {
+                        content = `<img src="${msg.image}" class="message-image" onclick="openImagePreview('${msg.image}')" alt="Resim"><br>${content}`;
+                    }
+                    
+                    div.innerHTML = `
+                        <div class="message-header">
+                            <div class="message-user">
+                                ${msg.sender} → ${msg.receiver}
                             </div>
-                            <div class="message-content">${msg.text}</div>
+                            <div class="message-time">${time}</div>
                         </div>
+                        <div class="message-content">${content}</div>
                     `;
+                    
+                    messagesContainer.appendChild(div);
                 });
                 
-                messagesContainer.innerHTML = html || '<div style="text-align:center; padding:20px; color:var(--text-secondary);">Henüz mesaj yok.</div>';
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 
             } catch (error) {
                 console.error('Owner mesaj yükleme hatası:', error);
-                messagesContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary);">Mesajlar yüklenemedi.</div>';
             }
         }
         
-        // MESAJ GÜNCELLEME
+        function startOwnerPrivateMessageMonitoring() {
+            if (!privateChatsRef || !isOwner) return;
+            
+            privateChatsRef.on('child_added', (snapshot) => {
+                const chatId = snapshot.key;
+                const chatRef = snapshot.ref;
+                
+                chatRef.on('child_added', (msgSnapshot) => {
+                    const msg = msgSnapshot.val();
+                    if (!msg) return;
+                    
+                    allPrivateMessages.push({
+                        key: chatId,
+                        ...msg
+                    });
+                    
+                    addNotification(
+                        `${msg.sender} → ${msg.receiver}`,
+                        `🔒 Özel mesaj: ${msg.text ? msg.text.substring(0, 50) : 'Resim'}...`,
+                        'owner'
+                    );
+                });
+            });
+        }
+        
+        // ========== MESAJ GÖNDERME ==========
+        async function sendMessage() {
+            if (!isFirebaseConnected) {
+                addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
+                return;
+            }
+            
+            const canSend = await checkBanBeforeMessage();
+            if (!canSend) return;
+            
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            if (text.startsWith('/')) {
+                handleCommand(text);
+                input.value = '';
+                autoResize(input);
+                return;
+            }
+            
+            const messageData = {
+                sender: currentUser.name,
+                text: text,
+                type: isOwner ? 'owner' : (isAdmin ? 'admin' : (isCoAdmin ? 'coadmin' : (isOperator ? 'operator' : (isSubscriber ? 'subscriber' : 'user')))),
+                timestamp: Date.now(),
+                time: new Date().toLocaleTimeString('tr-TR', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                })
+            };
+            
+            try {
+                await messagesRef.push(messageData);
+                input.value = '';
+                autoResize(input);
+                
+                userStats.messageCount++;
+                updateProfilePanel();
+                
+                if (usersRef) {
+                    usersRef.child(currentUser.name).update({
+                        lastSeen: Date.now(),
+                        messageCount: userStats.messageCount
+                    });
+                }
+                
+                if (text.length < 2 || text.includes('http') || text.includes('.com')) {
+                    mateBot.updateSecurityStats('spamDetected', 1);
+                }
+                
+            } catch (error) {
+                console.error('Mesaj gönderme hatası:', error);
+                addSystemMessage('❌ Mesaj gönderilemedi!');
+            }
+        }
+        
+        async function checkBanBeforeMessage() {
+            if (!currentUser || !bansRef) return true;
+            
+            try {
+                const banCheck = await checkIfBannedSecure(currentUser.name);
+                if (banCheck.isBanned) {
+                    addSystemMessage('🚫 MATE Bot: BANLANDINIZ! Mesaj gönderemezsiniz.');
+                    return false;
+                }
+                return true;
+            } catch (error) {
+                console.error('Ban kontrol hatası:', error);
+                return true;
+            }
+        }
+        
+        // ========== KOMUT İŞLEME ==========
+        async function handleCommand(cmd) {
+            if (!isFirebaseConnected) {
+                addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
+                return;
+            }
+            
+            const parts = cmd.substring(1).split(' ');
+            const command = parts[0].toLowerCase();
+            const args = parts.slice(1);
+            
+            console.log("🔍 Komut:", command, "Args:", args);
+            
+            if (command === 'mate' || command === 'matebot') {
+                if (args[0] === 'stats') {
+                    const stats = mateBot.getStats();
+                    let statMessage = `
+                        🤖 <strong>MATE BOT İSTATİSTİKLERİ:</strong><br><br>
+                        • Spam Engellenen: ${stats.spamBlocked}<br>
+                        • Şüpheli Aktivite: ${stats.suspiciousDetected}<br>
+                        • Verilen Banlar: ${stats.bansIssued}<br>
+                        • İşlenen Şikayetler: ${stats.reportsProcessed}<br>
+                        • Aktif Tarama: ${isFirebaseConnected ? '✅' : '❌'}<br>
+                        • Son Tarama: Şimdi
+                    `;
+                    addSystemMessage(statMessage);
+                    return;
+                }
+                
+                if (args[0] === 'scan' && (isOwner || isAdmin)) {
+                    mateBot.performSecurityScan();
+                    addSystemMessage('🔒 MATE Bot güvenlik taraması başlatıldı...');
+                    return;
+                }
+                
+                addSystemMessage('🤖 MATE Bot Komutları:');
+                addSystemMessage('• /mate stats - Bot istatistiklerini göster');
+                addSystemMessage('• /mate scan - Güvenlik taraması başlat (Admin+)');
+                return;
+            }
+            
+            if (command === 'tim' || command === 'ownertim') {
+                if (isOwner) {
+                    openOwnerTimPanel();
+                } else {
+                    addSystemMessage('⛔ Bu komutu sadece Owner kullanabilir!');
+                }
+                return;
+            }
+            
+            if (command === 'sub' || command === 'subscribe' || command === 'abone') {
+                openSubscribeModal();
+                return;
+            }
+            
+            if (command === 'profile' || command === 'profil') {
+                toggleProfilePanel();
+                return;
+            }
+            
+            if (command === 'yardım' || command === 'help') {
+                showHelp();
+                return;
+            }
+            
+            if (command === 'online' || command === 'list') {
+                toggleUserList();
+                return;
+            }
+            
+            if (command === 'story' || command === 'hikaye') {
+                openStoryCreateModal();
+                return;
+            }
+            
+            if (command === 'özel' || command === 'pm') {
+                if (args[0]) {
+                    openPrivateChat(args[0]);
+                } else {
+                    addSystemMessage('Kullanım: /özel kullanıcıadı');
+                }
+                return;
+            }
+            
+            if (command === 'şikayet' || command === 'report') {
+                if (args[0]) {
+                    openReportModal(args[0]);
+                } else {
+                    addSystemMessage('Kullanım: /şikayet kullanıcıadı');
+                }
+                return;
+            }
+            
+            if (command === 'ban') {
+                if ((isOwner || isAdmin || isCoAdmin) && args[0]) {
+                    openBanModal(args[0]);
+                } else {
+                    addSystemMessage('⛔ Yetkiniz yok veya kullanıcı belirtmediniz!');
+                }
+                return;
+            }
+            
+            if (command === 'kick') {
+                if ((isOwner || isAdmin || isCoAdmin) && args[0]) {
+                    openKickModal(args[0]);
+                } else {
+                    addSystemMessage('⛔ Yetkiniz yok veya kullanıcı belirtmediniz!');
+                }
+                return;
+            }
+            
+            if (command === 'clear' || command === 'temizle') {
+                if (isOwner || isAdmin || isCoAdmin) {
+                    clearChat();
+                } else {
+                    addSystemMessage('⛔ Yetkiniz yok!');
+                }
+                return;
+            }
+            
+            if (command === 'admin' || command === 'yönetim') {
+                if (isOwner || isAdmin) {
+                    openAdminPanel();
+                } else {
+                    addSystemMessage('⛔ Yetkiniz yok!');
+                }
+                return;
+            }
+            
+            if (customCommands[command]) {
+                const cmdData = customCommands[command];
+                
+                if (cmdData.role === 'all' ||
+                    (cmdData.role === 'operator' && (isOperator || isCoAdmin || isAdmin || isOwner)) ||
+                    (cmdData.role === 'coadmin' && (isCoAdmin || isAdmin || isOwner)) ||
+                    (cmdData.role === 'admin' && (isAdmin || isOwner)) ||
+                    (cmdData.role === 'owner' && isOwner)) {
+                    
+                    addSystemMessage(cmdData.response);
+                } else {
+                    addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!');
+                }
+                return;
+            }
+            
+            addSystemMessage('❌ Bilinmeyen komut! /yardım yazarak tüm komutları görebilirsiniz.');
+        }
+        
+        function showHelp() {
+            let helpMessage = '📖 <strong>TÜM KOMUTLAR:</strong><br><br>';
+            
+            helpMessage += '<strong>Genel Komutlar:</strong><br>';
+            helpMessage += '• /yardım - Tüm komutları göster<br>';
+            helpMessage += '• /profil - Profil panelini aç<br>';
+            helpMessage += '• /online - Online kullanıcıları göster<br>';
+            helpMessage += '• /story - Yeni story oluştur<br>';
+            helpMessage += '• /mate stats - MATE Bot istatistikleri<br>';
+            helpMessage += '• /abone - Abonelik sistemi<br><br>';
+            
+            helpMessage += '<strong>Özel Komutlar:</strong><br>';
+            helpMessage += '• /özel kullanıcı - Özel sohbet başlat<br><br>';
+            
+            if (isOperator || isCoAdmin || isAdmin || isOwner) {
+                helpMessage += '<strong>Moderasyon Komutları:</strong><br>';
+                helpMessage += '• /şikayet kullanıcı - Kullanıcıyı şikayet et<br>';
+                
+                if (isCoAdmin || isAdmin || isOwner) {
+                    helpMessage += '• /ban kullanıcı - Kullanıcıyı banla<br>';
+                    helpMessage += '• /kick kullanıcı - Kullanıcıyı at<br>';
+                }
+                
+                if (isAdmin || isOwner) {
+                    helpMessage += '• /temizle - Sohbeti temizle<br>';
+                }
+                
+                if (isOwner) {
+                    helpMessage += '• /tim - Owner TIM paneli<br>';
+                    helpMessage += '• /admin - Admin paneli<br>';
+                }
+            }
+            
+            addSystemMessage(helpMessage);
+        }
+        
+        // ========== MESAJ GÜNCELLEME ==========
         function updateMessages(messages) {
+            if (!messages) return;
+            
             const container = document.getElementById('messages');
-            if (!container) return;
+            
+            const messageArray = Object.values(messages);
+            messageArray.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            
+            const recentMessages = messageArray.slice(-50);
             
             container.innerHTML = '';
             
-            // Sistem mesajı
-            const systemMsg = document.createElement('div');
-            systemMsg.className = 'yt-message system';
-            systemMsg.innerHTML = `
-                <div class="message-content">
-                    🎉 Popbox Music Live'e hoş geldiniz! MATE Bot güvenliğiniz için burada. Canlı sohbete katılın.
-                </div>
-            `;
-            container.appendChild(systemMsg);
+            const welcomeMsg = document.createElement('div');
+            welcomeMsg.className = 'yt-message system';
+            welcomeMsg.textContent = '🎉 Popbox Music Live\'e hoş geldiniz! MATE Bot güvenliğiniz için burada. Canlı sohbete katılın.';
+            container.appendChild(welcomeMsg);
             
-            // MATE Bot kartı
             const mateBotCard = document.createElement('div');
             mateBotCard.className = 'mate-bot-card';
             mateBotCard.id = 'mateBotWelcome';
@@ -5270,97 +5687,133 @@
             `;
             container.appendChild(mateBotCard);
             
-            // Firebase mesajları
-            if (messages) {
-                Object.values(messages).forEach(msg => {
-                    if (!msg) return;
-                    
-                    const messageDiv = document.createElement('div');
-                    let messageClass = 'yt-message';
-                    
-                    if (msg.type === 'mate-bot') {
-                        messageClass += ' mate-bot';
-                    } else if (msg.sender === SECURE_CONFIG.OWNER_CONFIG.username) {
-                        messageClass += ' owner';
-                    } else if (adminList.includes(msg.sender)) {
-                        messageClass += ' admin';
-                    } else if (coAdminList.includes(msg.sender)) {
-                        messageClass += ' coadmin';
-                    } else if (operatorList.includes(msg.sender)) {
-                        messageClass += ' operator';
-                    } else if (subscribers.includes(msg.sender)) {
-                        messageClass += ' subscriber';
-                    }
-                    
-                    messageDiv.className = messageClass;
-                    messageDiv.innerHTML = `
-                        <div class="message-header">
-                            <div class="message-user">${msg.sender}</div>
-                            <div class="message-time">${msg.time || formatTime(msg.timestamp)}</div>
-                        </div>
-                        <div class="message-content">${msg.text}</div>
-                    `;
-                    
-                    container.appendChild(messageDiv);
-                });
-            }
+            recentMessages.forEach(msg => {
+                if (!msg) return;
+                
+                const messageElement = createMessageElement(msg);
+                container.appendChild(messageElement);
+            });
             
             container.scrollTop = container.scrollHeight;
         }
         
-        // UYGULAMA BAŞLATMA
+        function createMessageElement(msg) {
+            const div = document.createElement('div');
+            
+            let messageClass = 'yt-message';
+            if (msg.type === 'mate-bot') {
+                messageClass += ' mate-bot';
+            } else if (msg.type === 'owner') {
+                messageClass += ' owner';
+            } else if (msg.type === 'admin') {
+                messageClass += ' admin';
+            } else if (msg.type === 'coadmin') {
+                messageClass += ' coadmin';
+            } else if (msg.type === 'operator') {
+                messageClass += ' operator';
+            } else if (msg.type === 'subscriber') {
+                messageClass += ' subscriber';
+            } else if (msg.type === 'system') {
+                messageClass += ' system';
+            }
+            
+            div.className = messageClass;
+            
+            const time = msg.time || new Date(msg.timestamp).toLocaleTimeString('tr-TR', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            let deleteBtn = '';
+            if (isOwner || isAdmin) {
+                if (msg.type === 'owner' && isOwner) {
+                    deleteBtn = `<button class="owner-delete-btn" onclick="deleteMessage('${msg.key || msg.timestamp}')">Sil</button>`;
+                } else if (msg.type !== 'owner' && (isOwner || isAdmin)) {
+                    deleteBtn = `<button class="delete-btn" onclick="deleteMessage('${msg.key || msg.timestamp}')">Sil</button>`;
+                }
+            }
+            
+            div.innerHTML = `
+                <div class="message-header">
+                    <div class="message-user" onclick="openUserInfo('${msg.sender}')">
+                        ${msg.sender}
+                    </div>
+                    <div class="message-time">${time}${deleteBtn}</div>
+                </div>
+                <div class="message-content">${msg.text || ''}</div>
+            `;
+            
+            return div;
+        }
+        
+        async function deleteMessage(messageId) {
+            if (!messagesRef) return;
+            
+            try {
+                if (isOwner) {
+                    await messagesRef.child(messageId).remove();
+                    addSystemMessage('✅ Mesaj silindi!');
+                } else if (isAdmin) {
+                    await messagesRef.child(messageId).remove();
+                    addSystemMessage('✅ Mesaj silindi!');
+                }
+            } catch (error) {
+                console.error('Mesaj silme hatası:', error);
+                addSystemMessage('❌ Mesaj silinemedi!');
+            }
+        }
+        
+        // ========== SİSTEM MESAJI ==========
+        function addSystemMessage(text) {
+            const messagesArea = document.getElementById('messages');
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'yt-message system';
+            messageDiv.innerHTML = `
+                <div class="message-content">${text}</div>
+            `;
+            
+            messagesArea.appendChild(messageDiv);
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+        
+        // ========== UYGULAMA BAŞLATMA ==========
         function initApp() {
-            // Mesaj input event listeners
-            const messageInput = document.getElementById('message-input');
-            if (messageInput) {
-                messageInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        sendMessage();
-                    }
-                });
-            }
+            document.getElementById('message-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
             
-            const privateInput = document.getElementById('private-input');
-            if (privateInput) {
-                privateInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        sendPrivateMessage();
-                    }
-                });
-            }
+            document.getElementById('private-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendPrivateMessage();
+                }
+            });
             
-            // Overlay click handler
-            const overlay = document.getElementById('overlay');
-            if (overlay) {
-                overlay.addEventListener('click', function(e) {
-                    if (e.target === this) {
-                        closePrivateChat();
-                        closeAdminModal();
-                        closeCommandModal();
-                        closeOwnerPrivateModal();
-                        closeStoryCreateModal();
-                        closeStoryEditModal();
-                        closeReportModal();
-                        closeReportsModal();
-                        closeStoryModal();
-                        closeSubscribeModal();
-                    }
-                });
-            }
+            document.getElementById('overlay').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closePrivateChat();
+                    closeAdminModal();
+                    closeCommandModal();
+                    closeOwnerPrivateModal();
+                    closeStoryCreateModal();
+                    closeStoryEditModal();
+                    closeReportModal();
+                    closeReportsModal();
+                    closeStoryModal();
+                    closeSubscribeModal();
+                }
+            });
             
-            // Story modal click handler
-            const storyModal = document.getElementById('storyModal');
-            if (storyModal) {
-                storyModal.addEventListener('click', function(e) {
-                    if (e.target === this) {
-                        closeStoryModal();
-                    }
-                });
-            }
+            document.getElementById('storyModal').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closeStoryModal();
+                }
+            });
             
-            // Global keyboard shortcuts
             document.addEventListener('keydown', function(e) {
                 if (document.getElementById('storyModal').style.display === 'flex') {
                     if (e.key === 'ArrowRight') {
@@ -5382,14 +5835,13 @@
                 }
             });
             
-            // YouTube player init
             if (typeof YT !== 'undefined') {
                 initYouTubePlayer();
             } else {
                 setTimeout(initYouTubePlayer, 1000);
             }
             
-            // Firebase listeners
+            // Firebase listener'ları
             if (usersRef) {
                 usersRef.on('value', (snapshot) => {
                     const users = snapshot.val() || {};
@@ -5403,6 +5855,89 @@
                     updateMessages(snapshot.val());
                 });
             }
+            
+            if (coAdminsRef) {
+                coAdminsRef.on('value', (snapshot) => {
+                    coAdminList = snapshot.val() || [];
+                    checkCoAdminStatus();
+                });
+            }
+            
+            if (operatorsRef) {
+                operatorsRef.on('value', (snapshot) => {
+                    operatorList = snapshot.val() || [];
+                    checkOperatorStatus();
+                });
+            }
+            
+            if (adminListRef) {
+                adminListRef.on('value', (snapshot) => {
+                    adminList = snapshot.val() || [];
+                    checkAdminStatus();
+                });
+            }
+            
+            if (storiesRef) {
+                storiesRef.on('value', (snapshot) => {
+                    loadStories();
+                });
+            }
+            
+            if (storyLikesRef) {
+                storyLikesRef.on('value', (snapshot) => {
+                    loadStoryLikes();
+                });
+            }
+            
+            if (storyReportsRef) {
+                storyReportsRef.on('value', (snapshot) => {
+                    loadStoryReports();
+                });
+            }
+            
+            if (subscribersRef) {
+                subscribersRef.on('value', (snapshot) => {
+                    loadSubscribers();
+                });
+            }
+            
+            loadRegisteredUsers();
+            loadOperators();
+            loadAdminList();
+            
+            // MATE Bot welcome messages
+            if (usersRef && !isOwner) {
+                usersRef.on('child_added', (snapshot) => {
+                    const user = snapshot.key;
+                    const userData = snapshot.val();
+                    
+                    if (userData && user !== currentUser?.name) {
+                        setTimeout(() => {
+                            mateBot.sendWelcome(user);
+                        }, 3000);
+                    }
+                });
+            }
+            
+            // Owner özel mesaj izleme
+            if (isOwner) {
+                startOwnerPrivateMessageMonitoring();
+            }
+            
+            // Ban kontrolü
+            const banCheckInterval = setInterval(async () => {
+                if (currentUser && bansRef) {
+                    const banCheck = await checkIfBanned(currentUser.name);
+                    if (banCheck.isBanned) {
+                        addSystemMessage("🚫 MATE Bot: BANLANDINIZ! Sayfadan atılıyorsunuz...");
+                        clearInterval(banCheckInterval);
+                        
+                        setTimeout(() => {
+                            logout();
+                        }, 3000);
+                    }
+                }
+            }, 5000);
             
             // Kullanıcı aktivite takibi
             setInterval(() => {
@@ -5420,12 +5955,9 @@
             // MATE Bot durum güncelleme
             setInterval(() => {
                 const status = document.getElementById('mateBotStatus');
-                if (status) {
-                    status.textContent = isFirebaseConnected ? '🟢' : '🔴';
-                }
+                status.textContent = isFirebaseConnected ? '🟢' : '🔴';
             }, 1000);
             
-            // Sayfadan çıkış
             window.addEventListener('beforeunload', function() {
                 if (currentUser && usersRef) {
                     usersRef.child(currentUser.name).remove();
@@ -5434,7 +5966,7 @@
             });
         }
         
-        // YOUTUBE PLAYER
+        // ========== YOUTUBE PLAYER ==========
         function initYouTubePlayer() {
             if (typeof YT !== 'undefined' && YT.Player) {
                 player = new YT.Player('youtube-player', {
@@ -5470,7 +6002,7 @@
             }
         }
         
-        // ONLINE KULLANICILAR GÜNCELLEME
+        // ========== ONLINE KULLANICILAR GÜNCELLEME ==========
         function updateOnlineUsers(users) {
             if (!users) users = {};
             
@@ -5557,124 +6089,7 @@
             container.innerHTML = html;
         }
         
-        // MESAJ GÖNDERME
-        async function sendMessage() {
-            if (!isFirebaseConnected) {
-                addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
-                return;
-            }
-            
-            const input = document.getElementById('message-input');
-            const text = input.value.trim();
-            
-            if (!text) return;
-            
-            if (text.startsWith('/')) {
-                handleCommand(text);
-                input.value = '';
-                autoResize(input);
-                return;
-            }
-            
-            const messageData = {
-                sender: currentUser.name,
-                text: text,
-                type: isOwner ? 'owner' : (isAdmin ? 'admin' : (isCoAdmin ? 'coadmin' : (isOperator ? 'operator' : (isSubscriber ? 'subscriber' : 'user')))),
-                timestamp: Date.now(),
-                time: formatTime(Date.now())
-            };
-            
-            try {
-                await messagesRef.push(messageData);
-                input.value = '';
-                autoResize(input);
-                
-                userStats.messageCount++;
-                updateProfilePanel();
-                
-                if (usersRef) {
-                    usersRef.child(currentUser.name).update({
-                        lastSeen: Date.now(),
-                        messageCount: userStats.messageCount
-                    });
-                }
-                
-                if (text.length < 2 || text.includes('http') || text.includes('.com')) {
-                    mateBot.updateSecurityStats('spamDetected', 1);
-                }
-                
-            } catch (error) {
-                console.error('Mesaj gönderme hatası:', error);
-                addSystemMessage('❌ Mesaj gönderilemedi!');
-            }
-        }
-        
-        // KOMUT İŞLEME
-        async function handleCommand(cmd) {
-            if (!isFirebaseConnected) {
-                addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
-                return;
-            }
-            
-            const parts = cmd.substring(1).split(' ');
-            const command = parts[0].toLowerCase();
-            const args = parts.slice(1);
-            
-            console.log("🔍 Komut:", command, "Args:", args);
-            
-            if (command === 'mate' || command === 'matebot') {
-                if (args[0] === 'stats') {
-                    const stats = mateBot.getStats();
-                    let statMessage = `
-                        🤖 <strong>MATE BOT İSTATİSTİKLERİ:</strong><br><br>
-                        • Spam Engellenen: ${stats.spamBlocked}<br>
-                        • Şüpheli Aktivite: ${stats.suspiciousDetected}<br>
-                        • Verilen Banlar: ${stats.bansIssued}<br>
-                        • İşlenen Şikayetler: ${stats.reportsProcessed}<br>
-                        • Aktif Tarama: ${isFirebaseConnected ? '✅' : '❌'}<br>
-                        • Son Tarama: Şimdi
-                    `;
-                    addSystemMessage(statMessage);
-                    return;
-                }
-                
-                if (args[0] === 'scan' && (isOwner || isAdmin)) {
-                    mateBot.performSecurityScan();
-                    addSystemMessage('🔒 MATE Bot güvenlik taraması başlatıldı...');
-                    return;
-                }
-                
-                addSystemMessage('🤖 MATE Bot Komutları:');
-                addSystemMessage('• /mate stats - Bot istatistiklerini göster');
-                addSystemMessage('• /mate scan - Güvenlik taraması başlat (Admin+)');
-                return;
-            }
-            
-            if (command === 'tim' || command === 'ownertim') {
-                if (isOwner) {
-                    openOwnerTimPanel();
-                } else {
-                    addSystemMessage('⛔ Bu komutu sadece Owner kullanabilir!');
-                }
-                return;
-            }
-            
-            if (command === 'sub' || command === 'subscribe' || command === 'abone') {
-                openSubscribeModal();
-                return;
-            }
-            
-            if (command === 'profile' || command === 'profil') {
-                toggleProfilePanel();
-                return;
-            }
-            
-            // Diğer komutlar için temel yapı
-            addSystemMessage(`🔍 Komut: ${command}`);
-            addSystemMessage(`📝 Kullanım: /${command} [parametreler]`);
-        }
-        
-        // ÇIKIŞ
+        // ========== ÇIKIŞ ==========
         function logout() {
             if (currentUser && usersRef) {
                 usersRef.child(currentUser.name).remove();
@@ -5685,7 +6100,7 @@
             location.reload();
         }
         
-        // SAYFA YÜKLENDİĞİNDE
+        // ========== SAYFA YÜKLENDİĞİNDE ==========
         window.addEventListener('load', async function() {
             console.log("📱 Sayfa yüklendi! MATE Bot aktif.");
             
@@ -5716,8 +6131,8 @@
                 if (e.key === 'Enter') login();
             });
             
-            // Panelleri kapatma
             document.addEventListener('click', function(e) {
+                // Panelleri kapatma
                 const panels = [
                     { panel: 'usersSidebar', btn: '.mobile-menu-btn' },
                     { panel: 'notificationPanel', btn: '.notification-icon' },
@@ -5747,12 +6162,15 @@
                 });
             });
             
-            // YouTube API hazır olduğunda
             function onYouTubeIframeAPIReady() {
                 console.log("🎬 YouTube API hazır!");
                 initYouTubePlayer();
             }
             window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
+            
+            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                console.log("📱 Mobil cihaz algılandı");
+            }
             
             // MATE Bot başlangıç mesajı
             setTimeout(() => {
@@ -5762,172 +6180,30 @@
             }, 5000);
         });
         
-        // EKSİK FONKSİYONLARIN YER TUTUCULARI
+        // ========== YARDIMCI FONKSİYONLAR ==========
+        function showLoginError(message) {
+            const errorDiv = document.getElementById('login-error');
+            if (message) {
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+            } else {
+                errorDiv.style.display = 'none';
+            }
+        }
+        
+        function showLoginSuccess(message) {
+            const successDiv = document.getElementById('login-success');
+            if (message) {
+                successDiv.textContent = message;
+                successDiv.style.display = 'block';
+            } else {
+                successDiv.style.display = 'none';
+            }
+        }
+        
         function openAdminPanel() {
-            addSystemMessage('🛡️ Admin paneli yakında eklenecek!');
-        }
-        
-        function openSettings() {
-            addSystemMessage('⚙️ Ayarlar yakında eklenecek!');
-        }
-        
-        function toggleProfileEdit() {
-            addSystemMessage('✏️ Profil düzenleme yakında eklenecek!');
-        }
-        
-        function clearAllNotifications() {
-            notifications = [];
-            notificationCount = 0;
-            updateNotificationBadge();
-            updateNotificationPanel();
-        }
-        
-        function handleNotificationClick(id) {
-            const notif = notifications.find(n => n.id === id);
-            if (notif) {
-                notif.read = true;
-                notificationCount = Math.max(0, notificationCount - 1);
-                updateNotificationBadge();
-                updateNotificationPanel();
-            }
-        }
-        
-        function openReportsModal() {
-            document.getElementById('reportsModal').style.display = 'flex';
+            document.getElementById('adminRegisterModal').style.display = 'block';
             document.getElementById('overlay').style.display = 'block';
-        }
-        
-        function closeReportsModal() {
-            document.getElementById('reportsModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
-        }
-        
-        function updateReportsList() {
-            const container = document.getElementById('reportsList');
-            if (reports.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary);">Henüz şikayet yok.</div>';
-                return;
-            }
-            
-            let html = '';
-            reports.forEach((report, index) => {
-                const time = new Date(report.timestamp).toLocaleTimeString('tr-TR', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-                
-                html += `
-                    <div class="report-item ${report.status === 'pending' ? 'unread' : ''}">
-                        <div style="display: flex; justify-content: space-between;">
-                            <strong>#${index + 1} ${report.reportedUser}</strong>
-                            <small style="color: var(--text-secondary);">${time}</small>
-                        </div>
-                        <div style="margin: 8px 0;">
-                            <strong>Raporlayan:</strong> ${report.reporter}<br>
-                            <strong>Sebep:</strong> ${report.reason}<br>
-                            <strong>Durum:</strong> ${report.status === 'pending' ? '🟡 Beklemede' : '✅ Çözüldü'}
-                        </div>
-                        <div class="report-actions">
-                            <button onclick="resolveReport(${index})" style="padding: 6px 12px; background: var(--online); color: white; border: none; border-radius: 4px; cursor: pointer;">
-                                Çöz
-                            </button>
-                            <button onclick="deleteReport(${index})" style="padding: 6px 12px; background: var(--secondary); color: white; border: none; border-radius: 4px; cursor: pointer;">
-                                Sil
-                            </button>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            container.innerHTML = html;
-        }
-        
-        function resolveReport(index) {
-            if (index >= 0 && index < reports.length) {
-                reports[index].status = 'resolved';
-                updateReportsList();
-                updateReportBadge();
-                updateReportPanel();
-            }
-        }
-        
-        function deleteReport(index) {
-            if (index >= 0 && index < reports.length) {
-                reports.splice(index, 1);
-                updateReportsList();
-                updateReportBadge();
-                updateReportPanel();
-            }
-        }
-        
-        function selectReportReason(reason) {
-            selectedReportReason = reason;
-            document.querySelectorAll('.report-reason').forEach(el => {
-                el.classList.remove('selected');
-            });
-            document.getElementById(`reason${getReasonIndex(reason)}`).classList.add('selected');
-        }
-        
-        function getReasonIndex(reason) {
-            switch(reason) {
-                case 'uygunsuz_icerik': return 1;
-                case 'rahatsiz_edici': return 2;
-                case 'spam': return 3;
-                case 'diger': return 4;
-                default: return 1;
-            }
-        }
-        
-        function submitReport() {
-            if (!selectedReportReason) {
-                addSystemMessage('❌ Lütfen bir şikayet sebebi seçin!');
-                return;
-            }
-            
-            if (!currentReportStoryId) {
-                addSystemMessage('❌ Şikayet edilecek story bulunamadı!');
-                return;
-            }
-            
-            const details = document.getElementById('report-details').value;
-            
-            const report = {
-                id: 'report_' + Date.now(),
-                storyId: currentReportStoryId,
-                reporter: currentUser.name,
-                reason: selectedReportReason,
-                details: details,
-                timestamp: Date.now(),
-                status: 'pending'
-            };
-            
-            reports.push(report);
-            updateReportBadge();
-            updateReportPanel();
-            
-            addSystemMessage('✅ Şikayetiniz alındı! Teşekkür ederiz.');
-            closeReportModal();
-        }
-        
-        function openReportModal(storyId) {
-            currentReportStoryId = storyId;
-            document.getElementById('reportModal').style.display = 'block';
-            document.getElementById('overlay').style.display = 'block';
-        }
-        
-        function closeReportModal() {
-            document.getElementById('reportModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
-            selectedReportReason = '';
-            currentReportStoryId = null;
-            document.getElementById('report-details').value = '';
-            document.querySelectorAll('.report-reason').forEach(el => {
-                el.classList.remove('selected');
-            });
-        }
-        
-        function openPrivateImageUpload() {
-            document.getElementById('imageUpload').click();
         }
         
         function closeAdminModal() {
@@ -5935,103 +6211,46 @@
             document.getElementById('overlay').style.display = 'none';
         }
         
-        function closeCommandModal() {
-            document.getElementById('commandModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
+        async function registerUser() {
+            // Bu fonksiyon admin kayıt sistemi için
         }
         
-        function closeStoryEditModal() {
-            document.getElementById('storyEditModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
+        function toggleProfileEdit() {
+            addSystemMessage('✏️ Profil düzenleme özelliği yakında eklenecek!');
         }
         
-        // YER TUTUCU FONKSİYONLAR
-        function loadCustomCommands() {
-            customCommands = {};
+        function openSettings() {
+            addSystemMessage('⚙️ Ayarlar menüsü yakında eklenecek!');
         }
         
-        function updateBannedUsers() {
-            bannedUsers = {};
-        }
-        
-        function startBanMonitoring() {
-            // Ban monitoring logic
-        }
-        
-        function loadStoryLikes() {
-            storyLikes = {};
-        }
-        
-        function loadStoryReports() {
-            storyReports = {};
-        }
-        
-        function loadRegisteredUsers() {
-            registeredUsers = {};
-        }
-        
-        function loadOperators() {
-            // Load operators
-        }
-        
-        function loadAdminList() {
-            // Load admin list
-        }
-        
-        function checkCoAdminStatus() {
-            // Check co-admin status
-        }
-        
-        function checkOperatorStatus() {
-            // Check operator status
-        }
-        
-        function checkAdminStatus() {
-            // Check admin status
-        }
-        
-        function startOwnerPrivateMessageMonitoring() {
-            // Owner private message monitoring
-        }
-        
-        function checkIfBanned(username) {
-            return { isBanned: false };
-        }
-        
-        function checkBanBeforeMessage() {
-            return Promise.resolve(true);
-        }
-        
-        function registerUser() {
-            addSystemMessage('👑 Kullanıcı kayıt sistemi yakında eklenecek!');
-        }
-        
-        function unregisterUser() {
-            addSystemMessage('🗑️ Kullanıcı silme sistemi yakında eklenecek!');
-        }
-        
-        function saveCustomCommand() {
-            addSystemMessage('🤖 Özel komut sistemi yakında eklenecek!');
-        }
-        
-        function deleteCustomCommand() {
-            addSystemMessage('🗑️ Komut silme sistemi yakında eklenecek!');
-        }
-        
-        function handleEditStoryImageUpload(event) {
-            // Handle edit story image upload
-        }
-        
-        function removeEditStoryImage() {
-            // Remove edit story image
-        }
-        
-        function updateStory() {
-            // Update story
-        }
-        
-        function deleteCurrentStory() {
-            // Delete current story
+        function openImagePreview(imageUrl) {
+            // Resim önizleme için modal açılabilir
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                z-index: 5000;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            `;
+            
+            modal.innerHTML = `
+                <img src="${imageUrl}" style="max-width: 90%; max-height: 90%; border-radius: 12px;">
+                <button onclick="this.parentElement.remove()" style="position: absolute; top: 20px; right: 20px; background: none; border: none; color: white; font-size: 30px; cursor: pointer;">×</button>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.remove();
+                }
+            });
         }
     </script>
     
