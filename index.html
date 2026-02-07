@@ -5,23 +5,125 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Popbox Music Chat</title>
 
+  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
   <style>
-    body { margin:0; background:#000; color:#fff; font-family:Arial; height:100vh; overflow:hidden; }
-    #login-screen { position:fixed; inset:0; background:#000; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:20px; z-index:1000; }
-    input, button { padding:12px; width:90%; max-width:350px; border-radius:6px; font-size:16px; }
-    button { background:#ff0000; color:white; border:none; cursor:pointer; }
-    #main { display:flex; flex-direction:column; height:100%; }
-    header { height:50px; background:#111; display:flex; align-items:center; justify-content:space-between; padding:0 15px; border-bottom:1px solid #333; }
-    #messages { flex:1; overflow-y:auto; padding:10px; }
-    .message { margin:8px 0; padding:10px; border-radius:8px; background:#222; }
-    .message.system { background:#333; color:#0f0; text-align:center; }
-    #input-area { padding:10px; background:#111; display:flex; }
-    #message-input { flex:1; padding:12px; border:none; border-radius:20px; background:#222; color:white; margin-right:8px; }
-    .owner-panel { position:fixed; inset:0; background:rgba(0,0,0,0.9); color:white; padding:20px; overflow-y:auto; z-index:999; }
+    body {
+      margin:0;
+      background:#000;
+      color:#fff;
+      font-family:Arial, sans-serif;
+      height:100vh;
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+    }
+    #login-screen {
+      position:fixed;
+      inset:0;
+      background:#000;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap:20px;
+      z-index:1000;
+    }
+    input, button {
+      padding:12px;
+      width:90%;
+      max-width:350px;
+      border-radius:6px;
+      font-size:16px;
+    }
+    button {
+      background:#ff0000;
+      color:white;
+      border:none;
+      cursor:pointer;
+    }
+    #main {
+      display:flex;
+      flex-direction:column;
+      height:100%;
+    }
+    header {
+      height:50px;
+      background:#111;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:0 15px;
+      border-bottom:1px solid #333;
+    }
+    #messages {
+      flex:1;
+      overflow-y:auto;
+      padding:10px;
+    }
+    .message {
+      margin:8px 0;
+      padding:10px;
+      border-radius:8px;
+      background:#222;
+    }
+    .message.system {
+      background:#333;
+      color:#0f0;
+      text-align:center;
+    }
+    .message.own {
+      background:#065fd4;
+      margin-left:auto;
+      margin-right:10px;
+    }
+    #input-area {
+      padding:10px;
+      background:#111;
+      display:flex;
+    }
+    #message-input {
+      flex:1;
+      padding:12px;
+      border:none;
+      border-radius:20px;
+      background:#222;
+      color:white;
+      margin-right:8px;
+    }
+    .owner-panel {
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,0.9);
+      color:white;
+      padding:20px;
+      overflow-y:auto;
+      z-index:999;
+    }
     .hidden { display:none !important; }
+    #story-bar {
+      height:70px;
+      overflow-x:auto;
+      display:flex;
+      gap:12px;
+      padding:10px;
+      background:rgba(0,0,0,0.7);
+    }
+    .story-item {
+      width:55px;
+      height:55px;
+      border-radius:50%;
+      background:#ff6b6b;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color:white;
+      font-weight:bold;
+      cursor:pointer;
+    }
   </style>
 </head>
 <body>
@@ -41,16 +143,22 @@
     <button onclick="cikisYap()">Çıkış</button>
   </header>
 
+  <!-- Story Bar -->
+  <div id="story-bar" class="story-bar"></div>
+
   <div id="messages">
-    <div class="message system">Hoş geldin MateKy!</div>
+    <div class="message system">Hoş geldin!</div>
   </div>
 
   <div id="input-area">
     <input id="message-input" placeholder="Mesaj yaz...">
     <button onclick="mesajGonder()">Gönder</button>
+    <input type="file" id="dosyaSec" accept="image/*,video/*" style="display:none" onchange="dosyaYukle()">
+    <button onclick="document.getElementById('dosyaSec').click()">📎</button>
   </div>
 </div>
 
+<!-- Owner Panel -->
 <div id="owner-panel" class="owner-panel hidden">
   <h2>Owner Panel (MateKy)</h2>
   <button onclick="document.getElementById('owner-panel').classList.add('hidden')">Kapat</button>
@@ -75,9 +183,11 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+const storage = firebase.storage();
 
 const messagesRef = db.ref('messages');
 const onlineRef = db.ref('online');
+const storiesRef = db.ref('stories');
 
 let mevcutKullanici = null;
 const OWNER_NICK = "mateky";
@@ -89,7 +199,9 @@ function girisYap() {
 
   if (!nick) return document.getElementById('hata').textContent = "Nick girin";
 
-  if (nick.toLowerCase() === OWNER_NICK) {
+  const normNick = nick.toLowerCase();
+
+  if (normNick === OWNER_NICK) {
     if (sifre !== OWNER_SIFRE) return document.getElementById('hata').textContent = "Şifre yanlış";
     mevcutKullanici = { nick: "MateKy", role: "owner" };
   } else {
@@ -100,14 +212,14 @@ function girisYap() {
   document.getElementById('main').classList.remove('hidden');
 
   // Online ekle
-  onlineRef.child(nick.toLowerCase()).set(true);
-  onlineRef.child(nick.toLowerCase()).onDisconnect().remove();
+  onlineRef.child(normNick).set(true);
+  onlineRef.child(normNick).onDisconnect().remove();
 
   // Mesaj dinle
   messagesRef.on('child_added', snap => {
     const msg = snap.val();
     const div = document.createElement('div');
-    div.className = 'message' + (msg.system ? ' system' : '');
+    div.className = 'message' + (msg.system ? ' system' : (normNick === mevcutKullanici.nick.toLowerCase() ? ' own' : ''));
     div.textContent = msg.text;
     document.getElementById('messages').appendChild(div);
     div.scrollIntoView();
@@ -122,7 +234,7 @@ function girisYap() {
     document.getElementById('owner-panel').classList.remove('hidden');
   }
 
-  mesajEkle("Sistem", "Hoş geldin " + mevcutKullanici.nick + "!");
+  mesajEkle("Sistem", `Hoş geldin ${mevcutKullanici.nick}!`);
 }
 
 function mesajEkle(kim, text) {
@@ -151,15 +263,38 @@ function sistemMesajGonder() {
 }
 
 function yeniStory() {
-  alert("Story oluşturma henüz basit modda. Metin gir:");
   const text = prompt("Story metni:");
-  if (text) {
-    messagesRef.push({ text: "[STORY] " + text, system: true, timestamp: Date.now() });
-  }
+  if (!text) return;
+
+  storiesRef.push({
+    sender: mevcutKullanici.nick,
+    text,
+    timestamp: Date.now(),
+    expires: Date.now() + 24*60*60*1000
+  });
+  mesajEkle("Sistem", "Yeni story oluşturuldu!");
+}
+
+function dosyaYukle() {
+  const file = document.getElementById('dosyaSec').files[0];
+  if (!file) return;
+
+  const ref = storage.ref('media/' + file.name);
+  ref.put(file).then(() => {
+    ref.getDownloadURL().then(url => {
+      messagesRef.push({
+        text: url,
+        type: file.type.startsWith('image') ? 'image' : 'video',
+        timestamp: Date.now()
+      });
+    });
+  });
 }
 
 function cikisYap() {
-  onlineRef.child(mevcutKullanici.nick.toLowerCase()).remove();
+  if (mevcutKullanici) {
+    onlineRef.child(mevcutKullanici.nick.toLowerCase()).remove();
+  }
   location.reload();
 }
 
