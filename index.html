@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Popbox Elite</title>
-    <!-- Firebase SDK v9 compat -->
+    <!-- Firebase SDK compat -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <style>
@@ -61,6 +61,7 @@
         .private-input-area { padding:16px 24px; border-top:1px solid var(--border); display:flex; gap:16px; background:var(--gray); }
         body.dark .private-input-area { background:#11141a; border-color:var(--border-dark); }
         .close-btn { background:none; border:none; color:white; font-size:32px; cursor:pointer; }
+        /* Profil */
         .profile-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:3000; backdrop-filter:blur(8px); }
         .profile-overlay.active { display:flex; }
         .profile-panel { width:90%; max-width:520px; background:var(--bg); border-radius:20px; overflow:hidden; box-shadow:0 20px 70px rgba(0,0,0,0.4); }
@@ -171,8 +172,8 @@
     </div>
 </div>
 
-<script type="module">
-    // Firebase Config (senin attığın)
+<script>
+    // Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
       authDomain: "popboxmusicchat.firebaseapp.com",
@@ -184,7 +185,6 @@
       measurementId: "G-SB1K22FLEX"
     };
 
-    // Firebase başlat
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
@@ -231,23 +231,19 @@
         
         if (role === 'owner') document.getElementById('godToggle').style.display = 'block';
 
-        // Mesaj dinle
         listenMessages();
     }
 
     function updateUserList() {
-        const list = document.getElementById('userList');
-        list.innerHTML = '';
-        
-        // Firebase'den online kullanıcıları çek (simülasyon + gerçek)
         db.ref('users/online').on('value', snapshot => {
+            const list = document.getElementById('userList');
             list.innerHTML = '';
             snapshot.forEach(child => {
                 const u = child.val();
                 const div = document.createElement('div');
                 div.className = 'user-item';
-                div.textContent = u.nick + (u.nick === currentUser.nick ? ' (sen)' : '');
-                if (godMode && u.nick === currentUser.nick) div.textContent += ' (gizli)';
+                div.textContent = u.nick + (u.nick === currentUser?.nick ? ' (sen)' : '');
+                if (godMode && u.nick === currentUser?.nick) div.textContent += ' (gizli)';
                 div.onclick = () => openPrivateChat(u.nick);
                 list.appendChild(div);
             });
@@ -278,15 +274,59 @@
         });
     }
 
-    // Diğer fonksiyonlar (özel sohbet, profil, tanrı modu) aynı kalıyor...
-    // (kodu kısalttım, ama önceki özellikler korunuyor)
+    function openPrivateChat(nick) {
+        activePrivate = nick;
+        document.getElementById('privateTitle').textContent = nick + ' ile özel sohbet';
+        document.getElementById('privateMessages').innerHTML = `<p>Sohbet başladı: ${nick}</p>`;
+        document.getElementById('privateOverlay').classList.add('active');
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closePrivate(); });
+    }
 
-    // ... (özel sohbet, profil, tanrı modu toggle kodlarını buraya ekle – önceki mesajımdan kopyala)
+    function closePrivate() {
+        document.getElementById('privateOverlay').classList.remove('active');
+    }
+
+    function sendPrivateMsg() {
+        const input = document.getElementById('privateInput');
+        if (!input.value.trim()) return;
+        
+        const msg = document.createElement('p');
+        msg.innerHTML = `<strong>Sen:</strong> ${input.value}`;
+        document.getElementById('privateMessages').appendChild(msg);
+        document.getElementById('privateMessages').scrollTop = document.getElementById('privateMessages').scrollHeight;
+        input.value = '';
+    }
+
+    function openProfile() {
+        document.getElementById('profileName').textContent = currentUser.nick;
+        document.getElementById('profileRole').textContent = currentUser.role;
+        document.getElementById('profileAvatar').textContent = currentUser.nick.charAt(0).toUpperCase();
+        document.getElementById('joinDate').textContent = currentUser.joined;
+        document.getElementById('userRole').textContent = currentUser.role;
+        document.getElementById('profileOverlay').classList.add('active');
+    }
+
+    function closeProfile(e) {
+        if (e.target.classList.contains('profile-overlay') || e.target.classList.contains('close-profile')) {
+            document.getElementById('profileOverlay').classList.remove('active');
+        }
+    }
+
+    function toggleGodMode() {
+        godMode = !godMode;
+        alert(`Tanrı modu ${godMode ? 'AÇILDI' : 'KAPATILDI'}! Artık gizlisin.`);
+        updateUserList();
+    }
+
+    function toggleFollow() { alert('Takip yakında!'); }
+    function toggleBlock() { alert('Engelle yakında!'); }
+    function changeStatus() { alert('Durum değiştirme yakında!'); }
 
     // Enter desteği
     document.getElementById('nickInput').addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
     document.getElementById('passInput').addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
     document.getElementById('msgInput').addEventListener('keypress', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+    document.getElementById('privateInput').addEventListener('keypress', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPrivateMsg(); } });
 </script>
 </body>
 </html>
