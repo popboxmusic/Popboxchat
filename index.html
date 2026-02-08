@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Popbox Elite - Genel Oda</title>
+    <!-- Firebase SDK compat -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
     <style>
         :root {
             --bg: #ffffff;
@@ -61,6 +65,8 @@
         body.dark .private-input-area { background:#11141a; border-color:var(--border-dark); }
         .close-btn { background:none; border:none; color:white; font-size:32px; cursor:pointer; }
         .media-preview { max-width:200px; max-height:200px; margin-top:8px; border-radius:12px; display:block; }
+        .progress { margin-top:8px; height:4px; background:#ddd; border-radius:2px; overflow:hidden; }
+        .progress-bar { height:100%; background:var(--primary); width:0%; transition:width 0.3s; }
         .profile-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:3000; backdrop-filter:blur(8px); }
         .profile-overlay.active { display:flex; }
         .profile-panel { width:90%; max-width:520px; background:var(--bg); border-radius:20px; overflow:hidden; box-shadow:0 20px 70px rgba(0,0,0,0.4); }
@@ -178,6 +184,21 @@
 </div>
 
 <script>
+    // Firebase Config
+    const firebaseConfig = {
+      apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
+      authDomain: "popboxmusicchat.firebaseapp.com",
+      databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
+      projectId: "popboxmusicchat",
+      storageBucket: "popboxmusicchat.firebasestorage.app",
+      messagingSenderId: "206625719024",
+      appId: "1:206625719024:web:d28f478a2c96d10412f835",
+      measurementId: "G-SB1K22FLEX"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
     // Değişkenler
     let currentUser = null;
     let activePrivate = null;
@@ -212,19 +233,23 @@
         updateUserList();
         
         if (role === 'owner') document.getElementById('godToggle').style.display = 'block';
+
+        listenMessages();
     }
 
     function updateUserList() {
-        const list = document.getElementById('userList');
-        list.innerHTML = '';
-        
-        ['Ahmet', 'Ayşe', 'Mehmet', 'Elif', currentUser.nick].forEach(name => {
-            const div = document.createElement('div');
-            div.className = 'user-item';
-            div.textContent = name + (name === currentUser.nick ? ' (sen)' : '');
-            if (godMode && name === currentUser.nick) div.textContent += ' (gizli)';
-            div.onclick = () => openPrivateChat(name);
-            list.appendChild(div);
+        db.ref('users/online').on('value', snapshot => {
+            const list = document.getElementById('userList');
+            list.innerHTML = '';
+            snapshot.forEach(child => {
+                const u = child.val();
+                const div = document.createElement('div');
+                div.className = 'user-item';
+                div.textContent = u.nick + (u.nick === currentUser?.nick ? ' (sen)' : '');
+                if (godMode && u.nick === currentUser?.nick) div.textContent += ' (gizli)';
+                div.onclick = () => openPrivateChat(u.nick);
+                list.appendChild(div);
+            });
         });
     }
 
