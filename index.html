@@ -2369,6 +2369,143 @@
             });
         }
 
+        // ==================== SOHBET SİSTEMİ ====================
+        function loadChat() {
+            const demoMessages = [
+                { 
+                    sender: mateBot, 
+                    text: "MATE güvenlik botu aktif. Sistem güvenliği sağlanıyor. 🤖", 
+                    time: new Date(Date.now() - 3600000),
+                    system: false 
+                },
+                { 
+                    sender: mateBot, 
+                    text: "Hoş geldiniz! IRC komutları için /help yazabilirsiniz.", 
+                    time: new Date(Date.now() - 1800000) 
+                }
+            ];
+            
+            demoMessages.forEach(msg => {
+                if (msg.system) {
+                    addSystemMessage(msg.text);
+                } else {
+                    addMessage(msg, false);
+                }
+            });
+        }
+
+        function addMessage(message, isOwn = false) {
+            const chatMessages = document.getElementById('chatMessages');
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isOwn ? 'message-outgoing' : 'message-incoming'}`;
+            
+            const timeStr = message.time.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+            
+            messageDiv.innerHTML = `
+                <div class="message-sender">
+                    ${message.sender.name}
+                    ${message.sender.role !== 'user' ? `<span class="user-role ${message.sender.role}">${message.sender.role}</span>` : ''}
+                </div>
+                <div class="message-text">${escapeHtml(message.text)}</div>
+                <div class="message-time">${timeStr}</div>
+            `;
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            if (godMode && !isOwn && !message.sender.isBot) {
+                logActivity(`💬 MESSAGE: ${message.sender.name}: ${message.text}`);
+            }
+        }
+
+        function addSystemMessage(text) {
+            const chatMessages = document.getElementById('chatMessages');
+            
+            const systemDiv = document.createElement('div');
+            systemDiv.className = 'message-system';
+            systemDiv.textContent = `📢 ${text}`;
+            
+            chatMessages.appendChild(systemDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            if (text.startsWith('/')) {
+                handleIRCCommand(text);
+                input.value = '';
+                return;
+            }
+            
+            const message = {
+                sender: currentUser,
+                text: text,
+                time: new Date()
+            };
+            
+            addMessage(message, true);
+            currentUser.messages++;
+            updateProfilePanel();
+            
+            if (liveUsers.has(currentUser.id)) {
+                liveUsers.get(currentUser.id).lastSeen = new Date();
+                liveUsers.get(currentUser.id).messages = currentUser.messages;
+            }
+            
+            input.value = '';
+            
+            if (godMode) {
+                logActivity(`💬 OWNER SENT: ${text}`);
+            }
+            
+            mateSecurityAlert('message', text);
+        }
+
+        // ==================== MATE BOT SİSTEMİ ====================
+        function mateBotMessage(text) {
+            addMessage({
+                sender: mateBot,
+                text: text,
+                time: new Date()
+            }, false);
+            
+            // Sadece owner/admin için MATE bildirimi
+            if (['owner', 'admin'].includes(currentUser.role)) {
+                addNotification(`🤖 MATE: ${text}`, true);
+            }
+            
+            if (godMode) {
+                logActivity(`🤖 MATE BOT: ${text}`);
+            }
+        }
+
+        function mateSecurityAlert(type, details) {
+            const alerts = {
+                login: `🔐 Yeni giriş tespit edildi: ${currentUser.name}`,
+                command: `⚡ IRC komutu kullanıldı: ${details}`,
+                message: `💬 Mesaj gönderildi: ${details.substring(0, 50)}...`,
+                private: `🔒 Özel mesaj başlatıldı`,
+                media: `🖼️ Medya paylaşıldı`,
+                story: `📸 Hikaye paylaşıldı: ${details}`
+            };
+            
+            const alertMessage = alerts[type] || `⚠️ Güvenlik uyarısı: ${type}`;
+            
+            // Sadece owner/admin için bildirim
+            if (['owner', 'admin'].includes(currentUser.role)) {
+                addNotification(alertMessage, true);
+            }
+            
+            if (godMode) {
+                logActivity(`🚨 MATE SECURITY: ${type} - ${details}`);
+            }
+        }
+
         // ==================== BİLDİRİM SİSTEMİ ====================
         function loadNotifications() {
             notifications = [];
@@ -2487,46 +2624,6 @@
             }
         }
 
-        // ==================== MATE BOT SİSTEMİ ====================
-        function mateBotMessage(text) {
-            addMessage({
-                sender: mateBot,
-                text: text,
-                time: new Date()
-            }, false);
-            
-            // Sadece owner/admin için MATE bildirimi
-            if (['owner', 'admin'].includes(currentUser.role)) {
-                addNotification(`🤖 MATE: ${text}`, true);
-            }
-            
-            if (godMode) {
-                logActivity(`🤖 MATE BOT: ${text}`);
-            }
-        }
-
-        function mateSecurityAlert(type, details) {
-            const alerts = {
-                login: `🔐 Yeni giriş tespit edildi: ${currentUser.name}`,
-                command: `⚡ IRC komutu kullanıldı: ${details}`,
-                message: `💬 Mesaj gönderildi: ${details.substring(0, 50)}...`,
-                private: `🔒 Özel mesaj başlatıldı`,
-                media: `🖼️ Medya paylaşıldı`,
-                story: `📸 Hikaye paylaşıldı: ${details}`
-            };
-            
-            const alertMessage = alerts[type] || `⚠️ Güvenlik uyarısı: ${type}`;
-            
-            // Sadece owner/admin için bildirim
-            if (['owner', 'admin'].includes(currentUser.role)) {
-                addNotification(alertMessage, true);
-            }
-            
-            if (godMode) {
-                logActivity(`🚨 MATE SECURITY: ${type} - ${details}`);
-            }
-        }
-
         // ==================== KULLANICI LİSTESİ (EŞ ZAMANLI) ====================
         function loadUsers() {
             const userList = document.getElementById('userList');
@@ -2622,6 +2719,57 @@
                 const name = user.querySelector('.user-name').textContent.toLowerCase();
                 user.style.display = name.includes(query) ? 'flex' : 'none';
             });
+        }
+
+        // ==================== PROFİL PANELİ ====================
+        function openProfilePanel() {
+            const panel = document.getElementById('profilePanel');
+            panel.classList.add('active');
+            updateProfilePanel();
+        }
+
+        function closeProfilePanel() {
+            document.getElementById('profilePanel').classList.remove('active');
+        }
+
+        function updateProfilePanel() {
+            if (!currentUser) return;
+            
+            document.getElementById('profileAvatar').textContent = currentUser.avatar;
+            document.getElementById('profileName').textContent = currentUser.name;
+            document.getElementById('profileRole').textContent = currentUser.role;
+            document.getElementById('profileRole').className = `profile-role ${currentUser.role}`;
+            document.getElementById('profileMessages').textContent = currentUser.messages;
+            document.getElementById('profileStories').textContent = currentUser.stories;
+            document.getElementById('profileFollowers').textContent = currentUser.followers;
+        }
+
+        function editProfile() {
+            const newName = prompt('Yeni kullanıcı adı:', currentUser.name);
+            if (newName && newName.trim() && newName !== currentUser.name) {
+                const normalizedNewName = newName.toLowerCase();
+                
+                if (nickRegistry.has(normalizedNewName) && normalizedNewName !== currentUser.name.toLowerCase()) {
+                    alert('Bu nick zaten alınmış!');
+                    return;
+                }
+                
+                nickRegistry.delete(currentUser.name.toLowerCase());
+                nickRegistry.add(normalizedNewName);
+                currentUser.name = newName;
+                currentUser.avatar = newName.charAt(0).toUpperCase();
+                
+                if (liveUsers.has(currentUser.id)) {
+                    liveUsers.get(currentUser.id).name = newName;
+                    liveUsers.get(currentUser.id).avatar = newName.charAt(0).toUpperCase();
+                }
+                
+                updateProfilePanel();
+                loadUsers();
+                addNotification('Profiliniz güncellendi');
+                
+                mateBotMessage(`📝 ${currentUser.name} kullanıcı adını güncelledi.`);
+            }
         }
 
         // ==================== HİKAYE SİSTEMİ (EŞ ZAMANLI) ====================
@@ -2745,6 +2893,134 @@
             }
             
             viewStory(currentStory.id);
+        }
+
+        function viewStory(storyId) {
+            const story = stories.find(s => s.id === storyId);
+            if (!story) return;
+            
+            currentStory = story;
+            currentStoryIndex = stories.findIndex(s => s.id === storyId);
+            
+            document.getElementById('storyUserAvatarInner').textContent = story.avatar;
+            document.getElementById('storyUserName').textContent = story.userName;
+            document.getElementById('storyTime').textContent = story.time;
+            document.getElementById('storyImage').src = story.media;
+            
+            updateStoryLikeButton();
+            
+            const userStories = stories.filter(s => s.userId === story.userId);
+            const progressDiv = document.getElementById('storyProgress');
+            progressDiv.innerHTML = '';
+            
+            userStories.forEach((s, index) => {
+                const progressBar = document.createElement('div');
+                progressBar.className = 'story-progress-bar';
+                const progressFill = document.createElement('div');
+                progressFill.className = 'story-progress-fill';
+                progressFill.id = `storyProgress${s.id}`;
+                progressBar.appendChild(progressFill);
+                progressDiv.appendChild(progressBar);
+            });
+            
+            document.getElementById('storyViewer').classList.add('active');
+            startStoryProgress();
+            
+            storyInterval = setTimeout(() => {
+                nextStory();
+            }, story.duration);
+        }
+
+        function updateStoryLikeButton() {
+            const btn = document.getElementById('storyLikeBtn');
+            const likesSpan = document.getElementById('storyLikes');
+            
+            if (!btn || !likesSpan || !currentStory) return;
+            
+            likesSpan.textContent = currentStory.likes;
+            
+            if (currentStory.likedBy && currentStory.likedBy.includes(currentUser.id)) {
+                btn.classList.add('liked');
+                btn.innerHTML = '<i class="fas fa-heart" style="color: #ef4444;"></i> <span>' + currentStory.likes + '</span>';
+            } else {
+                btn.classList.remove('liked');
+                btn.innerHTML = '<i class="fas fa-heart"></i> <span>' + currentStory.likes + '</span>';
+            }
+        }
+
+        function startStoryProgress() {
+            clearInterval(storyProgressInterval);
+            
+            const progressFill = document.getElementById(`storyProgress${currentStory.id}`);
+            if (!progressFill) return;
+            
+            let width = 0;
+            storyProgressInterval = setInterval(() => {
+                if (width >= 100) {
+                    clearInterval(storyProgressInterval);
+                    return;
+                }
+                width += 0.5;
+                progressFill.style.width = width + '%';
+            }, currentStory.duration / 200);
+        }
+
+        function likeStory() {
+            if (!currentStory) return;
+            
+            const btn = document.getElementById('storyLikeBtn');
+            const likesSpan = document.getElementById('storyLikes');
+            
+            if (!btn || !likesSpan) return;
+            
+            if (!currentStory.likedBy) {
+                currentStory.likedBy = [];
+            }
+            
+            if (currentStory.likedBy.includes(currentUser.id)) {
+                currentStory.likes--;
+                currentStory.likedBy = currentStory.likedBy.filter(id => id !== currentUser.id);
+                btn.classList.remove('liked');
+                btn.innerHTML = '<i class="fas fa-heart"></i> <span>' + currentStory.likes + '</span>';
+                likesSpan.textContent = currentStory.likes;
+            } else {
+                currentStory.likes++;
+                currentStory.likedBy.push(currentUser.id);
+                btn.classList.add('liked');
+                btn.innerHTML = '<i class="fas fa-heart" style="color: #ef4444;"></i> <span>' + currentStory.likes + '</span>';
+                likesSpan.textContent = currentStory.likes;
+                
+                if (currentStory.userId !== currentUser.id) {
+                    addNotification(`${currentStory.userName} kullanıcısının hikayesini beğendiniz`);
+                }
+            }
+        }
+
+        function nextStory() {
+            clearTimeout(storyInterval);
+            clearInterval(storyProgressInterval);
+            
+            const userStories = stories.filter(s => s.userId === currentStory.userId);
+            const currentIndex = userStories.findIndex(s => s.id === currentStory.id);
+            
+            if (currentIndex < userStories.length - 1) {
+                viewStory(userStories[currentIndex + 1].id);
+            } else {
+                const nextUserIndex = stories.findIndex(s => s.id === currentStory.id) + 1;
+                if (nextUserIndex < stories.length) {
+                    viewStory(stories[nextUserIndex].id);
+                } else {
+                    closeStory();
+                }
+            }
+        }
+
+        function closeStory() {
+            clearTimeout(storyInterval);
+            clearInterval(storyProgressInterval);
+            document.getElementById('storyViewer').classList.remove('active');
+            currentStory = null;
+            updateTopStories();
         }
 
         // ==================== MEDYA YÜKLEME SİSTEMİ ====================
@@ -3120,10 +3396,409 @@
             selectedUser = null;
         }
 
-        // ==================== DİĞER FONKSİYONLAR (KISALTILMIŞ) ====================
-        // Bu kısımda sadece değişen fonksiyonlar gösterilmiştir.
-        // Kalan fonksiyonlar (profile, IRC, owner panel, vs.) önceki versiyonla aynı kalacaktır.
-        // Kod uzunluğu nedeniyle tamamını buraya eklemiyorum.
+        // ==================== IRC KOMUT PANELİ ====================
+        function loadIRCCommands() {
+            const ircCommandsDiv = document.getElementById('ircCommands');
+            if (!ircCommandsDiv) return;
+            
+            ircCommandsDiv.innerHTML = '';
+            
+            ircCommands.forEach(cmd => {
+                const commandDiv = document.createElement('div');
+                commandDiv.className = 'irc-command';
+                commandDiv.onclick = () => useIRCCommand(cmd.command);
+                
+                commandDiv.innerHTML = `
+                    <div style="font-weight: 500; font-family: var(--font-mono);">${cmd.command}</div>
+                    <div class="description">${cmd.description}</div>
+                    <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Örnek: ${cmd.example}</div>
+                `;
+                
+                ircCommandsDiv.appendChild(commandDiv);
+            });
+        }
+
+        function toggleIRCPanel() {
+            const panel = document.getElementById('ircPanel');
+            panel.classList.toggle('active');
+        }
+
+        function useIRCCommand(command) {
+            document.getElementById('messageInput').value = command + ' ';
+            document.getElementById('messageInput').focus();
+            toggleIRCPanel();
+        }
+
+        // ==================== OWNER PANELİ ====================
+        function updatePermissionControls() {
+            const ircBtn = document.getElementById('ircBtn');
+            const ownerBtn = document.getElementById('ownerBtn');
+            
+            ircBtn.classList.remove('disabled');
+            ircBtn.title = 'IRC Komutları';
+            
+            if (godMode) {
+                ownerBtn.classList.remove('disabled');
+                ownerBtn.title = 'Owner Paneli';
+                document.getElementById('adminAlertBtn').style.display = 'flex';
+            } else {
+                ownerBtn.classList.add('disabled');
+                ownerBtn.title = 'Sadece Owner';
+            }
+        }
+
+        function toggleOwnerPanel() {
+            if (!godMode) {
+                alert('Bu panele erişim yetkiniz yok.');
+                return;
+            }
+            
+            const panel = document.getElementById('ownerPanel');
+            panel.classList.toggle('active');
+            
+            if (panel.classList.contains('active')) {
+                updateOwnerPanel();
+            }
+        }
+
+        function updateOwnerPanel() {
+            updateLiveMonitoring();
+            updatePrivateMessagesMonitor();
+        }
+
+        function logActivity(message) {
+            liveActivity.unshift({
+                id: liveActivity.length + 1,
+                message: message,
+                time: new Date(),
+                user: currentUser.name
+            });
+            
+            if (liveActivity.length > 50) {
+                liveActivity = liveActivity.slice(0, 50);
+            }
+            
+            updateLiveMonitoring();
+        }
+
+        function updateLiveMonitoring() {
+            const monitoringDiv = document.getElementById('liveMonitoring');
+            if (!monitoringDiv) return;
+            
+            monitoringDiv.innerHTML = '';
+            
+            const recentActivity = liveActivity.slice(0, 10);
+            
+            if (recentActivity.length === 0) {
+                monitoringDiv.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-tertiary);">Henüz aktivite yok</div>';
+                return;
+            }
+            
+            recentActivity.forEach(activity => {
+                const activityDiv = document.createElement('div');
+                activityDiv.className = 'monitor-item';
+                
+                const timeAgo = getTimeAgo(activity.time);
+                
+                activityDiv.innerHTML = `
+                    <div class="monitor-header">
+                        <div class="monitor-user">${activity.user}</div>
+                        <div class="monitor-time">${timeAgo}</div>
+                    </div>
+                    <div class="monitor-content">${activity.message}</div>
+                `;
+                
+                monitoringDiv.appendChild(activityDiv);
+            });
+        }
+
+        function updatePrivateMessagesMonitor() {
+            const monitorDiv = document.getElementById('privateMessagesMonitor');
+            if (!monitorDiv) return;
+            
+            monitorDiv.innerHTML = '';
+            
+            if (Object.keys(privateMessages).length === 0) {
+                monitorDiv.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-tertiary);">Henüz özel mesaj yok</div>';
+                return;
+            }
+            
+            let html = '';
+            for (const [key, messages] of Object.entries(privateMessages)) {
+                if (messages.length > 0) {
+                    const lastMessage = messages[messages.length - 1];
+                    const user1 = demoUsers.find(u => u.id === parseInt(key.split('_')[0]));
+                    const user2 = demoUsers.find(u => u.id === parseInt(key.split('_')[1]));
+                    
+                    if (user1 && user2) {
+                        const timeAgo = getTimeAgo(lastMessage.time);
+                        html += `
+                            <div class="monitor-item">
+                                <div class="monitor-header">
+                                    <div class="monitor-user">${user1.name} ↔ ${user2.name}</div>
+                                    <div class="monitor-time">${timeAgo}</div>
+                                </div>
+                                <div class="monitor-content">${lastMessage.sender.name}: ${lastMessage.text || '[MEDYA]'}</div>
+                            </div>
+                        `;
+                    }
+                }
+            }
+            
+            monitorDiv.innerHTML = html || '<div style="text-align: center; padding: 20px; color: var(--text-tertiary);">Henüz özel mesaj yok</div>';
+        }
+
+        function systemBroadcast() {
+            const message = prompt('Genel duyuru mesajını girin:');
+            if (message) {
+                addSystemMessage(`📢 SİSTEM DUYURUSU: ${message}`);
+                logActivity(`📢 OWNER BROADCAST: ${message}`);
+                addNotification('Sistem duyurusu yayınlandı');
+                mateBotMessage(`📢 Owner genel duyuru yaptı: ${message}`);
+            }
+        }
+
+        function forceLogoutAll() {
+            if (confirm('Tüm kullanıcıları çıkartmak istediğinize emin misiniz?')) {
+                demoUsers.forEach(user => {
+                    if (user.id !== currentUser.id && !user.isBot) {
+                        user.online = false;
+                        if (liveUsers.has(user.id)) {
+                            liveUsers.get(user.id).online = false;
+                        }
+                    }
+                });
+                
+                loadUsers();
+                addSystemMessage('Tüm kullanıcılar sistemden çıkartıldı (owner hariç)');
+                logActivity('🔄 OWNER FORCE LOGOUT: All users logged out');
+                mateBotMessage('🚨 Owner tüm kullanıcıları sistemden çıkarttı!');
+            }
+        }
+
+        function simulateActivity() {
+            // Bot ile simulasyon yap
+            mateBotMessage('🔧 Owner aktivite simülasyonu başlattı. Sistem test ediliyor...');
+            
+            setTimeout(() => {
+                mateBotMessage('✅ Sistem testi başarılı! Tüm bileşenler çalışıyor.');
+            }, 2000);
+            
+            logActivity(`🤖 OWNER SIMULATION: Activity simulation started`);
+        }
+
+        // ==================== IRC KOMUT İŞLEME ====================
+        function handleIRCCommand(command) {
+            const parts = command.split(' ');
+            const cmd = parts[0].toLowerCase();
+            const args = parts.slice(1);
+            
+            mateSecurityAlert('command', command);
+            
+            switch(cmd) {
+                case '/nick':
+                    if (args.length < 1) {
+                        addSystemMessage('Kullanım: /nick <yeni_nick>');
+                        return;
+                    }
+                    changeNick(args[0]);
+                    break;
+                    
+                case '/msg':
+                    if (args.length < 2) {
+                        addSystemMessage('Kullanım: /msg <nick> <mesaj>');
+                        return;
+                    }
+                    const target = args[0];
+                    const msg = args.slice(1).join(' ');
+                    sendPrivateIRC(target, msg);
+                    break;
+                    
+                case '/whois':
+                    if (args.length < 1) {
+                        addSystemMessage('Kullanım: /whois <nick>');
+                        return;
+                    }
+                    whoisUser(args[0]);
+                    break;
+                    
+                case '/kick':
+                case '/ban':
+                case '/mute':
+                    if (!godMode && !['owner', 'admin', 'mod'].includes(currentUser.role)) {
+                        addSystemMessage('Bu komut için yetkiniz yok');
+                        mateBotMessage(`⛔ ${currentUser.name}, bu komut için yetkiniz yok!`);
+                        return;
+                    }
+                    handleModCommand(cmd, args);
+                    break;
+                    
+                case '/help':
+                    showIRCHelp();
+                    break;
+                    
+                case '/admin':
+                    toggleOwnerPanel();
+                    break;
+                    
+                default:
+                    addSystemMessage(`Bilinmeyen komut: ${cmd}. /help yazarak komut listesini görebilirsiniz.`);
+            }
+            
+            if (godMode) {
+                logActivity(`⌨️ OWNER COMMAND: ${command}`);
+            }
+        }
+
+        function changeNick(newNick) {
+            const normalizedNewNick = newNick.toLowerCase();
+            
+            if (nickRegistry.has(normalizedNewNick)) {
+                addSystemMessage(`Nick "${newNick}" zaten alınmış!`);
+                return;
+            }
+            
+            nickRegistry.delete(currentUser.name.toLowerCase());
+            nickRegistry.add(normalizedNewNick);
+            currentUser.name = newNick;
+            currentUser.avatar = newNick.charAt(0).toUpperCase();
+            
+            if (liveUsers.has(currentUser.id)) {
+                liveUsers.get(currentUser.id).name = newNick;
+                liveUsers.get(currentUser.id).avatar = newNick.charAt(0).toUpperCase();
+            }
+            
+            addSystemMessage(`Nick değiştirildi: ${newNick}`);
+            updateProfilePanel();
+            loadUsers();
+            
+            mateBotMessage(`📝 ${currentUser.name} nick değiştirdi.`);
+        }
+
+        function sendPrivateIRC(target, message) {
+            const user = demoUsers.find(u => u.name.toLowerCase() === target.toLowerCase());
+            if (!user) {
+                addSystemMessage(`Kullanıcı bulunamadı: ${target}`);
+                return;
+            }
+            
+            if (user.isBot) {
+                mateBotMessage(`🤖 Benimle özel sohbet yapamazsınız! Komutlar için /help yazın.`);
+                return;
+            }
+            
+            openPrivateChat(user);
+            
+            setTimeout(() => {
+                const privateInput = document.getElementById('privateMessageInput');
+                if (privateInput) {
+                    privateInput.value = message;
+                    sendPrivateMessage();
+                }
+            }, 100);
+        }
+
+        function whoisUser(nick) {
+            const user = demoUsers.find(u => u.name.toLowerCase() === nick.toLowerCase());
+            if (!user) {
+                addSystemMessage(`Kullanıcı bulunamadı: ${nick}`);
+                return;
+            }
+            
+            const liveUser = liveUsers.get(user.id);
+            const isOnline = liveUser ? liveUser.online : user.online;
+            
+            const info = `
+                Kullanıcı: ${user.name}
+                Rol: ${user.role}
+                Durum: ${isOnline ? '🟢 Çevrimiçi' : '⚫ Çevrimdışı'}
+                Mesaj: ${user.messages}
+                Hikaye: ${user.stories}
+                Takipçi: ${user.followers}
+                Takip: ${user.following}
+                ${user.isBot ? '🤖 Sistem Botu' : ''}
+            `.split('\n').map(line => line.trim()).join('\n');
+            
+            addSystemMessage(info);
+        }
+
+        function handleModCommand(cmd, args) {
+            if (args.length < 1) {
+                addSystemMessage(`Kullanım: ${cmd} <nick> [sebep]`);
+                return;
+            }
+            
+            const target = args[0];
+            const reason = args.slice(1).join(' ') || 'Sebep belirtilmedi';
+            const user = demoUsers.find(u => u.name.toLowerCase() === target.toLowerCase());
+            
+            if (!user) {
+                addSystemMessage(`Kullanıcı bulunamadı: ${target}`);
+                return;
+            }
+            
+            if (user.isBot) {
+                addSystemMessage('Bot kullanıcısına işlem yapılamaz');
+                mateBotMessage('😄 Beni atamazsınız! Sistem güvenliği için buradayım.');
+                return;
+            }
+            
+            if (user.role === 'owner' && user.id !== currentUser.id) {
+                addSystemMessage('Owner kullanıcısına işlem yapılamaz');
+                return;
+            }
+            
+            switch(cmd) {
+                case '/kick':
+                    user.online = false;
+                    if (liveUsers.has(user.id)) {
+                        liveUsers.get(user.id).online = false;
+                    }
+                    addSystemMessage(`${user.name} kullanıcısı atıldı. Sebep: ${reason}`);
+                    mateBotMessage(`🚪 ${currentUser.name}, ${user.name} kullanıcısını attı: ${reason}`);
+                    break;
+                case '/ban':
+                    user.online = false;
+                    if (liveUsers.has(user.id)) {
+                        liveUsers.delete(user.id);
+                    }
+                    addSystemMessage(`${user.name} kullanıcısı yasaklandı. Sebep: ${reason}`);
+                    mateBotMessage(`🚫 ${currentUser.name}, ${user.name} kullanıcısını yasakladı: ${reason}`);
+                    break;
+                case '/mute':
+                    addSystemMessage(`${user.name} kullanıcısı susturuldu. Sebep: ${reason}`);
+                    mateBotMessage(`🔇 ${currentUser.name}, ${user.name} kullanıcısını susturdu: ${reason}`);
+                    break;
+            }
+            
+            loadUsers();
+            
+            if (godMode) {
+                logActivity(`⚡ MOD COMMAND: ${cmd} ${target} - ${reason}`);
+            }
+        }
+
+        function showIRCHelp() {
+            let helpText = 'Kullanılabilir IRC Komutları:\n';
+            ircCommands.forEach(cmd => {
+                helpText += `  ${cmd.command.padEnd(12)} - ${cmd.description}\n`;
+            });
+            addSystemMessage(helpText);
+        }
+
+        // ==================== MEDYA GÖRÜNTÜLEME ====================
+        function viewPrivateMedia(url) {
+            viewMedia(url);
+        }
+
+        function viewMedia(url) {
+            document.getElementById('modalImage').src = url;
+            document.getElementById('mediaModal').classList.add('active');
+        }
+
+        function closeMediaModal() {
+            document.getElementById('mediaModal').classList.remove('active');
+        }
 
         // ==================== CANLI GÜNCELLEMELER ====================
         function startLiveUpdates() {
@@ -3201,6 +3876,76 @@
             if (Math.random() > 0.5) {
                 mateBotMessage(randomMessage);
             }
+        }
+
+        // ==================== ÇIKIŞ İŞLEMLERİ ====================
+        function handleLogout() {
+            if (confirm('Çıkış yapmak istediğinize emin misiniz?')) {
+                if (currentUser) {
+                    currentUser.online = false;
+                    if (liveUsers.has(currentUser.id)) {
+                        liveUsers.get(currentUser.id).online = false;
+                    }
+                }
+                
+                location.reload();
+            }
+        }
+
+        // ==================== TEMA SİSTEMİ ====================
+        function toggleTheme() {
+            const body = document.body;
+            
+            if (theme === 'night') {
+                body.classList.add('day-mode');
+                body.classList.remove('night-mode');
+                theme = 'day';
+            } else {
+                body.classList.add('night-mode');
+                body.classList.remove('day-mode');
+                theme = 'night';
+            }
+        }
+
+        // ==================== VIDEO CONTROLS ====================
+        function toggleVideoPlay() {
+            const video = document.getElementById('mainVideo');
+            const btn = document.getElementById('playBtn');
+            
+            if (video.paused) {
+                video.play();
+                btn.innerHTML = '<i class="fas fa-pause"></i>';
+            } else {
+                video.pause();
+                btn.innerHTML = '<i class="fas fa-play"></i>';
+            }
+        }
+
+        function toggleVideoMute() {
+            const video = document.getElementById('mainVideo');
+            const btn = document.getElementById('muteBtn');
+            
+            video.muted = !video.muted;
+            btn.innerHTML = video.muted ? '<i class="fas fa-volume-mute"></i>' : '<i class="fas fa-volume-up"></i>';
+        }
+
+        function toggleVideoFullscreen() {
+            const video = document.getElementById('mainVideo');
+            
+            if (!document.fullscreenElement) {
+                video.requestFullscreen().catch(err => {
+                    console.log(`Fullscreen error: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // ==================== UTILITY FUNCTIONS ====================
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // ==================== EVENT LISTENERS ====================
