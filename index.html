@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Popbox Elite</title>
+    <title>Popbox Elite - Kişisel Alan</title>
     <style>
         :root {
             --bg-day: #ffffff;
@@ -34,14 +34,16 @@
         button:hover { opacity:0.9; }
         .error { color:#ff0000; margin-top:12px; font-size:14px; }
         .app { display:none; height:100vh; flex-direction:row; }
-        .sidebar { width:280px; background:var(--gray-day); border-right:1px solid var(--border-day); display:flex; flex-direction:column; overflow-y:auto; }
+        .sidebar { width:320px; background:var(--gray-day); border-right:1px solid var(--border-day); display:flex; flex-direction:column; overflow-y:auto; }
         body.night .sidebar { background:var(--gray-night); border-color:var(--border-night); }
-        .channel-list { flex:1; padding:16px; }
-        .channel-item { padding:12px; cursor:pointer; border-radius:8px; margin-bottom:8px; transition:0.2s; }
-        .channel-item:hover { background:#eee; }
-        body.night .channel-item:hover { background:#222; }
-        .channel-item.active { background:#000; color:#fff; }
-        body.night .channel-item.active { background:#fff; color:#000; }
+        .header { height:60px; background:var(--gray-day); border-bottom:1px solid var(--border-day); padding:0 16px; display:flex; align-items:center; justify-content:space-between; }
+        body.night .header { background:var(--gray-night); border-color:var(--border-night); }
+        .user-list { flex:1; padding:16px; }
+        .user-item { padding:12px; cursor:pointer; border-radius:8px; margin-bottom:8px; transition:0.2s; display:flex; align-items:center; gap:12px; }
+        .user-item:hover { background:#eee; }
+        body.night .user-item:hover { background:#222; }
+        .user-avatar { width:40px; height:40px; border-radius:50%; background:#000; color:#fff; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:bold; }
+        body.night .user-avatar { background:#fff; color:#000; }
         .chat-main { flex:1; display:flex; flex-direction:column; background:var(--bg-day); }
         body.night .chat-main { background:var(--bg-night); }
         .chat-header { height:60px; background:var(--gray-day); border-bottom:1px solid var(--border-day); padding:0 16px; display:flex; align-items:center; justify-content:space-between; }
@@ -89,21 +91,21 @@
 <div id="app" class="app" style="display:none;">
     <div class="sidebar">
         <div class="chat-header">
-            <div style="font-weight:600;">Kanallar</div>
+            <div style="font-weight:600;">Kişiler</div>
             <div>
                 <button onclick="document.body.classList.toggle('night'); document.body.classList.toggle('day')">Gece/Gündüz</button>
                 <button onclick="openProfile()">Profil</button>
             </div>
         </div>
-        <div class="channel-list" id="channelList"></div>
+        <div class="user-list" id="userList"></div>
     </div>
 
     <div class="chat-main">
         <div class="chat-header">
-            <div id="channelName">Genel Oda</div>
+            <div id="chatWith">Bir kişi seç</div>
         </div>
         <div class="messages" id="messages">
-            <p id="welcome">Hoş geldin! Burası Genel Oda – mesaj yazmaya başla...</p>
+            <p id="welcome">Hoş geldin! Bir kişiye tıkla sohbet başlat...</p>
         </div>
         <div class="input-area">
             <textarea id="msgInput" placeholder="Mesaj yaz..."></textarea>
@@ -113,7 +115,7 @@
         </div>
     </div>
 
-    <!-- Overlay (Profil / Özel Sohbet) -->
+    <!-- Overlay (Profil) -->
     <div id="overlay" class="overlay">
         <div class="overlay-content">
             <div class="overlay-header">
@@ -128,13 +130,9 @@
 <script>
     let currentUser = null;
     let godMode = false;
-    let currentChannel = 'general';
-    const channels = {
-        general: { name: 'Genel Oda', messages: [] },
-        rastgele: { name: 'Rastgele', messages: [] },
-        muzık: { name: 'Müzik', messages: [] },
-        sohbet: { name: 'Sohbet', messages: [] }
-    };
+    let currentChatWith = null;
+
+    const onlineUsers = ['Ahmet', 'Ayşe', 'Mehmet', 'Elif', 'Kumsal', 'Baran', 'Ece']; // Simüle edilmiş kişiler
 
     function handleLogin() {
         const nick = document.getElementById('nickInput').value.trim();
@@ -150,68 +148,57 @@
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('app').style.display = 'flex';
         
-        loadChannelList();
-        loadChannel('general');
+        loadUserList();
+        document.getElementById('welcome').innerHTML = `Hoş geldin <strong>${nick}</strong>! Bir kişiye tıkla sohbet başlat...`;
     }
 
-    function loadChannelList() {
-        const list = document.getElementById('channelList');
+    function loadUserList() {
+        const list = document.getElementById('userList');
         list.innerHTML = '';
-        Object.keys(channels).forEach(key => {
+        onlineUsers.forEach(name => {
             const div = document.createElement('div');
-            div.className = 'channel-item' + (key === currentChannel ? ' active' : '');
-            div.textContent = channels[key].name;
-            div.onclick = () => loadChannel(key);
+            div.className = 'user-item';
+            div.innerHTML = `
+                <div class="user-avatar">${name.charAt(0).toUpperCase()}</div>
+                <div>${name}${name === currentUser.nick ? ' (sen)' : ''}</div>
+            `;
+            div.onclick = () => startChatWith(name);
             list.appendChild(div);
         });
     }
 
-    function loadChannel(key) {
-        currentChannel = key;
-        document.getElementById('channelName').textContent = channels[key].name;
-        const messagesDiv = document.getElementById('messages');
-        messagesDiv.innerHTML = '';
-        channels[key].messages.forEach(msg => {
-            const div = document.createElement('div');
-            div.className = 'msg ' + (msg.self ? 'msg-self' : 'msg-other');
-            div.innerHTML = msg.content;
-            messagesDiv.appendChild(div);
-        });
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        loadChannelList(); // aktif kanal vurgusunu güncelle
+    function startChatWith(nick) {
+        currentChatWith = nick;
+        document.getElementById('chatWith').textContent = nick;
+        document.getElementById('messages').innerHTML = `<p>Sohbet başladı: ${nick}</p>`;
     }
 
     function sendMessage() {
         const input = document.getElementById('msgInput');
-        if (!input.value.trim()) return;
+        if (!input.value.trim() || !currentChatWith) return;
         
-        const msg = { self: true, content: input.value };
-        channels[currentChannel].messages.push(msg);
-        const div = document.createElement('div');
-        div.className = 'msg msg-self';
-        div.textContent = input.value;
-        document.getElementById('messages').appendChild(div);
+        const msg = document.createElement('div');
+        msg.className = 'msg msg-self';
+        msg.textContent = input.value;
+        document.getElementById('messages').appendChild(msg);
         document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         input.value = '';
     }
 
     function handleLocalMedia(event) {
         const file = event.target.files[0];
-        if (!file) return;
+        if (!file || !currentChatWith) return alert('Dosya seçilmedi veya sohbet açık değil!');
 
         const reader = new FileReader();
         reader.onload = function(e) {
-            const msg = { self: true, content: '' };
-            const div = document.createElement('div');
-            div.className = 'msg msg-self';
+            const msg = document.createElement('div');
+            msg.className = 'msg msg-self';
             if (file.type.startsWith('image')) {
-                msg.content = `<img src="${e.target.result}" style="max-width:100%; border-radius:12px;">`;
+                msg.innerHTML = `<img src="${e.target.result}" style="max-width:100%; border-radius:12px;">`;
             } else if (file.type.startsWith('video')) {
-                msg.content = `<video src="${e.target.result}" controls style="max-width:100%; border-radius:12px;"></video>`;
+                msg.innerHTML = `<video src="${e.target.result}" controls style="max-width:100%; border-radius:12px;"></video>`;
             }
-            channels[currentChannel].messages.push(msg);
-            div.innerHTML = msg.content;
-            document.getElementById('messages').appendChild(div);
+            document.getElementById('messages').appendChild(msg);
             document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         };
         reader.readAsDataURL(file);
