@@ -7,25 +7,55 @@
     <style>
         :root {
             --bg: #ffffff;
+            --bg-dark: #0f1115;
             --text: #000000;
+            --text-dark: #e0e0e0;
             --primary: #1890ff;
+            --primary-hover: #40a9ff;
             --danger: #ff4d4f;
+            --success: #52c41a;
             --gray: #f0f0f0;
+            --gray-dark: #1f2229;
+            --border: #ddd;
+            --border-dark: #2a2e35;
         }
-        body { margin:0; font-family:system-ui, sans-serif; background:var(--bg); color:var(--text); height:100vh; overflow:hidden; }
+        body { margin:0; font-family:system-ui, sans-serif; background:var(--bg); color:var(--text); height:100vh; overflow:hidden; transition:background 0.3s; }
+        body.dark { background:var(--bg-dark); color:var(--text-dark); }
         .login-screen { position:fixed; inset:0; background:linear-gradient(135deg, #e6f7ff, #ffffff); display:flex; align-items:center; justify-content:center; z-index:9999; }
         .login-box { background:white; padding:40px; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,0.15); width:360px; text-align:center; }
-        input { width:100%; padding:12px; margin:12px 0; border:1px solid #ddd; border-radius:8px; font-size:16px; }
-        button { width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:8px; font-size:16px; cursor:pointer; }
+        input { width:100%; padding:12px; margin:12px 0; border:1px solid var(--border); border-radius:8px; font-size:16px; }
+        button { width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:8px; font-size:16px; cursor:pointer; transition:0.2s; }
+        button:hover { background:var(--primary-hover); }
         .error { color:var(--danger); margin-top:12px; min-height:20px; }
         .app { display:none; height:100vh; flex-direction:column; }
-        .header { height:60px; background:#f8f9fa; border-bottom:1px solid #ddd; padding:0 20px; display:flex; align-items:center; justify-content:space-between; }
-        .chat { flex:1; padding:20px; overflow-y:auto; }
-        .users { width:220px; background:#f8f9fa; border-left:1px solid #ddd; padding:20px; }
+        .header { height:60px; background:#f8f9fa; border-bottom:1px solid var(--border); padding:0 20px; display:flex; align-items:center; justify-content:space-between; }
+        body.dark .header { background:#11141a; border-color:var(--border-dark); }
+        .chat-area { flex:1; display:flex; overflow:hidden; }
+        .messages { flex:1; padding:20px; overflow-y:auto; }
+        .input-area { padding:12px 20px; border-top:1px solid var(--border); background:#f8f9fa; display:flex; gap:12px; }
+        body.dark .input-area { background:#11141a; border-color:var(--border-dark); }
+        textarea { flex:1; padding:12px; border:1px solid var(--border); border-radius:8px; resize:none; font-size:15px; }
+        body.dark textarea { background:#1a1d24; color:#eee; border-color:#333; }
+        .send-btn { padding:12px 20px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer; }
+        .users-sidebar { width:220px; background:#f8f9fa; border-left:1px solid var(--border); padding:20px; overflow-y:auto; }
+        body.dark .users-sidebar { background:#0c0e12; border-color:var(--border-dark); }
+        .user-item { padding:10px; cursor:pointer; border-radius:8px; margin-bottom:6px; }
+        .user-item:hover { background:var(--gray); }
+        body.dark .user-item:hover { background:#1f2229; }
+        .private-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; justify-content:flex-end; z-index:2000; }
+        .private-overlay.active { display:flex; }
+        .private-window { width:50%; min-width:500px; height:100%; background:var(--bg); border-left:1px solid var(--border); display:flex; flex-direction:column; box-shadow:-10px 0 30px rgba(0,0,0,0.3); }
+        body.dark .private-window { background:var(--bg-dark); border-color:var(--border-dark); }
+        .private-header { padding:16px; background:var(--primary); color:white; display:flex; justify-content:space-between; align-items:center; }
+        .private-messages { flex:1; padding:16px; overflow-y:auto; }
+        .private-input-area { padding:12px; border-top:1px solid var(--border); display:flex; gap:12px; background:var(--gray); }
+        body.dark .private-input-area { background:#11141a; border-color:var(--border-dark); }
+        .close-btn { background:none; border:none; color:white; font-size:24px; cursor:pointer; }
     </style>
 </head>
 <body>
 
+<!-- Login Ekranı -->
 <div id="loginScreen" class="login-screen">
     <div class="login-box">
         <h2>Popbox Elite</h2>
@@ -45,29 +75,64 @@
     </div>
 </div>
 
+<!-- Ana Uygulama -->
 <div id="app" class="app">
     <div class="header">
         <div>Genel Sohbet</div>
         <div>
-            <button onclick="document.body.classList.toggle('dark')">Tema</button>
-            <button onclick="alert('Profil yakında')">Profil</button>
+            <button onclick="document.body.classList.toggle('dark')">Koyu/Açık</button>
+            <button onclick="openProfile()">Profil</button>
         </div>
     </div>
     
-    <div style="flex:1; display:flex;">
-        <div class="chat" id="chatArea">
+    <div class="chat-area">
+        <div class="messages" id="messages">
             <p id="welcome">Hoş geldin! Mesaj yazmaya başla...</p>
         </div>
         
-        <div class="users">
-            <h4>Çevrimiçi Kullanıcılar</h4>
-            <div id="userList"></div>
+        <div class="input-area">
+            <textarea id="msgInput" placeholder="Mesaj yazın..."></textarea>
+            <button class="send-btn" onclick="sendMessage()">Gönder</button>
+        </div>
+    </div>
+    
+    <div class="users-sidebar">
+        <h4>Çevrimiçi Kullanıcılar</h4>
+        <div id="userList">
+            <!-- JS ile doldurulacak -->
+        </div>
+    </div>
+</div>
+
+<!-- Özel Sohbet Overlay -->
+<div id="privateOverlay" class="private-overlay">
+    <div class="private-window">
+        <div class="private-header">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <button class="close-btn" onclick="closePrivate()">←</button>
+                <span id="privateTitle">Özel Sohbet</span>
+            </div>
+            <div>
+                <button style="background:rgba(255,255,255,0.2); border:none; color:white; padding:6px 12px; border-radius:6px; margin-right:8px;" onclick="alert('Şikayet gönderildi')">Şikayet Et</button>
+                <button style="background:var(--danger); color:white; border:none; padding:6px 12px; border-radius:6px;" onclick="alert('Kullanıcı engellendi')">Engelle</button>
+            </div>
+        </div>
+        <div class="private-messages" id="privateMessages">
+            <!-- Mesajlar buraya -->
+        </div>
+        <div class="private-input-area">
+            <textarea id="privateInput" placeholder="Mesaj yaz..."></textarea>
+            <button class="send-btn" onclick="sendPrivateMsg()">Gönder</button>
         </div>
     </div>
 </div>
 
 <script>
-// Basit yardımcılar
+// Global değişkenler
+let currentUser = null;
+let activePrivate = null;
+
+// Yardımcı fonksiyonlar
 function showError(msg) {
     document.getElementById('errorMsg').textContent = msg;
 }
@@ -78,45 +143,103 @@ function handleLogin() {
     
     showError('');
     
-    if (!nick) {
-        showError('Kullanıcı adı zorunlu!');
-        return;
-    }
+    if (!nick) return showError('Kullanıcı adı zorunlu!');
     
     let role = 'user';
     if (nick.toLowerCase() === 'mateky') {
-        if (pass === 'kumsal07@') {
-            role = 'owner';
-        } else {
-            showError('Owner şifresi yanlış!');
-            return;
-        }
+        if (pass === 'kumsal07@') role = 'owner';
+        else return showError('Owner şifresi yanlış!');
     } else if (pass) {
-        showError('Normal kullanıcılar şifre girmemeli!');
-        return;
+        return showError('Normal kullanıcılar şifre girmemeli!');
     }
     
-    // Giriş başarılı
+    currentUser = { nick, role };
+    
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     
-    // Hoş geldin mesajı
     document.getElementById('welcome').innerHTML = `Hoş geldin <strong>${nick}</strong>! (Rol: ${role})<br>Mesaj yazmaya başla...`;
     
-    // Kullanıcı listesine ekle (basit simülasyon)
-    document.getElementById('userList').innerHTML += `<p>${nick} (${role})</p>`;
-    
-    // Konsola bilgi
-    console.log(`Giriş yapıldı: ${nick} - Rol: ${role}`);
+    // Kullanıcı listesine ekle
+    updateUserList();
 }
 
-// Enter tuşu ile giriş
-document.getElementById('nickInput').addEventListener('keypress', e => {
-    if (e.key === 'Enter') handleLogin();
+function updateUserList() {
+    const list = document.getElementById('userList');
+    list.innerHTML = '';
+    
+    // Örnek kullanıcılar + mevcut kullanıcı
+    ['Ahmet', 'Ayşe', 'Mehmet', 'Elif', currentUser.nick].forEach(name => {
+        const div = document.createElement('div');
+        div.className = 'user-item';
+        div.textContent = name;
+        div.onclick = () => openPrivateChat(name);
+        list.appendChild(div);
+    });
+}
+
+function sendMessage() {
+    const input = document.getElementById('msgInput');
+    if (!input.value.trim()) return;
+    
+    const msgDiv = document.createElement('p');
+    msgDiv.innerHTML = `<strong>${currentUser.nick}:</strong> ${input.value}`;
+    document.getElementById('messages').appendChild(msgDiv);
+    document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+    input.value = '';
+}
+
+function openPrivateChat(nick) {
+    activePrivate = nick;
+    document.getElementById('privateTitle').textContent = nick + ' ile özel sohbet';
+    document.getElementById('privateMessages').innerHTML = `<p>Sohbet başladı: ${nick}</p>`;
+    document.getElementById('privateOverlay').classList.add('active');
+    
+    // ESC ile kapatma
+    document.addEventListener('keydown', escClosePrivate);
+}
+
+function closePrivate() {
+    document.getElementById('privateOverlay').classList.remove('active');
+    document.removeEventListener('keydown', escClosePrivate);
+    activePrivate = null;
+}
+
+function escClosePrivate(e) {
+    if (e.key === 'Escape') closePrivate();
+}
+
+function sendPrivateMsg() {
+    const input = document.getElementById('privateInput');
+    if (!input.value.trim()) return;
+    
+    const msgDiv = document.createElement('p');
+    msgDiv.innerHTML = `<strong>Sen:</strong> ${input.value}`;
+    document.getElementById('privateMessages').appendChild(msgDiv);
+    document.getElementById('privateMessages').scrollTop = document.getElementById('privateMessages').scrollHeight;
+    input.value = '';
+}
+
+// Enter tuşu desteği (login + mesaj)
+document.getElementById('nickInput').addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
+document.getElementById('passInput').addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
+document.getElementById('msgInput').addEventListener('keypress', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
 });
-document.getElementById('passInput').addEventListener('keypress', e => {
-    if (e.key === 'Enter') handleLogin();
+document.getElementById('privateInput').addEventListener('keypress', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendPrivateMsg();
+    }
 });
+
+// Profil placeholder
+function openProfile() {
+    alert('Profil paneli yakında eklenecek!');
+}
 </script>
 </body>
 </html>
