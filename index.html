@@ -3,11 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Popbox Elite</title>
-    <!-- Firebase SDK compat -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+    <title>Popbox Elite - Genel Oda</title>
     <style>
         :root {
             --bg: #ffffff;
@@ -17,7 +13,6 @@
             --primary: #1890ff;
             --primary-hover: #40a9ff;
             --danger: #ff4d4f;
-            --success: #52c41a;
             --gray: #f0f0f0;
             --gray-dark: #1f2229;
             --border: #ddd;
@@ -66,8 +61,6 @@
         body.dark .private-input-area { background:#11141a; border-color:var(--border-dark); }
         .close-btn { background:none; border:none; color:white; font-size:32px; cursor:pointer; }
         .media-preview { max-width:200px; max-height:200px; margin-top:8px; border-radius:12px; display:block; }
-        .progress { margin-top:8px; height:4px; background:#ddd; border-radius:2px; overflow:hidden; }
-        .progress-bar { height:100%; background:var(--primary); width:0%; transition:width 0.3s; }
         .profile-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:3000; backdrop-filter:blur(8px); }
         .profile-overlay.active { display:flex; }
         .profile-panel { width:90%; max-width:520px; background:var(--bg); border-radius:20px; overflow:hidden; box-shadow:0 20px 70px rgba(0,0,0,0.4); }
@@ -103,7 +96,7 @@
 <!-- Ana Uygulama -->
 <div id="app" class="app">
     <div class="header">
-        <div>Genel Sohbet</div>
+        <div>Genel Oda</div>
         <div>
             <button onclick="document.body.classList.toggle('dark')">Gece/Gündüz</button>
             <button onclick="openProfile()">Profil</button>
@@ -112,7 +105,7 @@
     
     <div class="chat-area">
         <div class="messages" id="messages">
-            <p id="welcome">Hoş geldin! Burası Popbox Elite – mesaj yazmaya başla...</p>
+            <p id="welcome">Hoş geldin! Burası Genel Oda – mesaj yazmaya başla...</p>
         </div>
         
         <div class="input-area">
@@ -144,13 +137,12 @@
         <div class="private-input-area">
             <textarea id="privateInput" placeholder="Mesaj yaz..."></textarea>
             <button class="attach-btn" onclick="document.getElementById('fileInputPrivate').click()">📎</button>
-            <input type="file" id="fileInputPrivate" accept="image/*,video/*" style="display:none;" onchange="uploadMedia(event)">
+            <input type="file" id="fileInputPrivate" accept="image/*,video/*" style="display:none;" onchange="handleLocalMedia(event)">
             <button class="send-btn" onclick="sendPrivateMsg()">Gönder</button>
         </div>
         <div id="previewContainer" style="padding:0 24px 16px; display:none;">
             <img id="mediaPreview" class="media-preview" style="display:none;">
             <video id="videoPreview" class="media-preview" controls style="display:none;"></video>
-            <div id="progressBar" class="progress"><div class="progress-bar" id="progress"></div></div>
         </div>
     </div>
 </div>
@@ -186,22 +178,6 @@
 </div>
 
 <script>
-    // Firebase Config
-    const firebaseConfig = {
-      apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
-      authDomain: "popboxmusicchat.firebaseapp.com",
-      databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
-      projectId: "popboxmusicchat",
-      storageBucket: "popboxmusicchat.firebasestorage.app",
-      messagingSenderId: "206625719024",
-      appId: "1:206625719024:web:d28f478a2c96d10412f835",
-      measurementId: "G-SB1K22FLEX"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-    const storage = firebase.storage();
-
     // Değişkenler
     let currentUser = null;
     let activePrivate = null;
@@ -228,70 +204,39 @@
         
         currentUser = { nick, role, joined: new Date().toLocaleDateString('tr-TR') };
         
-        db.ref('users/online/' + nick).set({
-            nick: nick,
-            role: role,
-            status: 'online',
-            lastSeen: firebase.database.ServerValue.TIMESTAMP
-        });
-
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('app').style.display = 'flex';
         
-        document.getElementById('welcome').innerHTML = `Hoş geldin <strong>${nick}</strong>! (Rol: ${role})<br>Burada ne yapalım, yaz bakalım...`;
+        document.getElementById('welcome').innerHTML = `Hoş geldin <strong>${nick}</strong>! (Rol: ${role})<br>Burası Genel Oda – mesaj yazmaya başla...`;
         
         updateUserList();
         
         if (role === 'owner') document.getElementById('godToggle').style.display = 'block';
-
-        listenMessages();
     }
 
     function updateUserList() {
-        db.ref('users/online').on('value', snapshot => {
-            const list = document.getElementById('userList');
-            list.innerHTML = '';
-            snapshot.forEach(child => {
-                const u = child.val();
-                const div = document.createElement('div');
-                div.className = 'user-item';
-                div.textContent = u.nick + (u.nick === currentUser?.nick ? ' (sen)' : '');
-                if (godMode && u.nick === currentUser?.nick) div.textContent += ' (gizli)';
-                div.onclick = () => openPrivateChat(u.nick);
-                list.appendChild(div);
-            });
+        const list = document.getElementById('userList');
+        list.innerHTML = '';
+        
+        ['Ahmet', 'Ayşe', 'Mehmet', 'Elif', currentUser.nick].forEach(name => {
+            const div = document.createElement('div');
+            div.className = 'user-item';
+            div.textContent = name + (name === currentUser.nick ? ' (sen)' : '');
+            if (godMode && name === currentUser.nick) div.textContent += ' (gizli)';
+            div.onclick = () => openPrivateChat(name);
+            list.appendChild(div);
         });
     }
 
     function sendMessage() {
         const input = document.getElementById('msgInput');
-        if (!input.value.trim() || !currentUser) return;
+        if (!input.value.trim()) return;
         
-        db.ref('messages/general').push({
-            sender: currentUser.nick,
-            text: input.value,
-            time: firebase.database.ServerValue.TIMESTAMP,
-            role: currentUser.role
-        });
-        
+        const msg = document.createElement('p');
+        msg.innerHTML = `<strong>${currentUser.nick}:</strong> ${input.value}`;
+        document.getElementById('messages').appendChild(msg);
+        document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         input.value = '';
-    }
-
-    function listenMessages() {
-        db.ref('messages/general').on('child_added', snapshot => {
-            const msg = snapshot.val();
-            const p = document.createElement('p');
-            p.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text}`;
-            if (msg.mediaUrl) {
-                if (msg.mediaType.startsWith('image')) {
-                    p.innerHTML += `<br><img src="${msg.mediaUrl}" style="max-width:300px; border-radius:12px; margin-top:8px;">`;
-                } else if (msg.mediaType.startsWith('video')) {
-                    p.innerHTML += `<br><video src="${msg.mediaUrl}" controls style="max-width:300px; border-radius:12px; margin-top:8px;"></video>`;
-                }
-            }
-            document.getElementById('messages').appendChild(p);
-            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-        });
     }
 
     function openPrivateChat(nick) {
@@ -317,57 +262,24 @@
         input.value = '';
     }
 
-    // Medya yükleme (Firebase Storage)
-    function uploadMedia(event) {
+    // Yerel Medya Yükleme (Firebase olmadan)
+    function handleLocalMedia(event) {
         const file = event.target.files[0];
-        if (!file || !currentUser || !activePrivate) return alert('Dosya seçilmedi veya sohbet açık değil!');
-
-        const preview = document.getElementById('mediaPreview');
-        const videoPreview = document.getElementById('videoPreview');
-        const progressBar = document.getElementById('progress');
-        const container = document.getElementById('previewContainer');
-        container.style.display = 'block';
+        if (!file || !activePrivate) return alert('Dosya seçilmedi veya sohbet açık değil!');
 
         const reader = new FileReader();
         reader.onload = function(e) {
+            const preview = document.createElement('div');
+            preview.style.marginTop = '8px';
             if (file.type.startsWith('image')) {
-                preview.src = e.target.result;
-                preview.style.display = 'block';
-                videoPreview.style.display = 'none';
+                preview.innerHTML = `<img src="${e.target.result}" style="max-width:300px; border-radius:12px;">`;
             } else if (file.type.startsWith('video')) {
-                videoPreview.src = e.target.result;
-                videoPreview.style.display = 'block';
-                preview.style.display = 'none';
+                preview.innerHTML = `<video src="${e.target.result}" controls style="max-width:300px; border-radius:12px;"></video>`;
             }
+            document.getElementById('privateMessages').appendChild(preview);
+            document.getElementById('privateMessages').scrollTop = document.getElementById('privateMessages').scrollHeight;
         };
         reader.readAsDataURL(file);
-
-        // Firebase Storage'a yükle
-        const storageRef = storage.ref();
-        const fileRef = storageRef.child(`chat-files/${currentUser.nick}/${Date.now()}.${file.name.split('.').pop()}`);
-        
-        const uploadTask = fileRef.put(file);
-
-        uploadTask.on('state_changed', 
-            (snapshot) => {
-                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                progressBar.style.width = progress + '%';
-            },
-            (error) => {
-                alert('Yükleme hatası: ' + error.message);
-                container.style.display = 'none';
-            },
-            () => {
-                uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
-                    // Mesaj olarak gönder (özel sohbet için simülasyon – gerçekte private chat path'ine push)
-                    const msg = document.createElement('p');
-                    msg.innerHTML = `<strong>Sen:</strong> [Medya]<br><img src="${downloadURL}" style="max-width:300px; border-radius:12px;">`;
-                    document.getElementById('privateMessages').appendChild(msg);
-                    document.getElementById('privateMessages').scrollTop = document.getElementById('privateMessages').scrollHeight;
-                    container.style.display = 'none';
-                });
-            }
-        );
     }
 
     function openProfile() {
@@ -390,6 +302,10 @@
         alert(`Tanrı modu ${godMode ? 'AÇILDI' : 'KAPATILDI'}! Artık gizlisin.`);
         updateUserList();
     }
+
+    function toggleFollow() { alert('Takip yakında!'); }
+    function toggleBlock() { alert('Engelle yakında!'); }
+    function changeStatus() { alert('Durum değiştirme yakında!'); }
 
     // Enter desteği
     document.getElementById('nickInput').addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
