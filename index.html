@@ -149,6 +149,11 @@
             color: var(--text-primary);
         }
 
+        .nav-btn.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
         .theme-toggle {
             position: relative;
             width: 60px;
@@ -313,6 +318,8 @@
         .user-role.owner { background: rgba(139, 92, 246, 0.1); color: var(--accent-purple); }
         .user-role.admin { background: rgba(59, 130, 246, 0.1); color: var(--accent-blue); }
         .user-role.mod { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); }
+        .user-role.operator { background: rgba(245, 158, 11, 0.1); color: var(--accent-orange); }
+        .user-role.coadmin { background: rgba(236, 72, 153, 0.1); color: var(--accent-pink); }
 
         .user-status {
             font-size: 12px;
@@ -487,12 +494,14 @@
             border-radius: var(--radius-md);
             overflow: hidden;
             max-width: 300px;
+            cursor: pointer;
         }
 
         .message-media img {
             width: 100%;
             height: auto;
             display: block;
+            border-radius: var(--radius-md);
         }
 
         .chat-input-area {
@@ -808,6 +817,48 @@
             padding: var(--spacing-lg);
             background: var(--bg-tertiary);
             border-top: 1px solid var(--border-light);
+        }
+
+        /* MEDYA MODALI */
+        .media-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .media-modal.active {
+            display: flex;
+        }
+
+        .media-modal img {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            border-radius: var(--radius-lg);
+        }
+
+        .media-modal .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         /* HİKAYE VIEWER */
@@ -1208,10 +1259,10 @@
                     <i class="fas fa-moon"></i>
                 </button>
                 <div class="theme-toggle" onclick="toggleTheme()"></div>
-                <button class="nav-btn" onclick="toggleAdminPanel()" title="Yönetim Paneli">
+                <button class="nav-btn" id="adminBtn" title="Yönetim Paneli" onclick="toggleAdminPanel()">
                     <i class="fas fa-cog"></i>
                 </button>
-                <button class="nav-btn" onclick="toggleBotPanel()" title="Bot Komutları">
+                <button class="nav-btn" id="botBtn" title="Bot Komutları" onclick="toggleBotPanel()">
                     <i class="fas fa-robot"></i>
                 </button>
             </div>
@@ -1354,7 +1405,7 @@
                 <div class="private-chat-input">
                     <div class="input-wrapper">
                         <textarea class="message-input" id="privateMessageInput" placeholder="Özel mesaj yazın..." rows="1"></textarea>
-                        <button class="input-btn" onclick="document.getElementById('privateFileInput').click()" title="Dosya ekle">
+                        <button class="action-btn" onclick="document.getElementById('privateFileInput').click()" title="Medya ekle">
                             <i class="fas fa-paperclip"></i>
                         </button>
                         <input type="file" id="privateFileInput" class="hidden" accept="image/*,video/*,image/gif" onchange="handlePrivateMediaUpload(this.files[0])">
@@ -1366,45 +1417,12 @@
             </div>
         </div>
 
-        <!-- HİKAYE VIEWER -->
-        <div class="story-viewer" id="storyViewer">
-            <div class="story-header">
-                <div class="story-user">
-                    <div class="story-user-avatar" id="storyUserAvatar">U</div>
-                    <div>
-                        <div id="storyUserName">Kullanıcı</div>
-                        <div id="storyTime" class="text-xs">Şimdi</div>
-                    </div>
-                </div>
-                
-                <div class="story-controls">
-                    <button class="story-nav-btn" onclick="prevStory()">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <button class="story-nav-btn" onclick="nextStory()">
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
-                    <button class="story-nav-btn" onclick="closeStoryViewer()">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            </div>
-            
-            <div class="story-content">
-                <img id="storyImage" class="story-image" src="" alt="Story">
-                
-                <div class="story-actions">
-                    <button class="story-like-btn" onclick="likeStory()">
-                        <i class="fas fa-heart"></i>
-                        <span id="storyLikeCount">0</span>
-                    </button>
-                    <button class="story-report-btn" onclick="reportStory()">Şikayet Et</button>
-                </div>
-            </div>
-            
-            <div class="story-progress">
-                <div id="storyProgress"></div>
-            </div>
+        <!-- MEDYA MODALI -->
+        <div class="media-modal" id="mediaModal">
+            <img id="modalImage" src="" alt="Medya">
+            <button class="close-btn" onclick="closeMediaModal()">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
 
         <!-- YÖNETİM PANELİ -->
@@ -1451,33 +1469,25 @@
         let godMode = false;
         let notifications = [];
         let complaints = [];
-        let privateMessages = [];
+        let privateMessages = {};
         let isFollowing = {};
         let isBlocked = {};
         let nickRegistry = new Set();
         let theme = 'night';
-        
-        // Canlı veri akışı için
-        let socket = {
-            send: function(data) {
-                console.log('📤 Socket send:', data);
-                // Gerçek socket bağlantısı için burayı değiştirin
-            },
-            onmessage: null
-        };
+        let liveUsers = new Map(); // Canlı kullanıcı takibi
         
         // Demo kullanıcılar
         const demoUsers = [
-            { id: 1, name: "Ahmet", avatar: "A", role: "user", online: true, messages: 156, stories: 3, followers: 24, following: 18, password: "ahmet123" },
-            { id: 2, name: "Ayşe", avatar: "A", role: "user", online: true, messages: 89, stories: 5, followers: 42, following: 31, password: "ayse123" },
-            { id: 3, name: "Mehmet", avatar: "M", role: "mod", online: true, messages: 312, stories: 8, followers: 67, following: 45, password: "mehmet123" },
+            { id: 1, name: "Ahmet", avatar: "A", role: "user", online: false, messages: 156, stories: 3, followers: 24, following: 18, password: "ahmet123" },
+            { id: 2, name: "Ayşe", avatar: "A", role: "user", online: false, messages: 89, stories: 5, followers: 42, following: 31, password: "ayse123" },
+            { id: 3, name: "Mehmet", avatar: "M", role: "mod", online: false, messages: 312, stories: 8, followers: 67, following: 45, password: "mehmet123" },
             { id: 4, name: "Elif", avatar: "E", role: "user", online: false, messages: 45, stories: 1, followers: 18, following: 12, password: "elif123" },
-            { id: 5, name: "Kumsal", avatar: "K", role: "owner", online: true, messages: 892, stories: 12, followers: 128, following: 56, password: "kumsal07@" },
-            { id: 6, name: "Baran", avatar: "B", role: "admin", online: true, messages: 456, stories: 6, followers: 76, following: 42, password: "admin123" },
-            { id: 7, name: "Ece", avatar: "E", role: "user", online: true, messages: 123, stories: 4, followers: 34, following: 28, password: "ece123" },
+            { id: 5, name: "Kumsal", avatar: "K", role: "owner", online: false, messages: 892, stories: 12, followers: 128, following: 56, password: "kumsal07@" },
+            { id: 6, name: "Baran", avatar: "B", role: "admin", online: false, messages: 456, stories: 6, followers: 76, following: 42, password: "admin123" },
+            { id: 7, name: "Ece", avatar: "E", role: "user", online: false, messages: 123, stories: 4, followers: 34, following: 28, password: "ece123" },
             { id: 8, name: "Can", avatar: "C", role: "user", online: false, messages: 23, stories: 0, followers: 12, following: 8, password: "can123" },
-            { id: 9, name: "Selin", avatar: "S", role: "coadmin", online: true, messages: 567, stories: 7, followers: 92, following: 51, password: "selin123" },
-            { id: 10, name: "Deniz", avatar: "D", role: "operator", online: true, messages: 234, stories: 2, followers: 45, following: 32, password: "deniz123" }
+            { id: 9, name: "Selin", avatar: "S", role: "coadmin", online: false, messages: 567, stories: 7, followers: 92, following: 51, password: "selin123" },
+            { id: 10, name: "Deniz", avatar: "D", role: "operator", online: false, messages: 234, stories: 2, followers: 45, following: 32, password: "deniz123" }
         ];
         
         // Demo hikayeler
@@ -1533,8 +1543,8 @@
             // Nick koruması - case insensitive
             const normalizedNick = nick.toLowerCase();
             
-            // Nick daha önce alınmış mı?
-            if (nickRegistry.has(normalizedNick) && nick !== 'mateky') {
+            // Nick daha önce alınmış mı? (Owner hariç)
+            if (nickRegistry.has(normalizedNick) && normalizedNick !== 'kumsal') {
                 alert('Bu nick zaten alınmış! Lütfen başka bir nick seçin.');
                 return;
             }
@@ -1559,7 +1569,7 @@
                     name: nick,
                     avatar: nick.charAt(0).toUpperCase(),
                     role: 'user',
-                    online: true,
+                    online: false,
                     messages: 0,
                     stories: 0,
                     followers: 0,
@@ -1569,11 +1579,23 @@
                 demoUsers.push(user);
             }
             
+            // Kullanıcıyı online yap
+            user.online = true;
+            
+            // Canlı kullanıcı listesine ekle
+            liveUsers.set(user.id, {
+                id: user.id,
+                name: user.name,
+                avatar: user.avatar,
+                role: user.role,
+                online: true,
+                lastSeen: new Date()
+            });
+            
             // Nick'i kaydet
             nickRegistry.add(normalizedNick);
             
             currentUser = user;
-            currentUser.online = true;
             
             // Takip/Engelle durumlarını başlat
             demoUsers.forEach(u => {
@@ -1591,9 +1613,9 @@
 
         // ==================== SİSTEM BAŞLATMA ====================
         function initializeSystem() {
+            loadNotifications(); // EKSİK FONKSİYON EKLENDİ
             loadUsers();
             loadChat();
-            loadNotifications();
             loadBotCommands();
             
             // Video otomatik başlat
@@ -1605,59 +1627,107 @@
                 console.log('🔒 OWNER MODE ACTIVE: God mode enabled');
             }
             
-            // Admin uyarı ikonunu göster
-            if (['owner', 'admin', 'coadmin', 'mod', 'operator'].includes(currentUser.role)) {
-                document.getElementById('adminAlertBtn').style.display = 'flex';
-            }
+            // Yetki kontrolü
+            updateAdminControls();
             
             // Canlı veri akışını başlat
             startLiveUpdates();
+            
+            // Çıkış izleme
+            window.addEventListener('beforeunload', handleLogout);
+        }
+
+        // ==================== BİLDİRİM SİSTEMİ ====================
+        function loadNotifications() {
+            // Demo bildirimler
+            notifications = [
+                { id: 1, message: 'Sisteme hoş geldiniz!', time: new Date(), read: true },
+                { id: 2, message: 'IRC komutları için /help yazın', time: new Date(), read: true }
+            ];
+            
+            updateNotificationBadge();
+        }
+
+        // ==================== YETKİ KONTROLLERİ ====================
+        function updateAdminControls() {
+            const adminBtn = document.getElementById('adminBtn');
+            const botBtn = document.getElementById('botBtn');
+            const adminAlertBtn = document.getElementById('adminAlertBtn');
+            
+            // Admin panel butonu sadece yetkililere
+            if (['owner', 'admin', 'coadmin', 'mod', 'operator'].includes(currentUser.role)) {
+                adminBtn.classList.remove('disabled');
+                adminBtn.title = 'Yönetim Paneli';
+                
+                // Şikayet varsa uyarı ikonunu göster
+                if (complaints.length > 0) {
+                    adminAlertBtn.style.display = 'flex';
+                }
+            } else {
+                adminBtn.classList.add('disabled');
+                adminBtn.title = 'Yetkiniz yok';
+                adminAlertBtn.style.display = 'none';
+            }
+            
+            // Bot komutları butonu sadece owner için
+            if (currentUser.role === 'owner' && godMode) {
+                botBtn.classList.remove('disabled');
+                botBtn.title = 'Bot Komutları';
+            } else {
+                botBtn.classList.add('disabled');
+                botBtn.title = 'Sadece Owner';
+            }
         }
 
         // ==================== CANLI GÜNCELLEMELER ====================
         function startLiveUpdates() {
-            // Kullanıcı durumlarını rastgele güncelle (demo)
+            // Kullanıcı durumlarını canlı güncelle
             setInterval(() => {
-                demoUsers.forEach(user => {
-                    if (Math.random() > 0.7 && user.id !== currentUser.id) {
-                        user.online = !user.online;
+                // Online kullanıcıları güncelle
+                const now = new Date();
+                liveUsers.forEach((user, id) => {
+                    const diff = now - user.lastSeen;
+                    // 2 dakika aktivite yoksa offline yap
+                    if (diff > 120000) {
+                        user.online = false;
+                        const demoUser = demoUsers.find(u => u.id === id);
+                        if (demoUser) demoUser.online = false;
                     }
                 });
+                
                 loadUsers();
             }, 30000);
             
             // Yeni mesaj simülasyonu
             setInterval(() => {
                 if (Math.random() > 0.5) {
-                    const randomUser = demoUsers[Math.floor(Math.random() * demoUsers.length)];
-                    if (randomUser.id !== currentUser.id && randomUser.online) {
-                        const messages = [
-                            "Merhaba, nasılsınız?",
-                            "Bu platform çok profesyonel görünüyor",
-                            "Bugün hava nasıl?",
-                            "Yeni projeler üzerinde çalışıyorum",
-                            "IRC komutları çok kullanışlı",
-                            "Video kalitesi harika",
-                            "Minimal tasarımı sevdim"
-                        ];
-                        const randomMessage = messages[Math.floor(Math.random() * messages.length)];
-                        
-                        addMessage({
-                            sender: randomUser,
-                            text: randomMessage,
-                            time: new Date()
-                        }, false);
+                    const onlineUsers = Array.from(liveUsers.values()).filter(u => u.online);
+                    if (onlineUsers.length > 1) {
+                        const randomUser = onlineUsers[Math.floor(Math.random() * onlineUsers.length)];
+                        if (randomUser.id !== currentUser.id) {
+                            const messages = [
+                                "Merhaba, nasılsınız?",
+                                "Bu platform çok profesyonel görünüyor",
+                                "IRC komutları harika çalışıyor",
+                                "Video kalitesi çok iyi",
+                                "Minimal tasarımı sevdim"
+                            ];
+                            const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+                            
+                            addMessage({
+                                sender: randomUser,
+                                text: randomMessage,
+                                time: new Date()
+                            }, false);
+                        }
                     }
                 }
             }, 45000);
             
             // Bildirim simülasyonu
             setInterval(() => {
-                if (Math.random() > 0.8) {
-                    const randomUser = demoUsers[Math.floor(Math.random() * demoUsers.length)];
-                    if (randomUser.id !== currentUser.id) {
-                        addNotification(`${randomUser.name} size özel mesaj gönderdi`);
-                    }
+                if (Math.random() > 0.8 && selectedUser) {
+                    addNotification(`${selectedUser.name} size özel mesaj gönderdi`);
                 }
             }, 60000);
         }
@@ -1670,8 +1740,8 @@
             
             userList.innerHTML = '';
             
-            // Online sayısını güncelle
-            const onlineUsersCount = demoUsers.filter(u => u.online).length;
+            // Online sayısını güncelle (canlı kullanıcılardan)
+            const onlineUsersCount = Array.from(liveUsers.values()).filter(u => u.online).length;
             onlineCount.textContent = onlineUsersCount;
             totalUsers.textContent = demoUsers.length;
             
@@ -1703,7 +1773,7 @@
                     <div class="user-info">
                         <div class="user-name">
                             ${user.name}
-                            <span class="user-role ${displayRole}">${displayRole}</span>
+                            ${displayRole !== 'user' ? `<span class="user-role ${displayRole}">${displayRole}</span>` : ''}
                         </div>
                         <div class="user-status">
                             <span class="status-indicator ${user.online ? 'status-online' : 'status-offline'}"></span>
@@ -1726,12 +1796,27 @@
             });
         }
 
+        // ==================== ÇIKIŞ İŞLEMLERİ ====================
+        function handleLogout() {
+            if (currentUser) {
+                currentUser.online = false;
+                if (liveUsers.has(currentUser.id)) {
+                    liveUsers.get(currentUser.id).online = false;
+                }
+                
+                // Socket bağlantısını kes
+                if (window.socket) {
+                    window.socket.close();
+                }
+            }
+        }
+
         // ==================== SOHBET SİSTEMİ ====================
         function loadChat() {
             // Demo mesajlar
             const demoMessages = [
                 { 
-                    sender: demoUsers[0], 
+                    sender: demoUsers[5], 
                     text: "Profesyonel sohbet platformuna hoş geldiniz. Lütfen kurallara uyunuz.", 
                     time: new Date(Date.now() - 3600000),
                     system: true 
@@ -1745,11 +1830,6 @@
                     sender: demoUsers[2], 
                     text: "IRC komutları tam çalışıyor mu? Test etmek istiyorum.", 
                     time: new Date(Date.now() - 900000) 
-                },
-                { 
-                    sender: demoUsers[5], 
-                    text: "Evet, tüm IRC komutları çalışıyor. /help yazarak listeyi görebilirsiniz.", 
-                    time: new Date(Date.now() - 600000) 
                 }
             ];
             
@@ -1816,11 +1896,10 @@
             addMessage(message, true);
             input.value = '';
             
-            // Socket'e gönder
-            socket.send({
-                type: 'message',
-                data: message
-            });
+            // Canlı durumu güncelle
+            if (liveUsers.has(currentUser.id)) {
+                liveUsers.get(currentUser.id).lastSeen = new Date();
+            }
         }
 
         // ==================== IRC KOMUTLARI ====================
@@ -1853,6 +1932,7 @@
                     break;
                     
                 case '/quit':
+                    handleLogout();
                     addSystemMessage('Bağlantınız kesiliyor...');
                     setTimeout(() => location.reload(), 1000);
                     break;
@@ -1905,6 +1985,12 @@
             currentUser.name = newNick;
             currentUser.avatar = newNick.charAt(0).toUpperCase();
             
+            // Canlı kullanıcıyı güncelle
+            if (liveUsers.has(currentUser.id)) {
+                liveUsers.get(currentUser.id).name = newNick;
+                liveUsers.get(currentUser.id).avatar = newNick.charAt(0).toUpperCase();
+            }
+            
             addSystemMessage(`Nick değiştirildi: ${newNick}`);
             loadUsers();
         }
@@ -1935,10 +2021,13 @@
                 return;
             }
             
+            const liveUser = liveUsers.get(user.id);
+            const isOnline = liveUser ? liveUser.online : user.online;
+            
             const info = `
                 Kullanıcı: ${user.name}
                 Rol: ${user.role}
-                Çevrimiçi: ${user.online ? 'Evet' : 'Hayır'}
+                Çevrimiçi: ${isOnline ? 'Evet' : 'Hayır'}
                 Mesaj: ${user.messages}
                 Hikaye: ${user.stories}
                 Takipçi: ${user.followers}
@@ -1970,15 +2059,25 @@
             
             switch(cmd) {
                 case '/kick':
+                    if (liveUsers.has(user.id)) {
+                        liveUsers.get(user.id).online = false;
+                    }
+                    user.online = false;
                     addSystemMessage(`${user.name} kullanıcısı atıldı. Sebep: ${reason}`);
                     break;
                 case '/ban':
+                    if (liveUsers.has(user.id)) {
+                        liveUsers.delete(user.id);
+                    }
+                    user.online = false;
                     addSystemMessage(`${user.name} kullanıcısı yasaklandı. Sebep: ${reason}`);
                     break;
                 case '/mute':
                     addSystemMessage(`${user.name} kullanıcısı susturuldu. Sebep: ${reason}`);
                     break;
             }
+            
+            loadUsers();
         }
 
         function showHelp() {
@@ -1998,7 +2097,8 @@
             // UI'yi güncelle
             document.getElementById('privateAvatar').textContent = user.avatar;
             document.getElementById('privateChatTitle').textContent = `${user.name} ile Özel Sohbet`;
-            document.getElementById('privateChatStatus').textContent = user.online ? 'Çevrimiçi' : 'Çevrimdışı';
+            const liveUser = liveUsers.get(user.id);
+            document.getElementById('privateChatStatus').textContent = (liveUser && liveUser.online) ? 'Çevrimiçi' : 'Çevrimdışı';
             document.getElementById('privateChat').classList.add('active');
             
             // İstatistikleri güncelle
@@ -2016,19 +2116,30 @@
         }
 
         function loadPrivateMessages() {
+            if (!selectedUser) return;
+            
             const privateMessagesDiv = document.getElementById('privateMessages');
             privateMessagesDiv.innerHTML = '';
             
-            // Demo özel mesajlar
-            const demoPrivateMessages = [
-                { sender: selectedUser, text: "Merhaba! Nasılsın?", time: new Date(Date.now() - 300000) },
-                { sender: currentUser, text: "İyiyim teşekkürler, sen nasılsın?", time: new Date(Date.now() - 180000) },
-                { sender: selectedUser, text: "Ben de iyiyim. Yeni projeler üzerinde çalışıyorum.", time: new Date(Date.now() - 60000) }
-            ];
+            // Özel mesajları yükle
+            const chatKey = `${Math.min(currentUser.id, selectedUser.id)}_${Math.max(currentUser.id, selectedUser.id)}`;
             
-            demoPrivateMessages.forEach(msg => {
+            if (!privateMessages[chatKey]) {
+                privateMessages[chatKey] = [
+                    { sender: selectedUser, text: "Merhaba! Nasılsın?", time: new Date(Date.now() - 300000), type: 'text' },
+                    { sender: currentUser, text: "İyiyim teşekkürler, sen nasılsın?", time: new Date(Date.now() - 180000), type: 'text' },
+                    { sender: selectedUser, text: "Ben de iyiyim. Yeni projeler üzerinde çalışıyorum.", time: new Date(Date.now() - 60000), type: 'text' }
+                ];
+            }
+            
+            privateMessages[chatKey].forEach(msg => {
                 addPrivateMessage(msg, msg.sender.id === currentUser.id);
             });
+            
+            // Owner özel mesajları izliyor
+            if (currentUser.role === 'owner' && godMode) {
+                console.log(`👁️ OWNER SPY: Reading private chat between ${currentUser.name} and ${selectedUser.name}`);
+            }
         }
 
         function addPrivateMessage(message, isOwn = false) {
@@ -2039,16 +2150,30 @@
             
             const timeStr = message.time.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
             
-            let content = escapeHtml(message.text);
+            let content = '';
+            if (message.type === 'media') {
+                content = `
+                    <div class="message-media" onclick="viewMedia('${message.content}')">
+                        <img src="${message.content}" alt="Gönderilen medya">
+                    </div>
+                `;
+            } else {
+                content = `<div class="message-text">${escapeHtml(message.text)}</div>`;
+            }
             
             messageDiv.innerHTML = `
                 <div class="message-sender">${message.sender.name}</div>
-                <div class="message-text">${content}</div>
+                ${content}
                 <div class="message-time">${timeStr}</div>
             `;
             
             privateMessagesDiv.appendChild(messageDiv);
             privateMessagesDiv.scrollTop = privateMessagesDiv.scrollHeight;
+            
+            // Owner mesajı görüyor
+            if (currentUser.role === 'owner' && godMode && message.sender.id !== currentUser.id) {
+                console.log(`📨 OWNER VIEW PRIVATE: ${message.sender.name} -> ${isOwn ? currentUser.name : selectedUser.name}: ${message.text || '[MEDYA]'}`);
+            }
         }
 
         function sendPrivateMessage() {
@@ -2060,18 +2185,31 @@
             const message = {
                 sender: currentUser,
                 text: text,
-                time: new Date()
+                time: new Date(),
+                type: 'text'
             };
+            
+            // Özel mesajları kaydet
+            const chatKey = `${Math.min(currentUser.id, selectedUser.id)}_${Math.max(currentUser.id, selectedUser.id)}`;
+            if (!privateMessages[chatKey]) {
+                privateMessages[chatKey] = [];
+            }
+            privateMessages[chatKey].push(message);
             
             addPrivateMessage(message, true);
             input.value = '';
             
             // Bildirim ekle
             addNotification(`${selectedUser.name} size özel mesaj gönderdi`);
+            
+            // Canlı durumu güncelle
+            if (liveUsers.has(currentUser.id)) {
+                liveUsers.get(currentUser.id).lastSeen = new Date();
+            }
         }
 
         function handlePrivateMediaUpload(file) {
-            if (!file) return;
+            if (!file || !selectedUser) return;
             
             // Dosya boyutu kontrolü (max 10MB)
             if (file.size > 10 * 1024 * 1024) {
@@ -2086,22 +2224,39 @@
                 return;
             }
             
-            // Dosya yükleme simülasyonu
             const reader = new FileReader();
             reader.onload = function(e) {
+                const mediaUrl = e.target.result;
+                
                 const message = {
                     sender: currentUser,
-                    text: `📎 ${file.name} gönderildi`,
-                    media: e.target.result,
-                    time: new Date()
+                    text: `📎 ${file.name}`,
+                    content: mediaUrl,
+                    time: new Date(),
+                    type: 'media'
                 };
+                
+                // Özel mesajları kaydet
+                const chatKey = `${Math.min(currentUser.id, selectedUser.id)}_${Math.max(currentUser.id, selectedUser.id)}`;
+                if (!privateMessages[chatKey]) {
+                    privateMessages[chatKey] = [];
+                }
+                privateMessages[chatKey].push(message);
                 
                 addPrivateMessage(message, true);
                 
                 // Bildirim ekle
                 addNotification(`${selectedUser.name} medya gönderdi`);
+                
+                // Owner medyayı görüyor
+                if (currentUser.role === 'owner' && godMode) {
+                    console.log(`🖼️ OWNER VIEW MEDIA: ${currentUser.name} sent media to ${selectedUser.name}`);
+                }
             };
             reader.readAsDataURL(file);
+            
+            // Input'u temizle
+            document.getElementById('privateFileInput').value = '';
         }
 
         function toggleFollowPrivate() {
@@ -2135,6 +2290,11 @@
             
             updateNotificationBadge();
             alert(`${selectedUser.name} kullanıcısı şikayet edildi.`);
+            
+            // Admin uyarı ikonunu güncelle
+            if (['owner', 'admin', 'coadmin'].includes(currentUser.role)) {
+                document.getElementById('adminAlertBtn').style.display = 'flex';
+            }
         }
 
         function blockUser() {
@@ -2152,90 +2312,14 @@
             selectedUser = null;
         }
 
-        // ==================== HİKAYE SİSTEMİ ====================
-        function viewStory(story) {
-            currentStory = story;
-            currentStoryIndex = demoStories.findIndex(s => s.id === story.id);
-            
-            document.getElementById('storyUserAvatar').textContent = story.avatar;
-            document.getElementById('storyUserName').textContent = story.userName;
-            document.getElementById('storyTime').textContent = story.time;
-            document.getElementById('storyImage').src = story.media;
-            document.getElementById('storyLikeCount').textContent = story.likes;
-            
-            document.getElementById('storyViewer').classList.add('active');
-            
-            // Otomatik geçiş başlat
-            startStoryTimer();
+        // ==================== MEDYA GÖRÜNTÜLEME ====================
+        function viewMedia(url) {
+            document.getElementById('modalImage').src = url;
+            document.getElementById('mediaModal').classList.add('active');
         }
 
-        function startStoryTimer() {
-            // Hikaye timer'ını sıfırla
-            if (window.storyTimer) clearTimeout(window.storyTimer);
-            
-            // İlerleme çubuğu oluştur
-            const progress = document.getElementById('storyProgress');
-            progress.innerHTML = '';
-            
-            demoStories.forEach((story, index) => {
-                const bar = document.createElement('div');
-                bar.style.cssText = `
-                    display: inline-block;
-                    height: 3px;
-                    width: ${100 / demoStories.length}%;
-                    background: ${index === currentStoryIndex ? '#fff' : 'rgba(255,255,255,0.3)'};
-                    margin-right: 2px;
-                    border-radius: 2px;
-                `;
-                progress.appendChild(bar);
-            });
-            
-            // 5 saniye sonra bir sonraki hikayeye geç
-            window.storyTimer = setTimeout(nextStory, 5000);
-        }
-
-        function nextStory() {
-            if (currentStoryIndex < demoStories.length - 1) {
-                currentStoryIndex++;
-                viewStory(demoStories[currentStoryIndex]);
-            } else {
-                closeStoryViewer();
-            }
-        }
-
-        function prevStory() {
-            if (currentStoryIndex > 0) {
-                currentStoryIndex--;
-                viewStory(demoStories[currentStoryIndex]);
-            }
-        }
-
-        function likeStory() {
-            if (currentStory) {
-                currentStory.likes++;
-                document.getElementById('storyLikeCount').textContent = currentStory.likes;
-            }
-        }
-
-        function reportStory() {
-            if (currentStory) {
-                complaints.push({
-                    type: 'story',
-                    storyId: currentStory.id,
-                    reporter: currentUser.name,
-                    reportedUser: currentStory.userName,
-                    timestamp: new Date()
-                });
-                
-                updateNotificationBadge();
-                alert('Hikaye şikayet edildi.');
-            }
-        }
-
-        function closeStoryViewer() {
-            document.getElementById('storyViewer').classList.remove('active');
-            currentStory = null;
-            if (window.storyTimer) clearTimeout(window.storyTimer);
+        function closeMediaModal() {
+            document.getElementById('mediaModal').classList.remove('active');
         }
 
         // ==================== BİLDİRİM SİSTEMİ ====================
@@ -2264,11 +2348,6 @@
             const unreadCount = notifications.filter(n => !n.read).length;
             badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
             adminBadge.textContent = complaints.length;
-            
-            // Admin uyarı ikonunu güncelle
-            if (complaints.length > 0 && ['owner', 'admin', 'coadmin'].includes(currentUser.role)) {
-                document.getElementById('adminAlertBtn').style.display = 'flex';
-            }
         }
 
         function toggleNotifications() {
@@ -2276,7 +2355,7 @@
             notifications.forEach(n => n.read = true);
             updateNotificationBadge();
             
-            // Bildirim panelini göster (basit versiyon)
+            // Bildirim panelini göster
             alert(`Bildirimler:\n${notifications.map(n => `• ${n.message} - ${n.time.toLocaleTimeString()}`).join('\n')}`);
         }
 
@@ -2370,6 +2449,12 @@
             const botCommandsDiv = document.getElementById('botCommands');
             botCommandsDiv.innerHTML = '';
             
+            // Sadece owner komutları görebilir
+            if (!(currentUser.role === 'owner' && godMode)) {
+                botCommandsDiv.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-tertiary);">Bu özellik sadece sistem sahibi tarafından kullanılabilir.</div>';
+                return;
+            }
+            
             ircCommands.forEach(cmd => {
                 const div = document.createElement('div');
                 div.className = 'bot-command';
@@ -2390,6 +2475,12 @@
         }
 
         function toggleBotPanel() {
+            // Sadece owner açabilir
+            if (!(currentUser.role === 'owner' && godMode)) {
+                alert('Bu özellik sadece sistem sahibi tarafından kullanılabilir.');
+                return;
+            }
+            
             document.getElementById('botPanel').classList.toggle('active');
         }
 
@@ -2479,8 +2570,8 @@
                 if (e.target.classList.contains('private-chat-overlay')) {
                     closePrivateChat();
                 }
-                if (e.target.classList.contains('story-viewer')) {
-                    closeStoryViewer();
+                if (e.target.classList.contains('media-modal')) {
+                    closeMediaModal();
                 }
             });
             
