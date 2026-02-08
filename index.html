@@ -7,6 +7,7 @@
     <!-- Firebase SDK compat -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
     <style>
         :root {
             --bg: #ffffff;
@@ -34,7 +35,7 @@
         body.dark p.tagline { color:#aaa; }
         input { width:100%; padding:14px; margin:14px 0; border:1px solid var(--border); border-radius:12px; font-size:16px; background:rgba(255,255,255,0.45); }
         body.dark input { background:rgba(30,35,45,0.55); color:#eee; border-color:#444; }
-        button { width:100%; padding:14px; background:var(--primary); color:white; border:none; border-radius:12px; font-size:16px; cursor:pointer; transition:0.3s; }
+        button { padding:14px; background:var(--primary); color:white; border:none; border-radius:12px; cursor:pointer; transition:0.3s; }
         button:hover { background:var(--primary-hover); transform:scale(1.03); }
         .error { color:var(--danger); margin-top:12px; font-size:14px; }
         .app { display:none; height:100vh; flex-direction:column; }
@@ -47,6 +48,8 @@
         textarea { flex:1; padding:14px; border:1px solid var(--border); border-radius:12px; resize:none; font-size:15px; background:rgba(255,255,255,0.6); }
         body.dark textarea { background:rgba(30,35,45,0.7); color:#eee; border-color:#444; }
         .send-btn { padding:14px 24px; background:var(--primary); color:white; border:none; border-radius:12px; cursor:pointer; }
+        .attach-btn { padding:14px; background:var(--gray); border:none; border-radius:12px; cursor:pointer; font-size:18px; }
+        body.dark .attach-btn { background:#1f2229; color:#eee; }
         .users-sidebar { width:240px; background:#f8f9fa; border-left:1px solid var(--border); padding:24px 16px; overflow-y:auto; }
         body.dark .users-sidebar { background:#0c0e12; border-color:var(--border-dark); }
         .user-item { padding:12px 16px; cursor:pointer; border-radius:12px; margin-bottom:8px; transition:0.25s; }
@@ -58,9 +61,12 @@
         body.dark .private-window { background:var(--bg-dark); border-color:var(--border-dark); }
         .private-header { padding:16px 24px; background:var(--primary); color:white; display:flex; justify-content:space-between; align-items:center; }
         .private-messages { flex:1; padding:24px; overflow-y:auto; }
-        .private-input-area { padding:16px 24px; border-top:1px solid var(--border); display:flex; gap:16px; background:var(--gray); }
+        .private-input-area { padding:16px 24px; border-top:1px solid var(--border); display:flex; gap:16px; background:var(--gray); align-items:center; }
         body.dark .private-input-area { background:#11141a; border-color:var(--border-dark); }
         .close-btn { background:none; border:none; color:white; font-size:32px; cursor:pointer; }
+        .media-preview { max-width:200px; max-height:200px; margin-top:8px; border-radius:12px; display:block; }
+        .progress { margin-top:8px; height:4px; background:#ddd; border-radius:2px; overflow:hidden; }
+        .progress-bar { height:100%; background:var(--primary); width:0%; transition:width 0.3s; }
         .profile-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:3000; backdrop-filter:blur(8px); }
         .profile-overlay.active { display:flex; }
         .profile-panel { width:90%; max-width:520px; background:var(--bg); border-radius:20px; overflow:hidden; box-shadow:0 20px 70px rgba(0,0,0,0.4); }
@@ -136,7 +142,14 @@
         <div class="private-messages" id="privateMessages"><p>Sohbet başladı...</p></div>
         <div class="private-input-area">
             <textarea id="privateInput" placeholder="Mesaj yaz..."></textarea>
+            <button class="attach-btn" onclick="document.getElementById('fileInput').click()">📎</button>
+            <input type="file" id="fileInput" accept="image/*,video/*" style="display:none;" onchange="uploadMedia(event)">
             <button class="send-btn" onclick="sendPrivateMsg()">Gönder</button>
+        </div>
+        <div id="previewContainer" style="padding:0 24px 16px; display:none;">
+            <img id="mediaPreview" class="media-preview" style="display:none;">
+            <video id="videoPreview" class="media-preview" controls style="display:none;"></video>
+            <div id="progressBar" class="progress"><div class="progress-bar" id="progress"></div></div>
         </div>
     </div>
 </div>
@@ -186,11 +199,13 @@
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
+    const storage = firebase.storage();
 
     // Değişkenler
     let currentUser = null;
     let activePrivate = null;
     let godMode = false;
+    let uploadingFile = null;
 
     function showError(msg) {
         document.getElementById('errorMsg').textContent = msg;
@@ -267,6 +282,13 @@
             const msg = snapshot.val();
             const p = document.createElement('p');
             p.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text}`;
+            if (msg.mediaUrl) {
+                if (msg.mediaType.startsWith('image')) {
+                    p.innerHTML += `<br><img src="${msg.mediaUrl}" style="max-width:300px; border-radius:12px; margin-top:8px;">`;
+                } else if (msg.mediaType.startsWith('video')) {
+                    p.innerHTML += `<br><video src="${msg.mediaUrl}" controls style="max-width:300px; border-radius:12px; margin-top:8px;"></video>`;
+                }
+            }
             document.getElementById('messages').appendChild(p);
             document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         });
@@ -295,6 +317,59 @@
         input.value = '';
     }
 
+    // Medya yükleme
+    function uploadMedia(event) {
+        const file = event.target.files[0];
+        if (!file || !currentUser || !activePrivate) return;
+
+        const preview = document.getElementById('mediaPreview');
+        const videoPreview = document.getElementById('videoPreview');
+        const progressBar = document.getElementById('progress');
+        const container = document.getElementById('previewContainer');
+        container.style.display = 'block';
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            if (file.type.startsWith('image')) {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+                videoPreview.style.display = 'none';
+            } else if (file.type.startsWith('video')) {
+                videoPreview.src = e.target.result;
+                videoPreview.style.display = 'block';
+                preview.style.display = 'none';
+            }
+        };
+        reader.readAsDataURL(file);
+
+        // Firebase Storage'a yükle
+        const storageRef = storage.ref();
+        const fileRef = storageRef.child(`chat-files/${currentUser.nick}/${Date.now()}.${file.name.split('.').pop()}`);
+        
+        const uploadTask = fileRef.put(file);
+
+        uploadTask.on('state_changed', 
+            (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                progressBar.style.width = progress + '%';
+            },
+            (error) => {
+                alert('Yükleme hatası: ' + error.message);
+                container.style.display = 'none';
+            },
+            () => {
+                uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
+                    // Mesaj olarak gönder (simülasyon – gerçekte database'e push)
+                    const msg = document.createElement('p');
+                    msg.innerHTML = `<strong>Sen:</strong> [Medya]<br><img src="${downloadURL}" style="max-width:300px; border-radius:12px;">`;
+                    document.getElementById('privateMessages').appendChild(msg);
+                    document.getElementById('privateMessages').scrollTop = document.getElementById('privateMessages').scrollHeight;
+                    container.style.display = 'none';
+                });
+            }
+        );
+    }
+
     function openProfile() {
         document.getElementById('profileName').textContent = currentUser.nick;
         document.getElementById('profileRole').textContent = currentUser.role;
@@ -305,7 +380,6 @@
     }
 
     function closeProfile(e) {
-        // e yoksa (butondan çağrıldıysa) doğrudan kapat
         if (!e || e.target.classList.contains('profile-overlay') || e.target.classList.contains('close-profile')) {
             document.getElementById('profileOverlay').classList.remove('active');
         }
@@ -316,10 +390,6 @@
         alert(`Tanrı modu ${godMode ? 'AÇILDI' : 'KAPATILDI'}! Artık gizlisin.`);
         updateUserList();
     }
-
-    function toggleFollow() { alert('Takip yakında!'); }
-    function toggleBlock() { alert('Engelle yakında!'); }
-    function changeStatus() { alert('Durum değiştirme yakında!'); }
 
     // Enter desteği
     document.getElementById('nickInput').addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
