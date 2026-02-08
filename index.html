@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Popbox Elite - Genel Oda</title>
+    <title>Popbox Elite</title>
     <style>
         :root {
             --bg-day: #ffffff;
@@ -29,13 +29,19 @@
         input { width:100%; padding:12px; margin:12px 0; border:1px solid #ccc; border-radius:8px; font-size:16px; }
         body.day input { background:#fff; color:#000; }
         body.night input { background:#111; color:#fff; border-color:#333; }
-        button { width:100%; padding:12px; background:#000; color:#fff; border:none; border-radius:8px; font-size:16px; cursor:pointer; transition:0.2s; }
+        button { padding:12px; background:#000; color:#fff; border:none; border-radius:8px; cursor:pointer; transition:0.2s; }
         body.night button { background:#fff; color:#000; }
         button:hover { opacity:0.9; }
         .error { color:#ff0000; margin-top:12px; font-size:14px; }
-        .app { display:none; height:100vh; flex-direction:column; }
-        .sidebar { width:30%; min-width:320px; background:var(--gray-day); border-right:1px solid var(--border-day); display:flex; flex-direction:column; }
+        .app { display:none; height:100vh; flex-direction:row; }
+        .sidebar { width:280px; background:var(--gray-day); border-right:1px solid var(--border-day); display:flex; flex-direction:column; overflow-y:auto; }
         body.night .sidebar { background:var(--gray-night); border-color:var(--border-night); }
+        .channel-list { flex:1; padding:16px; }
+        .channel-item { padding:12px; cursor:pointer; border-radius:8px; margin-bottom:8px; transition:0.2s; }
+        .channel-item:hover { background:#eee; }
+        body.night .channel-item:hover { background:#222; }
+        .channel-item.active { background:#000; color:#fff; }
+        body.night .channel-item.active { background:#fff; color:#000; }
         .chat-main { flex:1; display:flex; flex-direction:column; background:var(--bg-day); }
         body.night .chat-main { background:var(--bg-night); }
         .chat-header { height:60px; background:var(--gray-day); border-bottom:1px solid var(--border-day); padding:0 16px; display:flex; align-items:center; justify-content:space-between; }
@@ -83,11 +89,18 @@
 <div id="app" class="app" style="display:none;">
     <div class="sidebar">
         <div class="chat-header">
-            <div style="font-weight:600;">Genel Oda</div>
+            <div style="font-weight:600;">Kanallar</div>
             <div>
                 <button onclick="document.body.classList.toggle('night'); document.body.classList.toggle('day')">Gece/Gündüz</button>
                 <button onclick="openProfile()">Profil</button>
             </div>
+        </div>
+        <div class="channel-list" id="channelList"></div>
+    </div>
+
+    <div class="chat-main">
+        <div class="chat-header">
+            <div id="channelName">Genel Oda</div>
         </div>
         <div class="messages" id="messages">
             <p id="welcome">Hoş geldin! Burası Genel Oda – mesaj yazmaya başla...</p>
@@ -115,6 +128,13 @@
 <script>
     let currentUser = null;
     let godMode = false;
+    let currentChannel = 'general';
+    const channels = {
+        general: { name: 'Genel Oda', messages: [] },
+        rastgele: { name: 'Rastgele', messages: [] },
+        muzık: { name: 'Müzik', messages: [] },
+        sohbet: { name: 'Sohbet', messages: [] }
+    };
 
     function handleLogin() {
         const nick = document.getElementById('nickInput').value.trim();
@@ -130,17 +150,47 @@
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('app').style.display = 'flex';
         
-        document.getElementById('welcome').innerHTML = `Hoş geldin <strong>${nick}</strong>! (Rol: ${role})`;
+        loadChannelList();
+        loadChannel('general');
+    }
+
+    function loadChannelList() {
+        const list = document.getElementById('channelList');
+        list.innerHTML = '';
+        Object.keys(channels).forEach(key => {
+            const div = document.createElement('div');
+            div.className = 'channel-item' + (key === currentChannel ? ' active' : '');
+            div.textContent = channels[key].name;
+            div.onclick = () => loadChannel(key);
+            list.appendChild(div);
+        });
+    }
+
+    function loadChannel(key) {
+        currentChannel = key;
+        document.getElementById('channelName').textContent = channels[key].name;
+        const messagesDiv = document.getElementById('messages');
+        messagesDiv.innerHTML = '';
+        channels[key].messages.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = 'msg ' + (msg.self ? 'msg-self' : 'msg-other');
+            div.innerHTML = msg.content;
+            messagesDiv.appendChild(div);
+        });
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        loadChannelList(); // aktif kanal vurgusunu güncelle
     }
 
     function sendMessage() {
         const input = document.getElementById('msgInput');
         if (!input.value.trim()) return;
         
-        const msg = document.createElement('div');
-        msg.className = 'msg msg-self';
-        msg.textContent = input.value;
-        document.getElementById('messages').appendChild(msg);
+        const msg = { self: true, content: input.value };
+        channels[currentChannel].messages.push(msg);
+        const div = document.createElement('div');
+        div.className = 'msg msg-self';
+        div.textContent = input.value;
+        document.getElementById('messages').appendChild(div);
         document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         input.value = '';
     }
@@ -151,14 +201,17 @@
 
         const reader = new FileReader();
         reader.onload = function(e) {
-            const msg = document.createElement('div');
-            msg.className = 'msg msg-self';
+            const msg = { self: true, content: '' };
+            const div = document.createElement('div');
+            div.className = 'msg msg-self';
             if (file.type.startsWith('image')) {
-                msg.innerHTML = `<img src="${e.target.result}" style="max-width:100%; border-radius:12px;">`;
+                msg.content = `<img src="${e.target.result}" style="max-width:100%; border-radius:12px;">`;
             } else if (file.type.startsWith('video')) {
-                msg.innerHTML = `<video src="${e.target.result}" controls style="max-width:100%; border-radius:12px;"></video>`;
+                msg.content = `<video src="${e.target.result}" controls style="max-width:100%; border-radius:12px;"></video>`;
             }
-            document.getElementById('messages').appendChild(msg);
+            channels[currentChannel].messages.push(msg);
+            div.innerHTML = msg.content;
+            document.getElementById('messages').appendChild(div);
             document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         };
         reader.readAsDataURL(file);
