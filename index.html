@@ -9,15 +9,27 @@
             --bg-day: #ffffff;
             --text-day: #000000;
             --bg-night: #000000;
-            --text-night: #e0e0e0;
-            --gray-day: #f8f9fa;
-            --gray-night: #0f0f0f;
+            --text-night: #ffffff;
+            --gray-day: #f5f5f5;
+            --gray-night: #111111;
             --border-day: #e0e0e0;
             --border-night: #222222;
         }
         body { margin:0; font-family:system-ui, sans-serif; height:100vh; overflow:hidden; transition:all 0.4s; }
         body.day { background:var(--bg-day); color:var(--text-day); }
         body.night { background:var(--bg-night); color:var(--text-night); }
+        .login-screen { position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.4); backdrop-filter:blur(12px); display:flex; align-items:center; justify-content:center; }
+        .login-box { background:rgba(255,255,255,0.9); border:1px solid rgba(0,0,0,0.2); border-radius:24px; padding:48px; width:380px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.4); backdrop-filter:blur(8px); }
+        body.night .login-box { background:rgba(20,20,20,0.9); border-color:rgba(255,255,255,0.1); box-shadow:0 20px 60px rgba(255,255,255,0.05); }
+        h2 { margin:0 0 12px; font-size:32px; font-weight:700; }
+        p.tagline { font-size:16px; margin:0 0 32px; color:#666; }
+        body.night p.tagline { color:#aaa; }
+        input { width:100%; padding:14px; margin:14px 0; border:1px solid #ccc; border-radius:12px; font-size:16px; background:rgba(255,255,255,0.8); }
+        body.night input { background:rgba(30,30,30,0.8); color:#fff; border-color:#444; }
+        button { width:100%; padding:14px; background:#000; color:#fff; border:none; border-radius:12px; font-size:16px; cursor:pointer; transition:0.2s; }
+        body.night button { background:#fff; color:#000; }
+        button:hover { opacity:0.9; }
+        .error { color:#ff4d4f; margin-top:12px; font-size:14px; }
         .app { display:none; height:100vh; flex-direction:row; }
         .left-menu { width:72px; background:var(--gray-day); border-right:1px solid var(--border-day); display:flex; flex-direction:column; align-items:center; padding:24px 0; gap:32px; }
         body.night .left-menu { background:var(--gray-night); border-color:var(--border-night); }
@@ -46,8 +58,6 @@
         body.night textarea { background:#111; color:#fff; border-color:#333; }
         .send-btn, .attach-btn { padding:14px; background:#000; border:none; border-radius:50%; cursor:pointer; font-size:22px; color:#fff; min-width:48px; height:48px; display:flex; align-items:center; justify-content:center; transition:0.2s; }
         body.night .send-btn, body.night .attach-btn { background:#fff; color:#000; }
-        .send-btn:hover, .attach-btn:hover { background:#111; }
-        body.night .send-btn:hover, body.night .attach-btn:hover { background:#eee; }
         .msg { margin-bottom:16px; max-width:80%; padding:10px 16px; border-radius:16px; line-height:1.5; font-size:15px; }
         .msg-self { background:#000; color:#fff; margin-left:auto; border-bottom-right-radius:4px; }
         body.night .msg-self { background:#fff; color:#000; border-bottom-right-radius:4px; }
@@ -158,4 +168,93 @@
         
         currentUser = { nick, role };
         
-        document.getElementById('loginScreen').style
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('app').style.display = 'flex';
+        
+        document.getElementById('smallAvatar').textContent = nick.charAt(0).toUpperCase();
+        loadUserList();
+        document.getElementById('welcome').innerHTML = `Hoş geldin <strong>${nick}</strong>! Bir kişiye tıkla sohbet başlat...`;
+    }
+
+    function loadUserList() {
+        const list = document.getElementById('userList');
+        list.innerHTML = '';
+        onlineUsers.forEach(name => {
+            const div = document.createElement('div');
+            div.className = 'user-item';
+            div.innerHTML = `
+                <div class="user-avatar">${name.charAt(0).toUpperCase()}</div>
+                <div>${name}${name === currentUser.nick ? ' (sen)' : ''}</div>
+            `;
+            div.onclick = () => startChatWith(name);
+            list.appendChild(div);
+        });
+    }
+
+    function startChatWith(nick) {
+        currentChatWith = nick;
+        document.getElementById('chatWith').textContent = nick;
+        document.getElementById('messages').innerHTML = `<p>Sohbet başladı: ${nick}</p>`;
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('msgInput');
+        if (!input.value.trim() || !currentChatWith) return;
+        
+        const msg = document.createElement('div');
+        msg.className = 'msg msg-self';
+        msg.textContent = input.value;
+        document.getElementById('messages').appendChild(msg);
+        document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        input.value = '';
+    }
+
+    function handleLocalMedia(event) {
+        const file = event.target.files[0];
+        if (!file || !currentChatWith) return alert('Dosya seçilmedi veya sohbet açık değil!');
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const msg = document.createElement('div');
+            msg.className = 'msg msg-self';
+            if (file.type.startsWith('image')) {
+                msg.innerHTML = `<img src="${e.target.result}" style="max-width:100%; border-radius:12px;">`;
+            } else if (file.type.startsWith('video')) {
+                msg.innerHTML = `<video src="${e.target.result}" controls style="max-width:100%; border-radius:12px;"></video>`;
+            }
+            document.getElementById('messages').appendChild(msg);
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function openProfile() {
+        document.getElementById('overlayTitle').textContent = 'Profil';
+        const body = document.getElementById('overlayBody');
+        body.innerHTML = `
+            <div style="text-align:center;">
+                <div style="width:160px; height:160px; margin:0 auto 32px; border-radius:50%; background:#000; color:#fff; display:flex; align-items:center; justify-content:center; font-size:72px; font-weight:bold; box-shadow:0 8px 32px rgba(0,0,0,0.4);"> ${currentUser.nick.charAt(0).toUpperCase()}</div>
+                <h2 style="font-size:32px; margin-bottom:12px;">${currentUser.nick}</h2>
+                <p style="font-size:18px; color:#666;">Rol: ${currentUser.role}${currentUser.role === 'owner' ? ' (Kanal Sahibi)' : ''}</p>
+                <button onclick="toggleGodMode()" style="margin-top:32px; padding:16px 40px; background:#000; color:#fff; border:none; border-radius:12px; font-size:18px; cursor:pointer;">Tanrı Modu ${godMode ? 'Kapat' : 'Aç'}</button>
+            </div>
+        `;
+        document.getElementById('overlay').classList.add('active');
+    }
+
+    function closeOverlay() {
+        document.getElementById('overlay').classList.remove('active');
+    }
+
+    function toggleGodMode() {
+        godMode = !godMode;
+        alert(`Tanrı modu ${godMode ? 'AÇILDI' : 'KAPATILDI'}!`);
+    }
+
+    // Enter desteği
+    document.getElementById('nickInput').addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
+    document.getElementById('passInput').addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
+    document.getElementById('msgInput').addEventListener('keypress', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+</script>
+</body>
+</html>
