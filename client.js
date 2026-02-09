@@ -1677,7 +1677,68 @@ class MateBot {
         }
     }
 }
+// Mobil kontrolü
+isMobile() {
+    return window.innerWidth <= 992;
+}
 
+// Swipe için kanal geçişi
+setupMobileSwipe() {
+    if (!this.isMobile()) return;
+    
+    let startX = 0;
+    let currentTranslate = 0;
+    let currentIndex = 0;
+    
+    document.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+    });
+    
+    document.addEventListener('touchmove', (e) => {
+        if (!this.isMobile()) return;
+        
+        const currentX = e.touches[0].clientX;
+        const diff = currentX - startX;
+        
+        // Kanal swipe
+        if (Math.abs(diff) > 50) {
+            if (diff > 0) {
+                this.prevChannel(); // Sola swipe
+            } else {
+                this.nextChannel(); // Sağa swipe
+            }
+            startX = currentX;
+        }
+    });
+}
+
+// Özel sohbet açma (mobile)
+openMobilePM(userId) {
+    if (!this.isMobile()) return;
+    
+    const pmWindow = document.createElement('div');
+    pmWindow.className = 'pm-window-mobile active';
+    pmWindow.innerHTML = `
+        <div class="pm-swipe-handle"></div>
+        <div class="pm-header-mobile">
+            <button class="btn btn-sm close-pm-mobile">
+                <i class="fas fa-chevron-down"></i>
+            </button>
+            <h4>${this.db.users[userId]?.name}</h4>
+        </div>
+        <div class="pm-content-mobile" id="pm-mobile-content">
+            <!-- Mesajlar -->
+        </div>
+        <div class="pm-input-mobile">
+            <input type="text" placeholder="Mesaj yaz..." class="mobile-pm-input">
+        </div>
+    `;
+    
+    document.body.appendChild(pmWindow);
+    
+    // Swipe down to close
+    this.setupSwipeToClose(pmWindow);
+}
 // Uygulamayı başlat
 document.addEventListener('DOMContentLoaded', function() {
     window.eliteChatClient = new EliteChatClient();
