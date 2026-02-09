@@ -1,246 +1,239 @@
-// ========== SUNUCU KISMI ==========  
-const express = require('express');  
-const http = require('http');  
-const socketIo = require('socket.io');  
-  
-const app = express();  
-const server = http.createServer(app);  
-const io = socketIo(server, { cors: { origin: "*" } });  
-  
-app.use(express.static('.'));  
-app.get('/', (req, res) => res.send(`  
-<!DOCTYPE html>  
-<html>  
-<head>  
-    <title>Popbox Chat</title>  
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>  
-    <script src="https://www.youtube.com/iframe_api"></script>  
-    <style>  
-        body { margin:0; padding:20px; background:#1a1a2e; color:white; }  
-        .container { display:flex; gap:20px; }  
-        .player { flex:3; background:#000; border-radius:10px; height:400px; }  
-        .chat { flex:1; background:#2d2d44; border-radius:10px; padding:15px; }  
-        #messages { height:300px; overflow-y:auto; }  
-        .message { background:#3d3d5c; padding:8px; margin:5px 0; border-radius:5px; }  
-    </style>  
-</head>  
-<body>  
-    <div class="container">  
-        <div class="player"><div id="youtube-player"></div></div>  
-        <div class="chat">  
-            <h3>Popbox Chat</h3>  
-            <div id="messages"></div>  
-            <input id="messageInput" placeholder="Mesaj..." style="width:100%; padding:10px; margin-top:10px;">  
-            <button onclick="sendMessage()" style="width:100%; padding:10px; margin-top:10px;">Gönder</button>  
-            <button onclick="adminLogin()" style="width:100%; padding:10px; margin-top:10px; background:#ff5555;">Admin Giriş</button>  
-        </div>  
-    </div>  
-      
-    <script>  
-        // ========== İSTEMCİ KISMI ==========  
-        let socket;  
-        let player;  
-          
-        // YouTube  
-        function onYouTubeIframeAPIReady() {  
-            player = new YT.Player('youtube-player', {  
-                height: '100%', width: '100%',  
-                videoId: 'dQw4w9WgXcQ'  
-            });  
-        }  
-          
-        // Socket Bağlantısı  
-        window.onload = function() {  
-            socket = io();  
-              
-            socket.on('connect', () => {  
-                console.log('✅ Bağlandı!');  
-                addMessage('Sistem', 'Sunucuya bağlandı!');  
-                  
-                const name = prompt('Adınız:', 'Kullanıcı_' + Math.floor(Math.random() * 1000));  
-                if (name) socket.emit('join', { username: name });  
-            });  
-              
-            socket.on('message', (data) => {  
-                addMessage(data.user, data.text);  
-            });  
-              
-            socket.on('system', (msg) => {  
-                addMessage('Sistem', msg);  
-            });  
-        };  
-          
-        function sendMessage() {  
-            const input = document.getElementById('messageInput');  
-            const msg = input.value;  
-            if (msg) {  
-                socket.emit('message', { text: msg });  
-                input.value = '';  
-            }  
-        }  
-          
-        function adminLogin() {  
-            socket.emit('admin-login', {   
-                username: 'popbox',   
-                password: 'kumsal07@'   
-            });  
-        }  
-          
-        function addMessage(user, text) {  
-            const div = document.createElement('div');  
-            div.className = 'message';  
-            div.innerHTML = `<strong>${user}:</strong> ${text}`;  
-            document.getElementById('messages').appendChild(div);  
-        }  
-    </script>  
-</body>  
-</html>  
-`));  
-  
-// ========== SOCKET İŞLEMLERİ ==========  
-io.on('connection', (socket) => {  
-    console.log('✅ Yeni bağlantı:', socket.id);  
-      
-    socket.on('join', (data) => {  
-        const user = data.username || 'Anon';  
-        console.log(`👤 ${user} katıldı`);  
-        socket.emit('system', `Hoş geldin ${user}!`);  
-        socket.broadcast.emit('system', `${user} katıldı`);  
-    });  
-      
-    socket.on('message', (data) => {  
-        console.log('💬 Mesaj:', data.text);  
-        io.emit('message', { user: 'Kullanıcı', text: data.text });  
-    });  
-      
-    socket.on('admin-login', (data) => {  
-        if (data.username === 'popbox' && data.password === 'kumsal07@') {  
-            console.log('👑 Admin girişi BAŞARILI');  
-            socket.emit('system', '✅ Admin oldunuz!');  
-        } else {  
-            socket.emit('system', '❌ Admin girişi başarısız');  
-        }  
-    });  
-  
-// Basit Demo Chat Sistemi  
-let currentUser = null;  
-let isAdmin = false;  
-let player = null;  
-  
-function login() {  
-    const nick = document.getElementById('login-nick').value.trim();  
-    if (!nick) return alert('Kullanıcı adı girin!');  
-      
-    currentUser = { name: nick, role: 'user' };  
-      
-    document.getElementById('login-screen').style.display = 'none';  
-    document.getElementById('app').style.display = 'flex';  
-      
-    initApp();  
-}  
-  
-function initApp() {  
-    addSystemMessage(`Hoş geldin, ${currentUser.name}!`);  
-      
-    if (currentUser.name.toLowerCase() === 'popbox') {  
-        addSystemMessage('Admin için: /admin kumsal07@');  
-    }  
-      
-    // YouTube Player  
-    if (typeof YT !== 'undefined') {  
-        player = new YT.Player('youtube-player', {  
-            height: '100%',  
-            width: '100%',  
-            videoId: 'dQw4w9WgXcQ',  
-            playerVars: { 'autoplay': 1, 'controls': 1 }  
-        });  
-    }  
-      
-    // Event Listeners  
-    document.getElementById('message-input').addEventListener('keypress', (e) => {  
-        if (e.key === 'Enter') sendMessage();  
-    });  
-      
-    // Demo Mesajlar  
-    setTimeout(() => addMessage('Ahmet', 'Selam!'), 1000);  
-    setTimeout(() => addMessage('Mehmet', 'Yayın harika!'), 3000);  
-}  
-  
-function sendMessage() {  
-    const input = document.getElementById('message-input');  
-    const text = input.value.trim();  
-    if (!text) return;  
-      
-    if (text.startsWith('/')) {  
-        handleCommand(text);  
-    } else {  
-        addMessage(currentUser.name, text, isAdmin ? 'admin' : 'user');  
-          
-        // Demo cevap  
-        setTimeout(() => {  
-            const replies = ['Evet!', 'Harika!', '👏'];  
-            const randomReply = replies[Math.floor(Math.random() * replies.length)];  
-            addMessage('Ahmet', randomReply);  
-        }, 1000);  
-    }  
-      
-    input.value = '';  
-}  
-  
-function addMessage(sender, text, type = 'user') {  
-    const container = document.getElementById('messages');  
-    const div = document.createElement('div');  
-    div.className = `message ${type}`;  
-      
-    const time = new Date().toLocaleTimeString('tr-TR', {   
-        hour: '2-digit',   
-        minute: '2-digit'   
-    });  
-      
-    div.innerHTML = `  
-        <div style="display:flex;justify-content:space-between;font-size:0.9em;margin-bottom:5px;">  
-            <strong>${type === 'admin' ? '👑 ' : ''}${sender}</strong>  
-            <span style="color:#aaa">${time}</span>  
-        </div>  
-        <div>${text}</div>  
-    `;  
-      
-    container.appendChild(div);  
-    container.scrollTop = container.scrollHeight;  
-}  
-  
-function addSystemMessage(text) {  
-    const container = document.getElementById('messages');  
-    const div = document.createElement('div');  
-    div.className = 'message system';  
-    div.innerHTML = `<strong>Sistem:</strong> ${text}`;  
-    container.appendChild(div);  
-    container.scrollTop = container.scrollHeight;  
-}  
-  
-function handleCommand(cmd) {  
-    const parts = cmd.substring(1).split(' ');  
-    const command = parts[0].toLowerCase();  
-      
-    if (command === 'admin' && parts[1] === 'kumsal07@' && currentUser.name.toLowerCase() === 'popbox') {  
-        isAdmin = true;  
-        document.body.style.border = '5px solid red';  
-        addSystemMessage('✅ Admin girişi başarılı!');  
-    } else if (command === 'temizle' && isAdmin) {  
-        document.getElementById('messages').innerHTML = '';  
-        addSystemMessage('Sohbet temizlendi.');  
-    } else if (command === 'yardım') {  
-        addSystemMessage('/admin [şifre] - /temizle - /yardım');  
-    }  
-}  
-  
-// YouTube API  
-function onYouTubeIframeAPIReady() {  
-    // Player zaten initApp'te oluşturuldu  
-}  
-  
-// Sayfa yüklenince  
-document.addEventListener('DOMContentLoaded', function() {  
-    // Otomatik focus  
-    document.getElementById('login-nick').focus();  
-});  
+// EliteChat Ana Sistem
+class EliteChat {
+    constructor() {
+        this.currentUser = null;
+        this.currentChannel = 'general';
+        this.activePM = null;
+        this.theme = 'night';
+        this.pmWindows = {};
+        
+        this.init();
+    }
+    
+    init() {
+        this.setupEventListeners();
+        this.setupServerEvents();
+        this.applyTheme();
+    }
+    
+    setupEventListeners() {
+        // Giriş butonu
+        document.getElementById('loginButton').addEventListener('click', () => this.handleLogin());
+        
+        // Enter ile giriş
+        document.getElementById('nickInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.handleLogin();
+        });
+        
+        // Mesaj gönderme
+        document.getElementById('sendBtn').addEventListener('click', () => this.sendMessage());
+        document.getElementById('messageInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage();
+            }
+        });
+        
+        // Tema değiştirme
+        document.getElementById('themeBtn').addEventListener('click', () => this.toggleTheme());
+        
+        // Modal kapatma
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) {
+                e.target.style.display = 'none';
+            }
+        });
+    }
+    
+    setupServerEvents() {
+        const server = window.eliteChatServer;
+        
+        // Yeni mesaj geldiğinde
+        server.on('new_message', (data) => {
+            if (data.channel === this.currentChannel) {
+                this.displayMessage(data.message);
+            }
+        });
+        
+        // Özel mesaj geldiğinde
+        server.on('private_message', (data) => {
+            if (data.message.to === this.currentUser?.id) {
+                this.handlePrivateMessage(data.message);
+            }
+        });
+        
+        // Kullanıcı katıldığında
+        server.on('user_joined', (data) => {
+            this.updateOnlineList();
+            if (this.currentChannel === 'general') {
+                this.addSystemMessage(`🎉 ${data.user.name} sohbete katıldı!`);
+            }
+        });
+        
+        // Yeni kanal oluşturulduğunda
+        server.on('channel_created', (data) => {
+            this.addChannelTab(data.channel);
+            this.addSystemMessage(`📢 Yeni kanal oluşturuldu: ${data.channel.name}`);
+        });
+    }
+    
+    async handleLogin() {
+        const nickInput = document.getElementById('nickInput');
+        const passInput = document.getElementById('passInput');
+        
+        const nick = nickInput.value.trim();
+        const password = passInput.value;
+        
+        if (!nick || nick.length < 2) {
+            alert('Kullanıcı adı en az 2 karakter olmalıdır');
+            return;
+        }
+        
+        const userId = nick.toLowerCase().replace(/[^a-z0-9._]/g, '');
+        
+        if (userId === 'mate') {
+            alert('Bu kullanıcı adı sistem tarafından kullanılıyor!');
+            return;
+        }
+        
+        // Şifreli giriş kontrolü
+        const db = window.eliteChatDatabase;
+        let userData;
+        
+        if (password) {
+            // Kayıtlı kullanıcı girişi
+            userData = db.authenticateUser(userId, password);
+            if (!userData) {
+                alert('Kullanıcı adı veya şifre hatalı!');
+                return;
+            }
+            userData.online = true;
+        } else {
+            // Misafir girişi
+            userData = {
+                id: userId,
+                name: nick,
+                role: 'user',
+                registered: false,
+                online: true,
+                invisible: false,
+                avatar: nick.charAt(0).toUpperCase(),
+                bio: '',
+                joinDate: new Date().toISOString(),
+                lastSeen: new Date().toISOString()
+            };
+        }
+        
+        // Sunucuya bağlan
+        const server = window.eliteChatServer;
+        const client = server.connectClient(userId, userData);
+        
+        if (!client) {
+            alert('Sunucuya bağlanılamadı!');
+            return;
+        }
+        
+        this.currentUser = userData;
+        
+        // Giriş ekranını kapat
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        
+        // Kanalı yükle
+        this.switchChannel('general');
+        
+        // Sistem mesajı
+        this.addSystemMessage(`🎉 Hoş geldin ${this.currentUser.name}!`);
+        
+        // Input'ları temizle
+        nickInput.value = '';
+        passInput.value = '';
+    }
+    
+    sendMessage() {
+        const input = document.getElementById('messageInput');
+        const text = input.value.trim();
+        
+        if (!text) return;
+        
+        if (text.startsWith('/')) {
+            // IRC komutu
+            this.handleIRCCommand(text);
+        } else if (this.activePM) {
+            // Özel mesaj
+            this.sendPrivateMessage(this.activePM, text);
+        } else {
+            // Kanal mesajı
+            this.sendChannelMessage(text);
+        }
+        
+        input.value = '';
+        input.focus();
+    }
+    
+    sendChannelMessage(text) {
+        if (!this.currentUser) return;
+        
+        const server = window.eliteChatServer;
+        const message = server.sendMessage(this.currentUser.id, this.currentChannel, text);
+        
+        if (message) {
+            this.displayMessage(message);
+        }
+    }
+    
+    sendPrivateMessage(toUserId, text) {
+        if (!this.currentUser) return;
+        
+        const server = window.eliteChatServer;
+        const message = server.sendPrivateMessage(this.currentUser.id, toUserId, text);
+        
+        if (message && this.pmWindows[toUserId]) {
+            this.addMessageToPMWindow(toUserId, message);
+        }
+    }
+    
+    displayMessage(message) {
+        const container = document.getElementById('chatMessages');
+        if (!container) return;
+        
+        const db = window.eliteChatDatabase;
+        const user = db.getUser(message.userId);
+        if (!user) return;
+        
+        const isOutgoing = message.userId === this.currentUser?.id;
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${isOutgoing ? 'message-outgoing' : 'message-incoming'}`;
+        
+        const displayName = user.id === 'mate' ? '🤖Mate' : user.name;
+        
+        messageDiv.innerHTML = `
+            <div class="message-sender">
+                <span style="font-weight: 500;">${this.escapeHtml(displayName)}</span>
+            </div>
+            <div class="message-text">${this.escapeHtml(message.text)}</div>
+            <div class="message-time">${this.formatTime(new Date(message.time))}</div>
+        `;
+        
+        container.appendChild(messageDiv);
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    addSystemMessage(text) {
+        const container = document.getElementById('chatMessages');
+        if (!container) return;
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'system-message';
+        messageDiv.textContent = text;
+        
+        container.appendChild(messageDiv);
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    switchChannel(channelId) {
+        this.currentChannel = channelId;
+        this.activePM = null;
+        
+        // Aktif sekme
+        document.querySelectorAll('.channel-tab').forEach(tab => {
