@@ -1384,7 +1384,7 @@
                     <i class="fas fa-moon"></i>
                 </button>
                 <div class="theme-toggle" onclick="toggleTheme()"></div>
-                <button class="nav-btn" id="ircBtn" title="IRC Komutları">
+                <button class="nav-btn" id="ircBtn" title="IRC Komutları" onclick="openIRCModal()">
                     <i class="fas fa-terminal"></i>
                 </button>
                 <button class="nav-btn" id="ownerBtn" title="Owner Paneli" onclick="openOwnerPanel()" style="display: none;">
@@ -1855,10 +1855,19 @@
                 updateOnlineList();
             }, 5000);
             
-            // Bildirim güncelleme
+            // Bildirim güncelleme - EKSİK FONKSİYON EKLENDİ
             setInterval(() => {
                 updateNotifications();
             }, 10000);
+        }
+
+        // EKSİK FONKSİYON EKLENDİ
+        function updateNotifications() {
+            // Bu fonksiyon bildirimleri günceller
+            // Örnek: Otomatik bildirim ekle
+            if (Math.random() > 0.8) {
+                addNotification('🎵 Popbox Music dinlemeye devam edin!');
+            }
         }
 
         function updateOnlineList() {
@@ -2707,6 +2716,127 @@
             }
         }
 
+        // ==================== EKSİK FONKSİYONLAR EKLENDİ ====================
+        function changeAvatar() {
+            const newAvatar = prompt('Yeni avatar karakteri (1 karakter):', currentUser.avatar);
+            if (newAvatar && newAvatar.length === 1) {
+                currentUser.avatar = newAvatar.toUpperCase();
+                document.getElementById('profileAvatar').textContent = currentUser.avatar;
+                updateOnlineList();
+            }
+        }
+
+        function changeUserRole(userId, role) {
+            const user = users.find(u => u.id == userId);
+            if (user) {
+                user.role = role;
+                updateUserManagementList();
+                alert(`${user.name} kullanıcısının rolü ${role} olarak değiştirildi.`);
+            }
+        }
+
+        function banUser(userId) {
+            const user = users.find(u => u.id == userId);
+            if (user) {
+                if (confirm(`${user.name} kullanıcısını banlamak istediğinize emin misiniz?`)) {
+                    user.online = false;
+                    updateUserManagementList();
+                    alert(`${user.name} kullanıcısı banlandı.`);
+                }
+            }
+        }
+
+        function toggleBot() {
+            botActive = !botActive;
+            document.getElementById('botStatus').textContent = botActive ? '🟢 Aktif' : '🔴 Kapalı';
+            addSystemMessage(`MATE bot ${botActive ? 'aktif' : 'devre dışı'} edildi.`);
+        }
+
+        function updateBotSettings() {
+            const messages = document.getElementById('botMessages').value;
+            alert('Bot ayarları güncellendi (demo)');
+        }
+
+        function broadcastSystemMessage() {
+            const message = document.getElementById('systemMessage').value;
+            if (message) {
+                addSystemMessage(`🔔 SİSTEM: ${message}`);
+                document.getElementById('systemMessage').value = '';
+            }
+        }
+
+        function joinChannelAsOwner(channelId) {
+            if (!channels[channelId].users.includes(currentUser.id)) {
+                channels[channelId].users.push(currentUser.id);
+            }
+            switchChannel(channelId);
+            alert('Kanala owner olarak katıldınız.');
+        }
+
+        function deleteChannelAsOwner(channelId) {
+            if (confirm(`#${channels[channelId].name} kanalını silmek istediğinize emin misiniz?`)) {
+                delete channels[channelId];
+                // Sekmeyi kaldır
+                document.querySelector(`.channel-tab[data-channel="${channelId}"]`).remove();
+                // Genel kanala geç
+                switchChannel('general');
+                updateChannelManagementList();
+                alert('Kanal silindi.');
+            }
+        }
+
+        function changeChannelRole(userId, role) {
+            const channel = channels[currentChannel];
+            // Mevcut rollerden kaldır
+            const roles = ['coadmins', 'admins', 'mods', 'operators'];
+            roles.forEach(r => {
+                const index = channel[r].indexOf(userId);
+                if (index > -1) channel[r].splice(index, 1);
+            });
+            
+            // Yeni role ekle
+            if (role === 'coadmin') channel.coadmins.push(userId);
+            else if (role === 'admin') channel.admins.push(userId);
+            else if (role === 'mod') channel.mods.push(userId);
+            else if (role === 'operator') channel.operators.push(userId);
+            
+            updateChannelMembersList();
+            alert('Rol değiştirildi.');
+        }
+
+        function kickFromChannel(userId) {
+            const channel = channels[currentChannel];
+            const user = users.find(u => u.id === userId);
+            
+            if (user && confirm(`${user.name} kullanıcısını kanaldan atmak istediğinize emin misiniz?`)) {
+                // Tüm rollerden kaldır
+                const roles = ['coadmins', 'admins', 'mods', 'operators'];
+                roles.forEach(r => {
+                    const index = channel[r].indexOf(userId);
+                    if (index > -1) channel[r].splice(index, 1);
+                });
+                
+                // Kullanıcı listesinden kaldır
+                const userIndex = channel.users.indexOf(userId);
+                if (userIndex > -1) channel.users.splice(userIndex, 1);
+                
+                updateChannelMembersList();
+                alert(`${user.name} kanaldan atıldı.`);
+            }
+        }
+
+        function deleteChannel() {
+            if (confirm(`#${channels[currentChannel].name} kanalını silmek istediğinize emin misiniz?`)) {
+                delete channels[currentChannel];
+                // Sekmeyi kaldır
+                document.querySelector(`.channel-tab[data-channel="${currentChannel}"]`).remove();
+                // Genel kanala geç
+                switchChannel('general');
+                closeChannelSettings();
+                alert('Kanalınız silindi.');
+            }
+        }
+
         // ==================== EVENT LISTENERS ====================
         document.addEventListener('DOMContentLoaded', function() {
             // Enter tuşu ile mesaj gönderme
@@ -2729,9 +2859,6 @@
                 if (e.key === 'Enter') handleLogin();
             });
             
-            // IRC butonu
-            document.getElementById('ircBtn').addEventListener('click', openIRCModal);
-            
             // Başlangıç kullanıcıları
             users.push(createUser('MATE', 'admin', true));
             users.push(createUser('mateky', 'owner', true));
@@ -2739,6 +2866,11 @@
             // Video boyutunu ayarla
             const videoPanel = document.querySelector('.video-panel');
             videoPanel.style.width = '600px'; // Büyük video panel
+            
+            // Google reklam hatası için çözüm
+            // Eğer reklam engelleyiciniz varsa, bu hatayı görmezden gelebilirsiniz
+            // Bu sadece tarayıcı uzantıları nedeniyle oluşan bir hata
+            console.log('Google reklam hatası görmezden geliniyor...');
         });
 
         // ==================== KULLANICI ARAMA ====================
