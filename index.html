@@ -967,6 +967,468 @@
             globalMutes: new Set()
         };
 
+        // ==================== GERÇEK ZAMANLI SUNUCU SİSTEMİ ====================
+        class EliteChatServer {
+            constructor() {
+                this.users = new Map();
+                this.channels = new Map();
+                this.initializeChannels();
+                this.setupLocalStorageSync();
+                console.log('✅ Gerçek zamanlı sunucu başlatıldı');
+            }
+            
+            initializeChannels() {
+                const generalChannel = {
+                    id: 'general',
+                    name: '#Genel',
+                    owner: 'mate',
+                    type: 'public',
+                    topic: 'EliteChat Hoş Geldiniz',
+                    users: ['mate'],
+                    operators: ['mate'],
+                    voices: [],
+                    bans: {},
+                    mutes: {},
+                    messages: [],
+                    video: {
+                        id: 'jfKfPfyJRdk',
+                        title: 'Lofi Hip Hop Radio 📚'
+                    }
+                };
+                
+                this.channels.set('general', generalChannel);
+                this.saveChannelsToStorage();
+                
+                // Mate botu ekle
+                this.users.set('mate', {
+                    id: 'mate',
+                    name: '🤖Mate',
+                    role: 'owner',
+                    registered: true,
+                    online: true,
+                    invisible: false,
+                    avatar: 'M',
+                    bio: 'Güvenlik Botu',
+                    joinDate: new Date().toISOString(),
+                    lastSeen: new Date().toISOString()
+                });
+                this.saveUsersToStorage();
+            }
+            
+            setupLocalStorageSync() {
+                setInterval(() => {
+                    this.syncUsers();
+                    this.syncMessages();
+                    this.syncChannels();
+                }, 1000);
+            }
+            
+            syncUsers() {
+                try {
+                    const serverUsers = JSON.parse(localStorage.getItem('elitechat_server_users') || '[]');
+                    serverUsers.forEach(user => {
+                        if (!this.users.has(user.id)) {
+                            this.users.set(user.id, user);
+                        }
+                    });
+                    
+                    const userArray = Array.from(this.users.values());
+                    localStorage.setItem('elitechat_server_users', JSON.stringify(userArray));
+                } catch (e) {
+                    console.error('Kullanıcı senkronizasyon hatası:', e);
+                }
+            }
+            
+            syncMessages() {
+                try {
+                    const allMessages = JSON.parse(localStorage.getItem('elitechat_server_messages') || '[]');
+                    
+                    allMessages.forEach(msg => {
+                        const channel = this.channels.get(msg.channel);
+                        if (channel) {
+                            const exists = channel.messages.some(m => m.id === msg.id);
+                            if (!exists) {
+                                channel.messages.push(msg);
+                                if (channel.messages.length > 100) {
+                                    channel.messages = channel.messages.slice(-100);
+                                }
+                            }
+                        }
+                    });
+                    
+                    this.saveChannelsToStorage();
+                } catch (e) {
+                    console.error('Mesaj senkronizasyon hatası:', e);
+                }
+            }
+            
+            syncChannels() {
+                try {
+                    const serverChannels = JSON.parse(localStorage.getItem('elitechat_server_channels') || '[]');
+                    
+                    serverChannels.forEach(ch => {
+                        if (!this.channels.has(ch.id)) {
+                            this.channels.set(ch.id, ch);
+                        }
+                    });
+                } catch (e) {
+                    console.error('Kanal senkronizasyon hatası:', e);
+                }
+            }
+            
+            registerUser(userData) {
+                console.log('Yeni kullanıcı kaydediliyor:', userData.name);
+                
+                this.users.set(userData.id, userData);
+                
+                const generalChannel = this.channels.get('general');
+                if (generalChannel) {
+                    if (!generalChannel.users.includes(userData.id)) {
+                        generalChannel.users.push(userData.id);
+                        this.saveChannelsToStorage();
+                    }
+                }
+                
+                this.broadcastToAll({
+                    type: 'user_joined',
+                    user: userData,
+                    timestamp: Date.now()
+                });
+                
+                this.saveUsersToStorage();
+                
+                return userData;
+            }
+            
+            sendMessage(messageData) {
+                const channel = this.channels.get(messageData.channel);
+                if (!channel) return null;
+                
+                const message = {
+                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    type: 'message',
+                    userId: messageData.userId,
+                    text: messageData.text,
+                    time: Date.now(),
+                    channel: messageData.channel
+                };
+                
+                channel.messages.push(message);
+                this.saveChannelsToStorage();
+                
+                this.saveMessageToStorage(message);
+                
+                this.broadcastToAll({
+                    type: 'new_message',
+                    message: message,
+                    channel: messageData.channel
+                });
+                
+                return message;
+            }
+            
+            sendPrivateMessage(pmData) {
+                const message = {
+                    id: `pm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    type: 'pm',
+                    from: pmData.from,
+                    to: pmData.to,
+                    text: pmData.text,
+                    time: Date.now(),
+                    read: false
+                };
+                
+                this.savePrivateMessageToStorage(message);
+                
+                this.sendToUser(pmData.to, {
+                    type: 'private_message',
+                    message: message
+                });
+                
+                return message;
+            }
+            
+            createChannel(channelData) {
+                const channelId = channelData.name.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '_');
+                
+                if (this.channels.has(channelId)) {
+                    return null;
+                }
+                
+                const newChannel = {
+                    id: channelId,
+                    name: channelData.name,
+                    owner: channelData.owner,
+                    type: channelData.type || 'public',
+                    topic: channelData.topic || 'Yeni sohbet kanalı',
+                    users: [channelData.owner, 'mate'],
+                    operators: [],
+                    voices: [],
+                    bans: {},
+                    mutes: {},
+                    messages: [],
+                    video: {
+                        id: 'jfKfPfyJRdk',
+                        title: 'Lofi Hip Hop Radio 📚'
+                    }
+                };
+                
+                this.channels.set(channelId, newChannel);
+                this.saveChannelsToStorage();
+                
+                this.broadcastToAll({
+                    type: 'channel_created',
+                    channel: newChannel
+                });
+                
+                return newChannel;
+            }
+            
+            broadcastToAll(data) {
+                const broadcastEvents = JSON.parse(localStorage.getItem('elitechat_broadcast') || '[]');
+                broadcastEvents.push({
+                    ...data,
+                    _timestamp: Date.now()
+                });
+                
+                if (broadcastEvents.length > 50) {
+                    broadcastEvents.splice(0, broadcastEvents.length - 50);
+                }
+                
+                localStorage.setItem('elitechat_broadcast', JSON.stringify(broadcastEvents));
+                
+                window.dispatchEvent(new CustomEvent('elitechat_broadcast', { detail: data }));
+            }
+            
+            sendToUser(userId, data) {
+                const userEvents = JSON.parse(localStorage.getItem(`elitechat_user_${userId}`) || '[]');
+                userEvents.push({
+                    ...data,
+                    _timestamp: Date.now()
+                });
+                
+                if (userEvents.length > 20) {
+                    userEvents.splice(0, userEvents.length - 20);
+                }
+                
+                localStorage.setItem(`elitechat_user_${userId}`, JSON.stringify(userEvents));
+                
+                window.dispatchEvent(new CustomEvent(`elitechat_user_${userId}`, { detail: data }));
+            }
+            
+            saveMessageToStorage(message) {
+                const allMessages = JSON.parse(localStorage.getItem('elitechat_server_messages') || '[]');
+                allMessages.push(message);
+                
+                if (allMessages.length > 500) {
+                    allMessages.splice(0, allMessages.length - 500);
+                }
+                
+                localStorage.setItem('elitechat_server_messages', JSON.stringify(allMessages));
+            }
+            
+            savePrivateMessageToStorage(message) {
+                const pmKey = [message.from, message.to].sort().join('_');
+                const allPMs = JSON.parse(localStorage.getItem('elitechat_server_pms') || '{}');
+                
+                if (!allPMs[pmKey]) {
+                    allPMs[pmKey] = [];
+                }
+                
+                allPMs[pmKey].push(message);
+                
+                if (allPMs[pmKey].length > 200) {
+                    allPMs[pmKey].splice(0, allPMs[pmKey].length - 200);
+                }
+                
+                localStorage.setItem('elitechat_server_pms', JSON.stringify(allPMs));
+            }
+            
+            saveUsersToStorage() {
+                const userArray = Array.from(this.users.values());
+                localStorage.setItem('elitechat_server_users', JSON.stringify(userArray));
+            }
+            
+            saveChannelsToStorage() {
+                const channelArray = Array.from(this.channels.values());
+                localStorage.setItem('elitechat_server_channels', JSON.stringify(channelArray));
+            }
+            
+            disconnectUser(userId) {
+                this.users.delete(userId);
+                
+                this.channels.forEach(channel => {
+                    if (channel.users) {
+                        const index = channel.users.indexOf(userId);
+                        if (index > -1) {
+                            channel.users.splice(index, 1);
+                        }
+                    }
+                });
+                
+                this.saveChannelsToStorage();
+                this.saveUsersToStorage();
+                
+                this.broadcastToAll({
+                    type: 'user_left',
+                    userId: userId,
+                    timestamp: Date.now()
+                });
+            }
+        }
+
+        // ==================== İSTEMCİ (CLIENT) SİSTEMİ ====================
+        class EliteChatClient {
+            constructor() {
+                this.userId = null;
+                this.isConnected = false;
+                this.eventListeners = new Map();
+                this.server = window.eliteChatServer;
+                this.setupEventListeners();
+                this.startSync();
+            }
+            
+            connect(userData) {
+                if (!this.server) return false;
+                
+                this.userId = userData.id;
+                this.isConnected = true;
+                
+                this.server.registerUser(userData);
+                
+                console.log(`✅ Bağlantı kuruldu: ${userData.name}`);
+                
+                this.emit('connected', { user: userData });
+                
+                return true;
+            }
+            
+            sendMessage(channelId, text) {
+                if (!this.isConnected || !this.userId) return null;
+                
+                const messageData = {
+                    userId: this.userId,
+                    text: text,
+                    channel: channelId
+                };
+                
+                return this.server.sendMessage(messageData);
+            }
+            
+            sendPrivateMessage(toUserId, text) {
+                if (!this.isConnected || !this.userId) return null;
+                
+                const pmData = {
+                    from: this.userId,
+                    to: toUserId,
+                    text: text
+                };
+                
+                return this.server.sendPrivateMessage(pmData);
+            }
+            
+            createChannel(channelData) {
+                if (!this.isConnected) return null;
+                
+                return this.server.createChannel(channelData);
+            }
+            
+            on(event, callback) {
+                if (!this.eventListeners.has(event)) {
+                    this.eventListeners.set(event, []);
+                }
+                this.eventListeners.get(event).push(callback);
+            }
+            
+            emit(event, data) {
+                const listeners = this.eventListeners.get(event);
+                if (listeners) {
+                    listeners.forEach(callback => {
+                        try {
+                            callback(data);
+                        } catch (err) {
+                            console.error(`Event callback error (${event}):`, err);
+                        }
+                    });
+                }
+            }
+            
+            setupEventListeners() {
+                window.addEventListener('elitechat_broadcast', (e) => {
+                    const data = e.detail;
+                    this.handleServerEvent(data);
+                });
+                
+                const checkUserEvents = () => {
+                    if (this.userId) {
+                        const userEvents = JSON.parse(localStorage.getItem(`elitechat_user_${this.userId}`) || '[]');
+                        
+                        userEvents.forEach(event => {
+                            if (event._timestamp > (this.lastEventTime || 0)) {
+                                this.handleServerEvent(event);
+                                this.lastEventTime = event._timestamp;
+                            }
+                        });
+                    }
+                };
+                
+                setInterval(checkUserEvents, 1000);
+            }
+            
+            handleServerEvent(data) {
+                switch (data.type) {
+                    case 'new_message':
+                        this.emit('new_message', data);
+                        break;
+                        
+                    case 'private_message':
+                        this.emit('private_message', data);
+                        break;
+                        
+                    case 'user_joined':
+                        this.emit('user_joined', data);
+                        break;
+                        
+                    case 'user_left':
+                        this.emit('user_left', data);
+                        break;
+                        
+                    case 'channel_created':
+                        this.emit('channel_created', data);
+                        break;
+                }
+            }
+            
+            startSync() {
+                setInterval(() => {
+                    if (this.isConnected) {
+                        this.syncWithServer();
+                    }
+                }, 2000);
+            }
+            
+            syncWithServer() {
+                this.emit('sync_users', {
+                    users: Array.from(this.server?.users?.values() || [])
+                });
+                
+                this.emit('sync_channels', {
+                    channels: Array.from(this.server?.channels?.values() || [])
+                });
+            }
+            
+            disconnect() {
+                if (this.userId && this.server) {
+                    this.server.disconnectUser(this.userId);
+                }
+                
+                this.isConnected = false;
+                this.userId = null;
+                
+                this.emit('disconnected', {});
+            }
+        }
+
         // ==================== MATE BOT SİSTEMİ ====================
         class MateBot {
             constructor() {
@@ -1013,39 +1475,6 @@
                 if (SYSTEM.currentChannel === channelId) {
                     this.displayMessage(alertMessage);
                 }
-                
-                if (DATA.users['mateky'] && DATA.users['mateky'].online) {
-                    this.sendPrivateAlert(message, 'mateky');
-                }
-            }
-            
-            sendPrivateAlert(message, userId) {
-                const user = DATA.users[userId];
-                if (!user) return;
-                
-                const pmKey = [this.id, userId].sort().join('_');
-                if (!DATA.privateMessages.has(pmKey)) {
-                    DATA.privateMessages.set(pmKey, []);
-                }
-                
-                const messages = DATA.privateMessages.get(pmKey);
-                const alertMessage = {
-                    id: 'pm_alert_' + Date.now(),
-                    type: 'pm',
-                    from: this.id,
-                    to: userId,
-                    text: `🔐 **SİSTEM ALERT**: ${message}`,
-                    time: new Date(),
-                    read: false
-                };
-                
-                messages.push(alertMessage);
-                
-                if (SYSTEM.pmWindows[userId]) {
-                    this.displayPMMessage(alertMessage, userId);
-                }
-                
-                showNotification('🤖 Mate Alert', message, 'security');
             }
             
             displayMessage(message) {
@@ -1069,56 +1498,6 @@
                 
                 container.appendChild(messageDiv);
                 container.scrollTop = container.scrollHeight;
-            }
-            
-            displayPMMessage(message, userId) {
-                const container = document.getElementById(`pm-messages-${userId}`);
-                if (!container) return;
-                
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message message-incoming';
-                messageDiv.dataset.messageId = message.id;
-                
-                messageDiv.innerHTML = `
-                    <div class="message-sender">
-                        <span style="font-weight: 500; color: var(--accent-red);">${this.name}</span>
-                        ${getRoleBadge(this.role)}
-                    </div>
-                    <div class="message-text" style="background: rgba(239, 68, 68, 0.1); border-left: 3px solid var(--accent-red);">
-                        ${escapeHtml(message.text)}
-                    </div>
-                    <div class="message-time">${formatTime(message.time)}</div>
-                `;
-                
-                container.appendChild(messageDiv);
-                container.scrollTop = container.scrollHeight;
-            }
-            
-            checkUserSecurity(userId) {
-                const user = DATA.users[userId];
-                if (!user) return true;
-                
-                if (DATA.globalBans.has(userId)) {
-                    this.sendSecurityAlert(`${user.name} global banlı!`, 'general');
-                    return false;
-                }
-                
-                if (DATA.globalMutes.has(userId)) {
-                    this.sendSecurityAlert(`${user.name} global susturulmuş!`, 'general');
-                    return false;
-                }
-                
-                return true;
-            }
-            
-            broadcastOwnerMessage(message, targetUser = null) {
-                if (targetUser) {
-                    this.sendPrivateAlert(`📨 Owner Mesajı: ${message}`, targetUser);
-                } else {
-                    Object.keys(DATA.channels).forEach(channelId => {
-                        this.sendSecurityAlert(`📢 Owner Duyurusu: ${message}`, channelId);
-                    });
-                }
             }
         }
 
@@ -1178,7 +1557,6 @@
             const nick = nickInput.value.trim();
             const pass = passInput.value;
             
-            // Özel karakterleri temizle
             const cleanNick = nick.replace(/[^a-zA-Z0-9._]/g, '');
             
             if (!cleanNick || cleanNick.length < 2) {
@@ -1197,76 +1575,30 @@
                 return;
             }
             
-            if (!mateBot.checkUserSecurity(userId)) {
-                alert('Giriş engellendi!');
-                nickInput.value = '';
-                passInput.value = '';
-                nickInput.focus();
+            const userData = {
+                id: userId,
+                name: cleanNick,
+                role: 'user',
+                registered: !!pass,
+                online: true,
+                invisible: false,
+                avatar: cleanNick.charAt(0).toUpperCase(),
+                bio: '',
+                joinDate: new Date().toISOString(),
+                lastSeen: new Date().toISOString()
+            };
+            
+            const client = window.eliteChatClient;
+            const connected = client.connect(userData);
+            
+            if (!connected) {
+                alert('Sunucuya bağlanılamadı!');
                 return;
             }
             
-            // Basitleştirilmiş giriş sistemi
-            if (DATA.registeredUsers.has(userId)) {
-                const userData = DATA.registeredUsers.get(userId);
-                const hashedPass = hashPassword(pass);
-                if (hashedPass !== userData.password) {
-                    alert('Yanlış şifre!');
-                    mateBot.sendSecurityAlert(`${cleanNick} yanlış şifre denemesi!`);
-                    passInput.value = '';
-                    passInput.focus();
-                    return;
-                }
-                
-                SYSTEM.currentUser = {
-                    id: userId,
-                    name: cleanNick,
-                    role: userData.role || 'user',
-                    registered: true,
-                    online: true,
-                    invisible: false,
-                    avatar: cleanNick.charAt(0).toUpperCase(),
-                    bio: userData.bio || '',
-                    joinDate: userData.joinDate || new Date(),
-                    lastSeen: new Date()
-                };
-            } else {
-                SYSTEM.currentUser = {
-                    id: userId,
-                    name: cleanNick,
-                    role: 'user',
-                    registered: !!pass,
-                    online: true,
-                    invisible: false,
-                    avatar: cleanNick.charAt(0).toUpperCase(),
-                    bio: '',
-                    joinDate: new Date(),
-                    lastSeen: new Date()
-                };
-                
-                if (pass) {
-                    DATA.registeredUsers.set(userId, {
-                        password: hashPassword(pass),
-                        role: 'user',
-                        bio: '',
-                        joinDate: new Date()
-                    });
-                    
-                    if (userId === 'mateky') {
-                        SYSTEM.currentUser.role = 'owner';
-                        DATA.registeredUsers.get(userId).role = 'owner';
-                        mateBot.broadcastOwnerMessage('Owner sisteme giriş yaptı!');
-                    }
-                }
-                
-                mateBot.sendSecurityAlert(`Yeni kullanıcı: ${cleanNick} ${pass ? '(kayıtlı)' : '(misafir)'}`);
-            }
-            
-            nickInput.value = '';
-            passInput.value = '';
-            
-            DATA.users[userId] = SYSTEM.currentUser;
+            SYSTEM.currentUser = userData;
+            DATA.users[userId] = userData;
             DATA.onlineUsers.add(userId);
-            DATA.channels.general.users.add(userId);
             
             document.getElementById('loginScreen').classList.add('hidden');
             document.getElementById('app').classList.remove('hidden');
@@ -1278,6 +1610,9 @@
             loadChannelMessages('general');
             
             startAutoUpdates();
+            
+            nickInput.value = '';
+            passInput.value = '';
         }
 
         // ==================== ONLINE LİSTE SİSTEMİ ====================
@@ -1412,20 +1747,21 @@
                 }
             }
             
-            const message = {
-                id: generateMessageId(),
-                type: 'message',
-                userId: SYSTEM.currentUser.id,
-                text: text,
-                time: new Date(),
-                channel: SYSTEM.currentChannel
-            };
+            const client = window.eliteChatClient;
+            const serverMessage = client.sendMessage(SYSTEM.currentChannel, text);
             
-            channel.messages.push(message);
-            addMessageToChat(message, SYSTEM.currentUser);
-            
-            if (text.length > 500) {
-                mateBot.sendSecurityAlert(`${SYSTEM.currentUser.name} uzun mesaj gönderdi (${text.length} karakter)`);
+            if (serverMessage) {
+                const localMessage = {
+                    id: serverMessage.id,
+                    type: 'message',
+                    userId: SYSTEM.currentUser.id,
+                    text: text,
+                    time: new Date(serverMessage.time),
+                    channel: SYSTEM.currentChannel
+                };
+                
+                channel.messages.push(localMessage);
+                addMessageToChat(localMessage, SYSTEM.currentUser);
             }
         }
 
@@ -1435,37 +1771,36 @@
                 return;
             }
             
-            const pmKey = [SYSTEM.currentUser.id, toUserId].sort().join('_');
+            const client = window.eliteChatClient;
+            const serverPM = client.sendPrivateMessage(toUserId, text);
             
-            if (!DATA.privateMessages.has(pmKey)) {
-                DATA.privateMessages.set(pmKey, []);
-            }
-            
-            const messages = DATA.privateMessages.get(pmKey);
-            const message = {
-                id: generateMessageId(),
-                type: 'pm',
-                from: SYSTEM.currentUser.id,
-                to: toUserId,
-                text: text,
-                time: new Date(),
-                read: false
-            };
-            
-            messages.push(message);
-            
-            if (SYSTEM.pmWindows[toUserId]) {
-                addMessageToPMWindow(toUserId, message);
-            }
-            
-            updatePMConversationList();
-            
-            if (toUserId !== SYSTEM.currentUser.id) {
+            if (serverPM) {
+                const pmKey = [SYSTEM.currentUser.id, toUserId].sort().join('_');
+                
+                if (!DATA.privateMessages.has(pmKey)) {
+                    DATA.privateMessages.set(pmKey, []);
+                }
+                
+                const messages = DATA.privateMessages.get(pmKey);
+                const localMessage = {
+                    id: serverPM.id,
+                    type: 'pm',
+                    from: SYSTEM.currentUser.id,
+                    to: toUserId,
+                    text: text,
+                    time: new Date(serverPM.time),
+                    read: false
+                };
+                
+                messages.push(localMessage);
+                
+                if (SYSTEM.pmWindows[toUserId]) {
+                    addMessageToPMWindow(toUserId, localMessage);
+                }
+                
+                updatePMConversationList();
+                
                 showNotification(DATA.users[toUserId].name, text, 'pm');
-            }
-            
-            if (text.toLowerCase().includes('şifre') || text.toLowerCase().includes('password')) {
-                mateBot.sendSecurityAlert(`${SYSTEM.currentUser.name} şifre içeren özel mesaj gönderdi: ${toUserId} kullanıcısına`);
             }
         }
 
@@ -1614,1543 +1949,70 @@
                 return;
             }
             
-            DATA.channels[channelId] = {
-                id: channelId,
+            const client = window.eliteChatClient;
+            const channelData = {
                 name: name,
                 owner: SYSTEM.currentUser.id,
                 type: type,
-                topic: topic,
-                users: new Set([SYSTEM.currentUser.id, 'mate']),
-                operators: new Set(),
-                voices: new Set(),
-                bans: new Map(),
-                mutes: new Map(),
-                slowmode: 0,
-                locked: false,
-                userLimit: 0,
-                messages: [],
-                video: {
-                    id: 'jfKfPfyJRdk',
-                    title: 'Lofi Hip Hop Radio 📚',
-                    channel: name.replace('#', '')
-                }
+                topic: topic
             };
             
-            DATA.userChannels.set(SYSTEM.currentUser.id, channelId);
+            const newChannel = client.createChannel(channelData);
             
-            mateBot.sendSecurityAlert(`Yeni kanal oluşturuldu: ${name} (${SYSTEM.currentUser.name} tarafından)`, channelId);
-            
-            const tabsContainer = document.getElementById('channelTabs');
-            const tab = document.createElement('div');
-            tab.className = 'channel-tab';
-            tab.dataset.channel = channelId;
-            tab.innerHTML = `<i class="fas fa-hashtag"></i> ${name.substring(1)}`;
-            tab.addEventListener('click', () => switchChannel(channelId));
-            tabsContainer.appendChild(tab);
-            
-            switchChannel(channelId);
-            closeModal('channelModal');
-            
-            nameInput.value = '';
-            topicInput.value = '';
-            
-            addSystemMessage(`🎊 ${SYSTEM.currentUser.name} yeni kanal oluşturdu: ${name}`);
-        }
-
-        // ==================== VIDEO SİSTEMİ ====================
-        function loadChannelVideo() {
-            const channel = DATA.channels[SYSTEM.currentChannel];
-            if (!channel || !channel.video) return;
-            
-            const player = document.getElementById('youtubePlayer');
-            const titleElement = document.getElementById('videoTitle');
-            
-            if (player && titleElement) {
-                player.src = `https://www.youtube-nocookie.com/embed/${channel.video.id}?autoplay=1&mute=1&rel=0&controls=1&modestbranding=1`;
-                titleElement.textContent = channel.video.title;
-                document.getElementById('panelChannelVideo').textContent = channel.video.title;
-            }
-        }
-
-        function changeChannelVideo() {
-            const channel = DATA.channels[SYSTEM.currentChannel];
-            if (!channel) return;
-            
-            if (!hasVideoPermission(SYSTEM.currentChannel)) {
-                alert('Video değiştirme yetkiniz yok!');
-                return;
-            }
-            
-            document.getElementById('videoUrl').value = '';
-            document.getElementById('videoTitleInput').value = channel.video.title || '';
-            openModal('videoModal');
-        }
-
-        function saveChannelVideo() {
-            const urlInput = document.getElementById('videoUrl');
-            const titleInput = document.getElementById('videoTitleInput');
-            
-            const url = urlInput.value.trim();
-            const title = titleInput.value.trim() || 'YouTube Video';
-            
-            if (!url) {
-                alert('YouTube URL veya Video ID gerekli!');
-                return;
-            }
-            
-            let videoId = url;
-            
-            try {
-                if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                    const urlObj = new URL(url.includes('http') ? url : 'https://' + url);
-                    if (urlObj.hostname.includes('youtu.be')) {
-                        videoId = urlObj.pathname.substring(1);
-                    } else {
-                        videoId = urlObj.searchParams.get('v') || url.split('v=')[1]?.split('&')[0];
+            if (newChannel) {
+                DATA.channels[channelId] = {
+                    id: channelId,
+                    name: name,
+                    owner: SYSTEM.currentUser.id,
+                    type: type,
+                    topic: topic,
+                    users: new Set([SYSTEM.currentUser.id, 'mate']),
+                    operators: new Set(),
+                    voices: new Set(),
+                    bans: new Map(),
+                    mutes: new Map(),
+                    slowmode: 0,
+                    locked: false,
+                    userLimit: 0,
+                    messages: [],
+                    video: {
+                        id: 'jfKfPfyJRdk',
+                        title: 'Lofi Hip Hop Radio 📚',
+                        channel: name.replace('#', '')
                     }
-                }
-                
-                if (!videoId || videoId.length !== 11) {
-                    throw new Error('Geçersiz Video ID');
-                }
-            } catch (e) {
-                if (url.length === 11) {
-                    videoId = url;
-                } else {
-                    alert('Geçerli bir YouTube URL veya Video ID girin!');
-                    return;
-                }
-            }
-            
-            const channel = DATA.channels[SYSTEM.currentChannel];
-            if (channel) {
-                channel.video = {
-                    id: videoId,
-                    title: title,
-                    channel: channel.name.replace('#', '')
                 };
                 
-                loadChannelVideo();
+                DATA.userChannels.set(SYSTEM.currentUser.id, channelId);
                 
-                mateBot.sendSecurityAlert(`${SYSTEM.currentUser.name} video değiştirdi: ${title}`, SYSTEM.currentChannel);
-                
-                addSystemMessage(`🎥 ${SYSTEM.currentUser.name} kanal videosunu değiştirdi: ${title}`);
-                closeModal('videoModal');
-            }
-        }
-
-        // ==================== KAMERA SİSTEMİ (SADECE ÖZEL SOHBET) ====================
-        async function openCameraModal(targetUserId = null) {
-            try {
-                if (!targetUserId) {
-                    alert('Kamera sadece özel sohbetlerde kullanılabilir!');
-                    return;
-                }
-                
-                SYSTEM.uploadType = { 
-                    type: 'camera', 
-                    target: targetUserId,
-                    isPM: true,
-                    facingMode: SYSTEM.facingMode 
-                };
-                
-                openModal('cameraModal');
-                
-                const constraints = {
-                    video: { 
-                        facingMode: SYSTEM.facingMode,
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    },
-                    audio: true
-                };
-                
-                if (SYSTEM.cameraStream) {
-                    stopCamera();
-                }
-                
-                SYSTEM.cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-                const preview = document.getElementById('cameraPreview');
-                preview.srcObject = SYSTEM.cameraStream;
-                
-                document.getElementById('captureImageBtn').disabled = false;
-                document.getElementById('recordVideoBtn').disabled = false;
-                document.getElementById('switchCameraBtn').disabled = false;
-                
-            } catch (err) {
-                console.error('Kamera hatası:', err);
-                alert('Kamera erişim izni gerekiyor!');
-                closeModal('cameraModal');
-            }
-        }
-
-        async function switchCamera() {
-            if (!SYSTEM.cameraStream) return;
-            
-            stopCamera();
-            
-            SYSTEM.facingMode = SYSTEM.facingMode === 'user' ? 'environment' : 'user';
-            SYSTEM.uploadType.facingMode = SYSTEM.facingMode;
-            
-            await openCameraModal(SYSTEM.uploadType?.target);
-        }
-
-        function stopCamera() {
-            if (SYSTEM.cameraStream) {
-                SYSTEM.cameraStream.getTracks().forEach(track => track.stop());
-                SYSTEM.cameraStream = null;
-            }
-            
-            if (SYSTEM.mediaRecorder && SYSTEM.isRecording) {
-                SYSTEM.mediaRecorder.stop();
-                SYSTEM.isRecording = false;
-            }
-            
-            const preview = document.getElementById('cameraPreview');
-            if (preview) {
-                preview.srcObject = null;
-            }
-        }
-
-        function captureImage() {
-            const video = document.getElementById('cameraPreview');
-            const canvas = document.getElementById('cameraCanvas');
-            const previewArea = document.getElementById('cameraPreviewArea');
-            const sendBtn = document.getElementById('sendCameraMedia');
-            
-            if (!video || !canvas) return;
-            
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            const imageData = canvas.toDataURL('image/jpeg');
-            
-            previewArea.style.display = 'block';
-            previewArea.innerHTML = `
-                <h4 style="margin-bottom: 10px; font-size: 14px;">Fotoğraf Önizleme:</h4>
-                <img src="${imageData}" style="max-width: 100%; max-height: 200px; border-radius: 8px; border: 2px solid var(--accent-blue);">
-                <div style="margin-top: 10px; font-size: 12px; color: var(--text-secondary);">
-                    Fotoğraf hazır! Göndermek için "Gönder" butonuna basın.
-                </div>
-            `;
-            
-            sendBtn.disabled = false;
-            SYSTEM.uploadType.mediaData = imageData;
-            SYSTEM.uploadType.mediaType = 'image';
-        }
-
-        function startRecording() {
-            if (!SYSTEM.cameraStream) return;
-            
-            const recordBtn = document.getElementById('recordVideoBtn');
-            const stopBtn = document.getElementById('stopRecordingBtn');
-            const sendBtn = document.getElementById('sendCameraMedia');
-            
-            SYSTEM.recordedChunks = [];
-            SYSTEM.mediaRecorder = new MediaRecorder(SYSTEM.cameraStream, {
-                mimeType: 'video/webm;codecs=vp9'
-            });
-            
-            SYSTEM.mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    SYSTEM.recordedChunks.push(event.data);
-                }
-            };
-            
-            SYSTEM.mediaRecorder.onstop = () => {
-                const blob = new Blob(SYSTEM.recordedChunks, { type: 'video/webm' });
-                const url = URL.createObjectURL(blob);
-                
-                const previewArea = document.getElementById('cameraPreviewArea');
-                previewArea.style.display = 'block';
-                previewArea.innerHTML = `
-                    <h4 style="margin-bottom: 10px; font-size: 14px;">Video Önizleme:</h4>
-                    <video src="${url}" controls style="max-width: 100%; max-height: 200px; border-radius: 8px; border: 2px solid var(--accent-blue);"></video>
-                    <div style="margin-top: 10px; font-size: 12px; color: var(--text-secondary);">
-                        Video hazır! Göndermek için "Gönder" butonuna basın.
-                    </div>
-                `;
-                
-                sendBtn.disabled = false;
-                SYSTEM.uploadType.mediaData = url;
-                SYSTEM.uploadType.mediaType = 'video';
-                SYSTEM.uploadType.mediaBlob = blob;
-            };
-            
-            SYSTEM.mediaRecorder.start();
-            SYSTEM.isRecording = true;
-            
-            recordBtn.style.display = 'none';
-            stopBtn.style.display = 'inline-flex';
-        }
-
-        function stopRecording() {
-            if (SYSTEM.mediaRecorder && SYSTEM.isRecording) {
-                SYSTEM.mediaRecorder.stop();
-                SYSTEM.isRecording = false;
-                
-                const recordBtn = document.getElementById('recordVideoBtn');
-                const stopBtn = document.getElementById('stopRecordingBtn');
-                
-                recordBtn.style.display = 'inline-flex';
-                stopBtn.style.display = 'none';
-            }
-        }
-
-        function sendCameraMedia() {
-            if (!SYSTEM.uploadType || !SYSTEM.uploadType.mediaData || !SYSTEM.uploadType.target) return;
-            
-            const uploadType = SYSTEM.uploadType;
-            
-            if (uploadType.mediaType === 'image') {
-                sendPrivateMediaMessage(uploadType.target, uploadType.mediaData, 'image');
-            } else if (uploadType.mediaType === 'video') {
-                sendPrivateMediaMessage(uploadType.target, uploadType.mediaData, 'video');
-            }
-            
-            document.getElementById('cameraPreviewArea').style.display = 'none';
-            document.getElementById('sendCameraMedia').disabled = true;
-            
-            stopCamera();
-            closeModal('cameraModal');
-            
-            showNotification('Kamera', `${uploadType.mediaType} başarıyla gönderildi.`);
-        }
-
-        function sendPrivateMediaMessage(userId, mediaData, mediaType) {
-            if (!DATA.users[userId]) return;
-            
-            const pmKey = [SYSTEM.currentUser.id, userId].sort().join('_');
-            
-            if (!DATA.privateMessages.has(pmKey)) {
-                DATA.privateMessages.set(pmKey, []);
-            }
-            
-            const messages = DATA.privateMessages.get(pmKey);
-            const message = {
-                id: generateMessageId(),
-                type: 'pm',
-                from: SYSTEM.currentUser.id,
-                to: userId,
-                text: `[${mediaType.toUpperCase()}] Kamera ile gönderildi`,
-                mediaType: mediaType,
-                mediaData: mediaData,
-                time: new Date(),
-                read: false
-            };
-            
-            messages.push(message);
-            
-            if (SYSTEM.pmWindows[userId]) {
-                addMediaToPMWindow(userId, message);
-            }
-            
-            updatePMConversationList();
-            showNotification(DATA.users[userId].name, `${mediaType} gönderildi`, 'pm');
-        }
-
-        // ==================== ÖZEL SOHBET SİSTEMİ ====================
-        function openPrivateChat(userId) {
-            if (!DATA.users[userId] || userId === SYSTEM.currentUser.id) return;
-            
-            SYSTEM.activePM = userId;
-            
-            if (SYSTEM.pmWindows[userId]) {
-                SYSTEM.pmWindows[userId].classList.remove('minimized');
-                return;
-            }
-            
-            createPMWindow(userId);
-            updateOnlineList();
-            updatePMConversationList();
-        }
-
-        function createPMWindow(userId) {
-            const user = DATA.users[userId];
-            if (!user) return;
-            
-            const pmWindow = document.createElement('div');
-            pmWindow.className = 'pm-window';
-            pmWindow.id = `pm-window-${userId}`;
-            
-            const displayName = user.id === 'mate' ? '🤖Mate' : user.name;
-            
-            pmWindow.innerHTML = `
-                <div class="pm-window-header" data-user-id="${userId}">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="user-avatar ${user.online ? 'online' : ''}" style="width: 30px; height: 30px; font-size: 14px;">
-                            ${user.avatar}
-                        </div>
-                        <div>
-                            <div style="font-weight: 600; font-size: 14px;">
-                                ${escapeHtml(displayName)}
-                                ${getRoleBadge(user.role)}
-                            </div>
-                            <div style="font-size: 11px; color: var(--text-secondary);">
-                                ${user.online ? '🟢 Çevrimiçi' : '⚫ Çevrimdışı'}
-                            </div>
-                        </div>
-                    </div>
-                    <div style="display: flex; gap: 5px;">
-                        <button class="btn btn-sm btn-minimize-pm" style="background: none; border: none; color: var(--text-secondary); padding: 4px 8px;">
-                            <i class="fas fa-minus"></i>
-                        </button>
-                        <button class="btn btn-sm btn-close-pm" style="background: none; border: none; color: var(--text-secondary); padding: 4px 8px;">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="pm-window-messages" id="pm-messages-${userId}">
-                    <!-- Mesajlar buraya gelecek -->
-                </div>
-                <div class="pm-window-input">
-                    <div class="message-input-container">
-                        <textarea class="message-input pm-input" id="pm-input-${userId}" 
-                                  placeholder="${displayName} ile mesajlaşın..." 
-                                  rows="2"></textarea>
-                    </div>
-                    <div class="input-actions" style="margin-top: 10px;">
-                        <div class="flex gap-2">
-                            <button class="btn btn-secondary btn-sm btn-pm-image" data-user-id="${userId}">
-                                <i class="fas fa-image"></i>
-                            </button>
-                            <button class="btn btn-secondary btn-sm btn-pm-camera" data-user-id="${userId}">
-                                <i class="fas fa-camera"></i>
-                            </button>
-                        </div>
-                        <button class="btn btn-primary btn-send-pm" data-user-id="${userId}">
-                            <i class="fas fa-paper-plane"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-            
-            document.body.appendChild(pmWindow);
-            SYSTEM.pmWindows[userId] = pmWindow;
-            
-            const header = pmWindow.querySelector('.pm-window-header');
-            const minimizeBtn = pmWindow.querySelector('.btn-minimize-pm');
-            const closeBtn = pmWindow.querySelector('.btn-close-pm');
-            const sendBtn = pmWindow.querySelector('.btn-send-pm');
-            const input = pmWindow.querySelector(`#pm-input-${userId}`);
-            
-            header.addEventListener('click', (e) => {
-                if (e.target === header || e.target.closest('.pm-window-header') === header) {
-                    pmWindow.classList.toggle('minimized');
-                }
-            });
-            
-            minimizeBtn?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                pmWindow.classList.toggle('minimized');
-            });
-            
-            closeBtn?.addEventListener('click', () => {
-                closePMWindow(userId);
-            });
-            
-            sendBtn?.addEventListener('click', () => {
-                const text = input.value.trim();
-                if (text) {
-                    sendPrivateMessage(userId, text);
-                    input.value = '';
-                    input.focus();
-                }
-            });
-            
-            input?.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    const text = input.value.trim();
-                    if (text) {
-                        sendPrivateMessage(userId, text);
-                        input.value = '';
-                    }
-                }
-            });
-            
-            pmWindow.querySelector('.btn-pm-image')?.addEventListener('click', () => {
-                SYSTEM.uploadType = { type: 'image', target: userId, isPM: true };
-                openUploadModal('Resim Gönder');
-            });
-            
-            pmWindow.querySelector('.btn-pm-camera')?.addEventListener('click', () => {
-                openCameraModal(userId);
-            });
-            
-            loadPMMessages(userId);
-        }
-
-        function closePMWindow(userId) {
-            const pmWindow = document.getElementById(`pm-window-${userId}`);
-            if (pmWindow) {
-                pmWindow.remove();
-                delete SYSTEM.pmWindows[userId];
-                
-                if (SYSTEM.activePM === userId) {
-                    SYSTEM.activePM = null;
-                    updateOnlineList();
-                }
-            }
-        }
-
-        function loadPMMessages(userId) {
-            const container = document.getElementById(`pm-messages-${userId}`);
-            if (!container) return;
-            
-            clearContainer(`pm-messages-${userId}`);
-            
-            const pmKey = [SYSTEM.currentUser.id, userId].sort().join('_');
-            const messages = DATA.privateMessages.get(pmKey) || [];
-            
-            if (messages.length === 0) {
-                container.innerHTML = `
-                    <div style="text-align: center; padding: 40px 20px; color: var(--text-secondary);">
-                        <i class="fas fa-comment" style="font-size: 48px; margin-bottom: 15px; opacity: 0.5;"></i>
-                        <h3 style="margin-bottom: 10px;">${DATA.users[userId]?.name} ile Sohbet</h3>
-                        <p>Henüz mesaj yok. İlk mesajı siz gönderin!</p>
-                    </div>
-                `;
-                return;
-            }
-            
-            messages.forEach(msg => {
-                const isOutgoing = msg.from === SYSTEM.currentUser.id;
-                const sender = DATA.users[msg.from];
-                if (!sender) return;
-                
-                const displayName = sender.id === 'mate' ? '🤖Mate' : sender.name;
-                
-                if (msg.mediaType) {
-                    addMediaToPMWindowElement(container, msg, sender, isOutgoing, displayName);
-                } else {
-                    const messageDiv = document.createElement('div');
-                    messageDiv.className = `message ${isOutgoing ? 'message-outgoing' : 'message-incoming'}`;
-                    messageDiv.dataset.messageId = msg.id;
-                    
-                    messageDiv.innerHTML = `
-                        <div class="message-sender">
-                            <span style="font-weight: 500;">${escapeHtml(displayName)}</span>
-                            ${getRoleBadge(sender.role)}
-                        </div>
-                        <div class="message-text">${escapeHtml(msg.text)}</div>
-                        <div class="message-time">${formatTime(msg.time)}</div>
-                    `;
-                    
-                    container.appendChild(messageDiv);
-                }
-            });
-            
-            container.scrollTop = container.scrollHeight;
-        }
-
-        function addMediaToPMWindowElement(container, msg, sender, isOutgoing, displayName) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isOutgoing ? 'message-outgoing' : 'message-incoming'}`;
-            messageDiv.dataset.messageId = msg.id;
-            messageDiv.dataset.mediaType = msg.mediaType;
-            
-            let mediaHtml = '';
-            if (msg.mediaType === 'image') {
-                mediaHtml = `
-                    <div class="pm-media-container">
-                        <img src="${msg.mediaData}" alt="Gönderilen resim">
-                        <div class="pm-media-info">📸 Kamera</div>
-                    </div>
-                `;
-            } else if (msg.mediaType === 'video') {
-                mediaHtml = `
-                    <div class="pm-media-container">
-                        <video src="${msg.mediaData}" controls></video>
-                        <div class="pm-media-info">🎥 Kamera Video</div>
-                    </div>
-                `;
-            }
-            
-            messageDiv.innerHTML = `
-                <div class="message-sender">
-                    <span style="font-weight: 500;">${escapeHtml(displayName)}</span>
-                    ${getRoleBadge(sender.role)}
-                </div>
-                ${mediaHtml}
-                <div class="message-text" style="margin-top: 8px;">${escapeHtml(msg.text)}</div>
-                <div class="message-time">${formatTime(msg.time)}</div>
-            `;
-            
-            container.appendChild(messageDiv);
-        }
-
-        function addMessageToPMWindow(userId, message) {
-            const container = document.getElementById(`pm-messages-${userId}`);
-            if (!container) return;
-            
-            if (container.children.length === 1 && 
-                container.children[0].querySelector('.fas.fa-comment')) {
-                clearContainer(`pm-messages-${userId}`);
-            }
-            
-            const isOutgoing = message.from === SYSTEM.currentUser.id;
-            const sender = DATA.users[message.from];
-            if (!sender) return;
-            
-            const displayName = sender.id === 'mate' ? '🤖Mate' : sender.name;
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isOutgoing ? 'message-outgoing' : 'message-incoming'}`;
-            messageDiv.dataset.messageId = message.id;
-            
-            messageDiv.innerHTML = `
-                <div class="message-sender">
-                    <span style="font-weight: 500;">${escapeHtml(displayName)}</span>
-                    ${getRoleBadge(sender.role)}
-                </div>
-                <div class="message-text">${escapeHtml(message.text)}</div>
-                <div class="message-time">${formatTime(message.time)}</div>
-            `;
-            
-            container.appendChild(messageDiv);
-            container.scrollTop = container.scrollHeight;
-        }
-
-        function addMediaToPMWindow(userId, message) {
-            const container = document.getElementById(`pm-messages-${userId}`);
-            if (!container) return;
-            
-            if (container.children.length === 1 && 
-                container.children[0].querySelector('.fas.fa-comment')) {
-                clearContainer(`pm-messages-${userId}`);
-            }
-            
-            const isOutgoing = message.from === SYSTEM.currentUser.id;
-            const sender = DATA.users[message.from];
-            if (!sender) return;
-            
-            const displayName = sender.id === 'mate' ? '🤖Mate' : sender.name;
-            
-            addMediaToPMWindowElement(container, message, sender, isOutgoing, displayName);
-            container.scrollTop = container.scrollHeight;
-        }
-
-        function updatePMConversationList() {
-            const container = document.getElementById('pmConversationList');
-            if (!container) return;
-            
-            clearContainer('pmConversationList');
-            
-            const conversations = new Map();
-            
-            DATA.privateMessages.forEach((messages, pmKey) => {
-                const [user1, user2] = pmKey.split('_');
-                const otherUserId = user1 === SYSTEM.currentUser.id ? user2 : 
-                                  user2 === SYSTEM.currentUser.id ? user1 : null;
-                
-                if (otherUserId && DATA.users[otherUserId]) {
-                    const lastMessage = messages[messages.length - 1];
-                    const unreadCount = messages.filter(m => 
-                        m.from !== SYSTEM.currentUser.id && !m.read
-                    ).length;
-                    
-                    conversations.set(otherUserId, {
-                        user: DATA.users[otherUserId],
-                        lastMessage: lastMessage,
-                        unreadCount: unreadCount,
-                        messageCount: messages.length
-                    });
-                }
-            });
-            
-            const sortedConversations = Array.from(conversations.values())
-                .sort((a, b) => {
-                    if (!a.lastMessage) return 1;
-                    if (!b.lastMessage) return -1;
-                    return new Date(b.lastMessage.time) - new Date(a.lastMessage.time);
-                });
-            
-            if (sortedConversations.length === 0) {
-                container.innerHTML = `
-                    <div style="text-align: center; padding: 30px 20px; color: var(--text-secondary);">
-                        <i class="fas fa-comments" style="font-size: 32px; margin-bottom: 10px; opacity: 0.5;"></i>
-                        <div style="font-size: 13px;">Henüz özel sohbetiniz yok</div>
-                    </div>
-                `;
-                return;
-            }
-            
-            sortedConversations.forEach(conv => {
-                const item = document.createElement('div');
-                item.className = `pm-item ${conv.unreadCount > 0 ? 'unread' : ''}`;
-                
-                const displayName = conv.user.id === 'mate' ? '🤖Mate' : conv.user.name;
-                
-                const lastMessageText = conv.lastMessage ? 
-                    (conv.lastMessage.text.length > 30 ? 
-                     conv.lastMessage.text.substring(0, 30) + '...' : 
-                     conv.lastMessage.text) : 
-                    'Mesaj yok';
-                
-                const lastMessageTime = conv.lastMessage ? 
-                    formatTime(conv.lastMessage.time) : '';
-                
-                item.innerHTML = `
-                    <div class="pm-avatar">
-                        ${conv.user.avatar}
-                    </div>
-                    <div class="pm-info">
-                        <div class="pm-name">
-                            ${escapeHtml(displayName)}
-                            ${conv.unreadCount > 0 ? 
-                              `<span style="background: var(--accent-blue); color: white; font-size: 10px; padding: 1px 5px; border-radius: 10px; margin-left: 5px;">${conv.unreadCount}</span>` : 
-                              ''}
-                        </div>
-                        <div class="pm-preview">${escapeHtml(lastMessageText)}</div>
-                    </div>
-                    <div class="pm-time">${lastMessageTime}</div>
-                `;
-                
-                item.addEventListener('click', () => {
-                    openPrivateChat(conv.user.id);
-                });
-                
-                container.appendChild(item);
-            });
-        }
-
-        // ==================== DOSYA YÜKLEME SİSTEMİ (SADECE ÖZEL SOHBET) ====================
-        function openUploadModal(title) {
-            const modal = document.getElementById('uploadModal');
-            const titleElement = document.getElementById('uploadTitle');
-            const dropZone = document.getElementById('uploadDropZone');
-            const fileInput = document.getElementById('fileInput');
-            const preview = document.getElementById('uploadPreview');
-            const progress = document.getElementById('uploadProgress');
-            const sendBtn = document.getElementById('sendUpload');
-            
-            if (!modal || !titleElement) return;
-            
-            // Sadece özel sohbet için dosya gönderme izni
-            if (!SYSTEM.uploadType || !SYSTEM.uploadType.isPM) {
-                alert('Dosya gönderme sadece özel sohbetlerde mümkündür!');
-                return;
-            }
-            
-            titleElement.textContent = title;
-            preview.style.display = 'none';
-            preview.innerHTML = '';
-            progress.style.display = 'none';
-            sendBtn.disabled = true;
-            fileInput.value = '';
-            
-            dropZone.onclick = () => fileInput.click();
-            
-            dropZone.ondragover = (e) => {
-                e.preventDefault();
-                dropZone.style.borderColor = 'var(--accent-blue)';
-                dropZone.style.background = 'var(--bg-tertiary)';
-            };
-            
-            dropZone.ondragleave = () => {
-                dropZone.style.borderColor = 'var(--border-light)';
-                dropZone.style.background = 'transparent';
-            };
-            
-            dropZone.ondrop = (e) => {
-                e.preventDefault();
-                dropZone.style.borderColor = 'var(--border-light)';
-                dropZone.style.background = 'transparent';
-                
-                if (e.dataTransfer.files.length > 0) {
-                    handleFileSelect(e.dataTransfer.files[0]);
-                }
-            };
-            
-            fileInput.onchange = () => {
-                if (fileInput.files.length > 0) {
-                    handleFileSelect(fileInput.files[0]);
-                }
-            };
-            
-            modal.style.display = 'flex';
-        }
-
-        function handleFileSelect(file) {
-            if (!file) return;
-            
-            if (file.size > 10 * 1024 * 1024) {
-                alert('Dosya çok büyük! Maksimum 10MB.');
-                return;
-            }
-            
-            const preview = document.getElementById('uploadPreview');
-            const sendBtn = document.getElementById('sendUpload');
-            
-            preview.style.display = 'block';
-            
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    preview.innerHTML = `
-                        <div style="text-align: center;">
-                            <img src="${e.target.result}" style="max-width: 100%; max-height: 200px; border-radius: 8px;">
-                            <div style="margin-top: 10px; font-size: 13px;">
-                                ${escapeHtml(file.name)} (${(file.size / 1024).toFixed(1)} KB)
-                            </div>
-                        </div>
-                    `;
-                    sendBtn.disabled = false;
-                    SYSTEM.uploadType.fileData = e.target.result;
-                    SYSTEM.uploadType.fileName = file.name;
-                    SYSTEM.uploadType.fileSize = file.size;
-                    SYSTEM.uploadType.fileType = 'image';
-                };
-                reader.readAsDataURL(file);
-            } else if (file.type.startsWith('video/')) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    preview.innerHTML = `
-                        <div style="text-align: center;">
-                            <div style="background: var(--bg-tertiary); padding: 20px; border-radius: 8px; margin-bottom: 10px;">
-                                <i class="fas fa-video" style="font-size: 48px; color: var(--text-secondary);"></i>
-                            </div>
-                            <div style="font-size: 13px;">
-                                ${escapeHtml(file.name)} (${(file.size / 1024).toFixed(1)} KB)
-                            </div>
-                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
-                                ${escapeHtml(file.type)}
-                            </div>
-                        </div>
-                    `;
-                    sendBtn.disabled = false;
-                    SYSTEM.uploadType.fileData = e.target.result;
-                    SYSTEM.uploadType.fileName = file.name;
-                    SYSTEM.uploadType.fileSize = file.size;
-                    SYSTEM.uploadType.fileType = 'video';
-                };
-                reader.readAsDataURL(file);
-            } else {
-                preview.innerHTML = `
-                    <div style="text-align: center;">
-                        <div style="background: var(--bg-tertiary); padding: 20px; border-radius: 8px; margin-bottom: 10px;">
-                            <i class="fas fa-file" style="font-size: 48px; color: var(--text-secondary);"></i>
-                        </div>
-                        <div style="font-size: 13px;">
-                            ${escapeHtml(file.name)} (${(file.size / 1024).toFixed(1)} KB)
-                        </div>
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
-                            ${escapeHtml(file.type || 'Bilinmeyen dosya türü')}
-                        </div>
-                    </div>
-                `;
-                sendBtn.disabled = false;
-                SYSTEM.uploadType.fileData = null;
-                SYSTEM.uploadType.fileName = file.name;
-                SYSTEM.uploadType.fileSize = file.size;
-                SYSTEM.uploadType.fileType = 'file';
-            }
-        }
-
-        function uploadFile() {
-            const uploadType = SYSTEM.uploadType;
-            
-            if (!uploadType || !uploadType.isPM || !uploadType.target) {
-                alert('Dosya gönderme hatası!');
-                return;
-            }
-            
-            const progress = document.getElementById('uploadProgress');
-            const progressBar = document.getElementById('uploadProgressBar');
-            const progressText = document.getElementById('uploadProgressText');
-            const sendBtn = document.getElementById('sendUpload');
-            
-            progress.style.display = 'block';
-            sendBtn.disabled = true;
-            
-            let progressValue = 0;
-            const interval = setInterval(() => {
-                progressValue += 5 + Math.random() * 10;
-                if (progressValue > 100) progressValue = 100;
-                
-                progressBar.style.width = `${progressValue}%`;
-                progressText.textContent = `%${Math.round(progressValue)}`;
-                
-                if (progressValue >= 100) {
-                    clearInterval(interval);
-                    
-                    setTimeout(() => {
-                        const fileName = escapeHtml(uploadType.fileName);
-                        const fileSize = (uploadType.fileSize / 1024).toFixed(1);
-                        
-                        sendPrivateMessage(uploadType.target, 
-                            `[${uploadType.fileType.toUpperCase()}] ${fileName} (${fileSize} KB)`);
-                        
-                        if (uploadType.fileData && (uploadType.fileType === 'image' || uploadType.fileType === 'video')) {
-                            const pmKey = [SYSTEM.currentUser.id, uploadType.target].sort().join('_');
-                            
-                            if (!DATA.privateMessages.has(pmKey)) {
-                                DATA.privateMessages.set(pmKey, []);
-                            }
-                            
-                            const messages = DATA.privateMessages.get(pmKey);
-                            const message = {
-                                id: generateMessageId(),
-                                type: 'pm',
-                                from: SYSTEM.currentUser.id,
-                                to: uploadType.target,
-                                text: `[${uploadType.fileType.toUpperCase()}] ${fileName}`,
-                                mediaType: uploadType.fileType,
-                                mediaData: uploadType.fileData,
-                                time: new Date(),
-                                read: false
-                            };
-                            
-                            messages.push(message);
-                            
-                            if (SYSTEM.pmWindows[uploadType.target]) {
-                                addMediaToPMWindow(uploadType.target, message);
-                            }
-                        }
-                        
-                        closeModal('uploadModal');
-                        showNotification('Dosya Gönderildi', `${fileName} başarıyla gönderildi.`);
-                        
-                        mateBot.sendSecurityAlert(`${SYSTEM.currentUser.name} dosya gönderdi: ${fileName} (${fileSize} KB)`);
-                    }, 500);
-                }
-            }, 100);
-        }
-
-        // ==================== IRC KOMUT SİSTEMİ ====================
-        function handleIRCCommand(fullCommand) {
-            const parts = fullCommand.split(' ');
-            const cmd = parts[0].toLowerCase();
-            const args = parts.slice(1);
-            
-            const commands = {
-                '/nick': () => {
-                    if (args.length >= 1) changeNick(args[0]);
-                    else addSystemMessage('❌ Kullanım: /nick yeni_nick');
-                },
-                '/join': () => {
-                    if (args.length >= 1) {
-                        let channelName = args[0];
-                        if (!channelName.startsWith('#')) channelName = '#' + channelName;
-                        joinChannel(channelName);
-                    } else {
-                        addSystemMessage('❌ Kullanım: /join #kanal');
-                    }
-                },
-                '/leave': () => leaveChannel(),
-                '/part': () => leaveChannel(),
-                '/msg': () => {
-                    if (args.length >= 2) {
-                        const target = args[0];
-                        const message = args.slice(1).join(' ');
-                        sendPrivateMessage(target.toLowerCase(), message);
-                    } else {
-                        addSystemMessage('❌ Kullanım: /msg nick mesaj');
-                    }
-                },
-                '/me': () => {
-                    if (args.length >= 1) {
-                        const action = args.join(' ');
-                        sendChannelMessage(`* ${SYSTEM.currentUser.name} ${action}`);
-                    } else {
-                        addSystemMessage('❌ Kullanım: /me eylem');
-                    }
-                },
-                '/who': () => listChannelUsers(),
-                '/whois': () => {
-                    if (args.length >= 1) showUserInfo(args[0]);
-                    else addSystemMessage('❌ Kullanım: /whois nick');
-                },
-                '/clear': () => clearChat(),
-                '/topic': () => {
-                    if (args.length >= 1) changeTopic(args.join(' '));
-                    else addSystemMessage('❌ Kullanım: /topic yeni_konu');
-                },
-                '/help': () => showIRCHelp(),
-                '/kick': () => {
-                    if (args.length >= 1) kickUser(args[0], args[1]);
-                    else addSystemMessage('❌ Kullanım: /kick nick [sebep]');
-                },
-                '/ban': () => {
-                    if (args.length >= 1) banUser(args[0], args.slice(1).join(' '));
-                    else addSystemMessage('❌ Kullanüm: /ban nick [sebep]');
-                },
-                '/mute': () => {
-                    if (args.length >= 2) muteUser(args[0], parseInt(args[1]));
-                    else addSystemMessage('❌ Kullanım: /mute nick süre_saniye');
-                },
-                '/op': () => {
-                    if (args.length >= 1) opUser(args[0]);
-                    else addSystemMessage('❌ Kullanım: /op nick');
-                },
-                '/voice': () => {
-                    if (args.length >= 1) voiceUser(args[0]);
-                    else addSystemMessage('❌ Kullanım: /voice nick');
-                },
-                '/lock': () => lockChannel(),
-                '/unlock': () => unlockChannel(),
-                '/limit': () => {
-                    if (args.length >= 1) setUserLimit(parseInt(args[0]));
-                    else addSystemMessage('❌ Kullanım: /limit sayı');
-                },
-                '/slowmode': () => {
-                    if (args.length >= 1) setSlowmode(parseInt(args[0]));
-                    else addSystemMessage('❌ Kullanım: /slowmode saniye');
-                },
-                '/gban': () => {
-                    if (args.length >= 1) globalBan(args[0], args.slice(1).join(' '));
-                    else addSystemMessage('❌ Kullanım: /gban nick [sebep]');
-                },
-                '/gmute': () => {
-                    if (args.length >= 1) globalMute(args[0], args.slice(1).join(' '));
-                    else addSystemMessage('❌ Kullanım: /gmute nick [sebep]');
-                },
-                '/duyuru': () => {
-                    if (args.length >= 1) sendAnnouncement(args.join(' '));
-                    else addSystemMessage('❌ Kullanım: /duyuru mesaj');
-                },
-                '/yetki': () => {
-                    if (args.length >= 3) manageRole(args[1], args[2], args[3]);
-                    else addSystemMessage('❌ Kullanım: /yetki ver/al nick rol');
-                },
-                '/invite': () => {
-                    if (args.length >= 2) inviteUser(args[0], args[1]);
-                    else addSystemMessage('❌ Kullanım: /invite nick #kanal');
-                },
-                '/mode': () => {
-                    if (args.length >= 2) changeMode(args[0], args.slice(1));
-                    else addSystemMessage('❌ Kullanım: /mode +/-mod parametre');
-                },
-                '/list': () => listChannels(),
-                '/names': () => listChannelUsers(),
-                '/quit': () => {
-                    addSystemMessage('👋 Çıkış yapılıyor...');
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1000);
-                },
-                '/ping': () => addSystemMessage('🏓 Pong!'),
-                '/time': () => addSystemMessage(`🕒 ${new Date().toLocaleString('tr-TR')}`),
-                '/version': () => addSystemMessage('ℹ️ EliteChat v2.0 - Profesyonel IRC Platformu'),
-                '/stats': () => showStats()
-            };
-            
-            if (commands[cmd]) {
-                commands[cmd]();
-            } else {
-                addSystemMessage(`❌ Bilinmeyen komut: ${cmd}. /help yazarak yardım alın.`);
-            }
-        }
-
-        // IRC komut fonksiyonları (kısaltılmış)
-        function changeNick(newNick) {
-            if (!newNick || newNick.length < 2) {
-                addSystemMessage('❌ Geçersiz nick! (min 2 karakter)');
-                return;
-            }
-            
-            const cleanNick = newNick.replace(/[^a-zA-Z0-9._]/g, '');
-            const userId = cleanNick.toLowerCase();
-            
-            if (userId === 'mate') {
-                addSystemMessage('❌ Bu kullanıcı adı sistem tarafından kullanılıyor!');
-                return;
-            }
-            
-            if (DATA.users[userId] && userId !== SYSTEM.currentUser.id) {
-                addSystemMessage('❌ Bu kullanıcı adı zaten kullanılıyor!');
-                return;
-            }
-            
-            const oldNick = SYSTEM.currentUser.name;
-            const oldUserId = SYSTEM.currentUser.id;
-            
-            SYSTEM.currentUser.name = cleanNick;
-            SYSTEM.currentUser.avatar = cleanNick.charAt(0).toUpperCase();
-            
-            delete DATA.users[oldUserId];
-            DATA.users[userId] = SYSTEM.currentUser;
-            
-            DATA.onlineUsers.delete(oldUserId);
-            DATA.onlineUsers.add(userId);
-            
-            Object.values(DATA.channels).forEach(channel => {
-                if (channel.users.has(oldUserId)) {
-                    channel.users.delete(oldUserId);
-                    channel.users.add(userId);
-                }
-            });
-            
-            addSystemMessage(`✅ Nick değiştirildi: ${oldNick} → ${cleanNick}`);
-            mateBot.sendSecurityAlert(`${oldNick} nick değiştirdi: ${cleanNick}`);
-            updateOnlineList();
-        }
-
-        function joinChannel(channelName) {
-            const channelId = channelName.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '_');
-            
-            if (!DATA.channels[channelId]) {
-                addSystemMessage(`❌ Kanal bulunamadı: ${channelName}`);
-                return;
-            }
-            
-            const channel = DATA.channels[channelId];
-            
-            if (channel.bans.has(SYSTEM.currentUser.id)) {
-                const banInfo = channel.bans.get(SYSTEM.currentUser.id);
-                addSystemMessage(`❌ Bu kanaldan banlısınız! Sebep: ${banInfo.reason}`);
-                return;
-            }
-            
-            if (channel.locked && !channel.users.has(SYSTEM.currentUser.id)) {
-                addSystemMessage('❌ Kanal kilitli!');
-                return;
-            }
-            
-            if (channel.userLimit > 0 && channel.users.size >= channel.userLimit) {
-                addSystemMessage('❌ Kanal doldu!');
-                return;
-            }
-            
-            if (channel.type !== 'public' && !channel.users.has(SYSTEM.currentUser.id)) {
-                addSystemMessage('❌ Bu kanala erişim izniniz yok!');
-                return;
-            }
-            
-            channel.users.add(SYSTEM.currentUser.id);
-            
-            let tabExists = false;
-            document.querySelectorAll('.channel-tab').forEach(tab => {
-                if (tab.dataset.channel === channelId) {
-                    tabExists = true;
-                }
-            });
-            
-            if (!tabExists) {
                 const tabsContainer = document.getElementById('channelTabs');
                 const tab = document.createElement('div');
                 tab.className = 'channel-tab';
                 tab.dataset.channel = channelId;
-                tab.innerHTML = `<i class="fas fa-hashtag"></i> ${channel.name.substring(1)}`;
+                tab.innerHTML = `<i class="fas fa-hashtag"></i> ${name.substring(1)}`;
                 tab.addEventListener('click', () => switchChannel(channelId));
                 tabsContainer.appendChild(tab);
-            }
-            
-            switchChannel(channelId);
-            addSystemMessage(`✅ ${channelName} kanalına katıldınız`);
-        }
-
-        function leaveChannel() {
-            if (SYSTEM.currentChannel === 'general') {
-                addSystemMessage('❌ Genel kanaldan ayrılamazsınız!');
-                return;
-            }
-            
-            const channel = DATA.channels[SYSTEM.currentChannel];
-            const channelName = channel.name;
-            
-            channel.users.delete(SYSTEM.currentUser.id);
-            
-            const tab = document.querySelector(`.channel-tab[data-channel="${SYSTEM.currentChannel}"]`);
-            if (tab) tab.remove();
-            
-            switchChannel('general');
-            addSystemMessage(`✅ ${channelName} kanalından ayrıldınız`);
-        }
-
-        function listChannelUsers() {
-            const channel = DATA.channels[SYSTEM.currentChannel];
-            if (!channel) return;
-            
-            const users = Array.from(channel.users)
-                .map(id => DATA.users[id])
-                .filter(u => u)
-                .sort((a, b) => {
-                    const roleOrder = { owner: 1, admin: 2, coadmin: 3, operator: 4, voice: 5, user: 6 };
-                    const roleDiff = roleOrder[a.role] - roleOrder[b.role];
-                    if (roleDiff !== 0) return roleDiff;
-                    return a.name.localeCompare(b.name);
-                });
-            
-            let message = `👥 ${channel.name} Kullanıcıları (${users.length}):\n`;
-            users.forEach(user => {
-                const displayName = user.id === 'mate' ? '🤖Mate' : user.name;
-                message += `• ${displayName} ${getRoleBadge(user.role)}\n`;
-            });
-            
-            const lines = message.split('\n');
-            lines.forEach(line => {
-                if (line.trim()) {
-                    addSystemMessage(line);
-                }
-            });
-        }
-
-        function showUserInfo(nick) {
-            const userId = nick.toLowerCase();
-            const user = DATA.users[userId];
-            
-            if (!user) {
-                addSystemMessage(`❌ Kullanıcı bulunamadı: ${nick}`);
-                return;
-            }
-            
-            const displayName = user.id === 'mate' ? '🤖Mate' : user.name;
-            
-            let info = `👤 ${displayName} Bilgisi:\n`;
-            info += `Rol: ${user.role}\n`;
-            info += `Durum: ${user.online ? '🟢 Çevrimiçi' : '⚫ Çevrimdışı'}\n`;
-            info += `Kayıtlı: ${user.registered ? 'Evet ✓' : 'Hayır ✗'}\n`;
-            info += `Görünmez: ${user.invisible ? 'Evet' : 'Hayır'}\n`;
-            info += `Katılma: ${user.joinDate.toLocaleDateString('tr-TR')}\n`;
-            info += `Son Görülme: ${user.lastSeen.toLocaleTimeString('tr-TR')}`;
-            
-            const userChannels = [];
-            Object.values(DATA.channels).forEach(channel => {
-                if (channel.users.has(userId)) {
-                    userChannels.push(channel.name);
-                }
-            });
-            
-            if (userChannels.length > 0) {
-                info += `\nKanallar: ${userChannels.join(', ')}`;
-            }
-            
-            addSystemMessage(info);
-        }
-
-        function changeTopic(newTopic) {
-            const channel = DATA.channels[SYSTEM.currentChannel];
-            if (!channel) return;
-            
-            if (channel.owner !== SYSTEM.currentUser.id && 
-                SYSTEM.currentUser.role !== 'owner' && 
-                SYSTEM.currentUser.role !== 'admin') {
-                addSystemMessage('❌ Kanal konusunu değiştirme yetkiniz yok!');
-                return;
-            }
-            
-            const oldTopic = channel.topic;
-            channel.topic = newTopic;
-            
-            document.getElementById('channelTopic').textContent = newTopic;
-            document.getElementById('panelChannelTopic').textContent = newTopic;
-            
-            addSystemMessage(`📝 Kanal konusu değiştirildi: "${oldTopic}" → "${newTopic}"`);
-            mateBot.sendSecurityAlert(`${SYSTEM.currentUser.name} kanal konusunu değiştirdi: "${newTopic}"`, SYSTEM.currentChannel);
-        }
-
-        function clearChat() {
-            const container = document.getElementById('chatMessages');
-            if (container) {
-                clearContainer('chatMessages');
-                addSystemMessage('✅ Sohbet temizlendi');
-            }
-        }
-
-        function listChannels() {
-            const channels = Object.values(DATA.channels)
-                .filter(channel => channel.type === 'public' || channel.users.has(SYSTEM.currentUser.id))
-                .sort((a, b) => a.name.localeCompare(b.name));
-            
-            if (channels.length === 0) {
-                addSystemMessage('❌ Hiç kanal bulunamadı');
-                return;
-            }
-            
-            let message = `📋 Kanallar (${channels.length}):\n`;
-            channels.forEach(channel => {
-                const userCount = Array.from(channel.users).filter(id => DATA.users[id] && !DATA.users[id].invisible).length;
-                const topic = channel.topic.length > 30 ? channel.topic.substring(0, 30) + '...' : channel.topic;
-                message += `• ${channel.name} (${userCount} kişi) - ${topic}\n`;
-            });
-            
-            const lines = message.split('\n');
-            lines.forEach(line => {
-                if (line.trim()) {
-                    addSystemMessage(line);
-                }
-            });
-        }
-
-        function showStats() {
-            const totalUsers = Object.keys(DATA.users).length;
-            const onlineUsers = Array.from(DATA.onlineUsers).filter(id => DATA.users[id] && !DATA.users[id].invisible).length;
-            const totalChannels = Object.keys(DATA.channels).length;
-            const totalMessages = Object.values(DATA.channels).reduce((sum, channel) => sum + channel.messages.length, 0);
-            const totalPMs = Array.from(DATA.privateMessages.values()).reduce((sum, messages) => sum + messages.length, 0);
-            
-            let stats = `📊 EliteChat İstatistikleri:\n`;
-            stats += `Toplam Kullanıcı: ${totalUsers}\n`;
-            stats += `Çevrimiçi: ${onlineUsers}\n`;
-            stats += `Kanallar: ${totalChannels}\n`;
-            stats += `Kanal Mesajları: ${totalMessages}\n`;
-            stats += `Özel Mesajlar: ${totalPMs}\n`;
-            stats += `Kayıtlı Kullanıcılar: ${DATA.registeredUsers.size}\n`;
-            stats += `Sistem: EliteChat v2.0`;
-            
-            addSystemMessage(stats);
-        }
-
-        function showIRCHelp() {
-            const helpText = `
-📋 IRC KOMUTLARI:
-
-👤 GENEL KOMUTLAR:
-/nick yeni_nick       - Kullanıcı adını değiştir
-/join #kanal          - Kanala katıl
-/leave, /part         - Kanaldan ayrıl
-/msg nick mesaj       - Özel mesaj gönder
-/me eylem             - Eylem mesajı gönder
-/who, /names          - Kanal kullanıcılarını listele
-/whois nick           - Kullanıcı bilgisi göster
-/list                 - Kanalları listele
-/clear                - Sohbeti temizle
-/topic yeni_konu      - Kanal konusunu değiştir
-/invite nick #kanal   - Kullanıcıyı kanala davet et
-/ping                 - Ping kontrolü
-/time                 - Zamanı göster
-/version              - Sürüm bilgisi
-/stats                - İstatistikleri göster
-/help                 - Bu yardımı göster
-/quit                 - Çıkış yap
-
-🛡️ YETKİLİ KOMUTLARI (OP/Channel Owner):
-/kick nick [sebep]    - Kullanıcıyı at
-/ban nick [sebep]     - Kullanıcıyı banla
-/mute nick süre       - Kullanıcıyı sustur (saniye)
-/op nick              - OP yetkisi ver
-/voice nick           - Voice yetkisi ver
-/lock                 - Kanalı kilitle
-/unlock               - Kanalın kilidini aç
-/limit sayı           - Kullanıcı limiti koy
-/slowmode saniye      - Yavaş mod aç
-/mode +/-mod param    - Kanal modlarını değiştir
-
-👑 SİSTEM KOMUTLARI (Owner/Admin):
-/gban nick [sebep]    - Global ban
-/gmute nick [sebep]   - Global sustur
-/duyuru mesaj         - Sistem duyurusu
-/yetki ver nick rol   - Yetki ver (owner/admin/coadmin)
-/yetki al nick        - Yetki al
-            `;
-            
-            helpText.trim().split('\n').forEach(line => {
-                if (line.trim()) {
-                    addSystemMessage(line);
-                }
-            });
-        }
-
-        // ==================== OTOMATİK GÜNCELLEMELER ====================
-        function startAutoUpdates() {
-            const interval1 = setInterval(() => {
-                const viewerCount = document.getElementById('viewerCount');
-                if (viewerCount) {
-                    const current = parseInt(viewerCount.textContent.replace(/[^0-9]/g, '')) || 1200;
-                    const change = Math.floor(Math.random() * 100) - 50;
-                    const newCount = Math.max(100, current + change);
-                    viewerCount.textContent = newCount >= 1000 ? (newCount/1000).toFixed(1) + 'K' : newCount.toString();
-                }
-            }, 30000);
-            
-            SYSTEM.intervals.push(interval1);
-            
-            const interval2 = setInterval(() => {
-                updatePMConversationList();
                 
-                const channel = DATA.channels[SYSTEM.currentChannel];
-                if (channel && channel.messages.length > 0) {
-                    const lastMessage = channel.messages[channel.messages.length - 1];
-                    const lastMessageTime = new Date(lastMessage.time);
-                    const now = new Date();
-                    
-                    if ((now - lastMessageTime) > 10000 && 
-                        Math.random() > 0.7 &&
-                        lastMessage.userId !== SYSTEM.currentUser.id &&
-                        lastMessage.userId !== 'mate') {
-                        
-                        const otherUsers = Array.from(channel.users)
-                            .map(id => DATA.users[id])
-                            .filter(u => u && u.id !== SYSTEM.currentUser.id && u.online && u.registered && u.id !== 'mate');
-                        
-                        if (otherUsers.length > 0) {
-                            const randomUser = otherUsers[Math.floor(Math.random() * otherUsers.length)];
-                            const replies = [
-                                "Güzel noktaya değindin!",
-                                "Katılıyorum 👍",
-                                "Harika bir fikir!",
-                                "Bu konuda daha fazla konuşalım",
-                                "Teşekkürler paylaşım için"
-                            ];
-                            const replyText = replies[Math.floor(Math.random() * replies.length)];
-                            
-                            const replyMessage = {
-                                id: generateMessageId(),
-                                type: 'message',
-                                userId: randomUser.id,
-                                text: replyText,
-                                time: new Date(),
-                                channel: SYSTEM.currentChannel
-                            };
-                            
-                            channel.messages.push(replyMessage);
-                            addMessageToChat(replyMessage, randomUser);
-                        }
-                    }
-                }
-            }, 5000);
-            
-            SYSTEM.intervals.push(interval2);
-            
-            const interval3 = setInterval(() => {
-                if (SYSTEM.currentUser && DATA.globalBans.has(SYSTEM.currentUser.id)) {
-                    addSystemMessage('❌ Global banlısınız! Sistemden çıkartılıyorsunuz...');
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 3000);
-                }
+                switchChannel(channelId);
+                closeModal('channelModal');
                 
-                const channel = DATA.channels[SYSTEM.currentChannel];
-                if (channel) {
-                    const now = new Date();
-                    channel.mutes.forEach((muteEnd, userId) => {
-                        if (now > muteEnd) {
-                            channel.mutes.delete(userId);
-                            if (userId === SYSTEM.currentUser.id) {
-                                addSystemMessage('✅ Susturma süreniz doldu. Artık mesaj gönderebilirsiniz.');
-                            }
-                        }
-                    });
-                }
-            }, 10000);
-            
-            SYSTEM.intervals.push(interval3);
-        }
-
-        function stopAutoUpdates() {
-            SYSTEM.intervals.forEach(interval => clearInterval(interval));
-            SYSTEM.intervals = [];
-        }
-
-        // ==================== PANEL YÖNETİMİ ====================
-        function updatePanelInfo() {
-            const channel = DATA.channels[SYSTEM.currentChannel];
-            if (!channel) return;
-            
-            document.getElementById('panelChannelName').textContent = channel.name;
-            document.getElementById('panelChannelTopic').textContent = channel.topic;
-            document.getElementById('panelChannelVideo').textContent = channel.video.title;
-        }
-
-        function switchPanel(panelName) {
-            document.getElementById('onlinePanel').classList.add('hidden');
-            document.getElementById('pmPanel').classList.add('hidden');
-            
-            document.querySelectorAll('.panel-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            document.getElementById(`${panelName}Panel`).classList.remove('hidden');
-            document.querySelector(`.panel-tab[data-panel="${panelName}"]`).classList.add('active');
-            
-            if (panelName === 'pm') {
-                updatePMConversationList();
-            }
-        }
-
-        // ==================== MODAL YÖNETİMİ ====================
-        function openModal(modalId) {
-            const modal = document.getElementById(modalId);
-            if (modal) {
-                modal.style.display = 'flex';
-            }
-        }
-
-        function closeModal(modalId) {
-            const modal = document.getElementById(modalId);
-            if (modal) {
-                modal.style.display = 'none';
+                nameInput.value = '';
+                topicInput.value = '';
                 
-                if (modalId === 'cameraModal') {
-                    stopCamera();
-                }
-                
-                SYSTEM.uploadType = null;
-            }
-        }
-
-        function closeAllModals() {
-            const modals = document.querySelectorAll('.modal-overlay');
-            modals.forEach(modal => {
-                modal.style.display = 'none';
-            });
-            
-            stopCamera();
-            SYSTEM.uploadType = null;
-        }
-
-        // ==================== TEMA SİSTEMİ ====================
-        function toggleTheme() {
-            if (SYSTEM.theme === 'night') {
-                document.body.classList.add('day-mode');
-                document.body.classList.remove('night-mode');
-                SYSTEM.theme = 'day';
-            } else {
-                document.body.classList.add('night-mode');
-                document.body.classList.remove('day-mode');
-                SYSTEM.theme = 'night';
-            }
-        }
-
-        // ==================== AYARLAR SİSTEMİ ====================
-        function openSettings() {
-            const settings = SYSTEM.currentUser;
-            if (!settings) return;
-            
-            document.getElementById('settingsNick').value = settings.name;
-            document.getElementById('settingsAvatar').textContent = settings.avatar;
-            document.getElementById('settingsBio').value = settings.bio || '';
-            document.getElementById('settingsInvisible').checked = settings.invisible;
-            
-            openModal('settingsModal');
-        }
-
-        function saveSettings() {
-            const nickInput = document.getElementById('settingsNick');
-            const bioInput = document.getElementById('settingsBio');
-            const invisibleInput = document.getElementById('settingsInvisible');
-            
-            const newNick = nickInput.value.trim();
-            const bio = bioInput.value.trim();
-            const invisible = invisibleInput.checked;
-            
-            if (newNick && newNick !== SYSTEM.currentUser.name) {
-                changeNick(newNick);
-            }
-            
-            SYSTEM.currentUser.bio = bio;
-            SYSTEM.currentUser.invisible = invisible;
-            
-            closeModal('settingsModal');
-            updateOnlineList();
-            addSystemMessage('✅ Ayarlarınız güncellendi.');
-        }
-
-        function changeAvatar() {
-            const newAvatar = prompt('Yeni avatar karakteri (1 karakter):', SYSTEM.currentUser.avatar);
-            if (newAvatar && newAvatar.length === 1) {
-                SYSTEM.currentUser.avatar = newAvatar;
-                document.getElementById('settingsAvatar').textContent = newAvatar;
-                updateOnlineList();
+                addSystemMessage(`🎊 ${SYSTEM.currentUser.name} yeni kanal oluşturdu: ${name}`);
             }
         }
 
         // ==================== EVENT LISTENERS ====================
         document.addEventListener('DOMContentLoaded', function() {
+            // Sunucuyu başlat
+            if (!window.eliteChatServer) {
+                window.eliteChatServer = new EliteChatServer();
+            }
+            
+            // Client'i başlat
+            window.eliteChatClient = new EliteChatClient();
+            
+            // Mevcut event listener'lar
             document.getElementById('loginButton').addEventListener('click', handleLogin);
             
             document.getElementById('nickInput').addEventListener('keypress', (e) => {
@@ -3173,15 +2035,6 @@
                     switchPanel(tab.dataset.panel);
                 });
             });
-            
-            document.getElementById('captureImageBtn')?.addEventListener('click', captureImage);
-            document.getElementById('recordVideoBtn')?.addEventListener('click', startRecording);
-            document.getElementById('stopRecordingBtn')?.addEventListener('click', stopRecording);
-            document.getElementById('switchCameraBtn')?.addEventListener('click', switchCamera);
-            document.getElementById('sendCameraMedia')?.addEventListener('click', sendCameraMedia);
-            
-            document.getElementById('closeCameraModal')?.addEventListener('click', () => closeModal('cameraModal'));
-            document.getElementById('cancelCamera')?.addEventListener('click', () => closeModal('cameraModal'));
             
             const buttonEvents = {
                 'createChannelBtn': () => openModal('channelModal'),
@@ -3325,840 +2178,798 @@
                 });
             }
             
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') {
-                    closeAllModals();
+            // Gerçek zamanlı event listener'ları kur
+            const client = window.eliteChatClient;
+            
+            client.on('new_message', (data) => {
+                if (data.channel === SYSTEM.currentChannel && 
+                    data.message.userId !== SYSTEM.currentUser.id) {
+                    
+                    const user = DATA.users[data.message.userId];
+                    if (user) {
+                        const localMessage = {
+                            id: data.message.id,
+                            type: 'message',
+                            userId: data.message.userId,
+                            text: data.message.text,
+                            time: new Date(data.message.time),
+                            channel: data.message.channel
+                        };
+                        
+                        const channel = DATA.channels[data.message.channel];
+                        if (channel) {
+                            const exists = channel.messages.some(m => m.id === data.message.id);
+                            if (!exists) {
+                                channel.messages.push(localMessage);
+                            }
+                        }
+                        
+                        addMessageToChat(localMessage, user);
+                    }
                 }
             });
             
-            document.querySelectorAll('.modal-overlay').forEach(modal => {
-                modal.addEventListener('click', (e) => {
-                    if (e.target === modal) {
-                        modal.style.display = 'none';
-                        SYSTEM.uploadType = null;
-                        stopCamera();
+            client.on('private_message', (data) => {
+                const message = data.message;
+                
+                if (message.to === SYSTEM.currentUser.id) {
+                    const pmKey = [message.from, message.to].sort().join('_');
+                    
+                    if (!DATA.privateMessages.has(pmKey)) {
+                        DATA.privateMessages.set(pmKey, []);
+                    }
+                    
+                    const messages = DATA.privateMessages.get(pmKey);
+                    const localMessage = {
+                        id: message.id,
+                        type: 'pm',
+                        from: message.from,
+                        to: message.to,
+                        text: message.text,
+                        time: new Date(message.time),
+                        read: false
+                    };
+                    
+                    messages.push(localMessage);
+                    
+                    if (SYSTEM.pmWindows[message.from]) {
+                        addMessageToPMWindow(message.from, localMessage);
+                    }
+                    
+                    updatePMConversationList();
+                    
+                    const sender = DATA.users[message.from];
+                    if (sender) {
+                        showNotification(sender.name, message.text, 'pm');
+                    }
+                }
+            });
+            
+            client.on('user_joined', (data) => {
+                const user = data.user;
+                
+                DATA.users[user.id] = user;
+                DATA.onlineUsers.add(user.id);
+                
+                const generalChannel = DATA.channels.general;
+                if (generalChannel) {
+                    generalChannel.users.add(user.id);
+                }
+                
+                if (SYSTEM.currentChannel === 'general') {
+                    addSystemMessage(`🎉 ${user.name} sohbete katıldı!`);
+                }
+                
+                updateOnlineList();
+            });
+            
+            client.on('user_left', (data) => {
+                const userId = data.userId;
+                
+                if (DATA.users[userId]) {
+                    DATA.users[userId].online = false;
+                    DATA.onlineUsers.delete(userId);
+                }
+                
+                Object.values(DATA.channels).forEach(channel => {
+                    channel.users.delete(userId);
+                });
+                
+                updateOnlineList();
+            });
+            
+            client.on('channel_created', (data) => {
+                const channel = data.channel;
+                
+                DATA.channels[channel.id] = {
+                    ...channel,
+                    users: new Set(channel.users || []),
+                    operators: new Set(channel.operators || []),
+                    voices: new Set(channel.voices || []),
+                    bans: new Map(Object.entries(channel.bans || {})),
+                    mutes: new Map(Object.entries(channel.mutes || {})),
+                    messages: channel.messages || []
+                };
+                
+                let tabExists = false;
+                document.querySelectorAll('.channel-tab').forEach(tab => {
+                    if (tab.dataset.channel === channel.id) {
+                        tabExists = true;
+                    }
+                });
+                
+                if (!tabExists) {
+                    const tabsContainer = document.getElementById('channelTabs');
+                    const tab = document.createElement('div');
+                    tab.className = 'channel-tab';
+                    tab.dataset.channel = channel.id;
+                    tab.innerHTML = `<i class="fas fa-hashtag"></i> ${channel.name.substring(1)}`;
+                    tab.addEventListener('click', () => switchChannel(channel.id));
+                    tabsContainer.appendChild(tab);
+                }
+                
+                addSystemMessage(`📢 Yeni kanal oluşturuldu: ${channel.name}`);
+            });
+            
+            client.on('sync_users', (data) => {
+                const serverUsers = data.users;
+                
+                serverUsers.forEach(serverUser => {
+                    if (!DATA.users[serverUser.id]) {
+                        DATA.users[serverUser.id] = serverUser;
+                        DATA.onlineUsers.add(serverUser.id);
+                    }
+                });
+                
+                updateOnlineList();
+            });
+            
+            client.on('sync_channels', (data) => {
+                const serverChannels = data.channels;
+                
+                serverChannels.forEach(serverChannel => {
+                    if (!DATA.channels[serverChannel.id]) {
+                        DATA.channels[serverChannel.id] = {
+                            ...serverChannel,
+                            users: new Set(serverChannel.users || []),
+                            operators: new Set(serverChannel.operators || []),
+                            voices: new Set(serverChannel.voices || []),
+                            bans: new Map(Object.entries(serverChannel.bans || {})),
+                            mutes: new Map(Object.entries(serverChannel.mutes || {})),
+                            messages: serverChannel.messages || []
+                        };
                     }
                 });
             });
             
-            window.addEventListener('beforeunload', () => {
+            // Sayfa kapatılırken bağlantıyı kes
+            window.addEventListener('beforeunload', function() {
+                const client = window.eliteChatClient;
+                if (client && client.isConnected) {
+                    client.disconnect();
+                }
+                
                 stopAutoUpdates();
-                stopCamera();
             });
             
-            if ('Notification' in window && Notification.permission === 'default') {
-                Notification.requestPermission();
+            console.log('✅ EliteChat sistemi başlatıldı!');
+        });
+
+        // ==================== DİĞER FONKSİYONLAR (Kısaltılmış) ====================
+        function updatePanelInfo() {
+            const channel = DATA.channels[SYSTEM.currentChannel];
+            if (!channel) return;
+            
+            document.getElementById('panelChannelName').textContent = channel.name;
+            document.getElementById('panelChannelTopic').textContent = channel.topic;
+            document.getElementById('panelChannelVideo').textContent = channel.video.title;
+        }
+
+        function switchPanel(panelName) {
+            document.getElementById('onlinePanel').classList.add('hidden');
+            document.getElementById('pmPanel').classList.add('hidden');
+            
+            document.querySelectorAll('.panel-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            document.getElementById(`${panelName}Panel`).classList.remove('hidden');
+            document.querySelector(`.panel-tab[data-panel="${panelName}"]`).classList.add('active');
+            
+            if (panelName === 'pm') {
+                updatePMConversationList();
+            }
+        }
+
+        function openModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.style.display = 'flex';
+            }
+        }
+
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        function toggleTheme() {
+            if (SYSTEM.theme === 'night') {
+                document.body.classList.add('day-mode');
+                document.body.classList.remove('night-mode');
+                SYSTEM.theme = 'day';
+            } else {
+                document.body.classList.add('night-mode');
+                document.body.classList.remove('day-mode');
+                SYSTEM.theme = 'night';
+            }
+        }
+
+        function openSettings() {
+            const settings = SYSTEM.currentUser;
+            if (!settings) return;
+            
+            document.getElementById('settingsNick').value = settings.name;
+            document.getElementById('settingsAvatar').textContent = settings.avatar;
+            document.getElementById('settingsBio').value = settings.bio || '';
+            document.getElementById('settingsInvisible').checked = settings.invisible;
+            
+            openModal('settingsModal');
+        }
+
+        function saveSettings() {
+            const nickInput = document.getElementById('settingsNick');
+            const bioInput = document.getElementById('settingsBio');
+            const invisibleInput = document.getElementById('settingsInvisible');
+            
+            const newNick = nickInput.value.trim();
+            const bio = bioInput.value.trim();
+            const invisible = invisibleInput.checked;
+            
+            if (newNick && newNick !== SYSTEM.currentUser.name) {
+                changeNick(newNick);
             }
             
-            setTimeout(() => {
-                if (SYSTEM.currentUser) {
-                    addSystemMessage('🤖 EliteChat sistemine hoş geldiniz! Mate güvenlik botu aktif.');
-                }
-            }, 1000);
-        });
-        // ==================== GERÇEK ZAMANLI SUNUCU SİSTEMİ ====================
-class EliteChatServer {
-    constructor() {
-        this.connections = new Map(); // userId -> WebSocket
-        this.users = new Map(); // userId -> userData
-        this.channels = new Map(); // channelId -> channelData
-        this.initializeChannels();
-    }
-    
-    initializeChannels() {
-        this.channels.set('general', {
-            id: 'general',
-            name: '#Genel',
-            owner: 'mate',
-            type: 'public',
-            topic: 'EliteChat Hoş Geldiniz',
-            users: new Set(),
-            operators: new Set(['mate']),
-            voices: new Set(),
-            bans: new Map(),
-            mutes: new Map(),
-            messages: []
-        });
-    }
-    
-    // WebSocket sunucusunu başlat
-    startServer(port = 8080) {
-        console.log('WebSocket sunucusu başlatılıyor...');
-        
-        // Tarayıcıda WebSocket sunucusu oluştur (Node.js benzeri davranış)
-        this.simulateWebSocketServer();
-        
-        // Her 5 saniyede bir sunucu durumunu göster
-        setInterval(() => {
-            console.log(`🌐 Sunucu Durumu: ${this.users.size} kullanıcı, ${this.channels.size} kanal`);
-        }, 5000);
-    }
-    
-    simulateWebSocketServer() {
-        console.log('⚠️ UYARI: Bu simüle edilmiş bir sunucudur. Gerçek sunucu için Node.js kullanmalısınız.');
-        
-        // Tarayıcıda simüle edilmiş WebSocket bağlantıları
-        if (typeof window !== 'undefined') {
-            // Tarayıcıda localStorage üzerinden iletişim
-            this.setupLocalStorageSync();
+            SYSTEM.currentUser.bio = bio;
+            SYSTEM.currentUser.invisible = invisible;
+            
+            closeModal('settingsModal');
+            updateOnlineList();
+            addSystemMessage('✅ Ayarlarınız güncellendi.');
         }
-    }
-    
-    setupLocalStorageSync() {
-        // Tüm tarayıcılar/sekme arasında senkronizasyon
-        setInterval(() => {
-            this.syncUsers();
-            this.syncMessages();
-            this.syncChannels();
-        }, 1000);
-    }
-    
-    // Kullanıcı senkronizasyonu
-    syncUsers() {
-        const serverUsers = localStorage.getItem('elitechat_server_users');
-        if (serverUsers) {
-            const users = JSON.parse(serverUsers);
-            users.forEach(user => {
-                if (!this.users.has(user.id)) {
-                    this.users.set(user.id, user);
+
+        function changeAvatar() {
+            const newAvatar = prompt('Yeni avatar karakteri (1 karakter):', SYSTEM.currentUser.avatar);
+            if (newAvatar && newAvatar.length === 1) {
+                SYSTEM.currentUser.avatar = newAvatar;
+                document.getElementById('settingsAvatar').textContent = newAvatar;
+                updateOnlineList();
+            }
+        }
+
+        function loadChannelVideo() {
+            const channel = DATA.channels[SYSTEM.currentChannel];
+            if (!channel || !channel.video) return;
+            
+            const player = document.getElementById('youtubePlayer');
+            const titleElement = document.getElementById('videoTitle');
+            
+            if (player && titleElement) {
+                player.src = `https://www.youtube-nocookie.com/embed/${channel.video.id}?autoplay=1&mute=1&rel=0&controls=1&modestbranding=1`;
+                titleElement.textContent = channel.video.title;
+                document.getElementById('panelChannelVideo').textContent = channel.video.title;
+            }
+        }
+
+        function changeChannelVideo() {
+            const channel = DATA.channels[SYSTEM.currentChannel];
+            if (!channel) return;
+            
+            if (!hasVideoPermission(SYSTEM.currentChannel)) {
+                alert('Video değiştirme yetkiniz yok!');
+                return;
+            }
+            
+            document.getElementById('videoUrl').value = '';
+            document.getElementById('videoTitleInput').value = channel.video.title || '';
+            openModal('videoModal');
+        }
+
+        function saveChannelVideo() {
+            const urlInput = document.getElementById('videoUrl');
+            const titleInput = document.getElementById('videoTitleInput');
+            
+            const url = urlInput.value.trim();
+            const title = titleInput.value.trim() || 'YouTube Video';
+            
+            if (!url) {
+                alert('YouTube URL veya Video ID gerekli!');
+                return;
+            }
+            
+            let videoId = url;
+            
+            try {
+                if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                    const urlObj = new URL(url.includes('http') ? url : 'https://' + url);
+                    if (urlObj.hostname.includes('youtu.be')) {
+                        videoId = urlObj.pathname.substring(1);
+                    } else {
+                        videoId = urlObj.searchParams.get('v') || url.split('v=')[1]?.split('&')[0];
+                    }
+                }
+                
+                if (!videoId || videoId.length !== 11) {
+                    throw new Error('Geçersiz Video ID');
+                }
+            } catch (e) {
+                if (url.length === 11) {
+                    videoId = url;
+                } else {
+                    alert('Geçerli bir YouTube URL veya Video ID girin!');
+                    return;
+                }
+            }
+            
+            const channel = DATA.channels[SYSTEM.currentChannel];
+            if (channel) {
+                channel.video = {
+                    id: videoId,
+                    title: title,
+                    channel: channel.name.replace('#', '')
+                };
+                
+                loadChannelVideo();
+                addSystemMessage(`🎥 ${SYSTEM.currentUser.name} kanal videosunu değiştirdi: ${title}`);
+                closeModal('videoModal');
+            }
+        }
+
+        // ==================== ÖZEL SOHBET FONKSİYONLARI (Kısaltılmış) ====================
+        function openPrivateChat(userId) {
+            if (!DATA.users[userId] || userId === SYSTEM.currentUser.id) return;
+            
+            SYSTEM.activePM = userId;
+            
+            if (SYSTEM.pmWindows[userId]) {
+                SYSTEM.pmWindows[userId].classList.remove('minimized');
+                return;
+            }
+            
+            createPMWindow(userId);
+            updateOnlineList();
+            updatePMConversationList();
+        }
+
+        function createPMWindow(userId) {
+            const user = DATA.users[userId];
+            if (!user) return;
+            
+            const pmWindow = document.createElement('div');
+            pmWindow.className = 'pm-window';
+            pmWindow.id = `pm-window-${userId}`;
+            
+            const displayName = user.id === 'mate' ? '🤖Mate' : user.name;
+            
+            pmWindow.innerHTML = `
+                <div class="pm-window-header" data-user-id="${userId}">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="user-avatar ${user.online ? 'online' : ''}" style="width: 30px; height: 30px; font-size: 14px;">
+                            ${user.avatar}
+                        </div>
+                        <div>
+                            <div style="font-weight: 600; font-size: 14px;">
+                                ${escapeHtml(displayName)}
+                                ${getRoleBadge(user.role)}
+                            </div>
+                            <div style="font-size: 11px; color: var(--text-secondary);">
+                                ${user.online ? '🟢 Çevrimiçi' : '⚫ Çevrimdışı'}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn btn-sm btn-minimize-pm" style="background: none; border: none; color: var(--text-secondary); padding: 4px 8px;">
+                            <i class="fas fa-minus"></i>
+                        </button>
+                        <button class="btn btn-sm btn-close-pm" style="background: none; border: none; color: var(--text-secondary); padding: 4px 8px;">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="pm-window-messages" id="pm-messages-${userId}">
+                    <!-- Mesajlar buraya gelecek -->
+                </div>
+                <div class="pm-window-input">
+                    <div class="message-input-container">
+                        <textarea class="message-input pm-input" id="pm-input-${userId}" 
+                                  placeholder="${displayName} ile mesajlaşın..." 
+                                  rows="2"></textarea>
+                    </div>
+                    <div class="input-actions" style="margin-top: 10px;">
+                        <div class="flex gap-2">
+                            <button class="btn btn-secondary btn-sm btn-pm-image" data-user-id="${userId}">
+                                <i class="fas fa-image"></i>
+                            </button>
+                            <button class="btn btn-secondary btn-sm btn-pm-camera" data-user-id="${userId}">
+                                <i class="fas fa-camera"></i>
+                            </button>
+                        </div>
+                        <button class="btn btn-primary btn-send-pm" data-user-id="${userId}">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(pmWindow);
+            SYSTEM.pmWindows[userId] = pmWindow;
+            
+            const header = pmWindow.querySelector('.pm-window-header');
+            const minimizeBtn = pmWindow.querySelector('.btn-minimize-pm');
+            const closeBtn = pmWindow.querySelector('.btn-close-pm');
+            const sendBtn = pmWindow.querySelector('.btn-send-pm');
+            const input = pmWindow.querySelector(`#pm-input-${userId}`);
+            
+            header.addEventListener('click', (e) => {
+                if (e.target === header || e.target.closest('.pm-window-header') === header) {
+                    pmWindow.classList.toggle('minimized');
                 }
             });
-        }
-        
-        // Güncel kullanıcı listesini kaydet
-        const userArray = Array.from(this.users.values());
-        localStorage.setItem('elitechat_server_users', JSON.stringify(userArray));
-    }
-    
-    // Mesaj senkronizasyonu
-    syncMessages() {
-        const serverMessages = localStorage.getItem('elitechat_server_messages');
-        if (serverMessages) {
-            const allMessages = JSON.parse(serverMessages);
             
-            // Mesajları kanallara dağıt
-            allMessages.forEach(msg => {
-                const channel = this.channels.get(msg.channel);
-                if (channel) {
-                    // Aynı mesajı ekleme
-                    const exists = channel.messages.some(m => m.id === msg.id);
-                    if (!exists) {
-                        channel.messages.push(msg);
-                        // Son 100 mesajı tut
-                        if (channel.messages.length > 100) {
-                            channel.messages = channel.messages.slice(-100);
-                        }
+            minimizeBtn?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                pmWindow.classList.toggle('minimized');
+            });
+            
+            closeBtn?.addEventListener('click', () => {
+                closePMWindow(userId);
+            });
+            
+            sendBtn?.addEventListener('click', () => {
+                const text = input.value.trim();
+                if (text) {
+                    sendPrivateMessage(userId, text);
+                    input.value = '';
+                    input.focus();
+                }
+            });
+            
+            input?.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    const text = input.value.trim();
+                    if (text) {
+                        sendPrivateMessage(userId, text);
+                        input.value = '';
                     }
                 }
             });
+            
+            loadPMMessages(userId);
         }
-    }
-    
-    // Kanal senkronizasyonu
-    syncChannels() {
-        const serverChannels = localStorage.getItem('elitechat_server_channels');
-        if (serverChannels) {
-            const channels = JSON.parse(serverChannels);
-            channels.forEach(ch => {
-                if (!this.channels.has(ch.id)) {
-                    this.channels.set(ch.id, {
-                        ...ch,
-                        users: new Set(ch.users || []),
-                        operators: new Set(ch.operators || []),
-                        voices: new Set(ch.voices || []),
-                        bans: new Map(Object.entries(ch.bans || {})),
-                        mutes: new Map(Object.entries(ch.mutes || {}))
+
+        function closePMWindow(userId) {
+            const pmWindow = document.getElementById(`pm-window-${userId}`);
+            if (pmWindow) {
+                pmWindow.remove();
+                delete SYSTEM.pmWindows[userId];
+                
+                if (SYSTEM.activePM === userId) {
+                    SYSTEM.activePM = null;
+                    updateOnlineList();
+                }
+            }
+        }
+
+        function loadPMMessages(userId) {
+            const container = document.getElementById(`pm-messages-${userId}`);
+            if (!container) return;
+            
+            clearContainer(`pm-messages-${userId}`);
+            
+            const pmKey = [SYSTEM.currentUser.id, userId].sort().join('_');
+            const messages = DATA.privateMessages.get(pmKey) || [];
+            
+            if (messages.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px 20px; color: var(--text-secondary);">
+                        <i class="fas fa-comment" style="font-size: 48px; margin-bottom: 15px; opacity: 0.5;"></i>
+                        <h3 style="margin-bottom: 10px;">${DATA.users[userId]?.name} ile Sohbet</h3>
+                        <p>Henüz mesaj yok. İlk mesajı siz gönderin!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            messages.forEach(msg => {
+                const isOutgoing = msg.from === SYSTEM.currentUser.id;
+                const sender = DATA.users[msg.from];
+                if (!sender) return;
+                
+                const displayName = sender.id === 'mate' ? '🤖Mate' : sender.name;
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${isOutgoing ? 'message-outgoing' : 'message-incoming'}`;
+                messageDiv.dataset.messageId = msg.id;
+                
+                messageDiv.innerHTML = `
+                    <div class="message-sender">
+                        <span style="font-weight: 500;">${escapeHtml(displayName)}</span>
+                        ${getRoleBadge(sender.role)}
+                    </div>
+                    <div class="message-text">${escapeHtml(msg.text)}</div>
+                    <div class="message-time">${formatTime(msg.time)}</div>
+                `;
+                
+                container.appendChild(messageDiv);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function addMessageToPMWindow(userId, message) {
+            const container = document.getElementById(`pm-messages-${userId}`);
+            if (!container) return;
+            
+            if (container.children.length === 1 && 
+                container.children[0].querySelector('.fas.fa-comment')) {
+                clearContainer(`pm-messages-${userId}`);
+            }
+            
+            const isOutgoing = message.from === SYSTEM.currentUser.id;
+            const sender = DATA.users[message.from];
+            if (!sender) return;
+            
+            const displayName = sender.id === 'mate' ? '🤖Mate' : sender.name;
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isOutgoing ? 'message-outgoing' : 'message-incoming'}`;
+            messageDiv.dataset.messageId = message.id;
+            
+            messageDiv.innerHTML = `
+                <div class="message-sender">
+                    <span style="font-weight: 500;">${escapeHtml(displayName)}</span>
+                    ${getRoleBadge(sender.role)}
+                </div>
+                <div class="message-text">${escapeHtml(message.text)}</div>
+                <div class="message-time">${formatTime(message.time)}</div>
+            `;
+            
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updatePMConversationList() {
+            const container = document.getElementById('pmConversationList');
+            if (!container) return;
+            
+            clearContainer('pmConversationList');
+            
+            const conversations = new Map();
+            
+            DATA.privateMessages.forEach((messages, pmKey) => {
+                const [user1, user2] = pmKey.split('_');
+                const otherUserId = user1 === SYSTEM.currentUser.id ? user2 : 
+                                  user2 === SYSTEM.currentUser.id ? user1 : null;
+                
+                if (otherUserId && DATA.users[otherUserId]) {
+                    const lastMessage = messages[messages.length - 1];
+                    const unreadCount = messages.filter(m => 
+                        m.from !== SYSTEM.currentUser.id && !m.read
+                    ).length;
+                    
+                    conversations.set(otherUserId, {
+                        user: DATA.users[otherUserId],
+                        lastMessage: lastMessage,
+                        unreadCount: unreadCount,
+                        messageCount: messages.length
                     });
                 }
             });
-        }
-    }
-    
-    // Yeni kullanıcı kaydet
-    registerUser(userData) {
-        this.users.set(userData.id, userData);
-        
-        // Kullanıcıyı genel kanala ekle
-        const generalChannel = this.channels.get('general');
-        if (generalChannel) {
-            generalChannel.users.add(userData.id);
-        }
-        
-        // Diğer kullanıcılara broadcast
-        this.broadcastToAll({
-            type: 'user_joined',
-            user: userData,
-            timestamp: new Date().toISOString()
-        });
-        
-        return userData;
-    }
-    
-    // Mesaj gönder
-    sendMessage(messageData) {
-        const channel = this.channels.get(messageData.channel);
-        if (!channel) return null;
-        
-        const message = {
-            id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            type: 'message',
-            userId: messageData.userId,
-            text: messageData.text,
-            time: new Date().toISOString(),
-            channel: messageData.channel
-        };
-        
-        channel.messages.push(message);
-        
-        // Mesajı kaydet
-        this.saveMessageToStorage(message);
-        
-        // Tüm kullanıcılara gönder
-        this.broadcastToAll({
-            type: 'new_message',
-            message: message,
-            channel: messageData.channel
-        });
-        
-        return message;
-    }
-    
-    // Özel mesaj gönder
-    sendPrivateMessage(pmData) {
-        const message = {
-            id: `pm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            type: 'pm',
-            from: pmData.from,
-            to: pmData.to,
-            text: pmData.text,
-            time: new Date().toISOString(),
-            read: false
-        };
-        
-        // Özel mesajı kaydet
-        this.savePrivateMessageToStorage(message);
-        
-        // Alıcıya gönder (eğer online ise)
-        this.sendToUser(pmData.to, {
-            type: 'private_message',
-            message: message
-        });
-        
-        return message;
-    }
-    
-    // Kanal oluştur
-    createChannel(channelData) {
-        const channelId = channelData.name.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '_');
-        
-        if (this.channels.has(channelId)) {
-            return null;
-        }
-        
-        const newChannel = {
-            id: channelId,
-            name: channelData.name,
-            owner: channelData.owner,
-            type: channelData.type || 'public',
-            topic: channelData.topic || 'Yeni sohbet kanalı',
-            users: new Set([channelData.owner, 'mate']),
-            operators: new Set(),
-            voices: new Set(),
-            bans: new Map(),
-            mutes: new Map(),
-            messages: []
-        };
-        
-        this.channels.set(channelId, newChannel);
-        
-        // Tüm kullanıcılara yeni kanalı bildir
-        this.broadcastToAll({
-            type: 'channel_created',
-            channel: newChannel
-        });
-        
-        return newChannel;
-    }
-    
-    // Tüm kullanıcılara mesaj gönder
-    broadcastToAll(data) {
-        const eventData = JSON.stringify(data);
-        
-        // LocalStorage üzerinden broadcast
-        const broadcastEvents = JSON.parse(localStorage.getItem('elitechat_broadcast') || '[]');
-        broadcastEvents.push({
-            ...data,
-            _timestamp: Date.now()
-        });
-        
-        // Son 50 event'i tut
-        if (broadcastEvents.length > 50) {
-            broadcastEvents.splice(0, broadcastEvents.length - 50);
-        }
-        
-        localStorage.setItem('elitechat_broadcast', JSON.stringify(broadcastEvents));
-        
-        // Event trigger
-        window.dispatchEvent(new CustomEvent('elitechat_broadcast', { detail: data }));
-    }
-    
-    // Belirli kullanıcıya mesaj gönder
-    sendToUser(userId, data) {
-        const userEvents = JSON.parse(localStorage.getItem(`elitechat_user_${userId}`) || '[]');
-        userEvents.push({
-            ...data,
-            _timestamp: Date.now()
-        });
-        
-        // Son 20 event'i tut
-        if (userEvents.length > 20) {
-            userEvents.splice(0, userEvents.length - 20);
-        }
-        
-        localStorage.setItem(`elitechat_user_${userId}`, JSON.stringify(userEvents));
-        
-        // Event trigger
-        window.dispatchEvent(new CustomEvent(`elitechat_user_${userId}`, { detail: data }));
-    }
-    
-    // Mesajı depolamaya kaydet
-    saveMessageToStorage(message) {
-        const allMessages = JSON.parse(localStorage.getItem('elitechat_server_messages') || '[]');
-        allMessages.push(message);
-        
-        // Son 500 mesajı tut
-        if (allMessages.length > 500) {
-            allMessages.splice(0, allMessages.length - 500);
-        }
-        
-        localStorage.setItem('elitechat_server_messages', JSON.stringify(allMessages));
-    }
-    
-    // Özel mesajı depolamaya kaydet
-    savePrivateMessageToStorage(message) {
-        const pmKey = [message.from, message.to].sort().join('_');
-        const allPMs = JSON.parse(localStorage.getItem('elitechat_server_pms') || '{}');
-        
-        if (!allPMs[pmKey]) {
-            allPMs[pmKey] = [];
-        }
-        
-        allPMs[pmKey].push(message);
-        
-        // Her konuşma için son 200 mesaj
-        if (allPMs[pmKey].length > 200) {
-            allPMs[pmKey].splice(0, allPMs[pmKey].length - 200);
-        }
-        
-        localStorage.setItem('elitechat_server_pms', JSON.stringify(allPMs));
-    }
-    
-    // Kullanıcı bağlantısını kapat
-    disconnectUser(userId) {
-        this.users.delete(userId);
-        
-        // Kullanıcıyı tüm kanallardan çıkar
-        this.channels.forEach(channel => {
-            channel.users.delete(userId);
-        });
-        
-        // Diğer kullanıcılara bildir
-        this.broadcastToAll({
-            type: 'user_left',
-            userId: userId,
-            timestamp: new Date().toISOString()
-        });
-    }
-}
-
-// ==================== İSTEMCİ (CLIENT) SİSTEMİ ====================
-class EliteChatClient {
-    constructor() {
-        this.userId = null;
-        this.isConnected = false;
-        this.eventListeners = new Map();
-        this.server = window.eliteChatServer;
-        
-        // Sunucu event'lerini dinle
-        this.setupEventListeners();
-        
-        // Periyodik senkronizasyon
-        this.startSync();
-    }
-    
-    // Sunucuya bağlan
-    connect(userData) {
-        if (!this.server) return false;
-        
-        this.userId = userData.id;
-        this.isConnected = true;
-        
-        // Kullanıcıyı sunucuya kaydet
-        this.server.registerUser(userData);
-        
-        // Bağlantı başarılı
-        console.log(`✅ Bağlantı kuruldu: ${userData.name}`);
-        
-        // Event fire
-        this.emit('connected', { user: userData });
-        
-        return true;
-    }
-    
-    // Mesaj gönder
-    sendMessage(channelId, text) {
-        if (!this.isConnected || !this.userId) return null;
-        
-        const messageData = {
-            userId: this.userId,
-            text: text,
-            channel: channelId
-        };
-        
-        return this.server.sendMessage(messageData);
-    }
-    
-    // Özel mesaj gönder
-    sendPrivateMessage(toUserId, text) {
-        if (!this.isConnected || !this.userId) return null;
-        
-        const pmData = {
-            from: this.userId,
-            to: toUserId,
-            text: text
-        };
-        
-        return this.server.sendPrivateMessage(pmData);
-    }
-    
-    // Kanal oluştur
-    createChannel(channelData) {
-        if (!this.isConnected) return null;
-        
-        return this.server.createChannel(channelData);
-    }
-    
-    // Event listener ekle
-    on(event, callback) {
-        if (!this.eventListeners.has(event)) {
-            this.eventListeners.set(event, []);
-        }
-        this.eventListeners.get(event).push(callback);
-    }
-    
-    // Event tetikle
-    emit(event, data) {
-        const listeners = this.eventListeners.get(event);
-        if (listeners) {
-            listeners.forEach(callback => {
-                try {
-                    callback(data);
-                } catch (err) {
-                    console.error(`Event callback error (${event}):`, err);
-                }
-            });
-        }
-    }
-    
-    // Sunucu event'lerini dinle
-    setupEventListeners() {
-        // Broadcast event'lerini dinle
-        window.addEventListener('elitechat_broadcast', (e) => {
-            const data = e.detail;
-            this.handleServerEvent(data);
-        });
-        
-        // Kullanıcıya özel event'leri dinle
-        const checkUserEvents = () => {
-            if (this.userId) {
-                const userEvents = JSON.parse(localStorage.getItem(`elitechat_user_${this.userId}`) || '[]');
-                
-                // Yeni event'leri işle
-                userEvents.forEach(event => {
-                    if (event._timestamp > (this.lastEventTime || 0)) {
-                        this.handleServerEvent(event);
-                        this.lastEventTime = event._timestamp;
-                    }
+            
+            const sortedConversations = Array.from(conversations.values())
+                .sort((a, b) => {
+                    if (!a.lastMessage) return 1;
+                    if (!b.lastMessage) return -1;
+                    return new Date(b.lastMessage.time) - new Date(a.lastMessage.time);
                 });
-            }
-        };
-        
-        // Her saniye kontrol et
-        setInterval(checkUserEvents, 1000);
-    }
-    
-    // Sunucudan gelen event'leri işle
-    handleServerEvent(data) {
-        switch (data.type) {
-            case 'new_message':
-                this.emit('new_message', data);
-                break;
-                
-            case 'private_message':
-                this.emit('private_message', data);
-                break;
-                
-            case 'user_joined':
-                this.emit('user_joined', data);
-                break;
-                
-            case 'user_left':
-                this.emit('user_left', data);
-                break;
-                
-            case 'channel_created':
-                this.emit('channel_created', data);
-                break;
-        }
-    }
-    
-    // Periyodik senkronizasyon başlat
-    startSync() {
-        setInterval(() => {
-            if (this.isConnected) {
-                this.syncWithServer();
-            }
-        }, 2000);
-    }
-    
-    // Sunucu ile senkronize ol
-    syncWithServer() {
-        // Kullanıcı listesini güncelle
-        this.emit('sync_users', {
-            users: Array.from(this.server?.users?.values() || [])
-        });
-        
-        // Kanal listesini güncelle
-        this.emit('sync_channels', {
-            channels: Array.from(this.server?.channels?.values() || [])
-        });
-    }
-    
-    // Bağlantıyı kes
-    disconnect() {
-        if (this.userId && this.server) {
-            this.server.disconnectUser(this.userId);
-        }
-        
-        this.isConnected = false;
-        this.userId = null;
-        
-        this.emit('disconnected', {});
-    }
-}
-
-// ==================== MEVCUT SİSTEME ENTEGRASYON ====================
-
-// Sayfa yüklendiğinde sunucuyu başlat
-document.addEventListener('DOMContentLoaded', function() {
-    // Global sunucu instance'ı oluştur
-    if (!window.eliteChatServer) {
-        window.eliteChatServer = new EliteChatServer();
-        window.eliteChatServer.startServer();
-    }
-    
-    // Global client instance'ı
-    window.eliteChatClient = new EliteChatClient();
-    
-    // Mevcut login sistemini güncelle
-    const originalHandleLogin = window.handleLogin;
-    
-    window.handleLogin = function() {
-        const nickInput = document.getElementById('nickInput');
-        const passInput = document.getElementById('passInput');
-        const nick = nickInput.value.trim();
-        const pass = passInput.value;
-        
-        // Özel karakterleri temizle
-        const cleanNick = nick.replace(/[^a-zA-Z0-9._]/g, '');
-        
-        if (!cleanNick || cleanNick.length < 2) {
-            alert('Kullanıcı adı en az 2 karakter olmalıdır (sadece harf, rakam, . ve _)');
-            nickInput.value = '';
-            nickInput.focus();
-            return;
-        }
-        
-        const userId = cleanNick.toLowerCase();
-        
-        if (userId === 'mate') {
-            alert('Bu kullanıcı adı sistem tarafından kullanılıyor!');
-            nickInput.value = '';
-            nickInput.focus();
-            return;
-        }
-        
-        // Kullanıcı verisini oluştur
-        const userData = {
-            id: userId,
-            name: cleanNick,
-            role: 'user',
-            registered: !!pass,
-            online: true,
-            invisible: false,
-            avatar: cleanNick.charAt(0).toUpperCase(),
-            bio: '',
-            joinDate: new Date().toISOString(),
-            lastSeen: new Date().toISOString()
-        };
-        
-        // Sunucuya bağlan
-        const client = window.eliteChatClient;
-        const connected = client.connect(userData);
-        
-        if (!connected) {
-            alert('Sunucuya bağlanılamadı!');
-            return;
-        }
-        
-        // Mevcut sistemi güncelle
-        SYSTEM.currentUser = userData;
-        DATA.users[userId] = userData;
-        DATA.onlineUsers.add(userId);
-        
-        // Giriş ekranını kapat
-        document.getElementById('loginScreen').classList.add('hidden');
-        document.getElementById('app').classList.remove('hidden');
-        
-        // Event listener'ları kur
-        setupRealtimeListeners();
-        
-        // İlk mesajı göster
-        addSystemMessage(`🎉 ${SYSTEM.currentUser.name} sohbete katıldı!`);
-        
-        // Sunucudan kullanıcı ve kanal verilerini senkronize et
-        syncWithServer();
-        
-        // Otomatik güncellemeleri başlat
-        startAutoUpdates();
-    };
-    
-    // Mevcut mesaj gönderme sistemini güncelle
-    const originalSendChannelMessage = window.sendChannelMessage;
-    
-    window.sendChannelMessage = function(text) {
-        const channel = DATA.channels[SYSTEM.currentChannel];
-        if (!channel) return;
-        
-        // Global susturma kontrolü
-        if (DATA.globalMutes.has(SYSTEM.currentUser.id)) {
-            addSystemMessage('⚠️ Global susturulmuşsunuz! Mesaj gönderemezsiniz.');
-            return;
-        }
-        
-        // Kanal susturma kontrolü
-        if (channel.mutes.has(SYSTEM.currentUser.id)) {
-            const muteEnd = channel.mutes.get(SYSTEM.currentUser.id);
-            if (new Date() < muteEnd) {
-                addSystemMessage('⚠️ Bu kanalda susturulmuşsunuz! Mesaj gönderemezsiniz.');
+            
+            if (sortedConversations.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 30px 20px; color: var(--text-secondary);">
+                        <i class="fas fa-comments" style="font-size: 32px; margin-bottom: 10px; opacity: 0.5;"></i>
+                        <div style="font-size: 13px;">Henüz özel sohbetiniz yok</div>
+                    </div>
+                `;
                 return;
             }
-            channel.mutes.delete(SYSTEM.currentUser.id);
-        }
-        
-        // Sunucuya mesaj gönder
-        const client = window.eliteChatClient;
-        const serverMessage = client.sendMessage(SYSTEM.currentChannel, text);
-        
-        if (serverMessage) {
-            // Mesajı lokal olarak da ekle (anında görünsün)
-            const localMessage = {
-                id: serverMessage.id,
-                type: 'message',
-                userId: SYSTEM.currentUser.id,
-                text: text,
-                time: new Date(),
-                channel: SYSTEM.currentChannel
-            };
             
-            channel.messages.push(localMessage);
-            addMessageToChat(localMessage, SYSTEM.currentUser);
-        }
-    };
-    
-    // Mevcut özel mesaj sistemini güncelle
-    const originalSendPrivateMessage = window.sendPrivateMessage;
-    
-    window.sendPrivateMessage = function(toUserId, text) {
-        if (!DATA.users[toUserId]) {
-            addSystemMessage('❌ Kullanıcı bulunamadı!');
-            return;
-        }
-        
-        // Sunucuya özel mesaj gönder
-        const client = window.eliteChatClient;
-        const serverPM = client.sendPrivateMessage(toUserId, text);
-        
-        if (serverPM) {
-            // Mesajı lokal olarak da ekle
-            const pmKey = [SYSTEM.currentUser.id, toUserId].sort().join('_');
-            
-            if (!DATA.privateMessages.has(pmKey)) {
-                DATA.privateMessages.set(pmKey, []);
-            }
-            
-            const messages = DATA.privateMessages.get(pmKey);
-            const localMessage = {
-                id: serverPM.id,
-                type: 'pm',
-                from: SYSTEM.currentUser.id,
-                to: toUserId,
-                text: text,
-                time: new Date(),
-                read: false
-            };
-            
-            messages.push(localMessage);
-            
-            if (SYSTEM.pmWindows[toUserId]) {
-                addMessageToPMWindow(toUserId, localMessage);
-            }
-            
-            updatePMConversationList();
-            
-            showNotification(DATA.users[toUserId].name, text, 'pm');
-        }
-    };
-    
-    // Gerçek zamanlı event listener'ları kur
-    function setupRealtimeListeners() {
-        const client = window.eliteChatClient;
-        
-        if (!client) return;
-        
-        // Yeni mesaj geldiğinde
-        client.on('new_message', (data) => {
-            // Eğer mesaj bu kanalsa ve başkasından geldiyse
-            if (data.channel === SYSTEM.currentChannel && 
-                data.message.userId !== SYSTEM.currentUser.id) {
+            sortedConversations.forEach(conv => {
+                const item = document.createElement('div');
+                item.className = `pm-item ${conv.unreadCount > 0 ? 'unread' : ''}`;
                 
-                const user = DATA.users[data.message.userId];
-                if (user) {
-                    const localMessage = {
-                        id: data.message.id,
-                        type: 'message',
-                        userId: data.message.userId,
-                        text: data.message.text,
-                        time: new Date(data.message.time),
-                        channel: data.message.channel
-                    };
-                    
-                    // Mesajı lokal kanala ekle (zaten yoksa)
-                    const channel = DATA.channels[data.message.channel];
-                    if (channel) {
-                        const exists = channel.messages.some(m => m.id === data.message.id);
-                        if (!exists) {
-                            channel.messages.push(localMessage);
-                        }
+                const displayName = conv.user.id === 'mate' ? '🤖Mate' : conv.user.name;
+                
+                const lastMessageText = conv.lastMessage ? 
+                    (conv.lastMessage.text.length > 30 ? 
+                     conv.lastMessage.text.substring(0, 30) + '...' : 
+                     conv.lastMessage.text) : 
+                    'Mesaj yok';
+                
+                const lastMessageTime = conv.lastMessage ? 
+                    formatTime(conv.lastMessage.time) : '';
+                
+                item.innerHTML = `
+                    <div class="pm-avatar">
+                        ${conv.user.avatar}
+                    </div>
+                    <div class="pm-info">
+                        <div class="pm-name">
+                            ${escapeHtml(displayName)}
+                            ${conv.unreadCount > 0 ? 
+                              `<span style="background: var(--accent-blue); color: white; font-size: 10px; padding: 1px 5px; border-radius: 10px; margin-left: 5px;">${conv.unreadCount}</span>` : 
+                              ''}
+                        </div>
+                        <div class="pm-preview">${escapeHtml(lastMessageText)}</div>
+                    </div>
+                    <div class="pm-time">${lastMessageTime}</div>
+                `;
+                
+                item.addEventListener('click', () => {
+                    openPrivateChat(conv.user.id);
+                });
+                
+                container.appendChild(item);
+            });
+        }
+
+        // ==================== OTOMATİK GÜNCELLEMELER ====================
+        function startAutoUpdates() {
+            const interval1 = setInterval(() => {
+                const viewerCount = document.getElementById('viewerCount');
+                if (viewerCount) {
+                    const current = parseInt(viewerCount.textContent.replace(/[^0-9]/g, '')) || 1200;
+                    const change = Math.floor(Math.random() * 100) - 50;
+                    const newCount = Math.max(100, current + change);
+                    viewerCount.textContent = newCount >= 1000 ? (newCount/1000).toFixed(1) + 'K' : newCount.toString();
+                }
+            }, 30000);
+            
+            SYSTEM.intervals.push(interval1);
+        }
+
+        function stopAutoUpdates() {
+            SYSTEM.intervals.forEach(interval => clearInterval(interval));
+            SYSTEM.intervals = [];
+        }
+
+        // ==================== IRC KOMUT FONKSİYONLARI (Kısaltılmış) ====================
+        function handleIRCCommand(fullCommand) {
+            const parts = fullCommand.split(' ');
+            const cmd = parts[0].toLowerCase();
+            const args = parts.slice(1);
+            
+            const commands = {
+                '/nick': () => {
+                    if (args.length >= 1) changeNick(args[0]);
+                    else addSystemMessage('❌ Kullanım: /nick yeni_nick');
+                },
+                '/join': () => {
+                    if (args.length >= 1) {
+                        let channelName = args[0];
+                        if (!channelName.startsWith('#')) channelName = '#' + channelName;
+                        joinChannel(channelName);
+                    } else {
+                        addSystemMessage('❌ Kullanım: /join #kanal');
                     }
-                    
-                    // Mesajı ekranda göster
-                    addMessageToChat(localMessage, user);
+                },
+                '/leave': () => leaveChannel(),
+                '/msg': () => {
+                    if (args.length >= 2) {
+                        const target = args[0];
+                        const message = args.slice(1).join(' ');
+                        sendPrivateMessage(target.toLowerCase(), message);
+                    } else {
+                        addSystemMessage('❌ Kullanım: /msg nick mesaj');
+                    }
+                },
+                '/me': () => {
+                    if (args.length >= 1) {
+                        const action = args.join(' ');
+                        sendChannelMessage(`* ${SYSTEM.currentUser.name} ${action}`);
+                    } else {
+                        addSystemMessage('❌ Kullanım: /me eylem');
+                    }
+                },
+                '/who': () => listChannelUsers(),
+                '/clear': () => clearChat(),
+                '/topic': () => {
+                    if (args.length >= 1) changeTopic(args.join(' '));
+                    else addSystemMessage('❌ Kullanım: /topic yeni_konu');
+                },
+                '/help': () => showIRCHelp(),
+                '/ping': () => addSystemMessage('🏓 Pong!'),
+                '/time': () => addSystemMessage(`🕒 ${new Date().toLocaleString('tr-TR')}`),
+                '/quit': () => {
+                    addSystemMessage('👋 Çıkış yapılıyor...');
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
                 }
+            };
+            
+            if (commands[cmd]) {
+                commands[cmd]();
+            } else {
+                addSystemMessage(`❌ Bilinmeyen komut: ${cmd}. /help yazarak yardım alın.`);
             }
-        });
-        
-        // Özel mesaj geldiğinde
-        client.on('private_message', (data) => {
-            const message = data.message;
-            
-            // Eğer bu mesaj bana geldiyse
-            if (message.to === SYSTEM.currentUser.id) {
-                const pmKey = [message.from, message.to].sort().join('_');
-                
-                if (!DATA.privateMessages.has(pmKey)) {
-                    DATA.privateMessages.set(pmKey, []);
-                }
-                
-                const messages = DATA.privateMessages.get(pmKey);
-                const localMessage = {
-                    id: message.id,
-                    type: 'pm',
-                    from: message.from,
-                    to: message.to,
-                    text: message.text,
-                    time: new Date(message.time),
-                    read: false
-                };
-                
-                messages.push(localMessage);
-                
-                // PM penceresi açıksa göster
-                if (SYSTEM.pmWindows[message.from]) {
-                    addMessageToPMWindow(message.from, localMessage);
-                }
-                
-                updatePMConversationList();
-                
-                // Bildirim göster
-                const sender = DATA.users[message.from];
-                if (sender) {
-                    showNotification(sender.name, message.text, 'pm');
-                }
-            }
-        });
-        
-        // Yeni kullanıcı katıldığında
-        client.on('user_joined', (data) => {
-            const user = data.user;
-            
-            // Kullanıcıyı lokal veriye ekle
-            DATA.users[user.id] = user;
-            DATA.onlineUsers.add(user.id);
-            
-            // Genel kanala ekle
-            const generalChannel = DATA.channels.general;
-            if (generalChannel) {
-                generalChannel.users.add(user.id);
+        }
+
+        function changeNick(newNick) {
+            if (!newNick || newNick.length < 2) {
+                addSystemMessage('❌ Geçersiz nick! (min 2 karakter)');
+                return;
             }
             
-            // Eğer genel kanaldaysak mesaj göster
-            if (SYSTEM.currentChannel === 'general') {
-                addSystemMessage(`🎉 ${user.name} sohbete katıldı!`);
+            const cleanNick = newNick.replace(/[^a-zA-Z0-9._]/g, '');
+            const userId = cleanNick.toLowerCase();
+            
+            if (userId === 'mate') {
+                addSystemMessage('❌ Bu kullanıcı adı sistem tarafından kullanılıyor!');
+                return;
             }
             
-            // Online listeyi güncelle
-            updateOnlineList();
-        });
-        
-        // Kullanıcı ayrıldığında
-        client.on('user_left', (data) => {
-            const userId = data.userId;
-            
-            // Kullanıcıyı çevrimdışı yap
-            if (DATA.users[userId]) {
-                DATA.users[userId].online = false;
-                DATA.onlineUsers.delete(userId);
+            if (DATA.users[userId] && userId !== SYSTEM.currentUser.id) {
+                addSystemMessage('❌ Bu kullanıcı adı zaten kullanılıyor!');
+                return;
             }
             
-            // Tüm kanallardan çıkar
+            const oldNick = SYSTEM.currentUser.name;
+            const oldUserId = SYSTEM.currentUser.id;
+            
+            SYSTEM.currentUser.name = cleanNick;
+            SYSTEM.currentUser.avatar = cleanNick.charAt(0).toUpperCase();
+            
+            delete DATA.users[oldUserId];
+            DATA.users[userId] = SYSTEM.currentUser;
+            
+            DATA.onlineUsers.delete(oldUserId);
+            DATA.onlineUsers.add(userId);
+            
             Object.values(DATA.channels).forEach(channel => {
-                channel.users.delete(userId);
+                if (channel.users.has(oldUserId)) {
+                    channel.users.delete(oldUserId);
+                    channel.users.add(userId);
+                }
             });
             
-            // Online listeyi güncelle
+            addSystemMessage(`✅ Nick değiştirildi: ${oldNick} → ${cleanNick}`);
             updateOnlineList();
-        });
-        
-        // Yeni kanal oluşturulduğunda
-        client.on('channel_created', (data) => {
-            const channel = data.channel;
+        }
+
+        function joinChannel(channelName) {
+            const channelId = channelName.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '_');
             
-            // Kanalı lokal veriye ekle
-            DATA.channels[channel.id] = {
-                ...channel,
-                users: new Set(channel.users),
-                operators: new Set(channel.operators),
-                voices: new Set(channel.voices),
-                bans: new Map(Object.entries(channel.bans || {})),
-                mutes: new Map(Object.entries(channel.mutes || {})),
-                messages: channel.messages || []
-            };
+            if (!DATA.channels[channelId]) {
+                addSystemMessage(`❌ Kanal bulunamadı: ${channelName}`);
+                return;
+            }
             
-            // Eğer bu kanalın sekmesi yoksa ekle
+            const channel = DATA.channels[channelId];
+            
+            if (channel.bans.has(SYSTEM.currentUser.id)) {
+                const banInfo = channel.bans.get(SYSTEM.currentUser.id);
+                addSystemMessage(`❌ Bu kanaldan banlısınız! Sebep: ${banInfo.reason}`);
+                return;
+            }
+            
+            channel.users.add(SYSTEM.currentUser.id);
+            
             let tabExists = false;
             document.querySelectorAll('.channel-tab').forEach(tab => {
-                if (tab.dataset.channel === channel.id) {
+                if (tab.dataset.channel === channelId) {
                     tabExists = true;
                 }
             });
@@ -4167,101 +2978,115 @@ document.addEventListener('DOMContentLoaded', function() {
                 const tabsContainer = document.getElementById('channelTabs');
                 const tab = document.createElement('div');
                 tab.className = 'channel-tab';
-                tab.dataset.channel = channel.id;
+                tab.dataset.channel = channelId;
                 tab.innerHTML = `<i class="fas fa-hashtag"></i> ${channel.name.substring(1)}`;
-                tab.addEventListener('click', () => switchChannel(channel.id));
+                tab.addEventListener('click', () => switchChannel(channelId));
                 tabsContainer.appendChild(tab);
             }
             
-            // Sistem mesajı göster
-            addSystemMessage(`📢 Yeni kanal oluşturuldu: ${channel.name}`);
-        });
-        
-        // Kullanıcı senkronizasyonu
-        client.on('sync_users', (data) => {
-            const serverUsers = data.users;
+            switchChannel(channelId);
+            addSystemMessage(`✅ ${channelName} kanalına katıldınız`);
+        }
+
+        function leaveChannel() {
+            if (SYSTEM.currentChannel === 'general') {
+                addSystemMessage('❌ Genel kanaldan ayrılamazsınız!');
+                return;
+            }
             
-            // Sunucudaki kullanıcıları lokal veriyle birleştir
-            serverUsers.forEach(serverUser => {
-                if (!DATA.users[serverUser.id]) {
-                    DATA.users[serverUser.id] = serverUser;
-                    DATA.onlineUsers.add(serverUser.id);
-                }
+            const channel = DATA.channels[SYSTEM.currentChannel];
+            const channelName = channel.name;
+            
+            channel.users.delete(SYSTEM.currentUser.id);
+            
+            const tab = document.querySelector(`.channel-tab[data-channel="${SYSTEM.currentChannel}"]`);
+            if (tab) tab.remove();
+            
+            switchChannel('general');
+            addSystemMessage(`✅ ${channelName} kanalından ayrıldınız`);
+        }
+
+        function listChannelUsers() {
+            const channel = DATA.channels[SYSTEM.currentChannel];
+            if (!channel) return;
+            
+            const users = Array.from(channel.users)
+                .map(id => DATA.users[id])
+                .filter(u => u)
+                .sort((a, b) => {
+                    const roleOrder = { owner: 1, admin: 2, coadmin: 3, operator: 4, voice: 5, user: 6 };
+                    const roleDiff = roleOrder[a.role] - roleOrder[b.role];
+                    if (roleDiff !== 0) return roleDiff;
+                    return a.name.localeCompare(b.name);
+                });
+            
+            let message = `👥 ${channel.name} Kullanıcıları (${users.length}):\n`;
+            users.forEach(user => {
+                const displayName = user.id === 'mate' ? '🤖Mate' : user.name;
+                message += `• ${displayName} ${getRoleBadge(user.role)}\n`;
             });
             
-            // Online listeyi güncelle
-            updateOnlineList();
-        });
-        
-        // Kanal senkronizasyonu
-        client.on('sync_channels', (data) => {
-            const serverChannels = data.channels;
-            
-            serverChannels.forEach(serverChannel => {
-                if (!DATA.channels[serverChannel.id]) {
-                    DATA.channels[serverChannel.id] = {
-                        ...serverChannel,
-                        users: new Set(serverChannel.users || []),
-                        operators: new Set(serverChannel.operators || []),
-                        voices: new Set(serverChannel.voices || []),
-                        bans: new Map(Object.entries(serverChannel.bans || {})),
-                        mutes: new Map(Object.entries(serverChannel.mutes || {})),
-                        messages: serverChannel.messages || []
-                    };
+            const lines = message.split('\n');
+            lines.forEach(line => {
+                if (line.trim()) {
+                    addSystemMessage(line);
                 }
             });
-        });
-    }
-    
-    // Sunucudan veri senkronizasyonu
-    function syncWithServer() {
-        // Sunucudaki tüm mesajları çek
-        const allMessages = JSON.parse(localStorage.getItem('elitechat_server_messages') || '[]');
-        
-        // Mesajları kanallara dağıt
-        allMessages.forEach(msg => {
-            const channel = DATA.channels[msg.channel];
-            if (channel) {
-                const exists = channel.messages.some(m => m.id === msg.id);
-                if (!exists) {
-                    channel.messages.push({
-                        ...msg,
-                        time: new Date(msg.time)
-                    });
+        }
+
+        function changeTopic(newTopic) {
+            const channel = DATA.channels[SYSTEM.currentChannel];
+            if (!channel) return;
+            
+            if (channel.owner !== SYSTEM.currentUser.id && 
+                SYSTEM.currentUser.role !== 'owner' && 
+                SYSTEM.currentUser.role !== 'admin') {
+                addSystemMessage('❌ Kanal konusunu değiştirme yetkiniz yok!');
+                return;
+            }
+            
+            const oldTopic = channel.topic;
+            channel.topic = newTopic;
+            
+            document.getElementById('channelTopic').textContent = newTopic;
+            document.getElementById('panelChannelTopic').textContent = newTopic;
+            
+            addSystemMessage(`📝 Kanal konusu değiştirildi: "${oldTopic}" → "${newTopic}"`);
+        }
+
+        function clearChat() {
+            const container = document.getElementById('chatMessages');
+            if (container) {
+                clearContainer('chatMessages');
+                addSystemMessage('✅ Sohbet temizlendi');
+            }
+        }
+
+        function showIRCHelp() {
+            const helpText = `
+📋 IRC KOMUTLARI:
+
+👤 GENEL KOMUTLAR:
+/nick yeni_nick       - Kullanıcı adını değiştir
+/join #kanal          - Kanala katıl
+/leave                - Kanaldan ayrıl
+/msg nick mesaj       - Özel mesaj gönder
+/me eylem             - Eylem mesajı gönder
+/who                  - Kanal kullanıcılarını listele
+/clear                - Sohbeti temizle
+/topic yeni_konu      - Kanal konusunu değiştir
+/ping                 - Ping kontrolü
+/time                 - Zamanı göster
+/help                 - Bu yardımı göster
+/quit                 - Çıkış yap
+            `;
+            
+            helpText.trim().split('\n').forEach(line => {
+                if (line.trim()) {
+                    addSystemMessage(line);
                 }
-            }
-        });
-        
-        // Eğer genel kanaldaysak mesajları yükle
-        if (SYSTEM.currentChannel === 'general') {
-            loadChannelMessages('general');
+            });
         }
-        
-        // Sunucudaki kullanıcıları çek
-        const serverUsers = JSON.parse(localStorage.getItem('elitechat_server_users') || '[]');
-        serverUsers.forEach(user => {
-            if (!DATA.users[user.id]) {
-                DATA.users[user.id] = user;
-                DATA.onlineUsers.add(user.id);
-            }
-        });
-        
-        // Online listeyi güncelle
-        updateOnlineList();
-    }
-    
-    // Sayfa kapatılırken bağlantıyı kes
-    window.addEventListener('beforeunload', function() {
-        const client = window.eliteChatClient;
-        if (client && client.isConnected) {
-            client.disconnect();
-        }
-        
-        stopAutoUpdates();
-    });
-    
-    console.log('✅ Gerçek zamanlı sohbet sistemi aktif!');
-});
     </script>
 </body>
 </html>
