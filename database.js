@@ -330,6 +330,82 @@ class Database {
         this.saveData();
     }
 }
+// Database class'ına bu methodları ekle:
+class Database {
+    // ... diğer kodlar ...
+    
+    isNickRegistered(nick) {
+        const cleanNick = nick.toLowerCase();
+        return Object.keys(this.registeredUsers).some(registeredNick => 
+            registeredNick.toLowerCase() === cleanNick
+        );
+    }
+    
+    findRegisteredNick(nick) {
+        const cleanNick = nick.toLowerCase();
+        for (const registeredNick in this.registeredUsers) {
+            if (registeredNick.toLowerCase() === cleanNick) {
+                return registeredNick; // Orijinal nick'i döndür
+            }
+        }
+        return null;
+    }
+    
+    registerUser(username, password, role = 'user') {
+        const userId = username.toLowerCase();
+        
+        // Büyük/küçük harf farklılığı kontrolü
+        if (this.isNickRegistered(username)) {
+            const existingNick = this.findRegisteredNick(username);
+            return { error: `Bu nick zaten kayıtlı: ${existingNick}` };
+        }
+        
+        if (this.registeredUsers[userId]) {
+            return { error: 'Bu kullanıcı adı zaten alınmış' };
+        }
 
+        this.registeredUsers[userId] = {
+            password: this.hashPassword(password),
+            role: role,
+            bio: '',
+            joinDate: new Date().toISOString(),
+            lastSeen: new Date().toISOString(),
+            avatar: username.charAt(0).toUpperCase(),
+            originalNick: username // Orijinal nick'i kaydet
+        };
+
+        this.saveData();
+        return this.registeredUsers[userId];
+    }
+    
+    authenticateUser(username, password) {
+        const cleanNick = username.toLowerCase();
+        
+        // Büyük/küçük harf farklılığı ile arama
+        let foundNick = null;
+        for (const registeredNick in this.registeredUsers) {
+            if (registeredNick.toLowerCase() === cleanNick) {
+                foundNick = registeredNick;
+                break;
+            }
+        }
+        
+        if (!foundNick) {
+            return { error: 'Kullanıcı bulunamadı' };
+        }
+        
+        const user = this.registeredUsers[foundNick];
+        
+        if (user.password === this.hashPassword(password)) {
+            return { 
+                success: true, 
+                user: user,
+                originalNick: foundNick // Orijinal nick'i döndür
+            };
+        }
+        
+        return { error: 'Şifre yanlış' };
+    }
+}
 // Global database instance
 window.elitechatDB = new Database();
