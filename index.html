@@ -760,7 +760,6 @@
                     <div id="customCommandsList" style="max-height: 200px; overflow-y: auto;">
                         <!-- Komutlar buraya gelecek -->
                     </div>
-                </div>
             </div>
             
             <div class="owner-content" id="systemTab">
@@ -811,88 +810,155 @@
             </div>
         </div>
     </div>
+</body>
+</html>
 
-    <!-- Diğer modallar (kısaltıldı) -->
-    <!-- Video, Kanal, PM, Ayarlar modalları var ama yer kısıtı nedeniyle kısaltıldı -->
-    <!-- Tam versiyonda mevcut olacaklar -->
-
-    <script src="database.js"></script>
-    <script src="irc-commands.js"></script>
-    <script src="pm-system.js"></script>
-    <script src="client.js"></script>
-    <script>
-// ACİL GİRİŞ DÜZELTİCİ
+<!-- GİRİŞ SİSTEMİ -->
+<script>
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('✅ Acil giriş düzeltisi yükleniyor...');
+    console.log('✅ EliteChat yükleniyor...');
     
+    // HTML elementlerini al
+    const loginScreen = document.getElementById('loginScreen');
+    const app = document.getElementById('app');
     const loginButton = document.getElementById('loginButton');
     const nickInput = document.getElementById('nickInput');
     const passInput = document.getElementById('passInput');
+    const ownerPanelBtn = document.getElementById('ownerPanelBtn');
+    const messageInput = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
     
     if (!loginButton || !nickInput) {
         console.error('❌ Giriş elementleri bulunamadı!');
         return;
     }
     
-    // Mevcut event listener'ları temizle (çakışmaları önlemek için)
-    const newLoginButton = loginButton.cloneNode(true);
-    loginButton.parentNode.replaceChild(newLoginButton, loginButton);
+    // Temiz event listener'lar ekle
+    loginButton.addEventListener('click', handleLogin);
+    nickInput.addEventListener('keypress', (e) => e.key === 'Enter' && handleLogin());
+    passInput.addEventListener('keypress', (e) => e.key === 'Enter' && handleLogin());
     
-    const newNickInput = nickInput.cloneNode(true);
-    nickInput.parentNode.replaceChild(newNickInput, nickInput);
+    // Mesaj gönderme
+    if (sendBtn && messageInput) {
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    }
     
-    const newPassInput = passInput.cloneNode(true);
-    passInput.parentNode.replaceChild(newPassInput, passInput);
+    // Basit sohbet sistemi
+    function sendMessage() {
+        const text = messageInput?.value.trim();
+        if (!text) return;
+        
+        const userNick = localStorage.getItem('currentNick') || 'Kullanıcı';
+        
+        // Mesajı ekrana ekle
+        addMessageToChat(userNick, text, true);
+        
+        // Input'u temizle
+        if (messageInput) messageInput.value = '';
+        
+        // Bot cevabı (basit)
+        setTimeout(() => {
+            const responses = [
+                "Hoş geldin! Nasılsın?",
+                "EliteChat'e hoş geldiniz!",
+                "Bugün nasılsınız?",
+                "Yardıma ihtiyacınız var mı?",
+                "Güzel bir gün, değil mi?"
+            ];
+            const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+            addMessageToChat('🤖Mate', randomResponse, false);
+        }, 1000);
+    }
     
-    // Yeni event listener'lar ekle
-    newLoginButton.addEventListener('click', function() {
-        handleLogin();
-    });
+    function addMessageToChat(sender, text, isOutgoing) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (!chatMessages) return;
+        
+        // İlk hoş geldin mesajını temizle
+        if (chatMessages.children.length === 1 && 
+            chatMessages.children[0].querySelector('.fa-comments')) {
+            chatMessages.innerHTML = '';
+        }
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${isOutgoing ? 'message-outgoing' : 'message-incoming'}`;
+        
+        const time = new Date().toLocaleTimeString('tr-TR', { 
+            hour: '2-digit', 
+            minute: '2-digit'
+        });
+        
+        messageDiv.innerHTML = `
+            <div class="message-sender">
+                ${isOutgoing ? '' : sender}
+            </div>
+            <div class="message-text">${escapeHtml(text)}</div>
+            <div class="message-time">${time}</div>
+        `;
+        
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
     
-    newNickInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') handleLogin();
-    });
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return String(text).replace(/[&<>"']/g, m => map[m]);
+    }
     
-    newPassInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') handleLogin();
-    });
-    
+    // Giriş fonksiyonu
     function handleLogin() {
-        const nick = newNickInput.value.trim();
-        const password = newPassInput.value;
+        const nick = nickInput.value.trim();
+        const password = passInput.value;
         
         console.log('Giriş denemesi:', nick, password ? 'şifreli' : 'şifresiz');
         
         if (!nick || nick.length < 2) {
             alert('Kullanıcı adı en az 2 karakter olmalıdır');
-            newNickInput.focus();
+            nickInput.focus();
             return;
         }
         
-        // Clean nick
+        // Nick'i temizle
         const cleanNick = nick.replace(/[^a-zA-Z0-9._]/g, '');
+        if (cleanNick.length < 2) {
+            alert('Geçerli bir kullanıcı adı girin');
+            nickInput.focus();
+            return;
+        }
         
         // Owner kontrolü
         let role = 'guest';
-        let specialLogin = false;
-        
         if (cleanNick.toLowerCase() === 'mateky' && password === 'kumsal07@') {
             role = 'owner';
-            specialLogin = true;
             console.log('✅ Owner girişi başarılı');
         }
         
         // Giriş yap
-        document.getElementById('loginScreen').classList.add('hidden');
-        document.getElementById('app').classList.remove('hidden');
+        loginScreen.classList.add('hidden');
+        app.classList.remove('hidden');
         
         // Owner panel butonunu göster
-        if (role === 'owner') {
-            const ownerBtn = document.getElementById('ownerPanelBtn');
-            if (ownerBtn) ownerBtn.classList.remove('hidden');
+        if (role === 'owner' && ownerPanelBtn) {
+            ownerPanelBtn.classList.remove('hidden');
         }
         
-        // Basit sistem mesajı
+        // Kullanıcı bilgisini sakla
+        localStorage.setItem('currentNick', cleanNick);
+        localStorage.setItem('currentRole', role);
+        
+        // Hoş geldin mesajı
         const chatMessages = document.getElementById('chatMessages');
         if (chatMessages) {
             chatMessages.innerHTML = '';
@@ -909,20 +975,25 @@ document.addEventListener('DOMContentLoaded', function() {
                             ${cleanNick}
                         </div>
                         <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
-                            ${specialLogin ? '👑 Owner olarak giriş yaptınız' : 'Misafir olarak giriş yaptınız'}
+                            ${role === 'owner' ? '👑 Owner' : '👤 Misafir'} olarak giriş yaptınız
                         </div>
                     </div>
                 </div>
             `;
             chatMessages.appendChild(welcomeMsg);
+            
+            // Bot mesajı
+            setTimeout(() => {
+                addMessageToChat('🤖Mate', `Merhaba ${cleanNick}! EliteChat'e hoş geldin.`, false);
+            }, 500);
         }
         
         // Online listeyi güncelle
         updateOnlineList(cleanNick, role);
         
         // Giriş alanlarını temizle
-        newNickInput.value = '';
-        newPassInput.value = '';
+        nickInput.value = '';
+        passInput.value = '';
         
         console.log('✅ Giriş başarılı:', cleanNick, role);
     }
@@ -930,6 +1001,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateOnlineList(nick, role) {
         const userList = document.getElementById('userList');
         const onlineCount = document.getElementById('onlineCount');
+        const channelUsersElement = document.getElementById('channelUsers');
         
         if (!userList) return;
         
@@ -947,7 +1019,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     🤖Mate
                     <span class="role-badge role-owner">O</span>
                 </div>
-                <div class="user-status">🟢 Çevrimiçi</div>
+                <div class="text-sm text-muted">🟢 Çevrimiçi</div>
             </div>
         `;
         userList.appendChild(botItem);
@@ -968,31 +1040,53 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${nick}
                     ${roleBadge}
                 </div>
-                <div class="user-status">🟢 Çevrimiçi</div>
+                <div class="text-sm text-muted">🟢 Çevrimiçi</div>
             </div>
         `;
         userList.appendChild(userItem);
         
-        // Sayıyı güncelle
-        if (onlineCount) {
-            onlineCount.textContent = '(2)';
-        }
-        
-        // Kanal kullanıcı sayısını güncelle
-        const channelUsersElement = document.getElementById('channelUsers');
-        if (channelUsersElement) {
-            channelUsersElement.textContent = '2';
-        }
+        // Sayıları güncelle
+        if (onlineCount) onlineCount.textContent = '(2)';
+        if (channelUsersElement) channelUsersElement.textContent = '2';
     }
     
-    // DEBUG: Otomatik giriş (test için)
-    // setTimeout(() => {
-    //     newNickInput.value = 'testuser';
-    //     handleLogin();
-    // }, 1000);
+    // Panel sekmeleri
+    document.querySelectorAll('.panel-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const panel = tab.dataset.panel;
+            document.getElementById('onlinePanel').classList.add('hidden');
+            document.getElementById('pmPanel').classList.add('hidden');
+            document.getElementById(`${panel}Panel`).classList.remove('hidden');
+            
+            document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+        });
+    });
     
-    console.log('✅ Acil giriş sistemi hazır!');
+    // Diğer butonlar için basit event'ler
+    document.getElementById('themeBtn')?.addEventListener('click', () => {
+        document.body.classList.toggle('day-mode');
+        document.body.classList.toggle('night-mode');
+    });
+    
+    document.getElementById('fullscreenBtn')?.addEventListener('click', () => {
+        const player = document.getElementById('youtubePlayer');
+        if (player.requestFullscreen) {
+            player.requestFullscreen();
+        } else if (player.webkitRequestFullscreen) {
+            player.webkitRequestFullscreen();
+        }
+    });
+    
+    // Test için: Otomatik giriş (debug modu için aç/kapat)
+    const DEBUG_AUTO_LOGIN = false; // true yaparsanız otomatik girer
+    if (DEBUG_AUTO_LOGIN) {
+        setTimeout(() => {
+            nickInput.value = 'testuser';
+            handleLogin();
+        }, 500);
+    }
+    
+    console.log('✅ EliteChat hazır!');
 });
 </script>
-</body>
-</html>
