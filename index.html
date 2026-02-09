@@ -1764,6 +1764,15 @@
             transform: translateX(0);
         }
 
+        .profile-header {
+            padding: var(--spacing-lg);
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-tertiary);
+        }
+
         .profile-scroll {
             flex: 1;
             overflow-y: auto;
@@ -2013,6 +2022,67 @@
 
         .setting-item.logout i:first-child {
             color: var(--accent-red);
+        }
+
+        /* PRIVACY SETTINGS STYLES */
+        .privacy-settings {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-md);
+        }
+
+        .privacy-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--spacing-md);
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-md);
+        }
+
+        .privacy-info {
+            flex: 1;
+        }
+
+        .privacy-title {
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .privacy-desc {
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .privacy-toggle {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            cursor: pointer;
+        }
+
+        .privacy-toggle.active {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .privacy-toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+
+        .privacy-toggle.active::after {
+            transform: translateX(20px);
         }
 
         /* UTILITIES */
@@ -2476,19 +2546,24 @@
                     </div>
                 </div>
                 
-                <!-- Aktivite Geçmişi -->
+                <!-- Gizlilik Ayarları -->
                 <div class="profile-section">
-                    <h4><i class="fas fa-history"></i> Son Aktiviteler</h4>
-                    <div class="activity-list" id="activityList">
-                        <!-- Aktiviteler buraya eklenecek -->
-                    </div>
-                </div>
-                
-                <!-- Hikayeler -->
-                <div class="profile-section">
-                    <h4><i class="fas fa-images"></i> Son Hikayeler</h4>
-                    <div class="profile-stories" id="profileStoriesList">
-                        <!-- Hikayeler buraya eklenecek -->
+                    <h4><i class="fas fa-user-shield"></i> Gizlilik Ayarları</h4>
+                    <div class="privacy-settings">
+                        <div class="privacy-item">
+                            <div class="privacy-info">
+                                <div class="privacy-title">Uyku Modu</div>
+                                <div class="privacy-desc">Çevrimiçi durumunuzu gizler</div>
+                            </div>
+                            <div class="privacy-toggle" id="sleepModeToggle" onclick="togglePrivacySetting('sleepMode')"></div>
+                        </div>
+                        <div class="privacy-item">
+                            <div class="privacy-info">
+                                <div class="privacy-title">Hayalet Modu</div>
+                                <div class="privacy-desc">Son görülme zamanınızı gizler</div>
+                            </div>
+                            <div class="privacy-toggle" id="ghostModeToggle" onclick="togglePrivacySetting('ghostMode')"></div>
+                        </div>
                     </div>
                 </div>
                 
@@ -2511,12 +2586,6 @@
                         <button class="setting-item" onclick="changePassword()">
                             <i class="fas fa-lock"></i>
                             <span>Şifre Değiştir</span>
-                            <i class="fas fa-chevron-right"></i>
-                        </button>
-                        
-                        <button class="setting-item" onclick="privacySettings()">
-                            <i class="fas fa-shield-alt"></i>
-                            <span>Gizlilik Ayarları</span>
                             <i class="fas fa-chevron-right"></i>
                         </button>
                         
@@ -2668,8 +2737,11 @@
             
             const normalizedNick = nick.toLowerCase();
             
-            if (nickRegistry.has(normalizedNick) && normalizedNick !== 'kumsal') {
-                alert('Bu nick zaten alınmış! Lütfen başka bir nick seçin.');
+            // Kayıtlı değilse ve demo kullanıcı da değilse kayıt et
+            const isDemoUser = demoUsers.some(u => u.name.toLowerCase() === normalizedNick);
+            
+            if (!isDemoUser) {
+                alert('Sadece kayıtlı kullanıcılar giriş yapabilir! Demo kullanıcılardan birini kullanın.');
                 return;
             }
             
@@ -2685,19 +2757,8 @@
                     return;
                 }
                 
-                user = {
-                    id: demoUsers.length + 1,
-                    name: nick,
-                    avatar: nick.charAt(0).toUpperCase(),
-                    role: 'user',
-                    online: true,
-                    messages: 0,
-                    stories: 0,
-                    followers: 0,
-                    following: 0,
-                    password: pass || ''
-                };
-                demoUsers.push(user);
+                alert('Sadece kayıtlı kullanıcılar giriş yapabilir!');
+                return;
             }
             
             user.online = true;
@@ -2716,12 +2777,10 @@
             // Profil bio'su ekle
             currentUser.bio = "Popbox Elite kullanıcısı";
             
-            // Profil gizlilik ayarları
+            // Gizlilik ayarları
             currentUser.privacy = {
-                profile: 'Herkese açık',
-                stories: 'Takipçiler',
-                messages: 'Herkes',
-                onlineStatus: 'Göster'
+                sleepMode: false,
+                ghostMode: false
             };
             
             demoUsers.forEach(u => {
@@ -2790,8 +2849,10 @@
             });
             
             // Seçilen tab'ı aktif et
-            document.querySelector(`.video-tab[onclick*="${tabName}"]`).classList.add('active');
-            document.getElementById(tabName + 'Tab').classList.add('active');
+            const tabElement = document.querySelector(`.video-tab[onclick*="'${tabName}'"]`);
+            if (tabElement) tabElement.classList.add('active');
+            const contentElement = document.getElementById(tabName + 'Tab');
+            if (contentElement) contentElement.classList.add('active');
         }
 
         function loadYouTubeVideo() {
@@ -3145,7 +3206,8 @@
                     seen: false,
                     likedBy: [],
                     reportedBy: [],
-                    views: 0
+                    views: 0,
+                    timestamp: new Date()
                 };
                 
                 stories.unshift(story);
@@ -3158,6 +3220,11 @@
                 
                 addNotification('Yeni hikaye yayınlandı!');
                 addSystemMessage('📸 ' + currentUser.name + ' yeni bir hikaye paylaştı');
+                
+                // Hikaye anlık yayınlandı mesajı
+                setTimeout(() => {
+                    alert('Hikayeniz başarıyla yayınlandı!');
+                }, 300);
             };
             
             reader.readAsDataURL(file);
@@ -3205,7 +3272,7 @@
                 storyImage.src = story.media;
                 storyImage.style.display = 'block';
                 storyVideo.style.display = 'none';
-                storyVideo.pause();
+                if (storyVideo) storyVideo.pause();
             } else {
                 storyVideo.src = story.media;
                 storyVideo.style.display = 'block';
@@ -3237,7 +3304,7 @@
             document.getElementById('storyViewer').classList.add('active');
             
             // Video ise otomatik oynat
-            if (story.type === 'video') {
+            if (story.type === 'video' && storyVideo) {
                 setTimeout(() => {
                     storyVideo.play().catch(e => console.log('Video otomatik oynatılamadı:', e));
                 }, 100);
@@ -3317,6 +3384,9 @@
             
             likesSpan.textContent = currentStory.likes;
             updateStoryStatistics();
+            
+            // Beğeni yapıldı mesajı
+            alert('Beğeniniz kaydedildi!');
         }
 
         function reportStory() {
@@ -3404,22 +3474,38 @@
         }
 
         function switchStoryTab(tabName) {
+            const storyModal = document.getElementById('storyManagementModal');
+            if (!storyModal || !storyModal.classList.contains('active')) {
+                console.log('Story management modal not open');
+                return;
+            }
+            
             // Tüm tab'ları deaktif et
-            document.querySelectorAll('.story-tab').forEach(tab => {
+            const tabs = document.querySelectorAll('.story-tab');
+            const contents = document.querySelectorAll('.story-tab-content');
+            
+            if (!tabs || !contents) return;
+            
+            tabs.forEach(tab => {
                 tab.classList.remove('active');
             });
-            document.querySelectorAll('.story-tab-content').forEach(content => {
+            
+            contents.forEach(content => {
                 content.classList.remove('active');
             });
             
             // Seçilen tab'ı aktif et
-            document.querySelector(`.story-tab[onclick*="${tabName}"]`).classList.add('active');
-            document.getElementById(tabName + 'Tab').classList.add('active');
+            const activeTab = document.querySelector(`.story-tab[onclick*="${tabName}"]`);
+            const activeContent = document.getElementById(tabName + 'Tab');
+            
+            if (activeTab) activeTab.classList.add('active');
+            if (activeContent) activeContent.classList.add('active');
         }
 
-        // Kullanıcının hikayelerini yükle
         function loadMyStories() {
             const myStoriesGrid = document.getElementById('myStoriesGrid');
+            if (!myStoriesGrid) return;
+            
             const userStories = stories.filter(s => s.userId === currentUser.id);
             
             if (userStories.length === 0) {
@@ -3443,10 +3529,10 @@
                 html += `
                     <div class="story-item" onclick="viewStory(${story.id})">
                         <div class="story-item-actions">
-                            <button class="story-action-btn" onclick="deleteStory(${story.id}); event.stopPropagation();" title="Sil">
+                            <button class="story-action-btn" onclick="event.stopPropagation(); deleteStoryById(${story.id});" title="Sil">
                                 <i class="fas fa-trash"></i>
                             </button>
-                            <button class="story-action-btn" onclick="viewStoryStats(${story.id}); event.stopPropagation();" title="İstatistikler">
+                            <button class="story-action-btn" onclick="event.stopPropagation(); viewStoryStats(${story.id});" title="İstatistikler">
                                 <i class="fas fa-chart-bar"></i>
                             </button>
                         </div>
@@ -3468,21 +3554,39 @@
             myStoriesGrid.innerHTML = html;
         }
 
-        // Hikaye istatistiklerini güncelle
+        function deleteStoryById(storyId) {
+            if (confirm('Bu hikayeyi silmek istediğinize emin misiniz?')) {
+                const storyIndex = stories.findIndex(s => s.id === storyId && s.userId === currentUser.id);
+                if (storyIndex !== -1) {
+                    stories.splice(storyIndex, 1);
+                    currentUser.stories--;
+                    
+                    updateTopStories();
+                    updateProfilePanel();
+                    loadMyStories();
+                    
+                    addNotification('Hikaye silindi');
+                }
+            }
+        }
+
         function updateStoryStatistics() {
             const userStories = stories.filter(s => s.userId === currentUser.id);
             const totalLikes = userStories.reduce((sum, story) => sum + (story.likes || 0), 0);
             const totalViews = userStories.reduce((sum, story) => sum + (story.views || 0), 0);
             
-            document.getElementById('totalStories').textContent = userStories.length;
-            document.getElementById('totalLikes').textContent = totalLikes;
-            document.getElementById('totalViews').textContent = totalViews;
+            const totalStoriesElem = document.getElementById('totalStories');
+            const totalLikesElem = document.getElementById('totalLikes');
+            const totalViewsElem = document.getElementById('totalViews');
+            
+            if (totalStoriesElem) totalStoriesElem.textContent = userStories.length;
+            if (totalLikesElem) totalLikesElem.textContent = totalLikes;
+            if (totalViewsElem) totalViewsElem.textContent = totalViews;
             
             // Grafik oluştur
             updateStoryChart();
         }
 
-        // Hikaye grafiği
         function updateStoryChart() {
             const canvas = document.getElementById('storyChart');
             if (!canvas) return;
@@ -3530,7 +3634,6 @@
             }
         }
 
-        // Hikaye istatistiklerini görüntüle
         function viewStoryStats(storyId) {
             const story = stories.find(s => s.id === storyId);
             if (!story) return;
@@ -3553,15 +3656,13 @@
         function openProfilePanel() {
             document.getElementById('profilePanel').classList.add('active');
             updateProfilePanel();
-            loadProfileActivities();
-            loadProfileStories();
+            updatePrivacySettings();
         }
 
         function closeProfilePanel() {
             document.getElementById('profilePanel').classList.remove('active');
         }
 
-        // Profil panelini güncelle
         function updateProfilePanel() {
             if (!currentUser) return;
             
@@ -3572,16 +3673,21 @@
             }
             
             // İsim ve rol
-            document.getElementById('profileName').textContent = currentUser.name;
+            const profileName = document.getElementById('profileName');
             const roleSpan = document.getElementById('profileRole');
-            roleSpan.textContent = currentUser.role;
-            roleSpan.className = `profile-role ${currentUser.role}`;
+            
+            if (profileName) profileName.textContent = currentUser.name;
+            if (roleSpan) {
+                roleSpan.textContent = currentUser.role;
+                roleSpan.className = `profile-role ${currentUser.role}`;
+            }
             
             // Biyografi
             const bioDiv = document.getElementById('profileBio');
             if (bioDiv) {
+                const bioText = currentUser.bio || 'Henüz bir biyografi eklenmemiş.';
                 bioDiv.innerHTML = `
-                    ${currentUser.bio || 'Henüz bir biyografi eklenmemiş.'}
+                    ${bioText}
                     <button class="edit-bio-btn" onclick="editBio()">
                         <i class="fas fa-edit"></i>
                     </button>
@@ -3589,13 +3695,65 @@
             }
             
             // İstatistikler
-            document.getElementById('profileMessages').textContent = currentUser.messages;
-            document.getElementById('profileStories').textContent = currentUser.stories;
-            document.getElementById('profileFollowers').textContent = currentUser.followers;
-            document.getElementById('profileFollowing').textContent = currentUser.following;
+            const messagesElem = document.getElementById('profileMessages');
+            const storiesElem = document.getElementById('profileStories');
+            const followersElem = document.getElementById('profileFollowers');
+            const followingElem = document.getElementById('profileFollowing');
+            
+            if (messagesElem) messagesElem.textContent = currentUser.messages;
+            if (storiesElem) storiesElem.textContent = currentUser.stories;
+            if (followersElem) followersElem.textContent = currentUser.followers;
+            if (followingElem) followingElem.textContent = currentUser.following;
         }
 
-        // Biyografi düzenle
+        function updatePrivacySettings() {
+            if (!currentUser.privacy) return;
+            
+            const sleepToggle = document.getElementById('sleepModeToggle');
+            const ghostToggle = document.getElementById('ghostModeToggle');
+            
+            if (sleepToggle) {
+                sleepToggle.classList.toggle('active', currentUser.privacy.sleepMode);
+            }
+            
+            if (ghostToggle) {
+                ghostToggle.classList.toggle('active', currentUser.privacy.ghostMode);
+            }
+        }
+
+        function togglePrivacySetting(setting) {
+            if (!currentUser.privacy) {
+                currentUser.privacy = {
+                    sleepMode: false,
+                    ghostMode: false
+                };
+            }
+            
+            currentUser.privacy[setting] = !currentUser.privacy[setting];
+            
+            const toggleElement = document.getElementById(setting + 'Toggle');
+            if (toggleElement) {
+                toggleElement.classList.toggle('active', currentUser.privacy[setting]);
+            }
+            
+            // Gizlilik ayarı değişti bildirimi
+            let message = '';
+            if (setting === 'sleepMode') {
+                message = currentUser.privacy.sleepMode ? 
+                    'Uyku modu aktif: Çevrimiçi durumunuz gizlendi' :
+                    'Uyku modu kapatıldı: Çevrimiçi durumunuz gösteriliyor';
+            } else if (setting === 'ghostMode') {
+                message = currentUser.privacy.ghostMode ? 
+                    'Hayalet modu aktif: Son görülme zamanınız gizlendi' :
+                    'Hayalet modu kapatıldı: Son görülme zamanınız gösteriliyor';
+            }
+            
+            if (message) {
+                alert(message);
+                addNotification(message);
+            }
+        }
+
         function editBio() {
             const newBio = prompt('Biyografinizi girin:', currentUser.bio || '');
             if (newBio !== null) {
@@ -3605,7 +3763,6 @@
             }
         }
 
-        // Avatar değiştir
         function changeAvatar() {
             document.getElementById('avatarInput').click();
         }
@@ -3646,123 +3803,6 @@
             reader.readAsDataURL(file);
         }
 
-        // Profil aktivitelerini yükle
-        function loadProfileActivities() {
-            const activityList = document.getElementById('activityList');
-            if (!activityList) return;
-            
-            // Demo aktiviteler
-            const activities = [
-                { text: 'Yeni bir hikaye paylaştı', time: '2 saat önce', icon: '📸' },
-                { text: 'Mehmet kullanıcısını takip etti', time: '1 gün önce', icon: '👤' },
-                { text: 'Genel sohbete mesaj gönderdi', time: '2 gün önce', icon: '💬' },
-                { text: 'Profil resmini güncelledi', time: '3 gün önce', icon: '🖼️' },
-                { text: 'Ayşe kullanıcısının hikayesini beğendi', time: '4 gün önce', icon: '❤️' }
-            ];
-            
-            let html = '';
-            activities.forEach(activity => {
-                html += `
-                    <div class="activity-item">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 16px;">${activity.icon}</span>
-                            <div style="flex: 1;">
-                                <div style="color: var(--text-primary);">${activity.text}</div>
-                                <div style="font-size: 11px; color: var(--text-tertiary);">${activity.time}</div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            activityList.innerHTML = html;
-        }
-
-        // Profil hikayelerini yükle
-        function loadProfileStories() {
-            const storiesList = document.getElementById('profileStoriesList');
-            if (!storiesList) return;
-            
-            const userStories = stories.filter(s => s.userId === currentUser.id).slice(0, 5);
-            
-            if (userStories.length === 0) {
-                storiesList.innerHTML = `
-                    <div style="text-align: center; padding: 20px; color: var(--text-secondary);">
-                        <i class="fas fa-images" style="font-size: 24px; margin-bottom: 8px;"></i>
-                        <div>Henüz hikayeniz yok</div>
-                    </div>
-                `;
-                return;
-            }
-            
-            let html = '';
-            userStories.forEach(story => {
-                html += `
-                    <div class="profile-story" onclick="viewStory(${story.id})">
-                        ${story.type === 'image' ? 
-                            `<img src="${story.media}" alt="Hikaye">` :
-                            `<video src="${story.media}" poster="${story.thumbnail || ''}"></video>`
-                        }
-                        <div style="position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.7); color: white; font-size: 10px; padding: 2px 4px; border-radius: 4px;">
-                            <i class="fas fa-heart"></i> ${story.likes || 0}
-                        </div>
-                    </div>
-                `;
-            });
-            
-            // Hikaye ekle butonu
-            html += `
-                <div class="profile-story" onclick="openStoryUpload()" style="background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; color: var(--accent-blue);">
-                    <div style="text-align: center;">
-                        <i class="fas fa-plus" style="font-size: 24px;"></i>
-                        <div style="font-size: 10px; margin-top: 4px;">Ekle</div>
-                    </div>
-                </div>
-            `;
-            
-            storiesList.innerHTML = html;
-        }
-
-        // Şifre değiştir
-        function changePassword() {
-            const oldPass = prompt('Eski şifrenizi girin:');
-            if (!oldPass) return;
-            
-            if (oldPass !== currentUser.password && currentUser.password) {
-                alert('Eski şifre yanlış!');
-                return;
-            }
-            
-            const newPass = prompt('Yeni şifrenizi girin:');
-            if (!newPass) return;
-            
-            const confirmPass = prompt('Yeni şifreyi tekrar girin:');
-            if (newPass !== confirmPass) {
-                alert('Şifreler uyuşmuyor!');
-                return;
-            }
-            
-            currentUser.password = newPass;
-            alert('Şifreniz başarıyla değiştirildi');
-        }
-
-        // Gizlilik ayarları
-        function privacySettings() {
-            const settings = `
-                Gizlilik Ayarları:
-                
-                1. Profil Görünürlüğü: ${currentUser.privacy?.profile || 'Herkese açık'}
-                2. Hikaye Görünürlüğü: ${currentUser.privacy?.stories || 'Takipçiler'}
-                3. Özel Mesajlar: ${currentUser.privacy?.messages || 'Herkes'}
-                4. Çevrimiçi Durumu: ${currentUser.privacy?.onlineStatus || 'Göster'}
-                
-                Bu ayarları değiştirmek için ilerleyen güncellemeleri bekleyin.
-            `;
-            
-            alert(settings);
-        }
-
-        // Profil düzenle
         function editProfile() {
             const newName = prompt('Yeni kullanıcı adı:', currentUser.name);
             if (newName && newName.trim() && newName !== currentUser.name) {
@@ -3789,11 +3829,35 @@
             }
         }
 
+        function changePassword() {
+            const oldPass = prompt('Eski şifrenizi girin:');
+            if (!oldPass) return;
+            
+            if (oldPass !== currentUser.password && currentUser.password) {
+                alert('Eski şifre yanlış!');
+                return;
+            }
+            
+            const newPass = prompt('Yeni şifrenizi girin:');
+            if (!newPass) return;
+            
+            const confirmPass = prompt('Yeni şifreyi tekrar girin:');
+            if (newPass !== confirmPass) {
+                alert('Şifreler uyuşmuyor!');
+                return;
+            }
+            
+            currentUser.password = newPass;
+            alert('Şifreniz başarıyla değiştirildi');
+        }
+
         // ==================== KULLANICI LİSTESİ ====================
         function loadUsers() {
             const userList = document.getElementById('userList');
             const onlineCount = document.getElementById('onlineCount');
             const totalUsers = document.getElementById('totalUsers');
+            
+            if (!userList || !onlineCount || !totalUsers) return;
             
             userList.innerHTML = '';
             
@@ -3941,8 +4005,10 @@
         function updateNotificationBadge() {
             const badge = document.getElementById('notificationBadge');
             const unreadCount = notifications.filter(n => !n.read).length;
-            badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
-            badge.style.display = unreadCount > 0 ? 'flex' : 'none';
+            if (badge) {
+                badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+                badge.style.display = unreadCount > 0 ? 'flex' : 'none';
+            }
         }
 
         function toggleNotifications() {
@@ -4041,31 +4107,41 @@
         // ==================== EVENT LISTENERS ====================
         document.addEventListener('DOMContentLoaded', function() {
             // Enter tuşu ile mesaj gönderme
-            document.getElementById('messageInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            });
-            
-            // Textarea otomatik yükseklik
-            const adjustTextarea = function(textarea) {
-                textarea.style.height = 'auto';
-                textarea.style.height = textarea.scrollHeight + 'px';
-            };
-            
-            document.getElementById('messageInput').addEventListener('input', function() {
-                adjustTextarea(this);
-            });
+            const messageInput = document.getElementById('messageInput');
+            if (messageInput) {
+                messageInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                    }
+                });
+                
+                // Textarea otomatik yükseklik
+                const adjustTextarea = function(textarea) {
+                    textarea.style.height = 'auto';
+                    textarea.style.height = textarea.scrollHeight + 'px';
+                };
+                
+                messageInput.addEventListener('input', function() {
+                    adjustTextarea(this);
+                });
+            }
             
             // Girişte Enter
-            document.getElementById('nickInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') handleLogin();
-            });
+            const nickInput = document.getElementById('nickInput');
+            const passInput = document.getElementById('passInput');
             
-            document.getElementById('passInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') handleLogin();
-            });
+            if (nickInput) {
+                nickInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') handleLogin();
+                });
+            }
+            
+            if (passInput) {
+                passInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') handleLogin();
+                });
+            }
             
             // Demo için önceden kayıtlı nick'ler
             demoUsers.forEach(user => {
