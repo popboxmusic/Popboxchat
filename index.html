@@ -3356,6 +3356,912 @@
                 }
             }, 1000);
         });
+        // ==================== GERÇEK ZAMANLI SUNUCU SİSTEMİ ====================
+class EliteChatServer {
+    constructor() {
+        this.connections = new Map(); // userId -> WebSocket
+        this.users = new Map(); // userId -> userData
+        this.channels = new Map(); // channelId -> channelData
+        this.initializeChannels();
+    }
+    
+    initializeChannels() {
+        this.channels.set('general', {
+            id: 'general',
+            name: '#Genel',
+            owner: 'mate',
+            type: 'public',
+            topic: 'EliteChat Hoş Geldiniz',
+            users: new Set(),
+            operators: new Set(['mate']),
+            voices: new Set(),
+            bans: new Map(),
+            mutes: new Map(),
+            messages: []
+        });
+    }
+    
+    // WebSocket sunucusunu başlat
+    startServer(port = 8080) {
+        console.log('WebSocket sunucusu başlatılıyor...');
+        
+        // Tarayıcıda WebSocket sunucusu oluştur (Node.js benzeri davranış)
+        this.simulateWebSocketServer();
+        
+        // Her 5 saniyede bir sunucu durumunu göster
+        setInterval(() => {
+            console.log(`🌐 Sunucu Durumu: ${this.users.size} kullanıcı, ${this.channels.size} kanal`);
+        }, 5000);
+    }
+    
+    simulateWebSocketServer() {
+        console.log('⚠️ UYARI: Bu simüle edilmiş bir sunucudur. Gerçek sunucu için Node.js kullanmalısınız.');
+        
+        // Tarayıcıda simüle edilmiş WebSocket bağlantıları
+        if (typeof window !== 'undefined') {
+            // Tarayıcıda localStorage üzerinden iletişim
+            this.setupLocalStorageSync();
+        }
+    }
+    
+    setupLocalStorageSync() {
+        // Tüm tarayıcılar/sekme arasında senkronizasyon
+        setInterval(() => {
+            this.syncUsers();
+            this.syncMessages();
+            this.syncChannels();
+        }, 1000);
+    }
+    
+    // Kullanıcı senkronizasyonu
+    syncUsers() {
+        const serverUsers = localStorage.getItem('elitechat_server_users');
+        if (serverUsers) {
+            const users = JSON.parse(serverUsers);
+            users.forEach(user => {
+                if (!this.users.has(user.id)) {
+                    this.users.set(user.id, user);
+                }
+            });
+        }
+        
+        // Güncel kullanıcı listesini kaydet
+        const userArray = Array.from(this.users.values());
+        localStorage.setItem('elitechat_server_users', JSON.stringify(userArray));
+    }
+    
+    // Mesaj senkronizasyonu
+    syncMessages() {
+        const serverMessages = localStorage.getItem('elitechat_server_messages');
+        if (serverMessages) {
+            const allMessages = JSON.parse(serverMessages);
+            
+            // Mesajları kanallara dağıt
+            allMessages.forEach(msg => {
+                const channel = this.channels.get(msg.channel);
+                if (channel) {
+                    // Aynı mesajı ekleme
+                    const exists = channel.messages.some(m => m.id === msg.id);
+                    if (!exists) {
+                        channel.messages.push(msg);
+                        // Son 100 mesajı tut
+                        if (channel.messages.length > 100) {
+                            channel.messages = channel.messages.slice(-100);
+                        }
+                    }
+                }
+            });
+        }
+    }
+    
+    // Kanal senkronizasyonu
+    syncChannels() {
+        const serverChannels = localStorage.getItem('elitechat_server_channels');
+        if (serverChannels) {
+            const channels = JSON.parse(serverChannels);
+            channels.forEach(ch => {
+                if (!this.channels.has(ch.id)) {
+                    this.channels.set(ch.id, {
+                        ...ch,
+                        users: new Set(ch.users || []),
+                        operators: new Set(ch.operators || []),
+                        voices: new Set(ch.voices || []),
+                        bans: new Map(Object.entries(ch.bans || {})),
+                        mutes: new Map(Object.entries(ch.mutes || {}))
+                    });
+                }
+            });
+        }
+    }
+    
+    // Yeni kullanıcı kaydet
+    registerUser(userData) {
+        this.users.set(userData.id, userData);
+        
+        // Kullanıcıyı genel kanala ekle
+        const generalChannel = this.channels.get('general');
+        if (generalChannel) {
+            generalChannel.users.add(userData.id);
+        }
+        
+        // Diğer kullanıcılara broadcast
+        this.broadcastToAll({
+            type: 'user_joined',
+            user: userData,
+            timestamp: new Date().toISOString()
+        });
+        
+        return userData;
+    }
+    
+    // Mesaj gönder
+    sendMessage(messageData) {
+        const channel = this.channels.get(messageData.channel);
+        if (!channel) return null;
+        
+        const message = {
+            id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: 'message',
+            userId: messageData.userId,
+            text: messageData.text,
+            time: new Date().toISOString(),
+            channel: messageData.channel
+        };
+        
+        channel.messages.push(message);
+        
+        // Mesajı kaydet
+        this.saveMessageToStorage(message);
+        
+        // Tüm kullanıcılara gönder
+        this.broadcastToAll({
+            type: 'new_message',
+            message: message,
+            channel: messageData.channel
+        });
+        
+        return message;
+    }
+    
+    // Özel mesaj gönder
+    sendPrivateMessage(pmData) {
+        const message = {
+            id: `pm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: 'pm',
+            from: pmData.from,
+            to: pmData.to,
+            text: pmData.text,
+            time: new Date().toISOString(),
+            read: false
+        };
+        
+        // Özel mesajı kaydet
+        this.savePrivateMessageToStorage(message);
+        
+        // Alıcıya gönder (eğer online ise)
+        this.sendToUser(pmData.to, {
+            type: 'private_message',
+            message: message
+        });
+        
+        return message;
+    }
+    
+    // Kanal oluştur
+    createChannel(channelData) {
+        const channelId = channelData.name.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '_');
+        
+        if (this.channels.has(channelId)) {
+            return null;
+        }
+        
+        const newChannel = {
+            id: channelId,
+            name: channelData.name,
+            owner: channelData.owner,
+            type: channelData.type || 'public',
+            topic: channelData.topic || 'Yeni sohbet kanalı',
+            users: new Set([channelData.owner, 'mate']),
+            operators: new Set(),
+            voices: new Set(),
+            bans: new Map(),
+            mutes: new Map(),
+            messages: []
+        };
+        
+        this.channels.set(channelId, newChannel);
+        
+        // Tüm kullanıcılara yeni kanalı bildir
+        this.broadcastToAll({
+            type: 'channel_created',
+            channel: newChannel
+        });
+        
+        return newChannel;
+    }
+    
+    // Tüm kullanıcılara mesaj gönder
+    broadcastToAll(data) {
+        const eventData = JSON.stringify(data);
+        
+        // LocalStorage üzerinden broadcast
+        const broadcastEvents = JSON.parse(localStorage.getItem('elitechat_broadcast') || '[]');
+        broadcastEvents.push({
+            ...data,
+            _timestamp: Date.now()
+        });
+        
+        // Son 50 event'i tut
+        if (broadcastEvents.length > 50) {
+            broadcastEvents.splice(0, broadcastEvents.length - 50);
+        }
+        
+        localStorage.setItem('elitechat_broadcast', JSON.stringify(broadcastEvents));
+        
+        // Event trigger
+        window.dispatchEvent(new CustomEvent('elitechat_broadcast', { detail: data }));
+    }
+    
+    // Belirli kullanıcıya mesaj gönder
+    sendToUser(userId, data) {
+        const userEvents = JSON.parse(localStorage.getItem(`elitechat_user_${userId}`) || '[]');
+        userEvents.push({
+            ...data,
+            _timestamp: Date.now()
+        });
+        
+        // Son 20 event'i tut
+        if (userEvents.length > 20) {
+            userEvents.splice(0, userEvents.length - 20);
+        }
+        
+        localStorage.setItem(`elitechat_user_${userId}`, JSON.stringify(userEvents));
+        
+        // Event trigger
+        window.dispatchEvent(new CustomEvent(`elitechat_user_${userId}`, { detail: data }));
+    }
+    
+    // Mesajı depolamaya kaydet
+    saveMessageToStorage(message) {
+        const allMessages = JSON.parse(localStorage.getItem('elitechat_server_messages') || '[]');
+        allMessages.push(message);
+        
+        // Son 500 mesajı tut
+        if (allMessages.length > 500) {
+            allMessages.splice(0, allMessages.length - 500);
+        }
+        
+        localStorage.setItem('elitechat_server_messages', JSON.stringify(allMessages));
+    }
+    
+    // Özel mesajı depolamaya kaydet
+    savePrivateMessageToStorage(message) {
+        const pmKey = [message.from, message.to].sort().join('_');
+        const allPMs = JSON.parse(localStorage.getItem('elitechat_server_pms') || '{}');
+        
+        if (!allPMs[pmKey]) {
+            allPMs[pmKey] = [];
+        }
+        
+        allPMs[pmKey].push(message);
+        
+        // Her konuşma için son 200 mesaj
+        if (allPMs[pmKey].length > 200) {
+            allPMs[pmKey].splice(0, allPMs[pmKey].length - 200);
+        }
+        
+        localStorage.setItem('elitechat_server_pms', JSON.stringify(allPMs));
+    }
+    
+    // Kullanıcı bağlantısını kapat
+    disconnectUser(userId) {
+        this.users.delete(userId);
+        
+        // Kullanıcıyı tüm kanallardan çıkar
+        this.channels.forEach(channel => {
+            channel.users.delete(userId);
+        });
+        
+        // Diğer kullanıcılara bildir
+        this.broadcastToAll({
+            type: 'user_left',
+            userId: userId,
+            timestamp: new Date().toISOString()
+        });
+    }
+}
+
+// ==================== İSTEMCİ (CLIENT) SİSTEMİ ====================
+class EliteChatClient {
+    constructor() {
+        this.userId = null;
+        this.isConnected = false;
+        this.eventListeners = new Map();
+        this.server = window.eliteChatServer;
+        
+        // Sunucu event'lerini dinle
+        this.setupEventListeners();
+        
+        // Periyodik senkronizasyon
+        this.startSync();
+    }
+    
+    // Sunucuya bağlan
+    connect(userData) {
+        if (!this.server) return false;
+        
+        this.userId = userData.id;
+        this.isConnected = true;
+        
+        // Kullanıcıyı sunucuya kaydet
+        this.server.registerUser(userData);
+        
+        // Bağlantı başarılı
+        console.log(`✅ Bağlantı kuruldu: ${userData.name}`);
+        
+        // Event fire
+        this.emit('connected', { user: userData });
+        
+        return true;
+    }
+    
+    // Mesaj gönder
+    sendMessage(channelId, text) {
+        if (!this.isConnected || !this.userId) return null;
+        
+        const messageData = {
+            userId: this.userId,
+            text: text,
+            channel: channelId
+        };
+        
+        return this.server.sendMessage(messageData);
+    }
+    
+    // Özel mesaj gönder
+    sendPrivateMessage(toUserId, text) {
+        if (!this.isConnected || !this.userId) return null;
+        
+        const pmData = {
+            from: this.userId,
+            to: toUserId,
+            text: text
+        };
+        
+        return this.server.sendPrivateMessage(pmData);
+    }
+    
+    // Kanal oluştur
+    createChannel(channelData) {
+        if (!this.isConnected) return null;
+        
+        return this.server.createChannel(channelData);
+    }
+    
+    // Event listener ekle
+    on(event, callback) {
+        if (!this.eventListeners.has(event)) {
+            this.eventListeners.set(event, []);
+        }
+        this.eventListeners.get(event).push(callback);
+    }
+    
+    // Event tetikle
+    emit(event, data) {
+        const listeners = this.eventListeners.get(event);
+        if (listeners) {
+            listeners.forEach(callback => {
+                try {
+                    callback(data);
+                } catch (err) {
+                    console.error(`Event callback error (${event}):`, err);
+                }
+            });
+        }
+    }
+    
+    // Sunucu event'lerini dinle
+    setupEventListeners() {
+        // Broadcast event'lerini dinle
+        window.addEventListener('elitechat_broadcast', (e) => {
+            const data = e.detail;
+            this.handleServerEvent(data);
+        });
+        
+        // Kullanıcıya özel event'leri dinle
+        const checkUserEvents = () => {
+            if (this.userId) {
+                const userEvents = JSON.parse(localStorage.getItem(`elitechat_user_${this.userId}`) || '[]');
+                
+                // Yeni event'leri işle
+                userEvents.forEach(event => {
+                    if (event._timestamp > (this.lastEventTime || 0)) {
+                        this.handleServerEvent(event);
+                        this.lastEventTime = event._timestamp;
+                    }
+                });
+            }
+        };
+        
+        // Her saniye kontrol et
+        setInterval(checkUserEvents, 1000);
+    }
+    
+    // Sunucudan gelen event'leri işle
+    handleServerEvent(data) {
+        switch (data.type) {
+            case 'new_message':
+                this.emit('new_message', data);
+                break;
+                
+            case 'private_message':
+                this.emit('private_message', data);
+                break;
+                
+            case 'user_joined':
+                this.emit('user_joined', data);
+                break;
+                
+            case 'user_left':
+                this.emit('user_left', data);
+                break;
+                
+            case 'channel_created':
+                this.emit('channel_created', data);
+                break;
+        }
+    }
+    
+    // Periyodik senkronizasyon başlat
+    startSync() {
+        setInterval(() => {
+            if (this.isConnected) {
+                this.syncWithServer();
+            }
+        }, 2000);
+    }
+    
+    // Sunucu ile senkronize ol
+    syncWithServer() {
+        // Kullanıcı listesini güncelle
+        this.emit('sync_users', {
+            users: Array.from(this.server?.users?.values() || [])
+        });
+        
+        // Kanal listesini güncelle
+        this.emit('sync_channels', {
+            channels: Array.from(this.server?.channels?.values() || [])
+        });
+    }
+    
+    // Bağlantıyı kes
+    disconnect() {
+        if (this.userId && this.server) {
+            this.server.disconnectUser(this.userId);
+        }
+        
+        this.isConnected = false;
+        this.userId = null;
+        
+        this.emit('disconnected', {});
+    }
+}
+
+// ==================== MEVCUT SİSTEME ENTEGRASYON ====================
+
+// Sayfa yüklendiğinde sunucuyu başlat
+document.addEventListener('DOMContentLoaded', function() {
+    // Global sunucu instance'ı oluştur
+    if (!window.eliteChatServer) {
+        window.eliteChatServer = new EliteChatServer();
+        window.eliteChatServer.startServer();
+    }
+    
+    // Global client instance'ı
+    window.eliteChatClient = new EliteChatClient();
+    
+    // Mevcut login sistemini güncelle
+    const originalHandleLogin = window.handleLogin;
+    
+    window.handleLogin = function() {
+        const nickInput = document.getElementById('nickInput');
+        const passInput = document.getElementById('passInput');
+        const nick = nickInput.value.trim();
+        const pass = passInput.value;
+        
+        // Özel karakterleri temizle
+        const cleanNick = nick.replace(/[^a-zA-Z0-9._]/g, '');
+        
+        if (!cleanNick || cleanNick.length < 2) {
+            alert('Kullanıcı adı en az 2 karakter olmalıdır (sadece harf, rakam, . ve _)');
+            nickInput.value = '';
+            nickInput.focus();
+            return;
+        }
+        
+        const userId = cleanNick.toLowerCase();
+        
+        if (userId === 'mate') {
+            alert('Bu kullanıcı adı sistem tarafından kullanılıyor!');
+            nickInput.value = '';
+            nickInput.focus();
+            return;
+        }
+        
+        // Kullanıcı verisini oluştur
+        const userData = {
+            id: userId,
+            name: cleanNick,
+            role: 'user',
+            registered: !!pass,
+            online: true,
+            invisible: false,
+            avatar: cleanNick.charAt(0).toUpperCase(),
+            bio: '',
+            joinDate: new Date().toISOString(),
+            lastSeen: new Date().toISOString()
+        };
+        
+        // Sunucuya bağlan
+        const client = window.eliteChatClient;
+        const connected = client.connect(userData);
+        
+        if (!connected) {
+            alert('Sunucuya bağlanılamadı!');
+            return;
+        }
+        
+        // Mevcut sistemi güncelle
+        SYSTEM.currentUser = userData;
+        DATA.users[userId] = userData;
+        DATA.onlineUsers.add(userId);
+        
+        // Giriş ekranını kapat
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        
+        // Event listener'ları kur
+        setupRealtimeListeners();
+        
+        // İlk mesajı göster
+        addSystemMessage(`🎉 ${SYSTEM.currentUser.name} sohbete katıldı!`);
+        
+        // Sunucudan kullanıcı ve kanal verilerini senkronize et
+        syncWithServer();
+        
+        // Otomatik güncellemeleri başlat
+        startAutoUpdates();
+    };
+    
+    // Mevcut mesaj gönderme sistemini güncelle
+    const originalSendChannelMessage = window.sendChannelMessage;
+    
+    window.sendChannelMessage = function(text) {
+        const channel = DATA.channels[SYSTEM.currentChannel];
+        if (!channel) return;
+        
+        // Global susturma kontrolü
+        if (DATA.globalMutes.has(SYSTEM.currentUser.id)) {
+            addSystemMessage('⚠️ Global susturulmuşsunuz! Mesaj gönderemezsiniz.');
+            return;
+        }
+        
+        // Kanal susturma kontrolü
+        if (channel.mutes.has(SYSTEM.currentUser.id)) {
+            const muteEnd = channel.mutes.get(SYSTEM.currentUser.id);
+            if (new Date() < muteEnd) {
+                addSystemMessage('⚠️ Bu kanalda susturulmuşsunuz! Mesaj gönderemezsiniz.');
+                return;
+            }
+            channel.mutes.delete(SYSTEM.currentUser.id);
+        }
+        
+        // Sunucuya mesaj gönder
+        const client = window.eliteChatClient;
+        const serverMessage = client.sendMessage(SYSTEM.currentChannel, text);
+        
+        if (serverMessage) {
+            // Mesajı lokal olarak da ekle (anında görünsün)
+            const localMessage = {
+                id: serverMessage.id,
+                type: 'message',
+                userId: SYSTEM.currentUser.id,
+                text: text,
+                time: new Date(),
+                channel: SYSTEM.currentChannel
+            };
+            
+            channel.messages.push(localMessage);
+            addMessageToChat(localMessage, SYSTEM.currentUser);
+        }
+    };
+    
+    // Mevcut özel mesaj sistemini güncelle
+    const originalSendPrivateMessage = window.sendPrivateMessage;
+    
+    window.sendPrivateMessage = function(toUserId, text) {
+        if (!DATA.users[toUserId]) {
+            addSystemMessage('❌ Kullanıcı bulunamadı!');
+            return;
+        }
+        
+        // Sunucuya özel mesaj gönder
+        const client = window.eliteChatClient;
+        const serverPM = client.sendPrivateMessage(toUserId, text);
+        
+        if (serverPM) {
+            // Mesajı lokal olarak da ekle
+            const pmKey = [SYSTEM.currentUser.id, toUserId].sort().join('_');
+            
+            if (!DATA.privateMessages.has(pmKey)) {
+                DATA.privateMessages.set(pmKey, []);
+            }
+            
+            const messages = DATA.privateMessages.get(pmKey);
+            const localMessage = {
+                id: serverPM.id,
+                type: 'pm',
+                from: SYSTEM.currentUser.id,
+                to: toUserId,
+                text: text,
+                time: new Date(),
+                read: false
+            };
+            
+            messages.push(localMessage);
+            
+            if (SYSTEM.pmWindows[toUserId]) {
+                addMessageToPMWindow(toUserId, localMessage);
+            }
+            
+            updatePMConversationList();
+            
+            showNotification(DATA.users[toUserId].name, text, 'pm');
+        }
+    };
+    
+    // Gerçek zamanlı event listener'ları kur
+    function setupRealtimeListeners() {
+        const client = window.eliteChatClient;
+        
+        if (!client) return;
+        
+        // Yeni mesaj geldiğinde
+        client.on('new_message', (data) => {
+            // Eğer mesaj bu kanalsa ve başkasından geldiyse
+            if (data.channel === SYSTEM.currentChannel && 
+                data.message.userId !== SYSTEM.currentUser.id) {
+                
+                const user = DATA.users[data.message.userId];
+                if (user) {
+                    const localMessage = {
+                        id: data.message.id,
+                        type: 'message',
+                        userId: data.message.userId,
+                        text: data.message.text,
+                        time: new Date(data.message.time),
+                        channel: data.message.channel
+                    };
+                    
+                    // Mesajı lokal kanala ekle (zaten yoksa)
+                    const channel = DATA.channels[data.message.channel];
+                    if (channel) {
+                        const exists = channel.messages.some(m => m.id === data.message.id);
+                        if (!exists) {
+                            channel.messages.push(localMessage);
+                        }
+                    }
+                    
+                    // Mesajı ekranda göster
+                    addMessageToChat(localMessage, user);
+                }
+            }
+        });
+        
+        // Özel mesaj geldiğinde
+        client.on('private_message', (data) => {
+            const message = data.message;
+            
+            // Eğer bu mesaj bana geldiyse
+            if (message.to === SYSTEM.currentUser.id) {
+                const pmKey = [message.from, message.to].sort().join('_');
+                
+                if (!DATA.privateMessages.has(pmKey)) {
+                    DATA.privateMessages.set(pmKey, []);
+                }
+                
+                const messages = DATA.privateMessages.get(pmKey);
+                const localMessage = {
+                    id: message.id,
+                    type: 'pm',
+                    from: message.from,
+                    to: message.to,
+                    text: message.text,
+                    time: new Date(message.time),
+                    read: false
+                };
+                
+                messages.push(localMessage);
+                
+                // PM penceresi açıksa göster
+                if (SYSTEM.pmWindows[message.from]) {
+                    addMessageToPMWindow(message.from, localMessage);
+                }
+                
+                updatePMConversationList();
+                
+                // Bildirim göster
+                const sender = DATA.users[message.from];
+                if (sender) {
+                    showNotification(sender.name, message.text, 'pm');
+                }
+            }
+        });
+        
+        // Yeni kullanıcı katıldığında
+        client.on('user_joined', (data) => {
+            const user = data.user;
+            
+            // Kullanıcıyı lokal veriye ekle
+            DATA.users[user.id] = user;
+            DATA.onlineUsers.add(user.id);
+            
+            // Genel kanala ekle
+            const generalChannel = DATA.channels.general;
+            if (generalChannel) {
+                generalChannel.users.add(user.id);
+            }
+            
+            // Eğer genel kanaldaysak mesaj göster
+            if (SYSTEM.currentChannel === 'general') {
+                addSystemMessage(`🎉 ${user.name} sohbete katıldı!`);
+            }
+            
+            // Online listeyi güncelle
+            updateOnlineList();
+        });
+        
+        // Kullanıcı ayrıldığında
+        client.on('user_left', (data) => {
+            const userId = data.userId;
+            
+            // Kullanıcıyı çevrimdışı yap
+            if (DATA.users[userId]) {
+                DATA.users[userId].online = false;
+                DATA.onlineUsers.delete(userId);
+            }
+            
+            // Tüm kanallardan çıkar
+            Object.values(DATA.channels).forEach(channel => {
+                channel.users.delete(userId);
+            });
+            
+            // Online listeyi güncelle
+            updateOnlineList();
+        });
+        
+        // Yeni kanal oluşturulduğunda
+        client.on('channel_created', (data) => {
+            const channel = data.channel;
+            
+            // Kanalı lokal veriye ekle
+            DATA.channels[channel.id] = {
+                ...channel,
+                users: new Set(channel.users),
+                operators: new Set(channel.operators),
+                voices: new Set(channel.voices),
+                bans: new Map(Object.entries(channel.bans || {})),
+                mutes: new Map(Object.entries(channel.mutes || {})),
+                messages: channel.messages || []
+            };
+            
+            // Eğer bu kanalın sekmesi yoksa ekle
+            let tabExists = false;
+            document.querySelectorAll('.channel-tab').forEach(tab => {
+                if (tab.dataset.channel === channel.id) {
+                    tabExists = true;
+                }
+            });
+            
+            if (!tabExists) {
+                const tabsContainer = document.getElementById('channelTabs');
+                const tab = document.createElement('div');
+                tab.className = 'channel-tab';
+                tab.dataset.channel = channel.id;
+                tab.innerHTML = `<i class="fas fa-hashtag"></i> ${channel.name.substring(1)}`;
+                tab.addEventListener('click', () => switchChannel(channel.id));
+                tabsContainer.appendChild(tab);
+            }
+            
+            // Sistem mesajı göster
+            addSystemMessage(`📢 Yeni kanal oluşturuldu: ${channel.name}`);
+        });
+        
+        // Kullanıcı senkronizasyonu
+        client.on('sync_users', (data) => {
+            const serverUsers = data.users;
+            
+            // Sunucudaki kullanıcıları lokal veriyle birleştir
+            serverUsers.forEach(serverUser => {
+                if (!DATA.users[serverUser.id]) {
+                    DATA.users[serverUser.id] = serverUser;
+                    DATA.onlineUsers.add(serverUser.id);
+                }
+            });
+            
+            // Online listeyi güncelle
+            updateOnlineList();
+        });
+        
+        // Kanal senkronizasyonu
+        client.on('sync_channels', (data) => {
+            const serverChannels = data.channels;
+            
+            serverChannels.forEach(serverChannel => {
+                if (!DATA.channels[serverChannel.id]) {
+                    DATA.channels[serverChannel.id] = {
+                        ...serverChannel,
+                        users: new Set(serverChannel.users || []),
+                        operators: new Set(serverChannel.operators || []),
+                        voices: new Set(serverChannel.voices || []),
+                        bans: new Map(Object.entries(serverChannel.bans || {})),
+                        mutes: new Map(Object.entries(serverChannel.mutes || {})),
+                        messages: serverChannel.messages || []
+                    };
+                }
+            });
+        });
+    }
+    
+    // Sunucudan veri senkronizasyonu
+    function syncWithServer() {
+        // Sunucudaki tüm mesajları çek
+        const allMessages = JSON.parse(localStorage.getItem('elitechat_server_messages') || '[]');
+        
+        // Mesajları kanallara dağıt
+        allMessages.forEach(msg => {
+            const channel = DATA.channels[msg.channel];
+            if (channel) {
+                const exists = channel.messages.some(m => m.id === msg.id);
+                if (!exists) {
+                    channel.messages.push({
+                        ...msg,
+                        time: new Date(msg.time)
+                    });
+                }
+            }
+        });
+        
+        // Eğer genel kanaldaysak mesajları yükle
+        if (SYSTEM.currentChannel === 'general') {
+            loadChannelMessages('general');
+        }
+        
+        // Sunucudaki kullanıcıları çek
+        const serverUsers = JSON.parse(localStorage.getItem('elitechat_server_users') || '[]');
+        serverUsers.forEach(user => {
+            if (!DATA.users[user.id]) {
+                DATA.users[user.id] = user;
+                DATA.onlineUsers.add(user.id);
+            }
+        });
+        
+        // Online listeyi güncelle
+        updateOnlineList();
+    }
+    
+    // Sayfa kapatılırken bağlantıyı kes
+    window.addEventListener('beforeunload', function() {
+        const client = window.eliteChatClient;
+        if (client && client.isConnected) {
+            client.disconnect();
+        }
+        
+        stopAutoUpdates();
+    });
+    
+    console.log('✅ Gerçek zamanlı sohbet sistemi aktif!');
+});
     </script>
 </body>
 </html>
