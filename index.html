@@ -820,5 +820,179 @@
     <script src="irc-commands.js"></script>
     <script src="pm-system.js"></script>
     <script src="client.js"></script>
+    <script>
+// ACİL GİRİŞ DÜZELTİCİ
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('✅ Acil giriş düzeltisi yükleniyor...');
+    
+    const loginButton = document.getElementById('loginButton');
+    const nickInput = document.getElementById('nickInput');
+    const passInput = document.getElementById('passInput');
+    
+    if (!loginButton || !nickInput) {
+        console.error('❌ Giriş elementleri bulunamadı!');
+        return;
+    }
+    
+    // Mevcut event listener'ları temizle (çakışmaları önlemek için)
+    const newLoginButton = loginButton.cloneNode(true);
+    loginButton.parentNode.replaceChild(newLoginButton, loginButton);
+    
+    const newNickInput = nickInput.cloneNode(true);
+    nickInput.parentNode.replaceChild(newNickInput, nickInput);
+    
+    const newPassInput = passInput.cloneNode(true);
+    passInput.parentNode.replaceChild(newPassInput, passInput);
+    
+    // Yeni event listener'lar ekle
+    newLoginButton.addEventListener('click', function() {
+        handleLogin();
+    });
+    
+    newNickInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') handleLogin();
+    });
+    
+    newPassInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') handleLogin();
+    });
+    
+    function handleLogin() {
+        const nick = newNickInput.value.trim();
+        const password = newPassInput.value;
+        
+        console.log('Giriş denemesi:', nick, password ? 'şifreli' : 'şifresiz');
+        
+        if (!nick || nick.length < 2) {
+            alert('Kullanıcı adı en az 2 karakter olmalıdır');
+            newNickInput.focus();
+            return;
+        }
+        
+        // Clean nick
+        const cleanNick = nick.replace(/[^a-zA-Z0-9._]/g, '');
+        
+        // Owner kontrolü
+        let role = 'guest';
+        let specialLogin = false;
+        
+        if (cleanNick.toLowerCase() === 'mateky' && password === 'kumsal07@') {
+            role = 'owner';
+            specialLogin = true;
+            console.log('✅ Owner girişi başarılı');
+        }
+        
+        // Giriş yap
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        
+        // Owner panel butonunu göster
+        if (role === 'owner') {
+            const ownerBtn = document.getElementById('ownerPanelBtn');
+            if (ownerBtn) ownerBtn.classList.remove('hidden');
+        }
+        
+        // Basit sistem mesajı
+        const chatMessages = document.getElementById('chatMessages');
+        if (chatMessages) {
+            chatMessages.innerHTML = '';
+            
+            const welcomeMsg = document.createElement('div');
+            welcomeMsg.className = 'message';
+            welcomeMsg.innerHTML = `
+                <div style="text-align: center; max-width: 100%;">
+                    <div style="display: inline-block; background: var(--bg-tertiary); padding: 12px 20px; border-radius: 12px; margin: 10px 0;">
+                        <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 5px;">
+                            🎉 EliteChat'e Hoş Geldiniz!
+                        </div>
+                        <div style="font-size: 16px; font-weight: 600; color: var(--text-primary);">
+                            ${cleanNick}
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
+                            ${specialLogin ? '👑 Owner olarak giriş yaptınız' : 'Misafir olarak giriş yaptınız'}
+                        </div>
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(welcomeMsg);
+        }
+        
+        // Online listeyi güncelle
+        updateOnlineList(cleanNick, role);
+        
+        // Giriş alanlarını temizle
+        newNickInput.value = '';
+        newPassInput.value = '';
+        
+        console.log('✅ Giriş başarılı:', cleanNick, role);
+    }
+    
+    function updateOnlineList(nick, role) {
+        const userList = document.getElementById('userList');
+        const onlineCount = document.getElementById('onlineCount');
+        
+        if (!userList) return;
+        
+        userList.innerHTML = '';
+        
+        // Bot'u ekle
+        const botItem = document.createElement('div');
+        botItem.className = 'user-item online';
+        botItem.innerHTML = `
+            <div class="user-avatar online" style="background: linear-gradient(135deg, #8B0000, #FF0000);">
+                M
+            </div>
+            <div class="user-info">
+                <div class="user-name">
+                    🤖Mate
+                    <span class="role-badge role-owner">O</span>
+                </div>
+                <div class="user-status">🟢 Çevrimiçi</div>
+            </div>
+        `;
+        userList.appendChild(botItem);
+        
+        // Kullanıcıyı ekle
+        const userItem = document.createElement('div');
+        userItem.className = 'user-item online active';
+        
+        const roleBadge = role !== 'guest' ? 
+            `<span class="role-badge role-${role}">${role === 'owner' ? 'O' : 'U'}</span>` : '';
+        
+        userItem.innerHTML = `
+            <div class="user-avatar online" style="background: linear-gradient(135deg, #3b82f6, #8b5cf6);">
+                ${nick.charAt(0).toUpperCase()}
+            </div>
+            <div class="user-info">
+                <div class="user-name">
+                    ${nick}
+                    ${roleBadge}
+                </div>
+                <div class="user-status">🟢 Çevrimiçi</div>
+            </div>
+        `;
+        userList.appendChild(userItem);
+        
+        // Sayıyı güncelle
+        if (onlineCount) {
+            onlineCount.textContent = '(2)';
+        }
+        
+        // Kanal kullanıcı sayısını güncelle
+        const channelUsersElement = document.getElementById('channelUsers');
+        if (channelUsersElement) {
+            channelUsersElement.textContent = '2';
+        }
+    }
+    
+    // DEBUG: Otomatik giriş (test için)
+    // setTimeout(() => {
+    //     newNickInput.value = 'testuser';
+    //     handleLogin();
+    // }, 1000);
+    
+    console.log('✅ Acil giriş sistemi hazır!');
+});
+</script>
 </body>
 </html>
