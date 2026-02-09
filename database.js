@@ -1,269 +1,335 @@
-// EliteChat Database System
-class EliteChatDB {
+// ==================== VERİTABANI SİSTEMİ ====================
+class Database {
     constructor() {
-        this.users = new Map();
-        this.channels = new Map();
+        this.initializeDatabase();
+        this.loadData();
+    }
+
+    initializeDatabase() {
+        if (!localStorage.getItem('elitechat_users')) {
+            localStorage.setItem('elitechat_users', JSON.stringify({}));
+        }
+        if (!localStorage.getItem('elitechat_channels')) {
+            const defaultChannels = {
+                general: {
+                    id: 'general',
+                    name: '#Genel',
+                    owner: 'mate',
+                    type: 'public',
+                    topic: 'EliteChat Hoş Geldiniz',
+                    users: ['mate'],
+                    operators: ['mate'],
+                    voices: [],
+                    bans: {},
+                    mutes: {},
+                    slowmode: 0,
+                    locked: false,
+                    userLimit: 0,
+                    messages: [],
+                    video: { 
+                        id: 'jfKfPfyJRdk', 
+                        title: 'Lofi Hip Hop Radio 📚',
+                        channel: 'Genel'
+                    }
+                }
+            };
+            localStorage.setItem('elitechat_channels', JSON.stringify(defaultChannels));
+        }
+        if (!localStorage.getItem('elitechat_private_messages')) {
+            localStorage.setItem('elitechat_private_messages', JSON.stringify({}));
+        }
+        if (!localStorage.getItem('elitechat_registered_users')) {
+            const ownerPass = this.hashPassword('kumsal07@');
+            const registeredUsers = {
+                'mate': {
+                    password: ownerPass,
+                    role: 'owner',
+                    bio: 'Sistem Sahibi',
+                    joinDate: new Date().toISOString(),
+                    lastSeen: new Date().toISOString(),
+                    avatar: 'M'
+                }
+            };
+            localStorage.setItem('elitechat_registered_users', JSON.stringify(registeredUsers));
+        }
+        if (!localStorage.getItem('elitechat_custom_commands')) {
+            localStorage.setItem('elitechat_custom_commands', JSON.stringify({}));
+        }
+        if (!localStorage.getItem('elitechat_media_logs')) {
+            localStorage.setItem('elitechat_media_logs', JSON.stringify([]));
+        }
+    }
+
+    loadData() {
+        this.users = JSON.parse(localStorage.getItem('elitechat_users') || '{}');
+        this.channels = JSON.parse(localStorage.getItem('elitechat_channels') || '{}');
+        this.privateMessages = JSON.parse(localStorage.getItem('elitechat_private_messages') || '{}');
+        this.registeredUsers = JSON.parse(localStorage.getItem('elitechat_registered_users') || '{}');
+        this.customCommands = JSON.parse(localStorage.getItem('elitechat_custom_commands') || '{}');
+        this.mediaLogs = JSON.parse(localStorage.getItem('elitechat_media_logs') || '[]');
         this.onlineUsers = new Set();
-        this.registeredUsers = new Map(); // Şifreli kullanıcılar
-        this.messages = new Map();
-        this.pms = new Map();
-        
-        this.init();
+        this.userChannels = new Map();
+        this.globalBans = new Set();
+        this.globalMutes = new Set();
     }
-    
-    init() {
-        // MATE BOT (FIXED CREDENTIALS)
-        this.users.set('mate', {
-            id: 'mate',
-            name: '🤖Mate',
-            role: 'owner',
-            password: this.hashPassword('mate123'), // Default şifre
-            online: true,
-            avatar: 'M',
-            bio: 'Güvenlik Botu',
-            joinDate: new Date().toISOString()
-        });
-        this.onlineUsers.add('mate');
-        
-        // OWNER ACCOUNT (Default owner)
-        this.registeredUsers.set('admin', {
-            password: this.hashPassword('admin123'),
-            role: 'owner',
-            userData: {
-                id: 'admin',
-                name: 'Admin',
-                role: 'owner',
-                avatar: 'A',
-                bio: 'Sistem Yöneticisi'
-            }
-        });
-        
-        // GENEL KANAL
-        this.channels.set('general', {
-            id: 'general',
-            name: '#Genel',
-            topic: 'Hoş geldiniz',
-            users: new Set(['mate']),
-            messages: [],
-            video: { id: 'jfKfPfyJRdk', title: 'Lofi Radio' }
-        });
-        
-        // LOCALSTORAGE'DAN YÜKLE
-        this.loadFromStorage();
+
+    saveData() {
+        localStorage.setItem('elitechat_users', JSON.stringify(this.users));
+        localStorage.setItem('elitechat_channels', JSON.stringify(this.channels));
+        localStorage.setItem('elitechat_private_messages', JSON.stringify(this.privateMessages));
+        localStorage.setItem('elitechat_registered_users', JSON.stringify(this.registeredUsers));
+        localStorage.setItem('elitechat_custom_commands', JSON.stringify(this.customCommands));
+        localStorage.setItem('elitechat_media_logs', JSON.stringify(this.mediaLogs));
     }
-    
-    // ŞİFRELEME
+
     hashPassword(password) {
+        if (!password) return '';
         let hash = 0;
         for (let i = 0; i < password.length; i++) {
             const char = password.charCodeAt(i);
             hash = ((hash << 5) - hash) + char;
             hash = hash & hash;
         }
-        return 'hash_' + Math.abs(hash).toString(36);
+        return 'hashed_' + Math.abs(hash).toString(36);
     }
-    
-    // KULLANICI İŞLEMLERİ
-    registerUser(username, password, userData) {
-        const hashedPassword = this.hashPassword(password);
-        this.registeredUsers.set(username, {
-            password: hashedPassword,
-            userData: userData,
-            registeredAt: new Date().toISOString()
-        });
-        this.saveToStorage();
-        return true;
+
+    // Kullanıcı işlemleri
+    addUser(user) {
+        this.users[user.id] = user;
+        this.saveData();
+        return user;
     }
-    
-    authenticateUser(username, password) {
-        const userRecord = this.registeredUsers.get(username);
-        if (!userRecord) return null;
+
+    updateUser(userId, updates) {
+        if (this.users[userId]) {
+            this.users[userId] = { ...this.users[userId], ...updates };
+            this.saveData();
+        }
+    }
+
+    getUser(userId) {
+        return this.users[userId];
+    }
+
+    getOnlineUsers() {
+        return Object.values(this.users).filter(u => u.online && !u.invisible);
+    }
+
+    // Kanal işlemleri
+    createChannel(channelData) {
+        const channelId = channelData.name.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '_');
         
-        const hashedInput = this.hashPassword(password);
-        if (userRecord.password === hashedInput) {
-            return userRecord.userData;
+        if (this.channels[channelId]) {
+            return null;
+        }
+
+        const newChannel = {
+            id: channelId,
+            name: channelData.name,
+            owner: channelData.owner,
+            type: channelData.type || 'public',
+            topic: channelData.topic || 'Yeni sohbet kanalı',
+            users: [channelData.owner, 'mate'],
+            operators: [],
+            voices: [],
+            bans: {},
+            mutes: {},
+            slowmode: 0,
+            locked: false,
+            userLimit: 0,
+            messages: [],
+            video: {
+                id: 'jfKfPfyJRdk',
+                title: 'Lofi Hip Hop Radio 📚',
+                channel: channelData.name.replace('#', '')
+            }
+        };
+
+        this.channels[channelId] = newChannel;
+        this.saveData();
+        return newChannel;
+    }
+
+    updateChannel(channelId, updates) {
+        if (this.channels[channelId]) {
+            this.channels[channelId] = { ...this.channels[channelId], ...updates };
+            this.saveData();
+        }
+    }
+
+    deleteChannel(channelId) {
+        if (channelId !== 'general') {
+            delete this.channels[channelId];
+            this.saveData();
+            return true;
+        }
+        return false;
+    }
+
+    // Mesaj işlemleri
+    addMessage(channelId, message) {
+        if (this.channels[channelId]) {
+            if (!this.channels[channelId].messages) {
+                this.channels[channelId].messages = [];
+            }
+            this.channels[channelId].messages.push(message);
+            
+            // Son 200 mesajı tut
+            if (this.channels[channelId].messages.length > 200) {
+                this.channels[channelId].messages = this.channels[channelId].messages.slice(-200);
+            }
+            
+            this.saveData();
+        }
+    }
+
+    deleteMessage(channelId, messageId) {
+        const channel = this.channels[channelId];
+        if (channel && channel.messages) {
+            const index = channel.messages.findIndex(m => m.id === messageId);
+            if (index > -1) {
+                channel.messages.splice(index, 1);
+                this.saveData();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Özel mesaj işlemleri
+    addPrivateMessage(pmKey, message) {
+        if (!this.privateMessages[pmKey]) {
+            this.privateMessages[pmKey] = [];
+        }
+        this.privateMessages[pmKey].push(message);
+        
+        // Son 100 mesajı tut
+        if (this.privateMessages[pmKey].length > 100) {
+            this.privateMessages[pmKey] = this.privateMessages[pmKey].slice(-100);
+        }
+        
+        this.saveData();
+        return message;
+    }
+
+    getPrivateMessages(user1, user2) {
+        const pmKey = [user1, user2].sort().join('_');
+        return this.privateMessages[pmKey] || [];
+    }
+
+    getAllPrivateMessages() {
+        return this.privateMessages;
+    }
+
+    // Kayıtlı kullanıcı işlemleri
+    registerUser(username, password, role = 'user') {
+        const userId = username.toLowerCase();
+        if (this.registeredUsers[userId]) {
+            return null;
+        }
+
+        this.registeredUsers[userId] = {
+            password: this.hashPassword(password),
+            role: role,
+            bio: '',
+            joinDate: new Date().toISOString(),
+            lastSeen: new Date().toISOString(),
+            avatar: username.charAt(0).toUpperCase()
+        };
+
+        this.saveData();
+        return this.registeredUsers[userId];
+    }
+
+    authenticateUser(username, password) {
+        const userId = username.toLowerCase();
+        const user = this.registeredUsers[userId];
+        
+        if (user && user.password === this.hashPassword(password)) {
+            return user;
         }
         return null;
     }
-    
-    // Kullanıcı girişi (şifreli veya misafir)
-    loginUser(nick, password = null) {
-        const userId = nick.toLowerCase().replace(/[^a-z0-9._]/g, '');
-        
-        // Mate bot kontrolü
-        if (userId === 'mate') {
-            if (password && this.hashPassword(password) === this.users.get('mate').password) {
-                return this.users.get('mate');
-            }
-            return null; // Mate şifresi yanlış
+
+    // Medya logları
+    addMediaLog(log) {
+        this.mediaLogs.unshift(log);
+        if (this.mediaLogs.length > 100) {
+            this.mediaLogs = this.mediaLogs.slice(0, 100);
         }
-        
-        // Kayıtlı kullanıcı
-        if (password) {
-            const authUser = this.authenticateUser(userId, password);
-            if (authUser) {
-                authUser.online = true;
-                this.users.set(userId, authUser);
-                this.onlineUsers.add(userId);
-                return authUser;
-            }
-            return null; // Şifre yanlış
+        this.saveData();
+    }
+
+    getMediaLogs() {
+        return this.mediaLogs;
+    }
+
+    // Özel komutlar
+    addCustomCommand(name, code) {
+        this.customCommands[name] = code;
+        this.saveData();
+        return true;
+    }
+
+    deleteCustomCommand(name) {
+        if (this.customCommands[name]) {
+            delete this.customCommands[name];
+            this.saveData();
+            return true;
         }
-        
-        // Misafir kullanıcı
-        const guestUser = {
-            id: userId,
-            name: nick,
-            role: 'user',
-            online: true,
-            avatar: nick.charAt(0).toUpperCase(),
-            bio: '',
-            registered: false,
-            joinDate: new Date().toISOString()
-        };
-        
-        this.users.set(userId, guestUser);
-        this.onlineUsers.add(userId);
-        return guestUser;
+        return false;
     }
-    
-    // KANAL İŞLEMLERİ
-    createChannel(creatorId, channelName, topic = '') {
-        const channelId = channelName.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '_');
-        
-        if (this.channels.has(channelId)) return null;
-        
-        const channel = {
-            id: channelId,
-            name: channelName,
-            topic: topic || 'Yeni kanal',
-            owner: creatorId,
-            users: new Set([creatorId, 'mate']),
-            messages: [],
-            video: { id: 'jfKfPfyJRdk', title: 'Lofi Radio' }
-        };
-        
-        this.channels.set(channelId, channel);
-        this.saveToStorage();
-        return channel;
+
+    getCustomCommands() {
+        return this.customCommands;
     }
-    
-    // MESAJ İŞLEMLERİ
-    addMessage(channelId, userId, text) {
-        const channel = this.channels.get(channelId);
-        if (!channel) return null;
-        
-        const message = {
-            id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-            userId: userId,
-            text: text,
-            time: new Date(),
-            channel: channelId
+
+    // Yedekleme
+    createBackup() {
+        const backup = {
+            users: this.users,
+            channels: this.channels,
+            registeredUsers: this.registeredUsers,
+            privateMessages: this.privateMessages,
+            customCommands: this.customCommands,
+            timestamp: new Date().toISOString()
         };
-        
-        channel.messages.push(message);
-        this.saveToStorage();
-        return message;
+        return JSON.stringify(backup);
     }
-    
-    addPM(fromId, toId, text) {
-        const key = [fromId, toId].sort().join('_');
-        if (!this.pms.has(key)) {
-            this.pms.set(key, []);
-        }
-        
-        const message = {
-            id: 'pm_' + Date.now(),
-            from: fromId,
-            to: toId,
-            text: text,
-            time: new Date(),
-            read: false
-        };
-        
-        this.pms.get(key).push(message);
-        this.saveToStorage();
-        return message;
-    }
-    
-    // STORAGE
-    saveToStorage() {
+
+    restoreBackup(backupData) {
         try {
-            // Kullanıcılar
-            const usersData = Array.from(this.users.entries());
-            localStorage.setItem('elitechat_users', JSON.stringify(usersData));
+            const backup = JSON.parse(backupData);
             
-            // Kanallar
-            const channelsData = Array.from(this.channels.entries()).map(([id, channel]) => ({
-                ...channel,
-                users: Array.from(channel.users)
-            }));
-            localStorage.setItem('elitechat_channels', JSON.stringify(channelsData));
+            this.users = backup.users || {};
+            this.channels = backup.channels || {};
+            this.registeredUsers = backup.registeredUsers || {};
+            this.privateMessages = backup.privateMessages || {};
+            this.customCommands = backup.customCommands || {};
             
-            // PM'ler
-            const pmsData = Array.from(this.pms.entries());
-            localStorage.setItem('elitechat_pms', JSON.stringify(pmsData));
-            
-            // Kayıtlı kullanıcılar
-            const registeredData = Array.from(this.registeredUsers.entries());
-            localStorage.setItem('elitechat_registered', JSON.stringify(registeredData));
-            
+            this.saveData();
+            return true;
         } catch (e) {
-            console.error('Kaydetme hatası:', e);
+            console.error('Yedek yükleme hatası:', e);
+            return false;
         }
     }
-    
-    loadFromStorage() {
-        try {
-            // Kullanıcılar
-            const usersData = JSON.parse(localStorage.getItem('elitechat_users') || '[]');
-            usersData.forEach(([id, user]) => {
-                this.users.set(id, user);
-                if (user.online) this.onlineUsers.add(id);
-            });
-            
-            // Kanallar
-            const channelsData = JSON.parse(localStorage.getItem('elitechat_channels') || '[]');
-            channelsData.forEach(channel => {
-                channel.users = new Set(channel.users);
-                this.channels.set(channel.id, channel);
-            });
-            
-            // PM'ler
-            const pmsData = JSON.parse(localStorage.getItem('elitechat_pms') || '[]');
-            pmsData.forEach(([key, messages]) => {
-                this.pms.set(key, messages || []);
-            });
-            
-            // Kayıtlı kullanıcılar
-            const registeredData = JSON.parse(localStorage.getItem('elitechat_registered') || '[]');
-            registeredData.forEach(([username, data]) => {
-                this.registeredUsers.set(username, data);
-            });
-            
-        } catch (e) {
-            console.error('Yükleme hatası:', e);
+
+    // Temizleme
+    clearChannelMessages(channelId) {
+        if (this.channels[channelId]) {
+            this.channels[channelId].messages = [];
+            this.saveData();
         }
     }
-    
-    // UTILITY
-    getUser(userId) {
-        return this.users.get(userId);
-    }
-    
-    getChannel(channelId) {
-        return this.channels.get(channelId);
-    }
-    
-    getOnlineUsers() {
-        return Array.from(this.onlineUsers).map(id => this.getUser(id)).filter(u => u);
-    }
-    
-    // Mate bot mesajı
-    sendBotMessage(channelId, text) {
-        return this.addMessage(channelId, 'mate', text);
+
+    clearAllMessages() {
+        Object.keys(this.channels).forEach(channelId => {
+            this.channels[channelId].messages = [];
+        });
+        this.saveData();
     }
 }
 
 // Global database instance
-window.eliteChatDB = new EliteChatDB();
+window.elitechatDB = new Database();
