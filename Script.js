@@ -237,3 +237,109 @@ class EliteChat {
         
         // Aktif sekme
         document.querySelectorAll('.channel-tab').forEach(tab => {
+            tab.classList.remove('active');
+            if (tab.dataset.channel === channelId) {
+                tab.classList.add('active');
+            }
+        });
+        
+        // Kanal bilgilerini güncelle
+        const db = window.eliteChatDatabase;
+        const channel = db.getChannel(channelId);
+        if (channel) {
+            document.getElementById('currentChannel').textContent = channel.name.replace('#', '');
+            document.getElementById('channelTopic').textContent = channel.topic;
+            document.getElementById('panelChannelName').textContent = channel.name;
+            document.getElementById('panelChannelTopic').textContent = channel.topic;
+            
+            // Mesajları yükle
+            this.loadChannelMessages(channelId);
+            this.updateOnlineList();
+        }
+    }
+    
+    updateOnlineList() {
+        const db = window.eliteChatDatabase;
+        const channel = db.getChannel(this.currentChannel);
+        if (!channel) return;
+        
+        const container = document.getElementById('userList');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        const users = Array.from(channel.users)
+            .map(id => db.getUser(id))
+            .filter(user => user && !user.invisible);
+        
+        users.forEach(user => {
+            const userDiv = document.createElement('div');
+            userDiv.className = 'user-item';
+            userDiv.innerHTML = `
+                <div class="user-avatar">${user.avatar}</div>
+                <div class="user-name">${user.name}</div>
+                <div class="user-status">${user.online ? '🟢' : '⚫'}</div>
+            `;
+            
+            userDiv.addEventListener('click', () => {
+                if (user.id !== this.currentUser?.id) {
+                    this.openPrivateChat(user.id);
+                }
+            });
+            
+            container.appendChild(userDiv);
+        });
+    }
+    
+    toggleTheme() {
+        this.theme = this.theme === 'night' ? 'day' : 'night';
+        this.applyTheme();
+    }
+    
+    applyTheme() {
+        if (this.theme === 'night') {
+            document.body.classList.add('night-mode');
+            document.body.classList.remove('day-mode');
+        } else {
+            document.body.classList.add('day-mode');
+            document.body.classList.remove('night-mode');
+        }
+    }
+    
+    // Utility fonksiyonları
+    escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return String(text).replace(/[&<>"']/g, m => map[m]);
+    }
+    
+    formatTime(date) {
+        return date.toLocaleTimeString('tr-TR', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: false
+        });
+    }
+    
+    // IRC komut işleme (kısaltılmış)
+    handleIRCCommand(command) {
+        console.log('IRC Command:', command);
+        // Detaylı IRC komutları irc-commands.js'de
+    }
+    
+    // Özel mesaj işlemleri (kısaltılmış)
+    openPrivateChat(userId) {
+        console.log('Open PM with:', userId);
+        // Detaylı PM sistemi pm-system.js'de
+    }
+}
+
+// Uygulamayı başlat
+document.addEventListener('DOMContentLoaded', () => {
+    window.eliteChat = new EliteChat();
+});
