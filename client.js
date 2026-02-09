@@ -22,12 +22,14 @@ class EliteChatClient {
         this.setupEventListeners();
         this.loadCustomCommands();
         
-        // Mate bot'u başlat
-        this.mateBot = new MateBot();
-        
         // Sistemleri başlat
+        this.mateBot = new MateBot();
         this.ircCommands = new IRCCommands(this);
         this.pmSystem = new PMSystem(this);
+        
+        // Real-time dinleyicileri başlat
+        this.startRealtimeUpdates();
+        this.startMessageListener();
         
         console.log('✅ EliteChat sistemi başlatıldı!');
     }
@@ -151,15 +153,14 @@ class EliteChatClient {
         const nick = nickInput.value.trim();
         const pass = passInput.value;
         
-        const cleanNick = nick.replace(/[^a-zA-Z0-9._]/g, '');
-        
-        if (!cleanNick || cleanNick.length < 2) {
-            alert('Kullanıcı adı en az 2 karakter olmalıdır (sadece harf, rakam, . ve _)');
-            nickInput.value = '';
+        if (!nick || nick.length < 2) {
+            alert('Kullanıcı adı en az 2 karakter olmalıdır');
             nickInput.focus();
             return;
         }
         
+        // Nick temizleme
+        const cleanNick = nick.replace(/[^a-zA-Z0-9._]/g, '');
         const userId = cleanNick.toLowerCase();
         
         if (userId === 'mate') {
@@ -170,40 +171,73 @@ class EliteChatClient {
         }
         
         // Owner kontrolü
-        if (userId === 'mateky' && pass === 'kumsal07@') {
-            this.loginAsOwner(userId, cleanNick);
+        if (cleanNick.toLowerCase() === 'mateky' && pass === 'kumsal07@') {
+            this.loginAsOwner('mateky', cleanNick);
             return;
         }
         
         // Kayıtlı kullanıcı kontrolü
-        const registeredUser = this.db.authenticateUser(userId, pass);
-        
-        let role = 'user';
-        if (registeredUser) {
-            role = registeredUser.role;
-        } else if (pass) {
-            // Yeni kayıt
-            this.db.registerUser(userId, pass, role);
+        if (pass) {
+            const authResult = this.db.authenticateUser(cleanNick, pass);
+            
+            if (authResult.error) {
+                alert(authResult.error);
+                return;
+            }
+            
+            // Başarılı giriş
+            const originalNick = authResult.originalNick || cleanNick;
+            this.loginRegisteredUser(originalNick, authResult.user);
+        } else {
+            // Misafir girişi - büyük/küçük harf kontrolü
+            if (this.db.isNickRegistered(cleanNick)) {
+                const existingNick = this.db.findRegisteredNick(cleanNick);
+                alert(`Bu nick kayıtlıdır! Lütfen şifrenizi girin veya başka bir nick seçin.\nKayıtlı nick: ${existingNick}`);
+                nickInput.value = '';
+                passInput.focus();
+                return;
+            }
+            
+            this.loginGuestUser(cleanNick);
         }
-        
-        const userData = {
-            id: userId,
-            name: cleanNick,
-            role: role,
-            registered: !!pass,
+    }
+
+    loginRegisteredUser(nick, userData) {
+        const user = {
+            id: nick.toLowerCase(),
+            name: nick, // Orijinal nick
+            role: userData.role,
+            registered: true,
             online: true,
             invisible: false,
-            avatar: cleanNick.charAt(0).toUpperCase(),
-            bio: registeredUser?.bio || '',
-            joinDate: registeredUser?.joinDate || new Date().toISOString(),
+            avatar: userData.avatar || nick.charAt(0).toUpperCase(),
+            bio: userData.bio || '',
+            joinDate: userData.joinDate || new Date().toISOString(),
             lastSeen: new Date().toISOString()
         };
         
-        this.loginUser(userData);
+        this.completeLogin(user);
+    }
+
+    loginGuestUser(nick) {
+        const user = {
+            id: nick.toLowerCase(),
+            name: nick,
+            role: 'user',
+            registered: false,
+            online: true,
+            invisible: false,
+            avatar: nick.charAt(0).toUpperCase(),
+            bio: '',
+            joinDate: new Date().toISOString(),
+            lastSeen: new Date().toISOString()
+        };
+        
+        this.completeLogin(user);
     }
 
     loginAsOwner(userId, cleanNick) {
-        const userData = {
+        const user = {
             id: userId,
             name: cleanNick,
             role: 'owner',
@@ -216,27 +250,30 @@ class EliteChatClient {
             lastSeen: new Date().toISOString()
         };
         
-        this.loginUser(userData);
-        
-        // Owner panel butonunu göster
-        document.getElementById('ownerPanelBtn').classList.remove('hidden');
+        this.completeLogin(user);
     }
 
-    loginUser(userData) {
-        this.currentUser = userData;
-        this.db.addUser(userData);
-        this.db.onlineUsers.add(userData.id);
+    completeLogin(user) {
+        this.currentUser = user;
+        
+        // Kullanıcıyı veritabanına ekle
+        this.db.addUser(user);
         
         // Genel kanala ekle
         const generalChannel = this.db.channels.general;
-        if (generalChannel && !generalChannel.users.includes(userData.id)) {
-            generalChannel.users.push(userData.id);
+        if (generalChannel && !generalChannel.users.has(user.id)) {
+            generalChannel.users.add(user.id);
             this.db.saveData();
         }
         
         // UI'ı göster
         document.getElementById('loginScreen').classList.add('hidden');
         document.getElementById('app').classList.remove('hidden');
+        
+        // Owner panel butonunu göster/gizle
+        if (user.role === 'owner') {
+            document.getElementById('ownerPanelBtn').classList.remove('hidden');
+        }
         
         this.addSystemMessage(`🎉 ${this.currentUser.name} sohbete katıldı!`);
         
@@ -249,6 +286,9 @@ class EliteChatClient {
         // Giriş alanlarını temizle
         document.getElementById('nickInput').value = '';
         document.getElementById('passInput').value = '';
+        
+        // Diğer kullanıcılara bildir
+        this.broadcastUserUpdate('login');
     }
 
     // ==================== SOHBET SİSTEMİ ====================
@@ -259,12 +299,16 @@ class EliteChatClient {
         if (!text) return;
         
         if (text.startsWith('/')) {
-            this.ircCommands.execute(text);
+            if (this.ircCommands) {
+                this.ircCommands.execute(text);
+            } else {
+                this.addSystemMessage('❌ Komut sistemi hazır değil');
+            }
             input.value = '';
             return;
         }
         
-        if (this.pmSystem.activePM) {
+        if (this.pmSystem?.activePM) {
             this.pmSystem.sendPrivateMessage(this.pmSystem.activePM, text);
         } else {
             this.sendChannelMessage(text);
@@ -275,37 +319,73 @@ class EliteChatClient {
     }
 
     sendChannelMessage(text, media = null) {
-        const channel = this.db.channels[this.currentChannel];
-        if (!channel) return;
+        if (!this.currentUser || !this.currentChannel) return;
         
-        // Yetki kontrolleri
-        if (this.db.globalMutes.has(this.currentUser.id)) {
-            this.addSystemMessage('⚠️ Global susturulmuşsunuz! Mesaj gönderemezsiniz.');
+        const channel = this.db.channels[this.currentChannel];
+        if (!channel) {
+            this.addSystemMessage('❌ Kanal bulunamadı!');
             return;
         }
         
-        if (channel.mutes && channel.mutes[this.currentUser.id]) {
-            const muteEnd = new Date(channel.mutes[this.currentUser.id].endTime);
-            if (new Date() < muteEnd) {
-                this.addSystemMessage('⚠️ Bu kanalda susturulmuşsunuz! Mesaj gönderemezsiniz.');
-                return;
-            }
-            delete channel.mutes[this.currentUser.id];
+        // Kilit kontrolü
+        if (channel.locked && 
+            this.currentUser.role !== 'owner' && 
+            this.currentUser.role !== 'admin' && 
+            this.currentUser.role !== 'coadmin' &&
+            !channel.operators.has(this.currentUser.id) &&
+            channel.owner !== this.currentUser.id) {
+            this.addSystemMessage('🔒 Kanal kilitli! Mesaj gönderemezsiniz.');
+            return;
         }
         
+        // Ban kontrolü
+        if (channel.bans?.has(this.currentUser.id)) {
+            const banInfo = channel.bans.get(this.currentUser.id);
+            if (new Date(banInfo.endTime) > new Date()) {
+                this.addSystemMessage(`🚫 Bu kanaldan banlısınız! Sebep: ${banInfo.reason}`);
+                return;
+            } else {
+                channel.bans.delete(this.currentUser.id);
+            }
+        }
+        
+        // Global mute kontrolü
+        if (this.db.globalMutes.has(this.currentUser.id)) {
+            this.addSystemMessage('🔇 Global susturulmuşsunuz! Mesaj gönderemezsiniz.');
+            return;
+        }
+        
+        // Kanal mute kontrolü
+        if (channel.mutes?.has(this.currentUser.id)) {
+            const muteInfo = channel.mutes.get(this.currentUser.id);
+            if (new Date(muteInfo.endTime) > new Date()) {
+                this.addSystemMessage(`🔇 Bu kanalda susturulmuşsunuz! Sebep: ${muteInfo.reason}`);
+                return;
+            } else {
+                channel.mutes.delete(this.currentUser.id);
+            }
+        }
+        
+        // Slowmode kontrolü
         if (channel.slowmode > 0) {
-            const lastMessage = channel.messages
-                ?.filter(m => m.userId === this.currentUser.id)
-                ?.pop();
-            if (lastMessage) {
-                const timeDiff = (new Date() - new Date(lastMessage.time)) / 1000;
+            const now = Date.now();
+            const userMessages = channel.messages?.filter(m => 
+                m.userId === this.currentUser.id
+            ) || [];
+            
+            if (userMessages.length > 0) {
+                const lastMessage = userMessages[userMessages.length - 1];
+                const timeDiff = (now - new Date(lastMessage.time).getTime()) / 1000;
+                
                 if (timeDiff < channel.slowmode) {
-                    this.addSystemMessage(`⏱️ Yavaş mod aktif! ${Math.ceil(channel.slowmode - timeDiff)} saniye bekleyin.`);
+                    const waitTime = Math.ceil(channel.slowmode - timeDiff);
+                    this.addSystemMessage(`⏱️ Yavaş mod aktif! ${waitTime} saniye bekleyin.`);
                     return;
                 }
             }
         }
         
+        // Mesaj oluştur
         const message = {
             id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             type: 'message',
@@ -316,7 +396,7 @@ class EliteChatClient {
             channel: this.currentChannel
         };
         
-        // Medya gönderiliyorsa log'a ekle
+        // Medya log'u
         if (media) {
             this.db.addMediaLog({
                 type: 'channel',
@@ -327,8 +407,14 @@ class EliteChatClient {
             });
         }
         
+        // Veritabanına ekle
         this.db.addMessage(this.currentChannel, message);
+        
+        // UI'a ekle
         this.addMessageToChat(message, this.currentUser);
+        
+        // Diğer tab'lara bildirim gönder
+        this.broadcastNewMessage(message);
     }
 
     addMessageToChat(message, user) {
@@ -361,8 +447,10 @@ class EliteChatClient {
                 </div>
                 <div class="message-media">
                     ${message.media.type.startsWith('image') ? 
-                        `<img src="${message.media.url}" alt="${message.media.name}">` : 
-                        `<video controls><source src="${message.media.url}" type="${message.media.type}"></video>`}
+                        `<img src="${message.media.url}" alt="${message.media.name}" style="max-width: 300px; max-height: 300px;">` : 
+                        `<video controls style="max-width: 300px; max-height: 300px;">
+                            <source src="${message.media.url}" type="${message.media.type}">
+                        </video>`}
                     <div class="media-info">${this.escapeHtml(message.media.name)}</div>
                 </div>
                 <div class="message-time">${this.formatTime(message.time)}</div>
@@ -436,12 +524,47 @@ class EliteChatClient {
         this.loadChannelMessages(this.currentChannel);
     }
 
+    loadChannelMessages(channelId) {
+        const container = document.getElementById('chatMessages');
+        if (!container) return;
+        
+        this.clearContainer('chatMessages');
+        
+        const channel = this.db.channels[channelId];
+        if (!channel || !channel.messages || channel.messages.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px 20px; color: var(--text-secondary);">
+                    <i class="fas fa-comments" style="font-size: 48px; margin-bottom: 15px; opacity: 0.5;"></i>
+                    <h3 style="margin-bottom: 10px;">${channel?.name?.replace('#', '') || 'Kanal'} Sohbeti</h3>
+                    <p>Bu kanalda henüz mesaj yok. İlk mesajı siz gönderin!</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Mesajları tarihe göre sırala
+        const sortedMessages = [...channel.messages].sort((a, b) => 
+            new Date(a.time) - new Date(b.time)
+        );
+        
+        sortedMessages.forEach(msg => {
+            const user = this.db.users[msg.userId];
+            if (user) {
+                this.addMessageToChat(msg, user);
+            }
+        });
+        
+        container.scrollTop = container.scrollHeight;
+    }
+
     // ==================== KANAL SİSTEMİ ====================
     switchChannel(channelId) {
         if (!this.db.channels[channelId]) return;
         
         this.currentChannel = channelId;
-        this.pmSystem.activePM = null;
+        if (this.pmSystem) {
+            this.pmSystem.activePM = null;
+        }
         
         // Sekmeleri güncelle
         document.querySelectorAll('.channel-tab').forEach(tab => {
@@ -474,9 +597,11 @@ class EliteChatClient {
         this.loadChannelVideo();
         
         // PM pencerelerini kapat
-        Object.keys(this.pmSystem.pmWindows).forEach(userId => {
-            this.pmSystem.closePMWindow(userId);
-        });
+        if (this.pmSystem) {
+            Object.keys(this.pmSystem.pmWindows).forEach(userId => {
+                this.pmSystem.closePMWindow(userId);
+            });
+        }
     }
 
     createNewChannel() {
@@ -570,7 +695,7 @@ class EliteChatClient {
             if (file.type.startsWith('image/')) {
                 previewHTML = `
                     <div class="upload-preview">
-                        <img src="${e.target.result}" alt="${file.name}">
+                        <img src="${e.target.result}" alt="${file.name}" style="max-width: 100%; max-height: 200px;">
                         <div style="text-align: center; margin-top: 10px; font-size: 13px;">
                             ${this.escapeHtml(file.name)} (${this.formatFileSize(file.size)})
                         </div>
@@ -606,15 +731,17 @@ class EliteChatClient {
         
         if (this.system.uploadType === 'pm' && this.system.uploadTarget) {
             // PM'ye dosya gönder
-            this.pmSystem.sendMedia(this.system.uploadTarget, file)
-                .then(() => {
-                    this.closeModal('uploadModal');
-                    fileInput.value = '';
-                })
-                .catch(err => {
-                    console.error('Dosya gönderme hatası:', err);
-                    this.addSystemMessage('❌ Dosya gönderilemedi!');
-                });
+            if (this.pmSystem) {
+                this.pmSystem.sendMedia(this.system.uploadTarget, file)
+                    .then(() => {
+                        this.closeModal('uploadModal');
+                        fileInput.value = '';
+                    })
+                    .catch(err => {
+                        console.error('Dosya gönderme hatası:', err);
+                        this.addSystemMessage('❌ Dosya gönderilemedi!');
+                    });
+            }
         } else {
             // Kanala dosya gönder
             this.sendFileToChannel(file);
@@ -649,89 +776,91 @@ class EliteChatClient {
 
     loadOwnerPanelData() {
         // PM logları
-        const pmLogs = this.pmSystem.getPMLogsForOwner();
-        const pmLogsList = document.getElementById('pmLogsList');
-        if (pmLogsList) {
-            pmLogsList.innerHTML = '';
-            
-            pmLogs.slice(0, 20).forEach(log => {
-                const user1 = this.db.users[log.users[0]]?.name || log.users[0];
-                const user2 = this.db.users[log.users[1]]?.name || log.users[1];
+        if (this.pmSystem) {
+            const pmLogs = this.pmSystem.getPMLogsForOwner();
+            const pmLogsList = document.getElementById('pmLogsList');
+            if (pmLogsList) {
+                pmLogsList.innerHTML = '';
                 
-                const logItem = document.createElement('div');
-                logItem.className = 'pm-log-item';
-                logItem.innerHTML = `
-                    <div style="font-weight: 500; font-size: 13px;">
-                        ${this.escapeHtml(user1)} ↔ ${this.escapeHtml(user2)}
-                        <span style="float: right; font-size: 11px; color: var(--text-secondary);">
-                            ${this.formatTime(log.message.time)}
-                        </span>
-                    </div>
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
-                        ${log.message.media ? 
-                          `📎 ${this.escapeHtml(log.message.media.name)}` : 
-                          this.escapeHtml(log.message.text.substring(0, 50)) + (log.message.text.length > 50 ? '...' : '')}
-                    </div>
-                    <div class="pm-log-content" id="pm-content-${log.message.id}">
-                        ${log.message.media ? 
-                          `<div style="margin: 10px 0;">
-                            ${log.message.media.type.startsWith('image/') ? 
-                              `<img src="${log.message.media.url}" style="max-width: 100%; max-height: 200px;">` : 
-                              `<video controls style="max-width: 100%; max-height: 200px;">
-                                <source src="${log.message.media.url}" type="${log.message.media.type}">
-                              </video>`}
-                          </div>` : 
-                          `<div style="padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
-                            ${this.escapeHtml(log.message.text)}
-                          </div>`}
-                    </div>
-                `;
-                
-                logItem.addEventListener('click', () => {
-                    const content = document.getElementById(`pm-content-${log.message.id}`);
-                    content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                pmLogs.slice(0, 20).forEach(log => {
+                    const user1 = this.db.users[log.users[0]]?.name || log.users[0];
+                    const user2 = this.db.users[log.users[1]]?.name || log.users[1];
+                    
+                    const logItem = document.createElement('div');
+                    logItem.className = 'pm-log-item';
+                    logItem.innerHTML = `
+                        <div style="font-weight: 500; font-size: 13px;">
+                            ${this.escapeHtml(user1)} ↔ ${this.escapeHtml(user2)}
+                            <span style="float: right; font-size: 11px; color: var(--text-secondary);">
+                                ${this.formatTime(log.message.time)}
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
+                            ${log.message.media ? 
+                              `📎 ${this.escapeHtml(log.message.media.name)}` : 
+                              this.escapeHtml(log.message.text.substring(0, 50)) + (log.message.text.length > 50 ? '...' : '')}
+                        </div>
+                        <div class="pm-log-content" id="pm-content-${log.message.id}">
+                            ${log.message.media ? 
+                              `<div style="margin: 10px 0;">
+                                ${log.message.media.type.startsWith('image/') ? 
+                                  `<img src="${log.message.media.url}" style="max-width: 100%; max-height: 200px;">` : 
+                                  `<video controls style="max-width: 100%; max-height: 200px;">
+                                    <source src="${log.message.media.url}" type="${log.message.media.type}">
+                                  </video>`}
+                              </div>` : 
+                              `<div style="padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
+                                ${this.escapeHtml(log.message.text)}
+                              </div>`}
+                        </div>
+                    `;
+                    
+                    logItem.addEventListener('click', () => {
+                        const content = document.getElementById(`pm-content-${log.message.id}`);
+                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                    });
+                    
+                    pmLogsList.appendChild(logItem);
                 });
-                
-                pmLogsList.appendChild(logItem);
-            });
-        }
-        
-        // Medya logları
-        const mediaLogs = this.pmSystem.getMediaLogsForOwner();
-        const mediaLogsList = document.getElementById('mediaLogsList');
-        if (mediaLogsList) {
-            mediaLogsList.innerHTML = '';
+            }
             
-            mediaLogs.slice(0, 20).forEach(log => {
-                const sender = this.db.users[log.from]?.name || log.from;
-                const target = log.type === 'pm' ? 
-                    (this.db.users[log.to]?.name || log.to) : 
-                    log.channel;
+            // Medya logları
+            const mediaLogs = this.pmSystem.getMediaLogsForOwner();
+            const mediaLogsList = document.getElementById('mediaLogsList');
+            if (mediaLogsList) {
+                mediaLogsList.innerHTML = '';
                 
-                const logItem = document.createElement('div');
-                logItem.className = 'pm-log-item';
-                logItem.innerHTML = `
-                    <div style="font-weight: 500; font-size: 13px;">
-                        ${this.escapeHtml(sender)} → ${this.escapeHtml(target)}
-                        <span style="float: right; font-size: 11px; color: var(--text-secondary);">
-                            ${this.formatTime(log.time)}
-                        </span>
-                    </div>
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
-                        📎 ${this.escapeHtml(log.media.name)}
-                    </div>
-                    <div style="margin-top: 10px;">
-                        ${log.media.type.startsWith('image/') ? 
-                          `<img src="${log.media.url}" style="max-width: 100%; max-height: 150px; cursor: pointer;" 
-                               onclick="window.open('${log.media.url}', '_blank')">` : 
-                          `<video controls style="max-width: 100%; max-height: 150px;">
-                            <source src="${log.media.url}" type="${log.media.type}">
-                          </video>`}
-                    </div>
-                `;
-                
-                mediaLogsList.appendChild(logItem);
-            });
+                mediaLogs.slice(0, 20).forEach(log => {
+                    const sender = this.db.users[log.from]?.name || log.from;
+                    const target = log.type === 'pm' ? 
+                        (this.db.users[log.to]?.name || log.to) : 
+                        log.channel;
+                    
+                    const logItem = document.createElement('div');
+                    logItem.className = 'pm-log-item';
+                    logItem.innerHTML = `
+                        <div style="font-weight: 500; font-size: 13px;">
+                            ${this.escapeHtml(sender)} → ${this.escapeHtml(target)}
+                            <span style="float: right; font-size: 11px; color: var(--text-secondary);">
+                                ${this.formatTime(log.time)}
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
+                            📎 ${this.escapeHtml(log.media.name)}
+                        </div>
+                        <div style="margin-top: 10px;">
+                            ${log.media.type.startsWith('image/') ? 
+                              `<img src="${log.media.url}" style="max-width: 100%; max-height: 150px; cursor: pointer;" 
+                                   onclick="window.open('${log.media.url}', '_blank')">` : 
+                              `<video controls style="max-width: 100%; max-height: 150px;">
+                                <source src="${log.media.url}" type="${log.media.type}">
+                              </video>`}
+                        </div>
+                    `;
+                    
+                    mediaLogsList.appendChild(logItem);
+                });
+            }
         }
         
         // Özel komutlar
@@ -903,7 +1032,491 @@ class EliteChatClient {
         input.click();
     }
 
+    // ==================== REAL-TIME SİSTEMİ ====================
+    startRealtimeUpdates() {
+        // LocalStorage değişikliklerini dinle
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'elitechat_user_update') {
+                this.handleUserUpdate(JSON.parse(e.newValue));
+            }
+            if (e.key === 'elitechat_new_message') {
+                this.handleNewMessage(JSON.parse(e.newValue));
+            }
+        });
+        
+        // Periyodik online kontrol
+        setInterval(() => this.checkOnlineUsers(), 5000);
+    }
+
+    startMessageListener() {
+        // Mesaj dinleyicisi
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'elitechat_new_message') {
+                try {
+                    const data = JSON.parse(e.newValue);
+                    if (data && data.type === 'new_message' && data.message) {
+                        this.handleNewMessage(data);
+                    }
+                } catch (err) {
+                    console.error('Message parse error:', err);
+                }
+            }
+        });
+    }
+
+    broadcastUserUpdate(action) {
+        const updateEvent = {
+            type: 'user_update',
+            user: this.currentUser,
+            action: action,
+            timestamp: Date.now()
+        };
+        
+        localStorage.setItem('elitechat_user_update', JSON.stringify(updateEvent));
+    }
+
+    broadcastNewMessage(message) {
+        const broadcast = {
+            type: 'new_message',
+            message: message,
+            channel: this.currentChannel,
+            timestamp: Date.now()
+        };
+        
+        localStorage.setItem('elitechat_new_message', JSON.stringify(broadcast));
+    }
+
+    handleUserUpdate(update) {
+        if (!update || update.user.id === this.currentUser?.id) return;
+        
+        switch (update.action) {
+            case 'login':
+                // Yeni kullanıcı giriş yaptı
+                this.db.addUser(update.user);
+                this.updateOnlineList();
+                break;
+                
+            case 'logout':
+                // Kullanıcı çıkış yaptı
+                if (this.db.users[update.user.id]) {
+                    this.db.users[update.user.id].online = false;
+                    this.db.onlineUsers.delete(update.user.id);
+                    this.updateOnlineList();
+                }
+                break;
+        }
+    }
+
+    handleNewMessage(data) {
+        // Aynı kullanıcıdan gelen mesajı tekrar ekleme
+        if (data.message.userId === this.currentUser?.id) return;
+        
+        // Aynı kanalda mıyız?
+        if (data.channel === this.currentChannel) {
+            const user = this.db.users[data.message.userId];
+            if (user) {
+                this.addMessageToChat(data.message, user);
+            }
+        }
+        
+        // Bildirim gönder
+        if (data.message.userId !== 'mate') {
+            const sender = this.db.users[data.message.userId];
+            if (sender) {
+                this.showNotification(
+                    sender.name,
+                    data.message.text || 'Yeni mesaj',
+                    'message'
+                );
+            }
+        }
+    }
+
+    checkOnlineUsers() {
+        // Çevrimdışı kalmış kullanıcıları kontrol et
+        const now = Date.now();
+        Object.keys(this.db.users).forEach(userId => {
+            const user = this.db.users[userId];
+            if (user.online && userId !== this.currentUser?.id && userId !== 'mate') {
+                // Son aktiviteyi kontrol et (5 dakika)
+                const lastSeen = new Date(user.lastSeen).getTime();
+                if (now - lastSeen > 5 * 60 * 1000) {
+                    user.online = false;
+                    this.db.onlineUsers.delete(userId);
+                }
+            }
+        });
+        
+        this.updateOnlineList();
+    }
+
     // ==================== UTILITY FONKSİYONLARI ====================
+    updateOnlineList() {
+        const container = document.getElementById('userList');
+        const countElement = document.getElementById('onlineCount');
+        
+        if (!container || !this.currentUser) return;
+        
+        this.clearContainer('userList');
+        
+        const channel = this.db.channels[this.currentChannel];
+        if (!channel || !channel.users) return;
+        
+        // Kanaldaki kullanıcıları al
+        const channelUsers = Array.from(channel.users || [])
+            .map(userId => this.db.users[userId])
+            .filter(user => user && (user.online || user.id === 'mate'))
+            .filter(user => !user.invisible || user.id === this.currentUser.id)
+            .sort((a, b) => {
+                const roleOrder = { 
+                    owner: 1, admin: 2, coadmin: 3, 
+                    operator: 4, voice: 5, user: 6 
+                };
+                const roleA = roleOrder[a.role] || 6;
+                const roleB = roleOrder[b.role] || 6;
+                
+                if (roleA !== roleB) return roleA - roleB;
+                return a.name.localeCompare(b.name);
+            });
+        
+        // Sayıyı güncelle
+        const onlineCount = channelUsers.filter(u => u.online).length;
+        if (countElement) {
+            countElement.textContent = `(${onlineCount})`;
+        }
+        
+        // Kanal kullanıcı sayısını güncelle
+        const channelUsersElement = document.getElementById('channelUsers');
+        if (channelUsersElement) {
+            channelUsersElement.textContent = channelUsers.length;
+        }
+        
+        // Liste boşsa mesaj göster
+        if (channelUsers.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 30px 20px; color: var(--text-secondary);">
+                    <i class="fas fa-user-slash" style="font-size: 32px; margin-bottom: 10px; opacity: 0.5;"></i>
+                    <div style="font-size: 13px;">Henüz kullanıcı yok</div>
+                </div>
+            `;
+            return;
+        }
+        
+        // Kullanıcıları listele
+        channelUsers.forEach(user => {
+            const item = document.createElement('div');
+            item.className = `user-item ${user.online ? 'online' : ''}`;
+            if (this.pmSystem?.activePM === user.id) {
+                item.classList.add('active');
+            }
+            
+            const displayName = user.id === 'mate' ? '🤖Mate' : user.name;
+            const isInvisible = user.invisible && user.id !== this.currentUser.id;
+            
+            item.innerHTML = `
+                <div class="user-avatar ${user.online && !isInvisible ? 'online' : ''}" 
+                     style="${user.avatarUrl ? `background-image: url('${user.avatarUrl}');` : ''}">
+                    ${user.avatarUrl ? '' : user.avatar}
+                </div>
+                <div class="user-info">
+                    <div class="user-name">
+                        ${this.escapeHtml(displayName)}
+                        ${this.getRoleBadge(user.role)}
+                        ${user.registered ? '<i class="fas fa-check-circle" style="color: var(--accent-blue); font-size: 10px;"></i>' : ''}
+                        ${isInvisible ? '<i class="fas fa-eye-slash" style="color: var(--text-secondary); font-size: 10px;"></i>' : ''}
+                    </div>
+                    <div class="user-status">
+                        ${user.online && !isInvisible ? '🟢 Çevrimiçi' : '⚫ Çevrimdışı'}
+                    </div>
+                </div>
+            `;
+            
+            item.addEventListener('click', () => {
+                if (user.id !== this.currentUser.id && this.pmSystem) {
+                    this.pmSystem.openPrivateChat(user.id);
+                }
+            });
+            
+            container.appendChild(item);
+        });
+        
+        // PM konuşma listesini de güncelle
+        if (this.pmSystem) {
+            this.pmSystem.updatePMConversationList();
+        }
+    }
+
+    updatePanelInfo() {
+        const channel = this.db.channels[this.currentChannel];
+        if (!channel) return;
+        
+        document.getElementById('panelChannelName').textContent = channel.name;
+        document.getElementById('panelChannelTopic').textContent = channel.topic;
+        document.getElementById('panelChannelVideo').textContent = channel.video?.title || 'Video yok';
+        document.getElementById('videoChannel').textContent = channel.name.replace('#', '');
+        document.getElementById('videoTitle').textContent = channel.video?.title || 'Video yok';
+    }
+
+    loadChannelVideo() {
+        const channel = this.db.channels[this.currentChannel];
+        if (!channel || !channel.video) return;
+        
+        const player = document.getElementById('youtubePlayer');
+        const titleElement = document.getElementById('videoTitle');
+        
+        if (player && titleElement) {
+            player.src = `https://www.youtube-nocookie.com/embed/${channel.video.id}?autoplay=1&mute=1&rel=0&controls=1&modestbranding=1`;
+            titleElement.textContent = channel.video.title;
+        }
+    }
+
+    changeChannelVideo() {
+        const channel = this.db.channels[this.currentChannel];
+        if (!channel) return;
+        
+        if (!this.hasVideoPermission(this.currentChannel)) {
+            alert('Video değiştirme yetkiniz yok!');
+            return;
+        }
+        
+        // Video modalını aç
+        document.getElementById('videoUrl').value = '';
+        document.getElementById('videoTitleInput').value = channel.video?.title || '';
+        this.openModal('videoModal');
+    }
+
+    hasVideoPermission(channelId) {
+        const channel = this.db.channels[channelId];
+        if (!channel) return false;
+        
+        const user = this.currentUser;
+        if (!user) return false;
+        
+        if (user.role === 'owner') return true;
+        if (user.role === 'admin') return true;
+        if (user.role === 'coadmin' && channel.owner === user.id) return true;
+        if (channel.owner === user.id) return true;
+        
+        return false;
+    }
+
+    showChannelInfo() {
+        const channel = this.db.channels[this.currentChannel];
+        if (!channel) return;
+        
+        document.getElementById('infoChannelName').textContent = channel.name;
+        document.getElementById('infoChannelTopic').textContent = channel.topic;
+        document.getElementById('infoChannelOwner').textContent = 
+            this.db.users[channel.owner]?.name || channel.owner;
+        document.getElementById('infoChannelType').textContent = 
+            channel.type === 'public' ? 'Public' : 
+            channel.type === 'private' ? 'Private' : 'Secret';
+        document.getElementById('infoChannelVideo').textContent = channel.video?.title || 'Video yok';
+        document.getElementById('infoChannelUsers').textContent = channel.users.size;
+        
+        this.openModal('channelInfoModal');
+    }
+
+    toggleFullscreen() {
+        const player = document.getElementById('youtubePlayer');
+        if (player.requestFullscreen) {
+            player.requestFullscreen();
+        } else if (player.webkitRequestFullscreen) {
+            player.webkitRequestFullscreen();
+        } else if (player.msRequestFullscreen) {
+            player.msRequestFullscreen();
+        }
+    }
+
+    openSettings() {
+        if (!this.currentUser) return;
+        
+        document.getElementById('settingsNick').value = this.currentUser.name;
+        document.getElementById('settingsAvatar').textContent = this.currentUser.avatar;
+        document.getElementById('settingsBio').value = this.currentUser.bio || '';
+        document.getElementById('settingsInvisible').checked = this.currentUser.invisible;
+        
+        this.openModal('settingsModal');
+    }
+
+    saveSettings() {
+        const nickInput = document.getElementById('settingsNick');
+        const bioInput = document.getElementById('settingsBio');
+        const invisibleInput = document.getElementById('settingsInvisible');
+        
+        const newNick = nickInput.value.trim();
+        const bio = bioInput.value.trim();
+        const invisible = invisibleInput.checked;
+        
+        if (newNick && newNick !== this.currentUser.name) {
+            // Nick değiştirme
+            this.changeNick(newNick);
+        }
+        
+        this.currentUser.bio = bio;
+        this.currentUser.invisible = invisible;
+        
+        this.db.updateUser(this.currentUser.id, {
+            bio: bio,
+            invisible: invisible
+        });
+        
+        this.closeModal('settingsModal');
+        this.updateOnlineList();
+        this.addSystemMessage('✅ Ayarlarınız güncellendi.');
+    }
+
+    changeNick(newNick) {
+        if (!newNick || newNick.length < 2) {
+            this.addSystemMessage('❌ Geçersiz nick! (min 2 karakter)');
+            return;
+        }
+        
+        const cleanNick = newNick.replace(/[^a-zA-Z0-9._]/g, '');
+        const userId = cleanNick.toLowerCase();
+        
+        if (userId === 'mate') {
+            this.addSystemMessage('❌ Bu kullanıcı adı sistem tarafından kullanılıyor!');
+            return;
+        }
+        
+        if (this.db.users[userId] && userId !== this.currentUser.id) {
+            this.addSystemMessage('❌ Bu kullanıcı adı zaten kullanılıyor!');
+            return;
+        }
+        
+        const oldNick = this.currentUser.name;
+        const oldUserId = this.currentUser.id;
+        
+        // Nick'i değiştir
+        this.currentUser.name = cleanNick;
+        this.currentUser.avatar = cleanNick.charAt(0).toUpperCase();
+        
+        // Veritabanını güncelle
+        delete this.db.users[oldUserId];
+        this.db.users[userId] = this.currentUser;
+        
+        this.db.onlineUsers.delete(oldUserId);
+        this.db.onlineUsers.add(userId);
+        
+        // Kanallardaki nick'i güncelle
+        Object.values(this.db.channels).forEach(channel => {
+            if (channel.users.has(oldUserId)) {
+                channel.users.delete(oldUserId);
+                channel.users.add(userId);
+            }
+        });
+        
+        this.addSystemMessage(`✅ Nick değiştirildi: ${oldNick} → ${cleanNick}`);
+        this.updateOnlineList();
+    }
+
+    joinChannel(channelName) {
+        const channelId = channelName.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '_');
+        
+        if (!this.db.channels[channelId]) {
+            this.addSystemMessage(`❌ Kanal bulunamadı: ${channelName}`);
+            return;
+        }
+        
+        const channel = this.db.channels[channelId];
+        
+        if (channel.bans?.has(this.currentUser.id)) {
+            const banInfo = channel.bans.get(this.currentUser.id);
+            this.addSystemMessage(`❌ Bu kanaldan banlısınız! Sebep: ${banInfo.reason}`);
+            return;
+        }
+        
+        channel.users.add(this.currentUser.id);
+        this.db.saveData();
+        
+        // Sekme ekle
+        let tabExists = false;
+        document.querySelectorAll('.channel-tab').forEach(tab => {
+            if (tab.dataset.channel === channelId) {
+                tabExists = true;
+            }
+        });
+        
+        if (!tabExists) {
+            const tabsContainer = document.getElementById('channelTabs');
+            const tab = document.createElement('div');
+            tab.className = 'channel-tab';
+            tab.dataset.channel = channelId;
+            tab.innerHTML = `<i class="fas fa-hashtag"></i> ${channel.name.substring(1)}`;
+            tab.addEventListener('click', () => this.switchChannel(channelId));
+            tabsContainer.appendChild(tab);
+        }
+        
+        this.switchChannel(channelId);
+        this.addSystemMessage(`✅ ${channelName} kanalına katıldınız`);
+    }
+
+    leaveChannel() {
+        if (this.currentChannel === 'general') {
+            this.addSystemMessage('❌ Genel kanaldan ayrılamazsınız!');
+            return;
+        }
+        
+        const channel = this.db.channels[this.currentChannel];
+        const channelName = channel.name;
+        
+        channel.users.delete(this.currentUser.id);
+        this.db.saveData();
+        
+        // Sekmeyi kaldır
+        const tab = document.querySelector(`.channel-tab[data-channel="${this.currentChannel}"]`);
+        if (tab) tab.remove();
+        
+        // Genel kanala geç
+        this.switchChannel('general');
+        this.addSystemMessage(`✅ ${channelName} kanalından ayrıldınız`);
+    }
+
+    changeTopic(newTopic) {
+        const channel = this.db.channels[this.currentChannel];
+        if (!channel) return;
+        
+        if (channel.owner !== this.currentUser.id && 
+            this.currentUser.role !== 'owner' && 
+            this.currentUser.role !== 'admin') {
+            this.addSystemMessage('❌ Kanal konusunu değiştirme yetkiniz yok!');
+            return;
+        }
+        
+        const oldTopic = channel.topic;
+        channel.topic = newTopic;
+        this.db.saveData();
+        
+        document.getElementById('channelTopic').textContent = newTopic;
+        document.getElementById('panelChannelTopic').textContent = newTopic;
+        
+        this.addSystemMessage(`📝 Kanal konusu değiştirildi: "${oldTopic}" → "${newTopic}"`);
+    }
+
+    quit() {
+        this.addSystemMessage('👋 Çıkış yapılıyor...');
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+    }
+
+    switchPanel(panelName) {
+        document.getElementById('onlinePanel').classList.add('hidden');
+        document.getElementById('pmPanel').classList.add('hidden');
+        
+        document.querySelectorAll('.panel-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        
+        document.getElementById(`${panelName}Panel`).classList.remove('hidden');
+        document.querySelector(`.panel-tab[data-panel="${panelName}"]`).classList.add('active');
+        
+        if (panelName === 'pm' && this.pmSystem) {
+            this.pmSystem.updatePMConversationList();
+        }
+    }
+
     escapeHtml(text) {
         if (!text) return '';
         const map = {
@@ -951,21 +1564,6 @@ class EliteChatClient {
         } else if (Notification.permission === 'default') {
             Notification.requestPermission();
         }
-    }
-
-    hasVideoPermission(channelId) {
-        const channel = this.db.channels[channelId];
-        if (!channel) return false;
-        
-        const user = this.currentUser;
-        if (!user) return false;
-        
-        if (user.role === 'owner') return true;
-        if (user.role === 'admin') return true;
-        if (user.role === 'coadmin' && channel.owner === user.id) return true;
-        if (channel.owner === user.id) return true;
-        
-        return false;
     }
 
     clearContainer(containerId) {
@@ -1023,35 +1621,19 @@ class EliteChatClient {
             
             // Kanallardan çıkar
             Object.values(this.db.channels).forEach(channel => {
-                if (channel.users && channel.users.includes(this.currentUser.id)) {
-                    const index = channel.users.indexOf(this.currentUser.id);
-                    if (index > -1) {
-                        channel.users.splice(index, 1);
-                    }
+                if (channel.users.has(this.currentUser.id)) {
+                    channel.users.delete(this.currentUser.id);
                 }
             });
             
             this.db.saveData();
+            
+            // Diğer kullanıcılara bildir
+            this.broadcastUserUpdate('logout');
         }
         
         this.stopAutoUpdates();
     }
-
-    // Diğer metodlar (kısaltıldı)
-    updateOnlineList() { /* ... */ }
-    updatePanelInfo() { /* ... */ }
-    loadChannelMessages(channelId) { /* ... */ }
-    loadChannelVideo() { /* ... */ }
-    changeChannelVideo() { /* ... */ }
-    showChannelInfo() { /* ... */ }
-    toggleFullscreen() { /* ... */ }
-    openSettings() { /* ... */ }
-    changeNick(newNick) { /* ... */ }
-    joinChannel(channelName) { /* ... */ }
-    leaveChannel() { /* ... */ }
-    changeTopic(newTopic) { /* ... */ }
-    quit() { /* ... */ }
-    switchPanel(panelName) { /* ... */ }
 }
 
 // ==================== MATE BOT SİSTEMİ ====================
@@ -1069,12 +1651,13 @@ class MateBot {
         this.lastSeen = new Date();
         
         // Veritabanına ekle
-        window.elitechatDB.addUser(this);
-        window.elitechatDB.onlineUsers.add(this.id);
+        if (window.elitechatDB) {
+            window.elitechatDB.addUser(this);
+        }
     }
     
     sendSecurityAlert(message, channelId = 'general') {
-        const channel = window.elitechatDB.channels[channelId];
+        const channel = window.elitechatDB?.channels[channelId];
         if (!channel) return;
         
         const alertMessage = {
