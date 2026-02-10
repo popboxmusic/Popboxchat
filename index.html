@@ -1181,14 +1181,15 @@
             width: 100%;
             height: 100%;
             z-index: 1;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            background: rgba(0, 0, 0, 0.95);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
             transition: opacity 1.5s ease;
+            opacity: 1;
         }
 
         .day-mode .blur-layer {
-            background: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.95);
         }
 
         .icon-menu {
@@ -1312,6 +1313,28 @@
             flex: 1;
             padding: 20px;
             overflow-y: auto;
+        }
+
+        .irc-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .irc-body::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+
+        .day-mode .irc-body::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        .irc-body::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+        }
+
+        .day-mode .irc-body::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.3);
         }
 
         .irc-commands {
@@ -2568,17 +2591,6 @@
                        autofocus>
             </div>
 
-            <div class="input-group">
-                <div class="input-label">
-                    <i class="fas fa-lock"></i>
-                    Şifre
-                </div>
-                <input type="password" 
-                       id="passInput" 
-                       class="login-input" 
-                       placeholder="Şifrenizi girin">
-            </div>
-
             <button class="login-btn" onclick="handleLogin()" id="loginBtn">
                 <span id="btnText">Giriş Yap</span>
             </button>
@@ -2587,7 +2599,7 @@
         <div class="login-footer">
             <div class="login-note">
                 <p style="margin-top: 10px; font-size: 12px; color: rgba(255,255,255,0.4);">
-                    Lütfen kayıtlı kullanıcı adı ve şifrenizi girin
+                    Lütfen kullanıcı adınızı girin
                 </p>
             </div>
         </div>
@@ -2845,8 +2857,11 @@
         // ==================== SAYFA YÜKLENDİĞİNDE ====================
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('nickInput').focus();
+            
             // BLUR LAYER'ı tam opak yap
             document.getElementById('blurLayer').style.opacity = '1';
+            document.getElementById('blurLayer').style.backdropFilter = 'blur(25px)';
+            document.getElementById('blurLayer').style.webkitBackdropFilter = 'blur(25px)';
             
             // YouTube API yükle
             loadYouTubeAPI();
@@ -2855,7 +2870,7 @@
             document.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     const activeElement = document.activeElement;
-                    if (activeElement.id === 'nickInput' || activeElement.id === 'passInput') {
+                    if (activeElement.id === 'nickInput') {
                         handleLogin();
                     } else if (activeElement.id === 'messageInput') {
                         sendMessage();
@@ -3973,10 +3988,8 @@
 
         function handleLogin() {
             const nickInput = document.getElementById('nickInput');
-            const passInput = document.getElementById('passInput');
             
             let nick = nickInput.value.trim();
-            const pass = passInput.value;
             
             if (!nick) {
                 showError('Kullanıcı adı gerekli!');
@@ -3988,36 +4001,31 @@
                 return;
             }
             
-            if (!pass) {
-                showError('Şifre gerekli!');
-                return;
-            }
-            
             const loginBtn = document.getElementById('loginBtn');
             loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             loginBtn.style.cursor = 'not-allowed';
             
             setTimeout(() => {
-                performLogin(nick, pass);
+                performLogin(nick);
             }, 800);
         }
 
-        function performLogin(nick, pass) {
+        function performLogin(nick) {
             const normalizedNick = nick.toLowerCase();
-            const user = storage.getUser(normalizedNick);
+            let user = storage.getUser(normalizedNick);
             
-            // DEĞİŞTİRİLDİ: Kullanıcı yoksa giriş yapılamaz
+            // YENİ: Kullanıcı yoksa otomatik oluştur
             if (!user) {
-                showError('Kullanıcı adı veya şifre hatalı!');
-                resetLoginButton();
-                return;
-            }
-            
-            // Mevcut kullanıcı kontrolü
-            if (user.password !== pass) {
-                showError('Kullanıcı adı veya şifre hatalı!');
-                resetLoginButton();
-                return;
+                user = {
+                    name: nick,
+                    password: '123456', // Varsayılan şifre
+                    role: 'user',
+                    avatar: nick.charAt(0).toUpperCase(),
+                    registered: false,
+                    avatarImage: null,
+                    lastSeen: Date.now()
+                };
+                storage.saveUser(user);
             }
             
             currentUser = user;
