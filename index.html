@@ -2052,12 +2052,12 @@
         <iframe 
             class="youtube-iframe"
             id="youtubeIframe"
-            src="https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=0&controls=1&modestbranding=1&rel=0"
+            src="https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=0&controls=0&modestbranding=1&rel=0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowfullscreen>
         </iframe>
         
-        <div class="youtube-overlay">
+        <div class="youtube-overlay" id="youtubeOverlay">
             <i class="fas fa-play" style="font-size: 40px; color: rgba(255,255,255,0.8);"></i>
         </div>
         
@@ -2587,7 +2587,8 @@
         // ==================== SAYFA YÜKLENDİĞİNDE ====================
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('nickInput').focus();
-            document.getElementById('blurLayer').style.opacity = '0.8';
+            // BLUR LAYER'ı tam opak yap
+            document.getElementById('blurLayer').style.opacity = '1';
             
             // YouTube API yükle
             loadYouTubeAPI();
@@ -2616,7 +2617,10 @@
             // Playlist'i yükle
             loadPlaylist();
             
-            // Demo sistemini yükleme (kaldırıldı)
+            // YouTube overlay tıklama event'i
+            document.getElementById('youtubeOverlay').addEventListener('click', function() {
+                toggleVideoPlay();
+            });
         });
 
         function closeAllPanels() {
@@ -2641,24 +2645,39 @@
 
         // ==================== YOUTUBE API ENTEGRASYONU ====================
         function loadYouTubeAPI() {
+            if (window.YT) {
+                initializeYouTubePlayer();
+                return;
+            }
+            
             const tag = document.createElement('script');
             tag.src = "https://www.youtube.com/iframe_api";
             const firstScriptTag = document.getElementsByTagName('script')[0];
             firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
         }
 
-        window.onYouTubeIframeAPIReady = function() {
-            const iframe = document.getElementById('youtubeIframe');
+        function initializeYouTubePlayer() {
+            if (!window.YT) {
+                setTimeout(initializeYouTubePlayer, 100);
+                return;
+            }
+            
             youTubePlayer = new YT.Player('youtubeIframe', {
                 events: {
                     'onReady': onPlayerReady,
                     'onStateChange': onPlayerStateChange
                 }
             });
+        }
+
+        window.onYouTubeIframeAPIReady = function() {
+            console.log('YouTube API hazır!');
+            initializeYouTubePlayer();
         };
 
         function onPlayerReady(event) {
             youtubePlayerReady = true;
+            console.log('YouTube Player Hazır!');
             
             // Başlangıç ses seviyesini ayarla
             youTubePlayer.setVolume(currentVolume);
@@ -2666,32 +2685,46 @@
             
             // Oynatma durumunu güncelle
             updatePlayButton();
+            
+            // Overlay'i gizle
+            document.getElementById('youtubeOverlay').style.display = 'none';
         }
 
         function onPlayerStateChange(event) {
+            console.log('Player State:', event.data);
             if (event.data == YT.PlayerState.PLAYING) {
                 isVideoPlaying = true;
                 document.getElementById('playIcon').className = 'fas fa-pause';
+                document.getElementById('youtubeOverlay').style.display = 'none';
             } else if (event.data == YT.PlayerState.PAUSED) {
                 isVideoPlaying = false;
                 document.getElementById('playIcon').className = 'fas fa-play';
+                document.getElementById('youtubeOverlay').style.display = 'flex';
+            } else if (event.data == YT.PlayerState.ENDED) {
+                isVideoPlaying = false;
+                document.getElementById('playIcon').className = 'fas fa-play';
+                document.getElementById('youtubeOverlay').style.display = 'flex';
             }
         }
 
         function toggleVideoPlay() {
-            if (!youtubePlayerReady) return;
+            if (!youtubePlayerReady || !youTubePlayer) {
+                console.log('YouTube player hazır değil!');
+                return;
+            }
             
             if (isVideoPlaying) {
                 youTubePlayer.pauseVideo();
             } else {
                 youTubePlayer.playVideo();
             }
-            isVideoPlaying = !isVideoPlaying;
-            updatePlayButton();
         }
 
         function toggleVideoMute() {
-            if (!youtubePlayerReady) return;
+            if (!youtubePlayerReady || !youTubePlayer) {
+                console.log('YouTube player hazır değil!');
+                return;
+            }
             
             if (isVideoMuted) {
                 youTubePlayer.unMute();
@@ -2705,29 +2738,41 @@
         }
 
         function changeVolume(value) {
-            if (!youtubePlayerReady) return;
+            if (!youtubePlayerReady || !youTubePlayer) {
+                console.log('YouTube player hazır değil!');
+                return;
+            }
             
-            currentVolume = value;
-            youTubePlayer.setVolume(value);
+            currentVolume = parseInt(value);
+            youTubePlayer.setVolume(currentVolume);
             
             // Ses simgesini güncelle
-            if (value == 0) {
+            if (currentVolume == 0) {
                 document.getElementById('volumeIcon').className = 'fas fa-volume-mute';
-            } else if (value < 50) {
+                isVideoMuted = true;
+            } else if (currentVolume < 50) {
                 document.getElementById('volumeIcon').className = 'fas fa-volume-down';
+                isVideoMuted = false;
             } else {
                 document.getElementById('volumeIcon').className = 'fas fa-volume-up';
+                isVideoMuted = false;
             }
         }
 
         function skipBackward() {
-            if (!youtubePlayerReady) return;
+            if (!youtubePlayerReady || !youTubePlayer) {
+                console.log('YouTube player hazır değil!');
+                return;
+            }
             const currentTime = youTubePlayer.getCurrentTime();
             youTubePlayer.seekTo(currentTime - 10, true);
         }
 
         function skipForward() {
-            if (!youtubePlayerReady) return;
+            if (!youtubePlayerReady || !youTubePlayer) {
+                console.log('YouTube player hazır değil!');
+                return;
+            }
             const currentTime = youTubePlayer.getCurrentTime();
             youTubePlayer.seekTo(currentTime + 10, true);
         }
@@ -2769,7 +2814,7 @@
             const video = currentPlaylist[index];
             if (!video) return;
             
-            if (youtubePlayerReady) {
+            if (youtubePlayerReady && youTubePlayer) {
                 youTubePlayer.loadVideoById(video.id);
                 document.getElementById('videoTitle').textContent = video.title;
                 
@@ -2778,6 +2823,8 @@
                 playlistItems[index].classList.add('active');
                 
                 currentVideoIndex = index;
+                isVideoPlaying = true;
+                updatePlayButton();
             }
         }
 
@@ -3510,29 +3557,47 @@
             const normalizedNick = nick.toLowerCase();
             const user = storage.getUser(normalizedNick);
             
+            // YENİ: Kullanıcı yoksa otomatik kayıt
             if (!user) {
-                showError('Kullanıcı bulunamadı!');
-                resetLoginButton();
-                return;
+                // Demo kullanıcıları engelle
+                if (nick.toLowerCase() === 'admin' || nick.toLowerCase() === 'demo') {
+                    showError('Bu kullanıcı adı mevcut değil!');
+                    resetLoginButton();
+                    return;
+                }
+                
+                // Yeni kullanıcı kaydı
+                currentUser = {
+                    name: nick,
+                    avatar: nick.charAt(0).toUpperCase(),
+                    role: 'user',
+                    password: pass,
+                    registered: false, // Kayıtlı değil - ilk girişte şifre belirleyecek
+                    lastSeen: Date.now()
+                };
+                
+                storage.saveUser(currentUser);
+            } else {
+                // Mevcut kullanıcı kontrolü
+                if (user.password !== pass) {
+                    showError('Şifre hatalı!');
+                    resetLoginButton();
+                    return;
+                }
+                
+                currentUser = user;
             }
-            
-            if (user.password !== pass) {
-                showError('Şifre hatalı!');
-                resetLoginButton();
-                return;
-            }
-            
-            currentUser = user;
             
             // Online listeye ekle
             const onlineUser = {
-                name: user.name,
-                avatar: user.avatar,
-                role: user.role,
+                name: currentUser.name,
+                avatar: currentUser.avatar,
+                role: currentUser.role,
                 status: "online",
                 chatting: true,
                 lastActive: Date.now(),
-                avatarImage: user.avatarImage
+                avatarImage: currentUser.avatarImage,
+                registered: currentUser.registered
             };
             
             storage.updateOnlineUser(onlineUser);
@@ -3543,10 +3608,17 @@
             
             setTimeout(() => {
                 const loginContainer = document.getElementById('loginContainer');
+                const blurLayer = document.getElementById('blurLayer');
+                
                 loginContainer.classList.add('login-success');
-                document.getElementById('blurLayer').style.opacity = '0';
+                
+                // Blur layer'ı kaldır
+                blurLayer.style.transition = 'opacity 0.6s ease';
+                blurLayer.style.opacity = '0';
                 
                 setTimeout(() => {
+                    // Blur layer'ı tamamen gizle
+                    blurLayer.style.display = 'none';
                     initializeApp();
                 }, 600);
             }, 1200);
