@@ -1,6 +1,7 @@
 // firebase-config.js - PROJE BİLGİLERİNLE GÜNCELLE
 console.log("🔥 Firebase Config yükleniyor...");
 
+// Sabit bir config nesnesi
 const firebaseConfig = {
     apiKey: "AIzaSyCrn_tXJZCAlKhem45aXjX4f0h26EPOQ70",
     authDomain: "popboxmusicchat.firebaseapp.com",
@@ -12,6 +13,10 @@ const firebaseConfig = {
     measurementId: "G-SB1K22FLEX"
 };
 
-// Global erişim için
-window.firebaseConfig = firebaseConfig;
-console.log("✅ Firebase Config hazır!");
+// Global erişim için - sadece tanımlı değilse ata
+if (!window.firebaseConfig) {
+    window.firebaseConfig = firebaseConfig;
+    console.log("✅ Firebase Config hazır!");
+} else {
+    console.log("ℹ️ Firebase Config zaten tanımlı!");
+}
