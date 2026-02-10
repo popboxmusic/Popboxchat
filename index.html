@@ -2251,6 +2251,567 @@
     <script src="firebase-integration.js"></script>
     
     <script>
+// ==================== EŞ ZAMANLI FIREBASE SİSTEMİ ====================
+
+let isFirebaseConnected = false;
+
+// FIREBASE BAĞLANTI KONTROLÜ
+function checkFirebaseConnection() {
+    if (typeof firebase !== 'undefined' && firebase.apps.length > 0) {
+        isFirebaseConnected = true;
+        console.log('✅ Firebase bağlantısı hazır!');
+        initializeRealtimeSystems();
+        return true;
+    }
+    console.log('⚠️ Firebase bağlantısı yok, local modda çalışılıyor...');
+    return false;
+}
+
+// TÜM EŞ ZAMANLI SİSTEMLERİ BAŞLAT
+function initializeRealtimeSystems() {
+    if (!isFirebaseConnected) return;
+    
+    initializeRealtimeChat();
+    initializeRealtimeOnlineUsers();
+    initializeRealtimePrivateChat();
+    startOnlinePresence();
+}
+
+// ==================== GENEL SOHBET EŞ ZAMANLI ====================
+function initializeRealtimeChat() {
+    if (!isFirebaseConnected) return;
+    
+    const chatRef = database.ref('generalChat');
+    
+    // Son 50 mesajı dinle
+    chatRef.limitToLast(50).on('value', (snapshot) => {
+        const messagesData = snapshot.val();
+        if (messagesData) {
+            // Firebase'den gelen veriyi array'e çevir
+            const messagesArray = Object.values(messagesData);
+            // Tarihe göre sırala
+            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+            
+            // Local array'i güncelle
+            chatMessages = messagesArray;
+            
+            // UI'ı güncelle
+            renderChatMessages();
+        }
+    });
+}
+
+// GENEL MESAJ GÖNDER (FIREBASE)
+function sendMessageRealtime(text) {
+    if (!currentUser) return;
+    
+    const now = new Date();
+    const timestamp = Date.now();
+    const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
+                   now.getMinutes().toString().padStart(2, '0');
+    
+    const message = {
+        id: timestamp + '_' + Math.random().toString(36).substr(2, 9),
+        user: currentUser.name,
+        avatar: currentUser.avatar,
+        avatarImage: currentUser.avatarImage,
+        message: text,
+        time: timeStr,
+        timestamp: timestamp,
+        side: "right",
+        userId: currentUser.name.toLowerCase().replace(/\s/g, '_')
+    };
+    
+    // Firebase'e gönder
+    if (isFirebaseConnected) {
+        database.ref('generalChat/' + message.id).set(message)
+            .then(() => {
+                console.log('✅ Mesaj Firebase\'e gönderildi');
+                // Input'u temizle
+                document.getElementById('messageInput').value = '';
+                
+                // Kullanıcıyı sohbette olarak işaretle
+                updateUserPresence(true);
+            })
+            .catch((error) => {
+                console.error('❌ Mesaj gönderilemedi:', error);
+                // Local'e ekle
+                chatMessages.push(message);
+                renderChatMessages();
+                document.getElementById('messageInput').value = '';
+            });
+    } else {
+        // Local'e ekle
+        chatMessages.push(message);
+        renderChatMessages();
+        document.getElementById('messageInput').value = '';
+    }
+}
+
+// ==================== ONLINE LİSTESİ EŞ ZAMANLI ====================
+function initializeRealtimeOnlineUsers() {
+    if (!isFirebaseConnected) return;
+    
+    const onlineUsersRef = database.ref('onlineUsers');
+    
+    onlineUsersRef.on('value', (snapshot) => {
+        const usersData = snapshot.val();
+        if (usersData) {
+            onlineUsers = Object.values(usersData);
+            // Kendimizi hariç tut
+            onlineUsers = onlineUsers.filter(user => 
+                user.name !== currentUser?.name
+            );
+            
+            // Online ve sohbette olanları ayır
+            const onlineUsersList = onlineUsers.filter(user => user.status === 'online');
+            const chattingUsersList = onlineUsers.filter(user => user.chatting);
+            
+            // Listeleri güncelle
+            updateOnlineLists(onlineUsersList, chattingUsersList);
+        }
+    });
+}
+
+// ONLINE DURUM GÜNCELLE
+function updateUserPresence(isChatting = false) {
+    if (!currentUser || !isFirebaseConnected) return;
+    
+    const userRef = database.ref('onlineUsers/' + currentUser.name.replace(/\./g, '_'));
+    
+    const userData = {
+        name: currentUser.name,
+        avatar: currentUser.avatar,
+        avatarImage: currentUser.avatarImage,
+        role: currentUser.role,
+        status: 'online',
+        chatting: isChatting,
+        lastActive: Date.now(),
+        userId: currentUser.name.toLowerCase().replace(/\s/g, '_')
+    };
+    
+    userRef.set(userData);
+    
+    // 30 saniyede bir güncelle (heartbeat)
+    if (window.presenceInterval) clearInterval(window.presenceInterval);
+    
+    window.presenceInterval = setInterval(() => {
+        userRef.update({
+            lastActive: Date.now(),
+            chatting: isChatting
+        });
+    }, 30000);
+}
+
+// ONLINE VARLIK SİSTEMİNİ BAŞLAT
+function startOnlinePresence() {
+    if (!currentUser) return;
+    
+    // Kullanıcıyı online olarak işaretle
+    updateUserPresence(false);
+    
+    // Sayfa kapanırken offline ol
+    window.addEventListener('beforeunload', () => {
+        goOffline();
+    });
+}
+
+// OFFLINE OL
+function goOffline() {
+    if (!currentUser || !isFirebaseConnected) return;
+    
+    const userRef = database.ref('onlineUsers/' + currentUser.name.replace(/\./g, '_'));
+    userRef.update({
+        status: 'offline',
+        lastActive: Date.now()
+    });
+}
+
+// ONLINE LİSTELERİ GÜNCELLE
+function updateOnlineLists(onlineList, chattingList) {
+    const onlineTab = document.querySelector('.online-tab:nth-child(1)');
+    const chatTab = document.querySelector('.online-tab:nth-child(2)');
+    
+    onlineTab.textContent = `Çevrimiçi (${onlineList.length})`;
+    chatTab.textContent = `Sohbette (${chattingList.length})`;
+    
+    // Online listeyi render et
+    renderOnlineList(onlineList);
+}
+
+// ONLINE LİSTEYİ RENDER ET
+function renderOnlineList(users) {
+    const onlineList = document.getElementById('onlineList');
+    let html = '';
+    
+    users.forEach(user => {
+        const timeAgo = getTimeAgo(user.lastActive);
+        const hasNotification = userNotifications[user.name] > 0;
+        const isBlocked = blockedUsers.includes(user.name);
+        
+        if (isBlocked) return;
+        
+        html += `
+            <div class="nick-item ${hasNotification ? 'has-notification' : ''}" onclick="openPrivateChat('${user.name}')">
+                <div class="nick-avatar">
+                    ${user.avatarImage ? 
+                        `<img src="${user.avatarImage}" alt="${user.name}">` : 
+                        user.avatar}
+                    ${hasNotification ? '<div class="notification-dot"></div>' : ''}
+                </div>
+                <div class="nick-info">
+                    <div class="nick-name">${user.name} ${user.role !== 'user' ? `(${user.role})` : ''}</div>
+                    <div class="nick-status">${user.chatting ? "Sohbette" : timeAgo}</div>
+                </div>
+                <div class="online-dot" style="background: ${user.chatting ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)'}"></div>
+            </div>
+        `;
+    });
+    
+    onlineList.innerHTML = html;
+}
+
+// ==================== ÖZEL SOHBET EŞ ZAMANLI ====================
+function initializeRealtimePrivateChat() {
+    if (!currentUser || !isFirebaseConnected) return;
+    
+    const privateRef = database.ref('privateMessages/' + currentUser.name.replace(/\./g, '_'));
+    
+    privateRef.on('value', (snapshot) => {
+        const messagesData = snapshot.val();
+        if (messagesData) {
+            Object.keys(messagesData).forEach(senderName => {
+                if (!privateMessages[senderName]) {
+                    privateMessages[senderName] = [];
+                }
+                
+                // Yeni mesajları kontrol et
+                const newMessages = messagesData[senderName];
+                const lastMessage = privateMessages[senderName][privateMessages[senderName].length - 1];
+                
+                if (lastMessage && newMessages.length > privateMessages[senderName].length) {
+                    // Yeni mesaj var
+                    privateMessages[senderName] = newMessages;
+                    
+                    // Bildirim göster
+                    if (!userNotifications[senderName]) {
+                        userNotifications[senderName] = 0;
+                    }
+                    userNotifications[senderName]++;
+                    
+                    // Online listeyi güncelle
+                    loadOnlineList();
+                    
+                    // Eğer açık olan sohbetse mesajları göster
+                    if (currentPrivateChatUser && currentPrivateChatUser.name === senderName) {
+                        loadPrivateMessages(senderName);
+                    }
+                } else if (!lastMessage) {
+                    // İlk mesajlar
+                    privateMessages[senderName] = newMessages;
+                }
+            });
+        }
+    });
+}
+
+// ÖZEL MESAJ GÖNDER (FIREBASE)
+function sendPrivateMessageRealtime(text, receiverName) {
+    if (!currentUser || !receiverName) return;
+    
+    const now = new Date();
+    const timestamp = Date.now();
+    const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
+                   now.getMinutes().toString().padStart(2, '0');
+    
+    const message = {
+        id: timestamp + '_' + Math.random().toString(36).substr(2, 9),
+        sender: currentUser.name,
+        receiver: receiverName,
+        avatar: currentUser.avatar,
+        avatarImage: currentUser.avatarImage,
+        message: text,
+        time: timeStr,
+        timestamp: timestamp,
+        type: 'text'
+    };
+    
+    // Firebase'e gönder (hem gönderen hem alıcı için)
+    if (isFirebaseConnected) {
+        // Gönderenin mesaj listesine ekle
+        const senderRef = database.ref('privateMessages/' + 
+            currentUser.name.replace(/\./g, '_') + '/' + receiverName);
+        
+        // Alıcının mesaj listesine ekle  
+        const receiverRef = database.ref('privateMessages/' + 
+            receiverName.replace(/\./g, '_') + '/' + currentUser.name);
+        
+        // Her iki tarafta da güncelle
+        Promise.all([
+            senderRef.transaction((current) => {
+                if (current === null) {
+                    return [message];
+                } else {
+                    current.push(message);
+                    return current;
+                }
+            }),
+            receiverRef.transaction((current) => {
+                if (current === null) {
+                    return [message];
+                } else {
+                    current.push(message);
+                    return current;
+                }
+            })
+        ]).then(() => {
+            console.log('✅ Özel mesaj gönderildi');
+            // Input'u temizle
+            document.getElementById('privateMessageInput').value = '';
+        }).catch((error) => {
+            console.error('❌ Özel mesaj gönderilemedi:', error);
+        });
+    } else {
+        // Local'e ekle
+        if (!privateMessages[receiverName]) {
+            privateMessages[receiverName] = [];
+        }
+        privateMessages[receiverName].push(message);
+        document.getElementById('privateMessageInput').value = '';
+    }
+}
+
+// GÖRSEL/VIDEO PAYLAŞIMI (FIREBASE STORAGE)
+function uploadMediaToFirebase(file, receiverName, isImage = true) {
+    if (!currentUser || !file) return;
+    
+    const timestamp = Date.now();
+    const fileExtension = file.name.split('.').pop();
+    const fileName = `${currentUser.name}_${timestamp}.${fileExtension}`;
+    const storagePath = isImage ? `private_images/${fileName}` : `private_videos/${fileName}`;
+    
+    const storageRef = storage.ref(storagePath);
+    const uploadTask = storageRef.put(file);
+    
+    uploadTask.on('state_changed',
+        (snapshot) => {
+            // Upload progress
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            console.log(`Upload ${progress.toFixed(2)}% tamamlandı`);
+        },
+        (error) => {
+            console.error('❌ Dosya yükleme hatası:', error);
+            alert('Dosya yüklenemedi!');
+        },
+        () => {
+            // Upload başarılı
+            uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
+                console.log('✅ Dosya yüklendi:', downloadURL);
+                
+                // Mesaj olarak gönder
+                const now = new Date();
+                const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
+                               now.getMinutes().toString().padStart(2, '0');
+                
+                const message = {
+                    id: timestamp + '_' + Math.random().toString(36).substr(2, 9),
+                    sender: currentUser.name,
+                    receiver: receiverName,
+                    avatar: currentUser.avatar,
+                    avatarImage: currentUser.avatarImage,
+                    [isImage ? 'image' : 'video']: downloadURL,
+                    time: timeStr,
+                    timestamp: timestamp,
+                    type: isImage ? 'image' : 'video'
+                };
+                
+                // Firebase'e mesaj olarak kaydet
+                const senderRef = database.ref('privateMessages/' + 
+                    currentUser.name.replace(/\./g, '_') + '/' + receiverName);
+                const receiverRef = database.ref('privateMessages/' + 
+                    receiverName.replace(/\./g, '_') + '/' + currentUser.name);
+                
+                Promise.all([
+                    senderRef.transaction((current) => {
+                        if (current === null) return [message];
+                        current.push(message);
+                        return current;
+                    }),
+                    receiverRef.transaction((current) => {
+                        if (current === null) return [message];
+                        current.push(message);
+                        return current;
+                    })
+                ]).then(() => {
+                    console.log('✅ Medya mesajı gönderildi');
+                });
+            });
+        }
+    );
+}
+
+// ==================== MEVCUT FONKSİYONLARI GÜNCELLE ====================
+
+// GİRİŞ YAP FONKSİYONUNU GÜNCELLE
+function performLogin(nick, pass) {
+    const normalizedNick = nick.toLowerCase();
+    
+    let user = {
+        name: nick.substring(0, 1).toUpperCase() + nick.substring(1).toLowerCase(),
+        role: "user",
+        avatar: nick.substring(0, 1).toUpperCase(),
+        registered: false
+    };
+    
+    currentUser = user;
+    
+    const loginBtn = document.getElementById('loginBtn');
+    loginBtn.classList.add('success');
+    loginBtn.innerHTML = '<i class="fas fa-check"></i> Giriş Başarılı!';
+    
+    setTimeout(() => {
+        const loginContainer = document.getElementById('loginContainer');
+        const blurLayer = document.getElementById('blurLayer');
+        
+        loginContainer.classList.add('login-success');
+        blurLayer.style.opacity = '0';
+        
+        setTimeout(() => {
+            blurLayer.classList.add('hidden');
+            loginContainer.style.display = 'none';
+            
+            // Firebase bağlantısını kontrol et ve sistemleri başlat
+            checkFirebaseConnection();
+            initializeApp();
+        }, 600);
+    }, 1200);
+}
+
+// SEND MESSAGE FONKSİYONUNU GÜNCELLE
+function sendMessage() {
+    const input = document.getElementById('messageInput');
+    const text = input.value.trim();
+    
+    if (!text) return;
+    
+    sendMessageRealtime(text);
+}
+
+// SEND PRIVATE MESSAGE FONKSİYONUNU GÜNCELLE
+function sendPrivateMessage() {
+    if (!currentPrivateChatUser) return;
+    
+    const input = document.getElementById('privateMessageInput');
+    const text = input.value.trim();
+    
+    if (!text) return;
+    
+    sendPrivateMessageRealtime(text, currentPrivateChatUser.name);
+}
+
+// DOSYA YÜKLEME FONKSİYONUNU GÜNCELLE
+document.getElementById('privateFileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file || !currentPrivateChatUser) return;
+    
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    
+    if (!isImage && !isVideo) {
+        alert('Sadece resim veya video dosyaları gönderebilirsiniz!');
+        return;
+    }
+    
+    if (file.size > 10 * 1024 * 1024) {
+        alert('Dosya boyutu 10MB\'dan küçük olmalıdır!');
+        return;
+    }
+    
+    if (isFirebaseConnected) {
+        // Firebase Storage'a yükle
+        uploadMediaToFirebase(file, currentPrivateChatUser.name, isImage);
+    } else {
+        // Local'e yükle
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const fileData = event.target.result;
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + 
+                           now.getMinutes().toString().padStart(2, '0');
+            
+            if (!privateMessages[currentPrivateChatUser.name]) {
+                privateMessages[currentPrivateChatUser.name] = [];
+            }
+            
+            privateMessages[currentPrivateChatUser.name].push({
+                sender: currentUser.name,
+                avatar: currentUser.avatar,
+                avatarImage: currentUser.avatarImage,
+                [isImage ? 'image' : 'video']: fileData,
+                time: timeStr,
+                type: isImage ? 'image' : 'video'
+            });
+            
+            loadPrivateMessages(currentPrivateChatUser.name);
+            document.getElementById('privateFileInput').value = '';
+        };
+        
+        reader.readAsDataURL(file);
+    }
+});
+
+// ÇIKIŞ YAP FONKSİYONUNU GÜNCELLE
+function handleLogout() {
+    if (confirm('Çıkış yapmak istediğinize emin misiniz?')) {
+        clearInterval(messageInterval);
+        clearInterval(userUpdateInterval);
+        if (window.presenceInterval) clearInterval(window.presenceInterval);
+        
+        // Firebase'den offline ol
+        goOffline();
+        
+        // Blur layer'i tekrar göster
+        const blurLayer = document.getElementById('blurLayer');
+        const loginContainer = document.getElementById('loginContainer');
+        
+        blurLayer.classList.remove('hidden');
+        blurLayer.style.opacity = '0.8';
+        loginContainer.style.display = 'block';
+        loginContainer.classList.remove('login-success');
+        
+        // Formu resetle
+        document.getElementById('nickInput').value = '';
+        document.getElementById('passInput').value = '';
+        resetLoginButton();
+        
+        // Odağı nick input'a ver
+        document.getElementById('nickInput').focus();
+        
+        // Kullanıcıyı sıfırla
+        currentUser = null;
+        onlineUsers = [];
+        chatMessages = [];
+        privateMessages = {};
+        
+        // Online listeyi sıfırla
+        loadOnlineList();
+        renderChatMessages();
+    }
+}
+
+// ==================== SAYFA YÜKLENİNCE ====================
+document.addEventListener('DOMContentLoaded', function() {
+    // Firebase bağlantısını kontrol et
+    setTimeout(() => {
+        checkFirebaseConnection();
+    }, 2000);
+});
+
+
+
+
+
+        
         // ==================== DEĞİŞKENLER ====================
         let currentUser = null;
         let isDayMode = false;
