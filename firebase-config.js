@@ -1,14 +1,9 @@
-// firebase-config.js  
-// Bu dosyayı asla public repo'da paylaşma (veya .gitignore ile dışarıda bırak)  
-// Eğer repo public ise, bu dosyayı silip .env benzeri bir yöntem kullan  
-  
-export const firebaseConfig = {  
-  apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",  
-  authDomain: "popboxmusicchat.firebaseapp.com",  
-  databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",  
-  projectId: "popboxmusicchat",  
-  storageBucket: "popboxmusicchat.firebasestorage.app",  
-  messagingSenderId: "206625719024",  
-  appId: "1:206625719024:web:d28f478a2c96d10412f835",  
-  measurementId: "G-SB1K22FLEX"  
-};  
+// firebase-config.js
+console.log("🔥 Firebase Config yükleniyor...");
+
+// Firebase SDK v8
+document.write(`
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+`);
