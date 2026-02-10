@@ -1,36 +1,13 @@
-// firebase-integration.js
+// firebase-integration.js - SADECE TEMEL ÖZELLİKLER
 console.log("🚀 Firebase Integration yükleniyor...");
 
-// ==================== FIREBASE ENTEGRASYONU ====================
-
-// Firebase yapılandırması
-const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyCrn_tXJZCAlKhem45aXjX4f0h26EPOQ70",
-    authDomain: "popboxmusicchat.firebaseapp.com",
-    databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
-    projectId: "popboxmusicchat",
-    storageBucket: "popboxmusicchat.firebasestorage.app",
-    messagingSenderId: "206625719024",
-    appId: "1:206625719024:web:d28f478a2c96d10412f835",
-    measurementId: "G-SB1K22FLEX"
-};
-
 // Firebase değişkenleri
-let firebaseApp;
-let database;
-let usersRef;
-let messagesRef;
-let privateChatsRef;
-let coAdminsRef;
-let bansRef;
-let registeredUsersRef;
-let customCommandsRef;
-let adminListRef;
-let storiesRef;
-
 let isFirebaseConnected = false;
 let currentFirebaseUser = null;
-let userPrivateChats = []; // Kullanıcının özel sohbetlerini takip et
+let database = null;
+let usersRef = null;
+let messagesRef = null;
+let privateChatsRef = null;
 
 // ==================== TEMEL FONKSİYONLAR ====================
 
@@ -44,9 +21,16 @@ function initializeFirebase() {
     }
     
     try {
-        firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+        // window.firebaseConfig kullan (firebase-config.js'den geliyor)
+        if (!window.firebaseConfig) {
+            console.error("❌ Firebase Config bulunamadı!");
+            return false;
+        }
+        
+        firebase.initializeApp(window.firebaseConfig);
         database = firebase.database();
         
+        // Bağlantı durumunu dinle
         const connectedRef = database.ref(".info/connected");
         connectedRef.on("value", function(snap) {
             isFirebaseConnected = snap.val() === true;
@@ -74,12 +58,6 @@ function initializeFirebaseReferences() {
     usersRef = database.ref('onlineUsers');
     messagesRef = database.ref('messages');
     privateChatsRef = database.ref('privateChats');
-    coAdminsRef = database.ref('coAdmins');
-    bansRef = database.ref('bans');
-    registeredUsersRef = database.ref('registeredUsers');
-    customCommandsRef = database.ref('customCommands');
-    adminListRef = database.ref('adminList');
-    storiesRef = database.ref('stories');
     
     console.log("📡 Firebase referansları başlatıldı");
 }
@@ -103,8 +81,11 @@ async function firebaseUserLogin(username, userData) {
             isRegistered: userData.registered || false
         });
         
-        // Kullanıcının özel sohbetlerini temizleme handler'ı
-        setupUserCleanup(username);
+        // Çıkış yapıldığında online durumu güncelle
+        usersRef.child(username).onDisconnect().update({
+            isOnline: false,
+            lastSeen: Date.now()
+        });
         
         return true;
     } catch (error) {
@@ -113,141 +94,10 @@ async function firebaseUserLogin(username, userData) {
     }
 }
 
-// ==================== ÖZEL SOHBET TEMİZLEME SİSTEMİ ====================
+// ==================== MESAJ SİSTEMİ ====================
 
-// Kullanıcı çıkış yaptığında özel sohbetleri temizle
-async function clearUserPrivateChats(username) {
-    if (!privateChatsRef) return;
-    
-    try {
-        console.log(`🧹 ${username} kullanıcısının özel sohbetleri temizleniyor...`);
-        
-        // Kullanıcının tüm özel sohbetlerini bul
-        const snapshot = await privateChatsRef.once('value');
-        const allChats = snapshot.val() || {};
-        
-        const promises = [];
-        
-        Object.keys(allChats).forEach(chatId => {
-            // Chat ID formatı: user1_user2
-            if (chatId.includes(username)) {
-                console.log(`🗑️ Özel sohbet siliniyor: ${chatId}`);
-                promises.push(privateChatsRef.child(chatId).remove());
-                userPrivateChats = userPrivateChats.filter(id => id !== chatId);
-            }
-        });
-        
-        await Promise.all(promises);
-        console.log(`✅ ${username} kullanıcısının ${promises.length} özel sohbeti temizlendi`);
-        
-    } catch (error) {
-        console.error("Özel sohbet temizleme hatası:", error);
-    }
-}
-
-// Kullanıcı için cleanup handler kur
-function setupUserCleanup(username) {
-    // Sayfadan çıkıldığında temizle
-    window.addEventListener('beforeunload', function() {
-        clearUserPrivateChats(username);
-        usersRef.child(username).remove();
-    });
-    
-    // Çıkış butonuna tıklandığında temizle
-    const originalLogout = window.handleLogout;
-    window.handleLogout = function() {
-        clearUserPrivateChats(username);
-        usersRef.child(username).remove();
-        if (originalLogout) originalLogout();
-    };
-    
-    // Firebase disconnect handler
-    usersRef.child(username).onDisconnect().update({
-        isOnline: false,
-        lastSeen: Date.now()
-    });
-    
-    // Disconnect olduğunda özel sohbetleri de temizle
-    database.ref(".info/connected").on("value", function(snap) {
-        if (snap.val() === false) {
-            clearUserPrivateChats(username);
-        }
-    });
-}
-
-// Özel sohbet oluştur
-function createPrivateChat(user1, user2) {
-    const chatId = generateChatId(user1, user2);
-    
-    // Bu sohbeti takip listesine ekle
-    if (!userPrivateChats.includes(chatId)) {
-        userPrivateChats.push(chatId);
-    }
-    
-    return chatId;
-}
-
-// Chat ID oluşturma
-function generateChatId(user1, user2) {
-    const users = [user1, user2].sort();
-    return `${users[0]}_${users[1]}`;
-}
-
-// Özel mesaj gönder
-async function sendPrivateMessageFirebase(sender, receiver, message, imageData = null) {
-    if (!isFirebaseConnected || !privateChatsRef) return false;
-    
-    try {
-        const chatId = createPrivateChat(sender, receiver);
-        
-        const messageData = {
-            sender: sender,
-            text: message,
-            timestamp: Date.now(),
-            time: new Date().toLocaleTimeString('tr-TR', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
-            })
-        };
-        
-        if (imageData) {
-            messageData.image = imageData;
-            messageData.text = '📸 Resim';
-        }
-        
-        await privateChatsRef.child(chatId).push(messageData);
-        return true;
-        
-    } catch (error) {
-        console.error("Özel mesaj gönderme hatası:", error);
-        return false;
-    }
-}
-
-// Özel mesajları dinle
-function listenPrivateChats(username, callback) {
-    if (!privateChatsRef) return;
-    
-    // Kullanıcının tüm özel sohbetlerini dinle
-    privateChatsRef.on('child_added', function(snapshot) {
-        const chatId = snapshot.key;
-        
-        // Eğer bu sohbette kullanıcı varsa
-        if (chatId.includes(username)) {
-            privateChatsRef.child(chatId).limitToLast(50).on('value', function(chatSnapshot) {
-                const messages = chatSnapshot.val() || {};
-                if (callback && typeof callback === 'function') {
-                    callback(chatId, messages);
-                }
-            });
-        }
-    });
-}
-
-// ==================== GENEL MESAJ SİSTEMİ ====================
-
-// Mesaj gönder
-async function sendMessageFirebase(sender, message, imageData = null) {
+// Genel mesaj gönder
+async function sendMessageFirebase(sender, message) {
     if (!isFirebaseConnected || !messagesRef) return false;
     
     try {
@@ -260,11 +110,6 @@ async function sendMessageFirebase(sender, message, imageData = null) {
                 minute: '2-digit' 
             })
         };
-        
-        if (imageData) {
-            messageData.image = imageData;
-            messageData.text = '📸 Resim';
-        }
         
         await messagesRef.push(messageData);
         
@@ -280,6 +125,54 @@ async function sendMessageFirebase(sender, message, imageData = null) {
         console.error("Mesaj gönderme hatası:", error);
         return false;
     }
+}
+
+// Özel mesaj gönder
+async function sendPrivateMessageFirebase(sender, receiver, message) {
+    if (!isFirebaseConnected || !privateChatsRef) return false;
+    
+    try {
+        // Chat ID oluştur (alfabetik sıralı)
+        const chatId = [sender, receiver].sort().join('_');
+        
+        const messageData = {
+            sender: sender,
+            receiver: receiver,
+            text: message,
+            timestamp: Date.now(),
+            time: new Date().toLocaleTimeString('tr-TR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            })
+        };
+        
+        await privateChatsRef.child(chatId).push(messageData);
+        return true;
+        
+    } catch (error) {
+        console.error("Özel mesaj gönderme hatası:", error);
+        return false;
+    }
+}
+
+// Özel mesajları dinle
+function listenPrivateChats(username, callback) {
+    if (!privateChatsRef || !isFirebaseConnected) return;
+    
+    // Kullanıcıyı ilgilendiren tüm özel sohbetleri dinle
+    privateChatsRef.on('child_added', function(snapshot) {
+        const chatId = snapshot.key;
+        
+        // Eğer bu sohbette kullanıcı varsa
+        if (chatId.includes(username)) {
+            privateChatsRef.child(chatId).limitToLast(50).on('value', function(chatSnapshot) {
+                const messages = chatSnapshot.val() || {};
+                if (callback && typeof callback === 'function') {
+                    callback(chatId, messages);
+                }
+            });
+        }
+    });
 }
 
 // ==================== DİNLEYİCİLER ====================
@@ -332,34 +225,23 @@ function checkFirebaseConnection() {
     });
 }
 
-// Hata göster
-function showFirebaseError(message) {
-    console.error("Firebase Error:", message);
-    if (typeof window.showError === 'function') {
-        window.showError(message);
-    }
-}
-
-// Başarı göster
-function showFirebaseSuccess(message) {
-    console.log("Firebase Success:", message);
-}
-
 // ==================== GLOBAL EXPORT ====================
 
 // Global olarak kullanılabilir hale getir
 window.firebaseIntegration = {
+    // Core
     initialize: initializeFirebase,
+    isConnected: () => isFirebaseConnected,
+    checkConnection: checkFirebaseConnection,
+    
+    // Auth
     login: firebaseUserLogin,
+    getUser: () => currentFirebaseUser,
+    
+    // Chat
     sendMessage: sendMessageFirebase,
     sendPrivateMessage: sendPrivateMessageFirebase,
-    listenPrivateChats: listenPrivateChats,
-    clearUserPrivateChats: clearUserPrivateChats,
-    checkConnection: checkFirebaseConnection,
-    isConnected: () => isFirebaseConnected,
-    getUser: () => currentFirebaseUser,
-    showError: showFirebaseError,
-    showSuccess: showFirebaseSuccess
+    listenPrivateChats: listenPrivateChats
 };
 
 // Sayfa yüklendiğinde otomatik başlat
@@ -369,4 +251,4 @@ window.addEventListener('load', function() {
     }, 1000);
 });
 
-console.log("✅ Firebase Integration hazır!");
+console.log("✅ Firebase Integration hazır! Sadece temel özellikler.");
