@@ -1050,17 +1050,19 @@
             100% { opacity: 1; }
         }
 
-        /* DİĞER STİLLER */
+        /* BULANIK KATMAN - DÜZELTİLDİ */
         .blur-layer {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 1;
+            z-index: 999;
             background: rgba(0, 0, 0, 0.8);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
+            opacity: 0.8;
+            pointer-events: none;
             transition: opacity 1.5s ease;
         }
 
@@ -1068,6 +1070,12 @@
             background: rgba(255, 255, 255, 0.8);
         }
 
+        .blur-layer.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* DİĞER STİLLER */
         .icon-menu {
             position: fixed;
             left: 0;
@@ -1474,7 +1482,7 @@
             color: #1d4ed8;
         }
 
-        /* GİRİŞ PANELİ */
+        /* GİRİŞ PANELİ - DÜZELTİLDİ */
         .login-container {
             position: fixed;
             top: 50%;
@@ -1840,6 +1848,9 @@
     </style>
 </head>
 <body class="night-mode">
+    <!-- BULANIK KATMAN - EN ÜSTE TASIYORUM -->
+    <div class="blur-layer" id="blurLayer"></div>
+
     <!-- YOUTUBE VİDEO PANELİ -->
     <div class="youtube-panel" id="youtubePanel">
         <div class="youtube-header">
@@ -2118,9 +2129,6 @@
         </div>
     </div>
 
-    <!-- BULANIK KATMAN -->
-    <div class="blur-layer" id="blurLayer"></div>
-
     <!-- SOL BAR - ICON MENU -->
     <div class="icon-menu">
         <div class="menu-icon active" onclick="togglePanel('online')" title="Online Listesi" id="onlineListBtn">
@@ -2239,13 +2247,9 @@
     </div>
 
     <!-- FIREBASE JS DOSYALARI -->
-    <!-- Önce Firebase Config (Proje bilgileriniz) -->
     <script src="firebase-config.js"></script>
-    
-    <!-- Sonra Firebase Integration (Firebase fonksiyonları) -->
     <script src="firebase-integration.js"></script>
     
-    <!-- Mevcut ana script'iniz -->
     <script>
         // ==================== DEĞİŞKENLER ====================
         let currentUser = null;
@@ -2265,7 +2269,6 @@
         let currentPrivateChatUser = null;
         let blockedUsers = [];
         let userNotifications = {};
-        let socket = null;
 
         // Türkçe Radyo ve Müzik YouTube Kanalları
         const youtubeVideos = [
@@ -2323,8 +2326,13 @@
 
         // ==================== SAYFA YÜKLENDİĞİNDE ====================
         document.addEventListener('DOMContentLoaded', function() {
+            // Blur layer'i göster
+            const blurLayer = document.getElementById('blurLayer');
+            blurLayer.style.opacity = '0.8';
+            blurLayer.classList.remove('hidden');
+            
+            // Odağı input'a ver
             document.getElementById('nickInput').focus();
-            document.getElementById('blurLayer').style.opacity = '0.8';
             
             // Enter tuşu ile giriş
             document.addEventListener('keypress', function(e) {
@@ -2354,7 +2362,7 @@
             if (typeof isFirebaseReady === 'function' && isFirebaseReady()) {
                 console.log('Firebase bağlantısı hazır!');
             } else {
-                console.log('Firebase henüz hazır değil, local modda çalışılıyor...');
+                console.log('Firebase hazır değil, local modda çalışılıyor...');
             }
         });
 
@@ -3232,10 +3240,14 @@
             
             setTimeout(() => {
                 const loginContainer = document.getElementById('loginContainer');
+                const blurLayer = document.getElementById('blurLayer');
+                
                 loginContainer.classList.add('login-success');
-                document.getElementById('blurLayer').style.opacity = '0';
+                blurLayer.style.opacity = '0';
                 
                 setTimeout(() => {
+                    blurLayer.classList.add('hidden');
+                    loginContainer.style.display = 'none';
                     initializeApp();
                 }, 600);
             }, 1200);
@@ -3399,7 +3411,32 @@
             if (confirm('Çıkış yapmak istediğinize emin misiniz?')) {
                 clearInterval(messageInterval);
                 clearInterval(userUpdateInterval);
-                location.reload();
+                
+                // Blur layer'i tekrar göster
+                const blurLayer = document.getElementById('blurLayer');
+                const loginContainer = document.getElementById('loginContainer');
+                
+                blurLayer.classList.remove('hidden');
+                blurLayer.style.opacity = '0.8';
+                loginContainer.style.display = 'block';
+                loginContainer.classList.remove('login-success');
+                
+                // Formu resetle
+                document.getElementById('nickInput').value = '';
+                document.getElementById('passInput').value = '';
+                resetLoginButton();
+                
+                // Odağı nick input'a ver
+                document.getElementById('nickInput').focus();
+                
+                // Kullanıcıyı sıfırla
+                currentUser = null;
+                onlineUsers = [];
+                chatMessages = [];
+                
+                // Online listeyi sıfırla
+                loadOnlineList();
+                renderChatMessages();
             }
         }
 
