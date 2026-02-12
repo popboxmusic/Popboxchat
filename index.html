@@ -556,6 +556,38 @@
             text-align: center;
         }
 
+        /* Normal kullanıcı kontrolleri */
+        .user-controls {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            right: 16px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            z-index: 150;
+        }
+
+        .user-control-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid #fff;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 18px;
+        }
+
+        .user-control-btn:hover {
+            background: #ff0000;
+            border-color: #ff0000;
+        }
+
         /* ========== SPOTIFY PLAYER ========== */
         .spotify-player {
             width: 100%;
@@ -852,6 +884,7 @@
 
         .modal-content {
             width: 500px;
+            max-width: 90%;
             background: #1a1a1a;
             border: 1px solid #2a2a2a;
             border-radius: 16px;
@@ -938,6 +971,28 @@
             pointer-events: none;
         }
 
+        /* Şikayet Modalı */
+        .complaint-reason {
+            margin-bottom: 16px;
+        }
+
+        .complaint-reason label {
+            display: block;
+            margin-bottom: 8px;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .complaint-reason select, .complaint-reason textarea {
+            width: 100%;
+            padding: 12px;
+            background: #0f0f0f;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+        }
+
         /* ========== LOGIN PANEL ========== */
         .login-overlay {
             position: fixed;
@@ -954,6 +1009,7 @@
 
         .login-box {
             width: 420px;
+            max-width: 90%;
             background: #1a1a1a;
             border: 1px solid #2a2a2a;
             border-radius: 24px;
@@ -986,15 +1042,35 @@
             margin-bottom: 32px;
         }
 
+        .password-wrapper {
+            position: relative;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+
         .login-input {
             width: 100%;
             padding: 16px;
+            padding-right: 50px;
             background: #0f0f0f;
             border: 1px solid #2a2a2a;
             border-radius: 12px;
             color: #fff;
             font-size: 15px;
-            margin-bottom: 16px;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #aaa;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .password-toggle:hover {
+            color: #fff;
         }
 
         .login-btn {
@@ -1019,10 +1095,25 @@
             color: #ff6b6b;
             font-size: 13px;
             display: none;
+            margin-bottom: 16px;
         }
 
         .hidden {
             display: none !important;
+        }
+
+        /* Aktif panel göstergesi */
+        .active-panel-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            border: 1px solid #3f3f3f;
+            z-index: 9999;
         }
     </style>
 </head>
@@ -1037,7 +1128,11 @@
             <p class="login-subtitle">Yetkili medya kontrol paneli</p>
             
             <input type="text" id="nickname" class="login-input" placeholder="Kullanıcı adı" autocomplete="off">
-            <input type="password" id="password" class="login-input" placeholder="Şifre">
+            
+            <div class="password-wrapper">
+                <input type="password" id="password" class="login-input" placeholder="Şifre" autocomplete="off">
+                <i class="fas fa-eye password-toggle" id="passwordToggle" onclick="togglePasswordVisibility()"></i>
+            </div>
             
             <div id="loginError" class="login-error"></div>
             
@@ -1055,14 +1150,14 @@
     <div id="app" class="app hidden">
         <!-- SOL MENÜ -->
         <div class="sidebar">
-            <div class="menu-item active" onclick="showUsersPanel()">
+            <div class="menu-item active" onclick="showUsersPanel(); closeAllModals();">
                 <i class="fas fa-users"></i>
             </div>
-            <div class="menu-item" onclick="toggleNotificationPanel()">
+            <div class="menu-item" onclick="toggleNotificationPanel(); closeAllModals();">
                 <i class="fas fa-bell"></i>
             </div>
             
-            <div class="user-avatar" id="userAvatar" onclick="showProfileMenu()">
+            <div class="user-avatar" id="userAvatar" onclick="showProfileMenu(); closeAllModalsExcept('profileModal');">
                 <span id="avatarText"></span>
                 <img id="avatarImg" src="" style="display:none;">
             </div>
@@ -1087,6 +1182,17 @@
                     <i class="fas fa-hashtag"></i>
                     <span id="currentChannel">genel</span>
                     <span id="onlineCount" style="color:#aaa; font-size:13px; margin-left:8px;"></span>
+                </div>
+                <div id="privateChatControls" style="display: none; gap: 8px;">
+                    <button class="control-btn" onclick="blockUser24h()" title="24 saat engelle">
+                        <i class="fas fa-ban"></i>
+                    </button>
+                    <button class="control-btn" onclick="reportUser()" title="Şikayet et">
+                        <i class="fas fa-flag"></i>
+                    </button>
+                    <button class="control-btn" onclick="closePrivateChat()" title="Pencereyi kapat">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             </div>
             
@@ -1120,7 +1226,7 @@
                     <div class="control-btn" id="addMediaBtn" onclick="openAddMediaModal()" title="Ekle">
                         <i class="fas fa-plus"></i>
                     </div>
-                    <span class="admin-badge">(admin erişimine açıktır)</span>
+                    <span class="admin-badge">(Sadece Admin Erişimi)</span>
                     <div class="control-btn" id="clearPlaylistBtn" onclick="clearPlaylist()" title="Temizle">
                         <i class="fas fa-trash"></i>
                     </div>
@@ -1130,10 +1236,22 @@
             <!-- YOUTUBE PLAYER - YETKİ KONTROLLÜ -->
             <div id="youtubePlayer" class="youtube-player">
                 <iframe id="youtubeIframe" src="https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=0&controls=1&modestbranding=1&rel=0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                
+                <!-- Normal kullanıcı kontrolleri -->
+                <div id="userYouTubeControls" class="user-controls" style="display: none;">
+                    <div class="user-control-btn" onclick="toggleMute()" title="Ses aç/kapat">
+                        <i class="fas fa-volume-up" id="muteIcon"></i>
+                    </div>
+                    <div class="user-control-btn" onclick="togglePlayPause()" title="Oynat/durdur">
+                        <i class="fas fa-play" id="playPauseIcon"></i>
+                    </div>
+                </div>
+                
+                <!-- Yetkisiz erişim overlay'i -->
                 <div id="youtubeNoPermission" class="no-permission-overlay" style="display: none;">
                     <i class="fas fa-lock"></i>
                     <span>Yetkiniz Yok</span>
-                    <small>Bu medya alanına sadece Owner, Admin ve yetkili Co-Admin'ler erişebilir.</small>
+                    <small>Bu medya alanını kontrol etme yetkiniz bulunmamaktadır.</small>
                 </div>
             </div>
             
@@ -1143,7 +1261,7 @@
                 <div id="spotifyNoPermission" class="no-permission-overlay" style="display: none;">
                     <i class="fas fa-lock"></i>
                     <span>Yetkiniz Yok</span>
-                    <small>Bu medya alanına sadece Owner, Admin ve yetkili Co-Admin'ler erişebilir.</small>
+                    <small>Bu medya alanını kontrol etme yetkiniz bulunmamaktadır.</small>
                 </div>
             </div>
             
@@ -1154,17 +1272,17 @@
                     <i class="fas fa-circle"></i> CANLI YAYIN
                 </div>
                 <div class="live-controls">
-                    <div class="live-btn" id="switchCameraBtn" onclick="switchCamera()">
+                    <div class="live-btn" id="switchCameraBtn" onclick="switchCamera()" title="Kamera değiştir (Admin)">
                         <i class="fas fa-camera-retro"></i>
                     </div>
-                    <div class="live-btn stop" id="stopLiveBtn" onclick="stopLiveStream()">
+                    <div class="live-btn stop" id="stopLiveBtn" onclick="stopLiveStream()" title="Yayını durdur (Admin)">
                         <i class="fas fa-stop"></i>
                     </div>
                 </div>
                 <div id="liveNoPermission" class="no-permission-overlay" style="display: none;">
                     <i class="fas fa-lock"></i>
                     <span>Yetkiniz Yok</span>
-                    <small>Canlı yayın alanına sadece Owner, Admin ve yetkili Co-Admin'ler erişebilir.</small>
+                    <small>Canlı yayın alanını kontrol etme yetkiniz bulunmamaktadır.</small>
                 </div>
             </div>
             
@@ -1242,8 +1360,46 @@
         </div>
     </div>
 
+    <!-- ŞİKAYET MODALI -->
+    <div id="complaintModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-flag" style="color: #ff4444;"></i> Kullanıcı Şikayet Et</h3>
+                <button class="modal-close" onclick="closeComplaintModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div id="complaintUserInfo" style="margin-bottom: 16px; padding: 12px; background: #0f0f0f; border-radius: 8px;">
+                <span id="complaintUsername" style="font-weight: 600;"></span> kullanıcısını şikayet ediyorsunuz.
+            </div>
+            
+            <div class="complaint-reason">
+                <label>Şikayet Sebebi</label>
+                <select id="complaintReason" class="modal-input">
+                    <option value="spam">Spam / Reklam</option>
+                    <option value="harassment">Taciz / Hakaret</option>
+                    <option value="inappropriate">Uygunsuz İçerik</option>
+                    <option value="other">Diğer</option>
+                </select>
+            </div>
+            
+            <div class="complaint-reason">
+                <label>Açıklama (İsteğe bağlı)</label>
+                <textarea id="complaintDescription" class="modal-input" rows="3" placeholder="Detaylı açıklama..."></textarea>
+            </div>
+            
+            <button class="modal-btn" onclick="submitComplaint()" style="background: #ff4444;">
+                <i class="fas fa-paper-plane"></i> Şikayeti Gönder
+            </button>
+        </div>
+    </div>
+
     <!-- HIDDEN FILE INPUT -->
     <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
+
+    <!-- AKTİF PANEL GÖSTERGESİ -->
+    <div id="activePanelIndicator" class="active-panel-indicator">Panel: Genel Sohbet</div>
 
     <script>
         // ========== FIREBASE KONFİG ==========
@@ -1288,6 +1444,9 @@
         let currentTab = 'online';
         let unreadPrivateMessages = {};
         
+        // Engellenen kullanıcılar (24 saat)
+        let blockedUsers = {};
+        
         // Canlı yayın değişkenleri
         let mediaStream = null;
         let currentFacingMode = 'user';
@@ -1298,6 +1457,13 @@
             admin: ['*'],
             coadmin: []
         };
+
+        // Aktif panel
+        let activeModal = null;
+
+        // YouTube oynatma durumu
+        let isMuted = false;
+        let isPlaying = true;
 
         // ========== FIREBASE BAŞLAT ==========
         function initializeFirebase() {
@@ -1312,6 +1478,22 @@
                     isFirebaseConnected = snap.val() === true;
                     console.log(isFirebaseConnected ? '✅ Firebase bağlandı!' : '❌ Firebase bağlantısı kesildi!');
                 });
+                
+                // Aktif yayını dinle
+                database.ref('activeStream').on('value', (snapshot) => {
+                    const streamData = snapshot.val();
+                    if (streamData) {
+                        // Yayın bilgilerini güncelle
+                        if (streamData.type === 'youtube') {
+                            playVideo(0, streamData.videoId);
+                        } else if (streamData.type === 'spotify') {
+                            playSpotify(0, streamData.spotifyId);
+                        } else if (streamData.type === 'live') {
+                            // Canlı yayın varsa
+                        }
+                    }
+                });
+                
             } catch (error) {
                 console.error('❌ Firebase hatası:', error);
             }
@@ -1359,7 +1541,6 @@
             else if (normalizedNick === 'coadmin' || normalizedNick.startsWith('co-')) {
                 currentUser = { name: nickname, role: 'coadmin', roleLevel: 3 };
                 isCoAdmin = true;
-                // Co-Admin'e varsayılan kanal yetkisi
                 authorizedChannels.coadmin.push('genel');
             }
             else if (normalizedNick === 'operator' || normalizedNick.startsWith('op-')) {
@@ -1373,7 +1554,6 @@
             if (database) {
                 const usersRef = database.ref('onlineUsers');
                 
-                // Sayfa kapatıldığında otomatik çıkış
                 window.addEventListener('beforeunload', function() {
                     database.ref(`onlineUsers/${currentUser.name}`).remove();
                 });
@@ -1396,7 +1576,6 @@
             document.getElementById('profileName').textContent = currentUser.name;
             document.getElementById('profileRole').textContent = currentUser.role;
             
-            // Medya yetkilerini güncelle
             updateMediaPermissions();
             updateMediaAccess();
             
@@ -1460,6 +1639,7 @@
             const youtubeTab = document.getElementById('youtubeTab');
             const spotifyTab = document.getElementById('spotifyTab');
             const liveTab = document.getElementById('liveTab');
+            const userControls = document.getElementById('userYouTubeControls');
             
             const hasAccess = canManageMedia();
             
@@ -1470,8 +1650,9 @@
                 liveTab.classList.add('disabled');
                 
                 if (currentMediaTab === 'youtube') {
-                    youtubeNoPerm.style.display = 'flex';
-                    youtubePlayer.querySelector('iframe').style.display = 'none';
+                    youtubeNoPerm.style.display = 'none'; // Engelleme yazısını kaldır
+                    youtubePlayer.querySelector('iframe').style.display = 'block'; // Videoyu göster
+                    userControls.style.display = 'flex'; // Normal kullanıcı kontrollerini göster
                 } else if (currentMediaTab === 'spotify') {
                     spotifyNoPerm.style.display = 'flex';
                     spotifyPlayer.querySelector('iframe').style.display = 'none';
@@ -1488,8 +1669,11 @@
                 
                 youtubeNoPerm.style.display = 'none';
                 youtubePlayer.querySelector('iframe').style.display = 'block';
+                userControls.style.display = 'none'; // Admin için normal kullanıcı kontrollerini gizle
+                
                 spotifyNoPerm.style.display = 'none';
                 spotifyPlayer.querySelector('iframe').style.display = 'block';
+                
                 liveNoPerm.style.display = 'none';
                 document.querySelector('#livePlayer video').style.display = 'block';
                 document.querySelector('.live-status').style.display = 'flex';
@@ -1506,6 +1690,47 @@
             });
         }
 
+        // ========== YOUTUBE KONTROLLERİ (Normal Kullanıcı) ==========
+        function toggleMute() {
+            const iframe = document.getElementById('youtubeIframe');
+            isMuted = !isMuted;
+            const muteIcon = document.getElementById('muteIcon');
+            
+            if (isMuted) {
+                iframe.src = iframe.src.replace('mute=0', 'mute=1');
+                if (!iframe.src.includes('mute=1')) {
+                    iframe.src += '&mute=1';
+                }
+                muteIcon.className = 'fas fa-volume-mute';
+            } else {
+                iframe.src = iframe.src.replace('mute=1', 'mute=0');
+                if (!iframe.src.includes('mute=0')) {
+                    iframe.src += '&mute=0';
+                }
+                muteIcon.className = 'fas fa-volume-up';
+            }
+        }
+
+        function togglePlayPause() {
+            const iframe = document.getElementById('youtubeIframe');
+            isPlaying = !isPlaying;
+            const playPauseIcon = document.getElementById('playPauseIcon');
+            
+            if (isPlaying) {
+                iframe.src = iframe.src.replace('autoplay=0', 'autoplay=1');
+                if (!iframe.src.includes('autoplay=1')) {
+                    iframe.src += '&autoplay=1';
+                }
+                playPauseIcon.className = 'fas fa-pause';
+            } else {
+                iframe.src = iframe.src.replace('autoplay=1', 'autoplay=0');
+                if (!iframe.src.includes('autoplay=0')) {
+                    iframe.src += '&autoplay=0';
+                }
+                playPauseIcon.className = 'fas fa-play';
+            }
+        }
+
         // ========== MEDYA OYNATMA ==========
         function stopAllMedia() {
             const youtubeIframe = document.getElementById('youtubeIframe');
@@ -1516,40 +1741,54 @@
         }
 
         // ========== YOUTUBE OYNAT ==========
-        function playVideo(index) {
-            if (!canManageMedia()) {
-                addSystemMessage('⛔ Bu medyayı kontrol etme yetkiniz yok!');
+        function playVideo(index, videoId = null) {
+            if (!canManageMedia() && !videoId) {
+                // Normal kullanıcı sadece izleyebilir
                 return;
             }
             
-            if (!youtubePlaylist[index]) return;
+            if (!youtubePlaylist[index] && !videoId) return;
             
             stopAllMedia();
             
-            const video = youtubePlaylist[index];
+            const video = videoId ? { id: videoId } : youtubePlaylist[index];
             const iframe = document.getElementById('youtubeIframe');
             
-            document.querySelectorAll('.playlist-item').forEach(el => el.classList.remove('active'));
+            if (canManageMedia()) {
+                document.querySelectorAll('.playlist-item').forEach(el => el.classList.remove('active'));
+            }
             
             iframe.src = `https://www.youtube.com/embed/${video.id}?autoplay=1&mute=0&controls=1&modestbranding=1&rel=0&enablejsapi=1`;
             
+            // Aktif yayını Firebase'e kaydet (sadece admin)
+            if (canManageMedia() && database) {
+                database.ref('activeStream').set({
+                    type: 'youtube',
+                    videoId: video.id,
+                    timestamp: Date.now(),
+                    startedBy: currentUser.name
+                });
+            }
+            
             setTimeout(() => renderPlaylist(), 100);
             
-            addSystemMessage(`🎬 YouTube: ${video.title}`);
+            if (canManageMedia()) {
+                addSystemMessage(`🎬 YouTube: ${video.title || 'Video'}`);
+            }
         }
 
         // ========== SPOTIFY OYNAT ==========
-        function playSpotify(index) {
+        function playSpotify(index, spotifyId = null) {
             if (!canManageMedia()) {
                 addSystemMessage('⛔ Bu medyayı kontrol etme yetkiniz yok!');
                 return;
             }
             
-            if (!spotifyPlaylist[index]) return;
+            if (!spotifyPlaylist[index] && !spotifyId) return;
             
             stopAllMedia();
             
-            const item = spotifyPlaylist[index];
+            const item = spotifyId ? { id: spotifyId, type: 'playlist' } : spotifyPlaylist[index];
             const iframe = document.getElementById('spotifyIframe');
             
             let embedUrl = '';
@@ -1569,9 +1808,19 @@
             
             iframe.src = embedUrl;
             
+            // Aktif yayını Firebase'e kaydet
+            if (database) {
+                database.ref('activeStream').set({
+                    type: 'spotify',
+                    spotifyId: item.id,
+                    timestamp: Date.now(),
+                    startedBy: currentUser.name
+                });
+            }
+            
             setTimeout(() => renderSpotifyPlaylist(), 100);
             
-            addSystemMessage(`🎵 Spotify: ${item.title}`);
+            addSystemMessage(`🎵 Spotify: ${item.title || 'Müzik'}`);
         }
 
         // ========== CANLI YAYIN ==========
@@ -1580,13 +1829,18 @@
                 addSystemMessage('⛔ Canlı yayın başlatma yetkiniz yok!');
                 return;
             }
+            closeAllModals();
             document.getElementById('liveStreamModal').classList.add('active');
+            activeModal = 'liveStreamModal';
+            updateActivePanelIndicator('Canlı Yayın Başlatma');
         }
 
         function closeLiveStreamModal() {
             document.getElementById('liveStreamModal').classList.remove('active');
-            document.getElementById('liveTitle').value = '';
-            document.getElementById('liveDescription').value = '';
+            if (activeModal === 'liveStreamModal') {
+                activeModal = null;
+                updateActivePanelIndicator('Genel Sohbet');
+            }
         }
 
         async function startLiveStream() {
@@ -1625,6 +1879,17 @@
                 liveStreams.push(liveStream);
                 renderLivePlaylist();
                 
+                // Aktif yayını Firebase'e kaydet
+                if (database) {
+                    database.ref('activeStream').set({
+                        type: 'live',
+                        streamId: liveStream.id,
+                        title: title,
+                        timestamp: Date.now(),
+                        startedBy: currentUser.name
+                    });
+                }
+                
                 addSystemMessage(`📹 Canlı yayın başlatıldı: ${title}`);
                 closeLiveStreamModal();
                 
@@ -1650,6 +1915,11 @@
             
             if (liveStreams.length > 0) {
                 liveStreams[liveStreams.length - 1].isActive = false;
+            }
+            
+            // Firebase'deki aktif yayını temizle
+            if (database) {
+                database.ref('activeStream').remove();
             }
             
             addSystemMessage('📹 Canlı yayın sonlandırıldı');
@@ -1991,13 +2261,13 @@
             const youtubePlayer = document.getElementById('youtubePlayer');
             const spotifyPlayer = document.getElementById('spotifyPlayer');
             const livePlayer = document.getElementById('livePlayer');
-            const modal = document.getElementById('addMediaModal');
             const modalContent = document.getElementById('modalContent');
             const modalTitle = document.getElementById('modalTitle');
             const addBtn = document.getElementById('addMediaConfirmBtn');
             const youtubeNoPerm = document.getElementById('youtubeNoPermission');
             const spotifyNoPerm = document.getElementById('spotifyNoPermission');
             const liveNoPerm = document.getElementById('liveNoPermission');
+            const userControls = document.getElementById('userYouTubeControls');
             
             youtubeTab.classList.remove('active');
             spotifyTab.classList.remove('active');
@@ -2014,9 +2284,11 @@
                 if (canManageMedia()) {
                     youtubeNoPerm.style.display = 'none';
                     youtubePlayer.querySelector('iframe').style.display = 'block';
+                    userControls.style.display = 'none';
                 } else {
-                    youtubeNoPerm.style.display = 'flex';
-                    youtubePlayer.querySelector('iframe').style.display = 'none';
+                    youtubeNoPerm.style.display = 'none';
+                    youtubePlayer.querySelector('iframe').style.display = 'block';
+                    userControls.style.display = 'flex';
                 }
                 
                 modalTitle.textContent = 'YouTube Video Ekle';
@@ -2082,9 +2354,27 @@
                 database.ref(`privateMessages/${currentUser.name}`).on('child_added', (snapshot) => {
                     const message = snapshot.val();
                     handlePrivateMessage(message);
-                    snapshot.ref.remove(); // Mesajı aldıktan sonra sil
+                    snapshot.ref.remove();
                 });
             }
+            
+            // Aktif yayını dinle
+            database.ref('activeStream').on('value', (snapshot) => {
+                const streamData = snapshot.val();
+                if (streamData) {
+                    if (streamData.type === 'youtube' && streamData.videoId) {
+                        const iframe = document.getElementById('youtubeIframe');
+                        if (!iframe.src.includes(streamData.videoId)) {
+                            iframe.src = `https://www.youtube.com/embed/${streamData.videoId}?autoplay=1&mute=0&controls=1&modestbranding=1&rel=0&enablejsapi=1`;
+                        }
+                    } else if (streamData.type === 'spotify' && streamData.spotifyId) {
+                        const iframe = document.getElementById('spotifyIframe');
+                        if (!iframe.src.includes(streamData.spotifyId)) {
+                            iframe.src = `https://open.spotify.com/embed/${streamData.spotifyId}?utm_source=generator&autoplay=1`;
+                        }
+                    }
+                }
+            });
         }
 
         // ========== ONLINE KULLANICILAR ==========
@@ -2102,12 +2392,10 @@
             Object.entries(usersData).forEach(([username, data]) => {
                 if (!data) return;
                 
-                // 1 dakika içinde güncelleme yapmamışsa offline kabul et
                 if (now - (data.lastSeen || 0) < 60000) {
                     onlineCount++;
                     onlineUsers.push(data);
                 } else {
-                    // Offline kullanıcıyı temizle
                     database.ref(`onlineUsers/${username}`).remove();
                 }
             });
@@ -2122,8 +2410,20 @@
             
             let filteredUsers = onlineUsers.filter(user => user.name !== currentUser?.name);
             
+            // Engellenen kullanıcıları filtrele
+            filteredUsers = filteredUsers.filter(user => {
+                const blocked = blockedUsers[user.name];
+                if (blocked) {
+                    if (Date.now() - blocked.timestamp < 24 * 60 * 60 * 1000) {
+                        return false; // Hala engelli
+                    } else {
+                        delete blockedUsers[user.name]; // 24 saat geçmişse engeli kaldır
+                    }
+                }
+                return true;
+            });
+            
             if (!isOnlineTab) {
-                // Sohbette sekmesi - özel mesajlaşılan kullanıcılar
                 filteredUsers = filteredUsers.filter(user => privateChats[user.name] && privateChats[user.name].length > 0);
             }
             
@@ -2157,13 +2457,21 @@
             
             container.innerHTML = html;
             
-            // Sohbette sekmesi sayacını güncelle
             const chattingCount = filteredUsers.filter(user => privateChats[user.name] && privateChats[user.name].length > 0).length;
             document.getElementById('chattingTab').textContent = `Sohbette (${chattingCount})`;
         }
 
         // ========== ÖZEL MESAJLAŞMA ==========
         function openPrivateChat(username) {
+            // Engellenen kullanıcı kontrolü
+            const blocked = blockedUsers[username];
+            if (blocked && (Date.now() - blocked.timestamp < 24 * 60 * 60 * 1000)) {
+                addSystemMessage(`⛔ ${username} kullanıcısını 24 saat engellediniz.`);
+                return;
+            }
+            
+            closeAllModals();
+            
             if (!privateChats[username]) {
                 privateChats[username] = [];
             }
@@ -2172,12 +2480,72 @@
             unreadPrivateMessages[username] = 0;
             
             document.getElementById('currentChannel').textContent = `@${username}`;
+            document.getElementById('privateChatControls').style.display = 'flex';
             
-            // Özel mesajları göster
             renderPrivateMessages(username);
             
-            // Sohbette sekmesine geç
             switchUserTab('chatting');
+            
+            updateActivePanelIndicator(`Özel Sohbet: ${username}`);
+        }
+
+        function closePrivateChat() {
+            activePrivateChat = null;
+            document.getElementById('currentChannel').textContent = 'genel';
+            document.getElementById('privateChatControls').style.display = 'none';
+            startFirebaseListeners();
+            updateActivePanelIndicator('Genel Sohbet');
+        }
+
+        function blockUser24h() {
+            if (!activePrivateChat) return;
+            
+            const username = activePrivateChat;
+            blockedUsers[username] = {
+                timestamp: Date.now()
+            };
+            
+            addSystemMessage(`⛔ ${username} kullanıcısı 24 saatliğine engellendi.`);
+            closePrivateChat();
+            renderUserList();
+        }
+
+        function reportUser() {
+            if (!activePrivateChat) return;
+            
+            document.getElementById('complaintUsername').textContent = activePrivateChat;
+            closeAllModals();
+            document.getElementById('complaintModal').classList.add('active');
+            activeModal = 'complaintModal';
+            updateActivePanelIndicator('Şikayet Paneli');
+        }
+
+        function closeComplaintModal() {
+            document.getElementById('complaintModal').classList.remove('active');
+            if (activeModal === 'complaintModal') {
+                activeModal = null;
+                updateActivePanelIndicator(activePrivateChat ? `Özel Sohbet: ${activePrivateChat}` : 'Genel Sohbet');
+            }
+        }
+
+        function submitComplaint() {
+            const username = document.getElementById('complaintUsername').textContent;
+            const reason = document.getElementById('complaintReason').value;
+            const description = document.getElementById('complaintDescription').value;
+            
+            // Şikayeti Firebase'e kaydet
+            if (database) {
+                database.ref('complaints').push({
+                    reporter: currentUser.name,
+                    reportedUser: username,
+                    reason: reason,
+                    description: description,
+                    timestamp: Date.now()
+                });
+            }
+            
+            addSystemMessage(`✅ ${username} kullanıcısı şikayet edildi. Teşekkürler!`);
+            closeComplaintModal();
         }
 
         function renderPrivateMessages(username) {
@@ -2220,6 +2588,13 @@
         function sendPrivateMessage(username, text) {
             if (!database || !currentUser) return;
             
+            // Engellenen kullanıcı kontrolü
+            const blocked = blockedUsers[username];
+            if (blocked && (Date.now() - blocked.timestamp < 24 * 60 * 60 * 1000)) {
+                addSystemMessage(`⛔ ${username} kullanıcısını 24 saat engellediniz.`);
+                return;
+            }
+            
             const message = {
                 sender: currentUser.name,
                 receiver: username,
@@ -2228,21 +2603,17 @@
                 timestamp: Date.now()
             };
             
-            // Karşı tarafa mesajı gönder
             database.ref(`privateMessages/${username}`).push(message);
             
-            // Kendi mesaj listene ekle
             if (!privateChats[username]) {
                 privateChats[username] = [];
             }
             privateChats[username].push(message);
             
-            // Eğer aktif sohbet bu kullanıcıyla ise göster
             if (activePrivateChat === username) {
                 renderPrivateMessages(username);
             }
             
-            // Sohbette sekmesini güncelle
             renderUserList();
         }
 
@@ -2251,29 +2622,29 @@
             
             const sender = message.sender;
             
+            // Engellenen kullanıcı kontrolü
+            const blocked = blockedUsers[sender];
+            if (blocked && (Date.now() - blocked.timestamp < 24 * 60 * 60 * 1000)) {
+                return; // Engellenen kullanıcıdan mesaj gösterme
+            }
+            
             if (!privateChats[sender]) {
                 privateChats[sender] = [];
             }
             privateChats[sender].push(message);
             
-            // Okunmamış mesaj sayacını artır
             if (activePrivateChat !== sender) {
                 unreadPrivateMessages[sender] = (unreadPrivateMessages[sender] || 0) + 1;
                 
-                // Sohbette sekmesinde bildirim
                 if (currentTab === 'chatting') {
                     renderUserList();
                 }
             }
             
-            // Eğer aktif sohbet bu kullanıcıyla ise göster
             if (activePrivateChat === sender) {
                 renderPrivateMessages(sender);
                 unreadPrivateMessages[sender] = 0;
             }
-            
-            // Bildirim sesi (opsiyonel)
-            // playNotificationSound();
             
             addSystemMessage(`💬 ${sender} size özel mesaj gönderdi!`);
         }
@@ -2282,7 +2653,6 @@
         function updateMessages(messagesData) {
             if (!messagesData) return;
             
-            // Eğer özel sohbet aktifse genel mesajları gösterme
             if (activePrivateChat) {
                 renderPrivateMessages(activePrivateChat);
                 return;
@@ -2333,7 +2703,6 @@
             
             if (!text || !currentUser || !database) return;
             
-            // Özel sohbet kontrolü
             if (activePrivateChat) {
                 sendPrivateMessage(activePrivateChat, text);
                 input.value = '';
@@ -2392,26 +2761,71 @@
         }
 
         // ========== MODAL İŞLEMLERİ ==========
+        function closeAllModals() {
+            document.getElementById('addMediaModal').classList.remove('active');
+            document.getElementById('liveStreamModal').classList.remove('active');
+            document.getElementById('profileModal').classList.remove('active');
+            document.getElementById('complaintModal').classList.remove('active');
+            activeModal = null;
+        }
+
+        function closeAllModalsExcept(modalId) {
+            closeAllModals();
+            activeModal = modalId;
+            updateActivePanelIndicator(getPanelName(modalId));
+        }
+
+        function getPanelName(modalId) {
+            const names = {
+                'addMediaModal': 'Medya Ekleme',
+                'liveStreamModal': 'Canlı Yayın Başlatma',
+                'profileModal': 'Profil',
+                'complaintModal': 'Şikayet'
+            };
+            return names[modalId] || 'Panel';
+        }
+
         function openAddMediaModal() {
             if (!canManageMedia()) {
                 addSystemMessage('⛔ Sadece Owner, Admin ve yetkili Co-Admin medya ekleyebilir!');
                 return;
             }
+            closeAllModals();
             document.getElementById('addMediaModal').classList.add('active');
+            activeModal = 'addMediaModal';
+            updateActivePanelIndicator('Medya Ekleme');
         }
 
         function closeAddMediaModal() {
             document.getElementById('addMediaModal').classList.remove('active');
             document.getElementById('mediaUrl').value = '';
             document.getElementById('mediaTitle').value = '';
+            if (activeModal === 'addMediaModal') {
+                activeModal = null;
+                updateActivePanelIndicator(activePrivateChat ? `Özel Sohbet: ${activePrivateChat}` : 'Genel Sohbet');
+            }
         }
 
         function showProfileMenu() {
+            closeAllModals();
             document.getElementById('profileModal').classList.add('active');
+            activeModal = 'profileModal';
+            updateActivePanelIndicator('Profil');
         }
 
         function closeProfileModal() {
             document.getElementById('profileModal').classList.remove('active');
+            if (activeModal === 'profileModal') {
+                activeModal = null;
+                updateActivePanelIndicator(activePrivateChat ? `Özel Sohbet: ${activePrivateChat}` : 'Genel Sohbet');
+            }
+        }
+
+        function updateActivePanelIndicator(text) {
+            const indicator = document.getElementById('activePanelIndicator');
+            if (indicator) {
+                indicator.textContent = `Panel: ${text}`;
+            }
         }
 
         // ========== DİĞER FONKSİYONLAR ==========
@@ -2437,10 +2851,12 @@
         }
 
         function showUsersPanel() {
-            // Genel sohbete dön
+            closeAllModals();
             activePrivateChat = null;
             document.getElementById('currentChannel').textContent = 'genel';
+            document.getElementById('privateChatControls').style.display = 'none';
             startFirebaseListeners();
+            updateActivePanelIndicator('Genel Sohbet');
         }
 
         function switchUserTab(tab) {
@@ -2475,6 +2891,19 @@
             resetLoginButton();
         }
 
+        function togglePasswordVisibility() {
+            const passwordInput = document.getElementById('password');
+            const toggleIcon = document.getElementById('passwordToggle');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                toggleIcon.className = 'fas fa-eye-slash password-toggle';
+            } else {
+                passwordInput.type = 'password';
+                toggleIcon.className = 'fas fa-eye password-toggle';
+            }
+        }
+
         function logout() {
             if (database && currentUser) {
                 database.ref(`onlineUsers/${currentUser.name}`).remove();
@@ -2502,13 +2931,13 @@
             
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') {
-                    closeAddMediaModal();
-                    closeProfileModal();
-                    closeLiveStreamModal();
+                    closeAllModals();
+                    e.preventDefault();
                 }
             });
             
             renderPlaylist();
+            updateActivePanelIndicator('Genel Sohbet');
         });
 
         // ========== GLOBAL FONKSİYONLAR ==========
@@ -2524,6 +2953,11 @@
         window.openAddMediaModal = openAddMediaModal;
         window.closeAddMediaModal = closeAddMediaModal;
         window.openPrivateChat = openPrivateChat;
+        window.closePrivateChat = closePrivateChat;
+        window.blockUser24h = blockUser24h;
+        window.reportUser = reportUser;
+        window.closeComplaintModal = closeComplaintModal;
+        window.submitComplaint = submitComplaint;
         window.showProfileMenu = showProfileMenu;
         window.closeProfileModal = closeProfileModal;
         window.uploadAvatar = uploadAvatar;
@@ -2532,6 +2966,10 @@
         window.switchUserTab = switchUserTab;
         window.autoResize = autoResize;
         window.logout = logout;
+        window.togglePasswordVisibility = togglePasswordVisibility;
+        window.toggleMute = toggleMute;
+        window.togglePlayPause = togglePlayPause;
+        window.closeAllModals = closeAllModals;
         
         // Canlı yayın fonksiyonları
         window.openLiveStreamModal = openLiveStreamModal;
