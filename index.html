@@ -9,10 +9,13 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- FIREBASE v8 -->
+    <!-- FIREBASE v8 - DOĞRU KONFİG -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+    
+    <!-- SENTRY'Yİ ENGELLE -->
+    <meta name="referrer" content="no-referrer">
     
     <style>
         * {
@@ -62,6 +65,60 @@
         * {
             scrollbar-width: thin;
             scrollbar-color: #3f3f3f #1a1a1a;
+        }
+
+        /* ========== DEBUG CONSOLE ========== */
+        .debug-console {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 400px;
+            height: 250px;
+            background: rgba(0,0,0,0.95);
+            border: 2px solid #00ff00;
+            border-radius: 8px;
+            padding: 12px;
+            color: #00ff00;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-y: auto;
+            z-index: 9999;
+            display: block;
+            box-shadow: 0 0 20px rgba(0,255,0,0.2);
+        }
+
+        .debug-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #00ff00;
+        }
+
+        .debug-title {
+            color: #00ff00;
+            font-weight: bold;
+        }
+
+        .debug-clear {
+            color: #fff;
+            cursor: pointer;
+            padding: 2px 8px;
+            background: #272727;
+            border-radius: 4px;
+        }
+
+        .debug-log {
+            margin-bottom: 4px;
+            word-break: break-all;
+            border-bottom: 1px solid #333;
+            padding-bottom: 4px;
+        }
+
+        .debug-time {
+            color: #888;
+            margin-right: 8px;
         }
 
         /* ========== SOL MENÜ ========== */
@@ -926,6 +983,15 @@
     </style>
 </head>
 <body>
+    <!-- DEBUG CONSOLE -->
+    <div id="debugConsole" class="debug-console">
+        <div class="debug-header">
+            <span class="debug-title">🔍 POPBOX DEBUG CONSOLE</span>
+            <span class="debug-clear" onclick="clearDebugLog()">TEMİZLE</span>
+        </div>
+        <div id="debugLogs"></div>
+    </div>
+
     <!-- LOGIN -->
     <div id="loginOverlay" class="login-overlay">
         <div class="login-box">
@@ -1001,7 +1067,7 @@
             </div>
         </div>
 
-        <!-- MEDYA PANELİ - YETKİ KONTROLLÜ -->
+        <!-- MEDYA PANELİ -->
         <div class="media-panel">
             <div class="media-header">
                 <div class="media-tabs">
@@ -1129,7 +1195,11 @@
     <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
 
     <script>
-        // ========== FIREBASE KONFİG ==========
+        // ========== SENTRY'Yİ ENGELLE ==========
+        window.Sentry = undefined;
+        window.__SENTRY__ = undefined;
+        
+        // ========== FIREBASE KONFİG - GÜNCELLENDİ ==========
         const firebaseConfig = {
             apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
             authDomain: "popboxmusicchat.firebaseapp.com",
@@ -1140,6 +1210,29 @@
             appId: "1:206625719024:web:d28f478a2c96d10412f835"
         };
 
+        // ========== DEBUG LOG ==========
+        function addDebugLog(message, type = 'info') {
+            const debugLogs = document.getElementById('debugLogs');
+            const time = new Date().toLocaleTimeString('tr-TR', { hour12: false });
+            const logEntry = document.createElement('div');
+            logEntry.className = 'debug-log';
+            logEntry.innerHTML = `<span class="debug-time">[${time}]</span> <span style="color: ${type === 'error' ? '#ff4444' : '#00ff00'};">${message}</span>`;
+            debugLogs.appendChild(logEntry);
+            debugLogs.scrollTop = debugLogs.scrollHeight;
+            
+            // Console'a da yaz
+            if (type === 'error') {
+                console.error(`🐛 ${message}`);
+            } else {
+                console.log(`🐛 ${message}`);
+            }
+        }
+
+        function clearDebugLog() {
+            document.getElementById('debugLogs').innerHTML = '';
+            addDebugLog('🧹 Debug konsolu temizlendi');
+        }
+
         // ========== GLOBAL DEĞİŞKENLER ==========
         let database;
         let currentUser = null;
@@ -1147,66 +1240,88 @@
         let isAdmin = false;
         let isCoAdmin = false;
         let isOperator = false;
-        let isFirebaseConnected = false;
         let currentMediaTab = 'youtube';
+        let authorizedChannel = 'genel';
+        let currentChannel = 'genel';
         
-        // Owner/Admin tüm kanallara erişebilir, CoAdmin sadece yetkili olduğu kanala
-        let authorizedChannel = 'genel'; // CoAdmin için yetkili kanal
-        let currentChannel = 'genel'; // Aktif kanal
-        
-        // YOUTUBE PLAYLIST
+        // MEDYA LİSTELERİ
         let youtubePlaylist = [
-            { id: 'jfKfPfyJRdk', title: 'Popbox Radio • 24/7 Canlı Müzik', addedBy: 'system', role: 'owner', timestamp: Date.now() }
+            { id: 'jfKfPfyJRdk', title: 'Popbox Radio • 24/7 Canlı Müzik', addedBy: 'MateKy', role: 'owner', timestamp: Date.now() }
         ];
         
-        // SPOTIFY PLAYLIST
         let spotifyPlaylist = [
-            { id: '37i9dQZF1DXcBWIGoYBM5M', title: 'Popbox Spotify • Günün Hitleri', addedBy: 'system', role: 'owner', type: 'playlist', timestamp: Date.now() }
+            { id: '37i9dQZF1DXcBWIGoYBM5M', title: 'Popbox Spotify • Günün Hitleri', addedBy: 'MateKy', role: 'owner', type: 'playlist', timestamp: Date.now() }
         ];
         
-        // CANLI YAYIN PLAYLIST
         let liveStreams = [];
-        
         let onlineUsers = [];
-        
-        // Canlı yayın değişkenleri
         let mediaStream = null;
         let currentFacingMode = 'user';
+        
+        // FIREBASE LİSTENER'LAR
+        let mediaListenersStarted = false;
 
         // ========== FIREBASE BAŞLAT ==========
         function initializeFirebase() {
             try {
+                addDebugLog('🔄 Firebase başlatılıyor...');
+                
                 if (!firebase.apps.length) {
                     firebase.initializeApp(firebaseConfig);
+                    addDebugLog('✅ Firebase initialize edildi');
                 }
-                database = firebase.database();
-                console.log('✅ Firebase başlatıldı!');
                 
-                database.ref('.info/connected').on('value', (snap) => {
-                    isFirebaseConnected = snap.val() === true;
-                    console.log(isFirebaseConnected ? '✅ Firebase bağlandı!' : '❌ Firebase bağlantısı kesildi!');
+                database = firebase.database();
+                addDebugLog('✅ Database referansı alındı');
+                
+                // Bağlantı testi
+                const connectedRef = database.ref('.info/connected');
+                connectedRef.on('value', (snap) => {
+                    if (snap.val() === true) {
+                        addDebugLog('✅ Firebase REALTIME bağlantı BAŞARILI!');
+                    } else {
+                        addDebugLog('❌ Firebase bağlantısı KESİLDİ!', 'error');
+                    }
                 });
                 
-                // Aktif medya durumunu dinle
+                // Medya listener'larını başlat
                 startMediaListeners();
                 
+                return true;
             } catch (error) {
-                console.error('❌ Firebase hatası:', error);
+                addDebugLog(`❌ Firebase hatası: ${error.message}`, 'error');
+                console.error('Firebase hatası:', error);
+                return false;
             }
         }
 
-        // ========== MEDYA DURUMUNU DİNLE ==========
+        // ========== MEDYA DURUMUNU DİNLE - DÜZELTİLDİ ==========
         function startMediaListeners() {
-            if (!database) return;
+            if (!database) {
+                addDebugLog('❌ Database yok, listener başlatılamadı!', 'error');
+                return;
+            }
             
-            // YouTube durumunu dinle
+            if (mediaListenersStarted) {
+                addDebugLog('⚠️ Media listener zaten başlatılmış');
+                return;
+            }
+            
+            addDebugLog('🔄 Medya listenerları başlatılıyor...');
+            
+            // YOUTUBE LİSTENER
             database.ref('mediaState/youtube').on('value', (snapshot) => {
                 const data = snapshot.val();
-                if (data && data.isActive) {
-                    const iframe = document.getElementById('youtubeIframe');
-                    iframe.src = `https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=0&controls=1&modestbranding=1&rel=0`;
+                addDebugLog(`📺 YouTube listener tetiklendi: ${JSON.stringify(data)}`);
+                
+                if (data && data.isActive === true) {
+                    addDebugLog(`🎬 YouTube başlatılıyor: ${data.title || 'Video'}`);
                     
-                    // YouTube player'ı göster
+                    const iframe = document.getElementById('youtubeIframe');
+                    const videoId = data.videoId || 'jfKfPfyJRdk';
+                    iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&controls=1&modestbranding=1&rel=0&enablejsapi=1`;
+                    
+                    // Player'ları göster/gizle
                     document.getElementById('youtubePlayer').style.display = 'block';
                     document.getElementById('spotifyPlayer').style.display = 'none';
                     document.getElementById('livePlayer').style.display = 'none';
@@ -1216,54 +1331,131 @@
                     document.getElementById('spotifyTab').classList.remove('active');
                     document.getElementById('liveTab').classList.remove('active');
                     
-                    addSystemMessage(`🎬 ${data.addedBy} YouTube başlattı: ${data.title}`);
+                    currentMediaTab = 'youtube';
+                    
+                    // Sistem mesajı
+                    if (data.addedBy && data.addedBy !== currentUser?.name) {
+                        addSystemMessage(`🎬 ${data.addedBy} YouTube başlattı: ${data.title || 'Video'}`);
+                    }
                 }
             });
             
-            // Spotify durumunu dinle
+            // SPOTIFY LİSTENER
             database.ref('mediaState/spotify').on('value', (snapshot) => {
                 const data = snapshot.val();
-                if (data && data.isActive) {
-                    const iframe = document.getElementById('spotifyIframe');
-                    iframe.src = data.embedUrl;
+                addDebugLog(`🎵 Spotify listener tetiklendi: ${JSON.stringify(data)}`);
+                
+                if (data && data.isActive === true) {
+                    addDebugLog(`🎵 Spotify başlatılıyor: ${data.title || 'Müzik'}`);
                     
-                    // Spotify player'ı göster
+                    const iframe = document.getElementById('spotifyIframe');
+                    iframe.src = data.embedUrl || 'https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M?utm_source=generator&autoplay=1';
+                    
                     document.getElementById('youtubePlayer').style.display = 'none';
                     document.getElementById('spotifyPlayer').style.display = 'block';
                     document.getElementById('livePlayer').style.display = 'none';
                     
-                    // Tab'leri güncelle
                     document.getElementById('youtubeTab').classList.remove('active');
                     document.getElementById('spotifyTab').classList.add('active');
                     document.getElementById('liveTab').classList.remove('active');
                     
-                    addSystemMessage(`🎵 ${data.addedBy} Spotify başlattı: ${data.title}`);
+                    currentMediaTab = 'spotify';
+                    
+                    if (data.addedBy && data.addedBy !== currentUser?.name) {
+                        addSystemMessage(`🎵 ${data.addedBy} Spotify başlattı: ${data.title || 'Müzik'}`);
+                    }
                 }
             });
             
-            // Canlı yayın durumunu dinle
+            // CANLI YAYIN LİSTENER
             database.ref('mediaState/live').on('value', (snapshot) => {
                 const data = snapshot.val();
-                if (data && data.isActive) {
-                    // Live player'ı göster
+                addDebugLog(`📹 Live listener tetiklendi: ${JSON.stringify(data)}`);
+                
+                if (data && data.isActive === true) {
+                    addDebugLog(`📹 Canlı yayın başlatıldı: ${data.title || 'Yayın'}`);
+                    
                     document.getElementById('youtubePlayer').style.display = 'none';
                     document.getElementById('spotifyPlayer').style.display = 'none';
                     document.getElementById('livePlayer').style.display = 'block';
                     
-                    // Tab'leri güncelle
                     document.getElementById('youtubeTab').classList.remove('active');
                     document.getElementById('spotifyTab').classList.remove('active');
                     document.getElementById('liveTab').classList.add('active');
                     
-                    addSystemMessage(`📹 ${data.addedBy} canlı yayın başlattı: ${data.title}`);
+                    currentMediaTab = 'live';
+                    
+                    if (data.addedBy && data.addedBy !== currentUser?.name) {
+                        addSystemMessage(`📹 ${data.addedBy} canlı yayın başlattı: ${data.title || 'Yayın'}`);
+                    }
+                } else if (data && data.isActive === false) {
+                    addDebugLog(`📹 Canlı yayın sonlandırıldı`);
+                    document.getElementById('livePlayer').style.display = 'none';
+                    document.getElementById('liveTab').classList.remove('active');
                 }
             });
+            
+            mediaListenersStarted = true;
+            addDebugLog('✅ Medya listenerları başlatıldı');
+        }
+
+        // ========== MEDYA DURUMUNU GÜNCELLE ==========
+        function updateMediaState(type, data) {
+            if (!database) {
+                addDebugLog('❌ Database yok, medya durumu güncellenemedi!', 'error');
+                return;
+            }
+            
+            addDebugLog(`🔄 Medya durumu güncelleniyor: ${type}`, 'info');
+            
+            // Önce tüm medyaları pasif yap
+            const updates = {};
+            updates[`mediaState/youtube/isActive`] = false;
+            updates[`mediaState/spotify/isActive`] = false;
+            updates[`mediaState/live/isActive`] = false;
+            
+            // Sonra aktif medyayı ekle
+            if (type === 'youtube') {
+                updates[`mediaState/youtube`] = {
+                    isActive: true,
+                    videoId: data.videoId,
+                    title: data.title,
+                    addedBy: currentUser?.name || 'system',
+                    timestamp: Date.now()
+                };
+            } else if (type === 'spotify') {
+                updates[`mediaState/spotify`] = {
+                    isActive: true,
+                    embedUrl: data.embedUrl,
+                    title: data.title,
+                    addedBy: currentUser?.name || 'system',
+                    timestamp: Date.now()
+                };
+            } else if (type === 'live') {
+                updates[`mediaState/live`] = {
+                    isActive: true,
+                    title: data.title,
+                    description: data.description,
+                    addedBy: currentUser?.name || 'system',
+                    timestamp: Date.now()
+                };
+            }
+            
+            database.ref().update(updates)
+                .then(() => {
+                    addDebugLog(`✅ Medya durumu güncellendi: ${type}`);
+                })
+                .catch((error) => {
+                    addDebugLog(`❌ Medya durumu güncellenemedi: ${error.message}`, 'error');
+                });
         }
 
         // ========== GİRİŞ ==========
-        async function handleLogin() {
+        function handleLogin() {
             const nickname = document.getElementById('nickname').value.trim();
             const password = document.getElementById('password').value;
+            
+            addDebugLog(`🔑 Giriş denemesi: ${nickname}`);
             
             if (!nickname) {
                 showError('Kullanıcı adı gerekli!');
@@ -1273,6 +1465,11 @@
             const loginBtn = document.getElementById('loginBtn');
             loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bağlanıyor...';
             loginBtn.disabled = true;
+            
+            // Firebase'i başlat
+            if (!database) {
+                initializeFirebase();
+            }
             
             setTimeout(() => performLogin(nickname, password), 500);
         }
@@ -1294,28 +1491,34 @@
                 isOwner = true;
                 isAdmin = true;
                 currentUser = { name: 'MateKy', role: 'owner', roleLevel: 5 };
-                authorizedChannel = 'all'; // Tüm kanallara erişim
+                authorizedChannel = 'all';
+                addDebugLog('👑 Owner girişi başarılı');
             }
             else if (normalizedNick === 'popbox' || normalizedNick === 'popboxmusic') {
                 currentUser = { name: nickname, role: 'admin', roleLevel: 4 };
                 isAdmin = true;
-                authorizedChannel = 'all'; // Tüm kanallara erişim
+                authorizedChannel = 'all';
+                addDebugLog('⚡ Admin girişi başarılı');
             }
             else if (normalizedNick === 'coadmin') {
                 currentUser = { name: nickname, role: 'coadmin', roleLevel: 3 };
                 isCoAdmin = true;
-                authorizedChannel = 'genel'; // Sadece genel kanalına erişim
+                authorizedChannel = 'genel';
+                addDebugLog('🔧 Co-Admin girişi başarılı');
             }
             else if (normalizedNick === 'operator' || normalizedNick.startsWith('op-')) {
                 currentUser = { name: nickname, role: 'operator', roleLevel: 2 };
                 isOperator = true;
-                authorizedChannel = 'genel'; // Sadece izleme yetkisi
+                authorizedChannel = 'genel';
+                addDebugLog('🛡️ Operator girişi başarılı');
             }
             else {
                 currentUser = { name: nickname, role: 'user', roleLevel: 1 };
-                authorizedChannel = 'genel'; // Sadece izleme yetkisi
+                authorizedChannel = 'genel';
+                addDebugLog('👤 Kullanıcı girişi başarılı');
             }
             
+            // Firebase'e kullanıcıyı kaydet
             if (database) {
                 const usersRef = database.ref('onlineUsers');
                 usersRef.child(currentUser.name).set({
@@ -1327,8 +1530,10 @@
                     isOnline: true
                 });
                 usersRef.child(currentUser.name).onDisconnect().remove();
+                addDebugLog(`✅ Kullanıcı Firebase'e kaydedildi: ${currentUser.name}`);
             }
             
+            // UI'ı güncelle
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('app').classList.remove('hidden');
             
@@ -1338,107 +1543,66 @@
             document.getElementById('profileRole').textContent = currentUser.role + (authorizedChannel !== 'all' ? ' • ' + authorizedChannel : '');
             
             updateMediaPermissions();
-            
             addSystemMessage(`🎉 ${currentUser.name} (${currentUser.role}) sohbete katıldı!`);
             
+            // Listener'ları başlat
             startFirebaseListeners();
         }
 
         // ========== YETKİ KONTROLÜ ==========
         function canManageMedia() {
-            // Owner ve Admin her zaman ekleyebilir
             if (isOwner || isAdmin) return true;
-            
-            // CoAdmin sadece yetkili kanalında ekleyebilir
             if (isCoAdmin && currentChannel === authorizedChannel) return true;
-            
             return false;
         }
 
         function canDeleteMedia() {
-            // Owner ve Admin her zaman silebilir
             if (isOwner || isAdmin) return true;
-            
-            // CoAdmin sadece yetkili kanalında silebilir
             if (isCoAdmin && currentChannel === authorizedChannel) return true;
-            
             return false;
         }
 
         function canStartLiveStream() {
-            // Owner ve Admin her zaman başlatabilir
             if (isOwner || isAdmin) return true;
-            
-            // CoAdmin sadece yetkili kanalında başlatabilir
             if (isCoAdmin && currentChannel === authorizedChannel) return true;
-            
-            // Operator sadece izleyebilir
             return false;
         }
 
         function updateMediaPermissions() {
             const addBtn = document.getElementById('addMediaBtn');
             const clearBtn = document.getElementById('clearPlaylistBtn');
-            const liveTab = document.getElementById('liveTab');
             
             if (canManageMedia()) {
                 addBtn.classList.remove('disabled');
                 clearBtn.classList.remove('disabled');
                 addBtn.style.opacity = '1';
                 clearBtn.style.opacity = '1';
+                addDebugLog('✅ Medya yönetim yetkisi aktif');
             } else {
                 addBtn.classList.add('disabled');
                 clearBtn.classList.add('disabled');
                 addBtn.style.opacity = '0.4';
                 clearBtn.style.opacity = '0.4';
+                addDebugLog('⚠️ Medya yönetim yetkisi yok');
             }
-            
-            // Canlı yayın butonunu yetkiye göre göster/gizle
-            if (canStartLiveStream()) {
-                liveTab.style.display = 'flex';
-            } else {
-                liveTab.style.display = 'flex'; // Herkes görebilir ama başlatamaz
-            }
-        }
-
-        // ========== MEDYA OYNATMA - SENKRONİZE ==========
-        function stopAllMedia() {
-            const youtubeIframe = document.getElementById('youtubeIframe');
-            youtubeIframe.src = youtubeIframe.src.replace('autoplay=1', 'autoplay=0');
-            
-            const spotifyIframe = document.getElementById('spotifyIframe');
-            spotifyIframe.src = spotifyIframe.src.replace('autoplay=1', 'autoplay=0');
         }
 
         // ========== YOUTUBE OYNAT ==========
         function playVideo(index) {
             if (!youtubePlaylist[index]) return;
             
-            // Yetki kontrolü
             if (!canManageMedia() && youtubePlaylist[index].addedBy !== currentUser?.name) {
                 addSystemMessage('⛔ Bu videoyu oynatma yetkiniz yok!');
                 return;
             }
             
             const video = youtubePlaylist[index];
+            addDebugLog(`🎬 YouTube oynatılıyor: ${video.title}`);
             
-            // Firebase'e YouTube durumunu kaydet
-            if (database) {
-                database.ref('mediaState/youtube').set({
-                    isActive: true,
-                    videoId: video.id,
-                    title: video.title,
-                    addedBy: currentUser.name,
-                    channel: currentChannel,
-                    timestamp: Date.now()
-                });
-                
-                // Diğer medya durumlarını pasif yap
-                database.ref('mediaState/spotify').update({ isActive: false });
-                if (!isOwner && !isAdmin) {
-                    database.ref('mediaState/live').update({ isActive: false });
-                }
-            }
+            updateMediaState('youtube', {
+                videoId: video.id,
+                title: video.title
+            });
             
             addSystemMessage(`🎬 YouTube: ${video.title} (${currentUser.name})`);
         }
@@ -1447,45 +1611,27 @@
         function playSpotify(index) {
             if (!spotifyPlaylist[index]) return;
             
-            // Yetki kontrolü
             if (!canManageMedia() && spotifyPlaylist[index].addedBy !== currentUser?.name) {
                 addSystemMessage('⛔ Bu öğeyi oynatma yetkiniz yok!');
                 return;
             }
             
             const item = spotifyPlaylist[index];
+            addDebugLog(`🎵 Spotify oynatılıyor: ${item.title}`);
             
             let embedUrl = '';
-            if (item.type === 'playlist' || item.id.includes('playlist')) {
-                const playlistId = item.id.replace('playlist/', '').split('?')[0];
-                embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}?utm_source=generator&autoplay=1`;
-            } else if (item.type === 'track' || item.id.includes('track')) {
-                const trackId = item.id.replace('track/', '').split('?')[0];
-                embedUrl = `https://open.spotify.com/embed/track/${trackId}?utm_source=generator&autoplay=1`;
-            } else if (item.type === 'album' || item.id.includes('album')) {
-                const albumId = item.id.replace('album/', '').split('?')[0];
-                embedUrl = `https://open.spotify.com/embed/album/${albumId}?utm_source=generator`;
+            if (item.type === 'playlist') {
+                embedUrl = `https://open.spotify.com/embed/playlist/${item.id}?utm_source=generator&autoplay=1`;
+            } else if (item.type === 'track') {
+                embedUrl = `https://open.spotify.com/embed/track/${item.id}?utm_source=generator&autoplay=1`;
             } else {
                 embedUrl = `https://open.spotify.com/embed/${item.id}?utm_source=generator&autoplay=1`;
             }
             
-            // Firebase'e Spotify durumunu kaydet
-            if (database) {
-                database.ref('mediaState/spotify').set({
-                    isActive: true,
-                    embedUrl: embedUrl,
-                    title: item.title,
-                    addedBy: currentUser.name,
-                    channel: currentChannel,
-                    timestamp: Date.now()
-                });
-                
-                // Diğer medya durumlarını pasif yap
-                database.ref('mediaState/youtube').update({ isActive: false });
-                if (!isOwner && !isAdmin) {
-                    database.ref('mediaState/live').update({ isActive: false });
-                }
-            }
+            updateMediaState('spotify', {
+                embedUrl: embedUrl,
+                title: item.title
+            });
             
             addSystemMessage(`🎵 Spotify: ${item.title} (${currentUser.name})`);
         }
@@ -1513,11 +1659,9 @@
             }
             
             const title = document.getElementById('liveTitle').value.trim() || `${currentUser.name} Canlı Yayını`;
-            const description = document.getElementById('liveDescription').value.trim() || 'Canlı yayın açıklaması';
+            addDebugLog(`📹 Canlı yayın başlatılıyor: ${title}`);
             
             try {
-                stopAllMedia();
-                
                 mediaStream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: currentFacingMode }, 
                     audio: true 
@@ -1526,44 +1670,31 @@
                 const videoElement = document.getElementById('liveVideo');
                 videoElement.srcObject = mediaStream;
                 
-                // Firebase'e canlı yayın durumunu kaydet
-                if (database) {
-                    const liveStream = {
-                        id: `live_${Date.now()}`,
-                        title: title,
-                        description: description,
-                        addedBy: currentUser.name,
-                        role: currentUser.role,
-                        channel: currentChannel,
-                        timestamp: Date.now(),
-                        isActive: true
-                    };
-                    
-                    liveStreams.push(liveStream);
-                    
-                    database.ref('mediaState/live').set({
-                        isActive: true,
-                        streamId: liveStream.id,
-                        title: title,
-                        description: description,
-                        addedBy: currentUser.name,
-                        channel: currentChannel,
-                        timestamp: Date.now()
-                    });
-                    
-                    // Diğer medya durumlarını pasif yap
-                    database.ref('mediaState/youtube').update({ isActive: false });
-                    database.ref('mediaState/spotify').update({ isActive: false });
-                }
+                const liveStream = {
+                    id: `live_${Date.now()}`,
+                    title: title,
+                    addedBy: currentUser.name,
+                    role: currentUser.role,
+                    timestamp: Date.now(),
+                    isActive: true
+                };
+                
+                liveStreams.push(liveStream);
+                
+                updateMediaState('live', {
+                    title: title,
+                    description: document.getElementById('liveDescription').value
+                });
                 
                 switchMediaTab('live');
                 renderLivePlaylist();
                 
                 addSystemMessage(`📹 Canlı yayın başlatıldı: ${title} (${currentUser.name})`);
                 closeLiveStreamModal();
+                addDebugLog('✅ Canlı yayın başlatıldı');
                 
             } catch (error) {
-                console.error('Kamera hatası:', error);
+                addDebugLog(`❌ Kamera hatası: ${error.message}`, 'error');
                 addSystemMessage('❌ Kamera erişimi sağlanamadı!');
             }
         }
@@ -1574,6 +1705,8 @@
                 return;
             }
             
+            addDebugLog('📹 Canlı yayın durduruluyor...');
+            
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => track.stop());
                 mediaStream = null;
@@ -1582,12 +1715,9 @@
             const videoElement = document.getElementById('liveVideo');
             videoElement.srcObject = null;
             
-            // Firebase'de canlı yayını durdur
             if (database) {
-                database.ref('mediaState/live').update({ 
-                    isActive: false,
-                    endedAt: Date.now()
-                });
+                database.ref('mediaState/live').update({ isActive: false })
+                    .then(() => addDebugLog('✅ Canlı yayın durduruldu'));
             }
             
             if (liveStreams.length > 0) {
@@ -1602,6 +1732,7 @@
             if (!mediaStream) return;
             
             currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+            addDebugLog(`📸 Kamera değiştiriliyor: ${currentFacingMode}`);
             
             mediaStream.getTracks().forEach(track => track.stop());
             
@@ -1612,17 +1743,16 @@
                 mediaStream = newStream;
                 const videoElement = document.getElementById('liveVideo');
                 videoElement.srcObject = newStream;
-                
-                addSystemMessage(`📸 Kamera değiştirildi: ${currentFacingMode === 'user' ? 'Ön' : 'Arka'} kamera`);
+                addSystemMessage(`📸 Kamera: ${currentFacingMode === 'user' ? 'Ön' : 'Arka'}`);
             }).catch(error => {
-                console.error('Kamera değiştirme hatası:', error);
+                addDebugLog(`❌ Kamera değiştirme hatası: ${error.message}`, 'error');
             });
         }
 
         // ========== PLAYLIST'E EKLE ==========
         function addToPlaylist() {
             if (!canManageMedia()) {
-                addSystemMessage('⛔ Sadece Owner, Admin ve yetkili Co-Admin medya ekleyebilir!');
+                addSystemMessage('⛔ Medya ekleme yetkiniz yok!');
                 closeAddMediaModal();
                 return;
             }
@@ -1641,8 +1771,6 @@
                     videoId = url.split('v=')[1]?.split('&')[0];
                 } else if (url.includes('youtu.be/')) {
                     videoId = url.split('youtu.be/')[1]?.split('?')[0];
-                } else if (url.includes('youtube.com/embed/')) {
-                    videoId = url.split('embed/')[1]?.split('?')[0];
                 } else {
                     videoId = url;
                 }
@@ -1653,12 +1781,11 @@
                         title: title || `Video ${youtubePlaylist.length + 1}`,
                         addedBy: currentUser.name,
                         role: currentUser.role,
-                        channel: currentChannel,
                         timestamp: Date.now()
                     });
                     renderPlaylist();
-                    
-                    addSystemMessage(`✅ YouTube eklendi: ${title || videoId} (${currentUser.name})`);
+                    addDebugLog(`✅ YouTube eklendi: ${title || videoId}`);
+                    addSystemMessage(`✅ YouTube eklendi: ${title || videoId}`);
                     closeAddMediaModal();
                 }
             } else {
@@ -1671,9 +1798,6 @@
                 } else if (url.includes('open.spotify.com/track/')) {
                     spotifyId = url.split('track/')[1]?.split('?')[0];
                     type = 'track';
-                } else if (url.includes('open.spotify.com/album/')) {
-                    spotifyId = url.split('album/')[1]?.split('?')[0];
-                    type = 'album';
                 }
                 
                 if (spotifyId) {
@@ -1683,12 +1807,11 @@
                         type: type,
                         addedBy: currentUser.name,
                         role: currentUser.role,
-                        channel: currentChannel,
                         timestamp: Date.now()
                     });
                     renderSpotifyPlaylist();
-                    
-                    addSystemMessage(`✅ Spotify eklendi: ${title || spotifyId} (${currentUser.name})`);
+                    addDebugLog(`✅ Spotify eklendi: ${title || spotifyId}`);
+                    addSystemMessage(`✅ Spotify eklendi: ${title || spotifyId}`);
                     closeAddMediaModal();
                 }
             }
@@ -1700,7 +1823,6 @@
         // ========== PLAYLIST GÖSTERME ==========
         function renderPlaylist() {
             const container = document.getElementById('playlist');
-            
             if (currentMediaTab !== 'youtube') return;
             
             if (youtubePlaylist.length === 0) {
@@ -1708,27 +1830,19 @@
                 return;
             }
             
-            let html = `
-                <div class="playlist-header">
-                    <span class="playlist-title"><i class="fab fa-youtube"></i> YouTube Playlist</span>
-                    <span style="color:#aaa; font-size:12px;">${youtubePlaylist.length} video</span>
-                </div>
-            `;
+            let html = `<div class="playlist-header"><span class="playlist-title"><i class="fab fa-youtube"></i> YouTube Playlist</span><span style="color:#aaa;">${youtubePlaylist.length} video</span></div>`;
             
             youtubePlaylist.forEach((item, index) => {
-                const canDelete = (isOwner || isAdmin || (isCoAdmin && currentChannel === authorizedChannel) || item.addedBy === currentUser?.name);
+                const canDelete = isOwner || isAdmin || (isCoAdmin && currentChannel === authorizedChannel) || item.addedBy === currentUser?.name;
                 
                 html += `
                     <div class="playlist-item" onclick="playVideo(${index})">
-                        <div class="playlist-thumb">
-                            <i class="fab fa-youtube" style="color:#aaa;"></i>
-                        </div>
+                        <div class="playlist-thumb"><i class="fab fa-youtube"></i></div>
                         <div class="playlist-info">
                             <div class="playlist-title-text">${item.title}</div>
                             <div class="playlist-meta">
-                                <span>${item.addedBy || 'system'}</span>
-                                <span class="role-badge ${item.role || 'system'}">${item.role || 'system'}</span>
-                                ${item.channel ? `<span style="color:#6495ed;">#${item.channel}</span>` : ''}
+                                <span>${item.addedBy}</span>
+                                <span class="role-badge ${item.role}">${item.role}</span>
                             </div>
                         </div>
                         ${canDelete ? `
@@ -1747,7 +1861,6 @@
 
         function renderSpotifyPlaylist() {
             const container = document.getElementById('playlist');
-            
             if (currentMediaTab !== 'spotify') return;
             
             if (spotifyPlaylist.length === 0) {
@@ -1755,27 +1868,19 @@
                 return;
             }
             
-            let html = `
-                <div class="playlist-header">
-                    <span class="playlist-title"><i class="fab fa-spotify" style="color:#1db954;"></i> Spotify Playlist</span>
-                    <span style="color:#aaa; font-size:12px;">${spotifyPlaylist.length} öğe</span>
-                </div>
-            `;
+            let html = `<div class="playlist-header"><span class="playlist-title"><i class="fab fa-spotify" style="color:#1db954;"></i> Spotify Playlist</span><span style="color:#aaa;">${spotifyPlaylist.length} öğe</span></div>`;
             
             spotifyPlaylist.forEach((item, index) => {
-                const canDelete = (isOwner || isAdmin || (isCoAdmin && currentChannel === authorizedChannel) || item.addedBy === currentUser?.name);
+                const canDelete = isOwner || isAdmin || (isCoAdmin && currentChannel === authorizedChannel) || item.addedBy === currentUser?.name;
                 
                 html += `
                     <div class="playlist-item spotify" onclick="playSpotify(${index})">
-                        <div class="playlist-thumb">
-                            <i class="fab fa-spotify" style="color:#1db954;"></i>
-                        </div>
+                        <div class="playlist-thumb"><i class="fab fa-spotify" style="color:#1db954;"></i></div>
                         <div class="playlist-info">
                             <div class="playlist-title-text">${item.title}</div>
                             <div class="playlist-meta">
-                                <span>${item.addedBy || 'system'}</span>
-                                <span class="role-badge ${item.role || 'system'}">${item.role || 'system'}</span>
-                                ${item.channel ? `<span style="color:#6495ed;">#${item.channel}</span>` : ''}
+                                <span>${item.addedBy}</span>
+                                <span class="role-badge ${item.role}">${item.role}</span>
                             </div>
                         </div>
                         ${canDelete ? `
@@ -1794,7 +1899,6 @@
 
         function renderLivePlaylist() {
             const container = document.getElementById('playlist');
-            
             if (currentMediaTab !== 'live') return;
             
             if (liveStreams.length === 0) {
@@ -1802,28 +1906,20 @@
                 return;
             }
             
-            let html = `
-                <div class="playlist-header">
-                    <span class="playlist-title"><i class="fas fa-video" style="color:#ff4444;"></i> Canlı Yayınlar</span>
-                    <span style="color:#aaa; font-size:12px;">${liveStreams.length} yayın</span>
-                </div>
-            `;
+            let html = `<div class="playlist-header"><span class="playlist-title"><i class="fas fa-video" style="color:#ff4444;"></i> Canlı Yayınlar</span><span style="color:#aaa;">${liveStreams.length} yayın</span></div>`;
             
             liveStreams.forEach((item, index) => {
                 const isActive = item.isActive;
-                const canDelete = (isOwner || isAdmin || (isCoAdmin && currentChannel === authorizedChannel) || item.addedBy === currentUser?.name);
+                const canDelete = isOwner || isAdmin || (isCoAdmin && currentChannel === authorizedChannel) || item.addedBy === currentUser?.name;
                 
                 html += `
                     <div class="playlist-item live ${isActive ? 'active' : ''}">
-                        <div class="playlist-thumb">
-                            <i class="fas fa-video" style="color:${isActive ? '#ff4444' : '#aaa'};"></i>
-                        </div>
+                        <div class="playlist-thumb"><i class="fas fa-video" style="color:${isActive ? '#ff4444' : '#aaa'};"></i></div>
                         <div class="playlist-info">
                             <div class="playlist-title-text">${item.title}</div>
                             <div class="playlist-meta">
-                                <span>${item.addedBy || 'system'}</span>
-                                <span class="role-badge ${item.role || 'system'}">${item.role || 'system'}</span>
-                                ${item.channel ? `<span style="color:#6495ed;">#${item.channel}</span>` : ''}
+                                <span>${item.addedBy}</span>
+                                <span class="role-badge ${item.role}">${item.role}</span>
                                 ${isActive ? '<span style="color:#ff4444;"><i class="fas fa-circle"></i> CANLI</span>' : ''}
                             </div>
                         </div>
@@ -1851,6 +1947,7 @@
             const removed = youtubePlaylist[index];
             youtubePlaylist.splice(index, 1);
             renderPlaylist();
+            addDebugLog(`🗑️ YouTube silindi: ${removed.title}`);
             addSystemMessage(`🗑️ YouTube silindi: ${removed.title}`);
         }
 
@@ -1863,13 +1960,14 @@
             const removed = spotifyPlaylist[index];
             spotifyPlaylist.splice(index, 1);
             renderSpotifyPlaylist();
+            addDebugLog(`🗑️ Spotify silindi: ${removed.title}`);
             addSystemMessage(`🗑️ Spotify silindi: ${removed.title}`);
         }
 
         // ========== PLAYLIST TEMİZLE ==========
         function clearPlaylist() {
             if (!canManageMedia()) {
-                addSystemMessage('⛔ Sadece Owner, Admin ve yetkili Co-Admin playlist temizleyebilir!');
+                addSystemMessage('⛔ Playlist temizleme yetkiniz yok!');
                 return;
             }
             
@@ -1877,12 +1975,14 @@
                 if (confirm('YouTube playlistini temizlemek istediğinize emin misiniz?')) {
                     youtubePlaylist = [];
                     renderPlaylist();
+                    addDebugLog('🗑️ YouTube playlist temizlendi');
                     addSystemMessage('🗑️ YouTube playlist temizlendi');
                 }
             } else if (currentMediaTab === 'spotify') {
                 if (confirm('Spotify playlistini temizlemek istediğinize emin misiniz?')) {
                     spotifyPlaylist = [];
                     renderSpotifyPlaylist();
+                    addDebugLog('🗑️ Spotify playlist temizlendi');
                     addSystemMessage('🗑️ Spotify playlist temizlendi');
                 }
             }
@@ -1892,43 +1992,31 @@
         function switchMediaTab(tab) {
             currentMediaTab = tab;
             
-            const youtubeTab = document.getElementById('youtubeTab');
-            const spotifyTab = document.getElementById('spotifyTab');
-            const liveTab = document.getElementById('liveTab');
-            const youtubePlayer = document.getElementById('youtubePlayer');
-            const spotifyPlayer = document.getElementById('spotifyPlayer');
-            const livePlayer = document.getElementById('livePlayer');
-            const modalTitle = document.getElementById('modalTitle');
-            const addBtn = document.getElementById('addMediaConfirmBtn');
-            const modalContent = document.getElementById('modalContent');
-            
-            youtubeTab.classList.remove('active');
-            spotifyTab.classList.remove('active');
-            liveTab.classList.remove('active');
+            document.getElementById('youtubeTab').classList.remove('active');
+            document.getElementById('spotifyTab').classList.remove('active');
+            document.getElementById('liveTab').classList.remove('active');
             
             if (tab === 'youtube') {
-                youtubeTab.classList.add('active');
-                youtubePlayer.style.display = 'block';
-                spotifyPlayer.style.display = 'none';
-                livePlayer.style.display = 'none';
-                modalTitle.textContent = 'YouTube Video Ekle';
-                addBtn.className = 'modal-btn';
-                modalContent.classList.remove('spotify');
+                document.getElementById('youtubeTab').classList.add('active');
+                document.getElementById('youtubePlayer').style.display = 'block';
+                document.getElementById('spotifyPlayer').style.display = 'none';
+                document.getElementById('livePlayer').style.display = 'none';
+                document.getElementById('modalTitle').textContent = 'YouTube Video Ekle';
+                document.getElementById('addMediaConfirmBtn').className = 'modal-btn';
                 renderPlaylist();
             } else if (tab === 'spotify') {
-                spotifyTab.classList.add('active');
-                youtubePlayer.style.display = 'none';
-                spotifyPlayer.style.display = 'block';
-                livePlayer.style.display = 'none';
-                modalTitle.textContent = 'Spotify Ekle';
-                addBtn.className = 'modal-btn spotify';
-                modalContent.classList.add('spotify');
+                document.getElementById('spotifyTab').classList.add('active');
+                document.getElementById('youtubePlayer').style.display = 'none';
+                document.getElementById('spotifyPlayer').style.display = 'block';
+                document.getElementById('livePlayer').style.display = 'none';
+                document.getElementById('modalTitle').textContent = 'Spotify Ekle';
+                document.getElementById('addMediaConfirmBtn').className = 'modal-btn spotify';
                 renderSpotifyPlaylist();
             } else if (tab === 'live') {
-                liveTab.classList.add('active');
-                youtubePlayer.style.display = 'none';
-                spotifyPlayer.style.display = 'none';
-                livePlayer.style.display = 'block';
+                document.getElementById('liveTab').classList.add('active');
+                document.getElementById('youtubePlayer').style.display = 'none';
+                document.getElementById('spotifyPlayer').style.display = 'none';
+                document.getElementById('livePlayer').style.display = 'block';
                 renderLivePlaylist();
                 
                 if (canStartLiveStream() && !mediaStream) {
@@ -1945,7 +2033,7 @@
                 updateOnlineUsers(snapshot.val());
             });
             
-            database.ref('messages').limitToLast(100).on('value', (snapshot) => {
+            database.ref('messages').limitToLast(50).on('value', (snapshot) => {
                 updateMessages(snapshot.val());
             });
         }
@@ -1962,8 +2050,7 @@
             let onlineCount = 0;
             
             Object.entries(usersData).forEach(([username, data]) => {
-                if (!data) return;
-                if (now - (data.lastSeen || 0) < 30000) {
+                if (data && now - (data.lastSeen || 0) < 30000) {
                     onlineCount++;
                     if (username !== currentUser?.name) {
                         onlineUsers.push(data);
@@ -1992,11 +2079,11 @@
                 else if (user.role === 'operator') roleIcon = '🛡️ ';
                 
                 html += `
-                    <div class="user-item" onclick="openPrivateChat('${user.name}')">
-                        <div class="user-avatar-small">${user.name.charAt(0).toUpperCase()}</div>
+                    <div class="user-item">
+                        <div class="user-avatar-small">${user.name?.charAt(0).toUpperCase() || '?'}</div>
                         <div class="user-info">
-                            <div class="user-name">${roleIcon}${user.name}</div>
-                            <div class="user-status">${user.role || 'user'} ${user.authorizedChannel && user.authorizedChannel !== 'all' ? '• ' + user.authorizedChannel : ''}</div>
+                            <div class="user-name">${roleIcon}${user.name || 'İsimsiz'}</div>
+                            <div class="user-status">${user.role || 'user'}</div>
                         </div>
                         <div class="online-dot"></div>
                     </div>
@@ -2037,7 +2124,7 @@
                 messageDiv.className = `message ${isOwn ? 'right' : ''}`;
                 messageDiv.innerHTML = `
                     <div class="message-header">
-                        <span class="message-sender" onclick="openPrivateChat('${msg.sender}')">${senderName}</span>
+                        <span class="message-sender">${senderName}</span>
                         <span class="message-time">${time}</span>
                     </div>
                     <div class="message-text">${escapeHTML(msg.text)}</div>
@@ -2055,18 +2142,10 @@
             
             if (!text || !currentUser || !database) return;
             
-            if (text.startsWith('/')) {
-                handleCommand(text);
-                input.value = '';
-                autoResize(input);
-                return;
-            }
-            
             await database.ref('messages').push({
                 sender: currentUser.name,
                 text: text,
                 role: currentUser.role,
-                channel: currentChannel,
                 timestamp: Date.now()
             });
             
@@ -2089,33 +2168,10 @@
             });
         }
 
-        // ========== KOMUT İŞLEME ==========
-        function handleCommand(cmd) {
-            const parts = cmd.substring(1).split(' ');
-            const command = parts[0].toLowerCase();
-            
-            if (command === 'temizle' || command === 'clear') {
-                if (isOwner || isAdmin || (isCoAdmin && currentChannel === authorizedChannel)) {
-                    if (confirm('Tüm mesajları temizlemek istediğinize emin misiniz?')) {
-                        database.ref('messages').remove();
-                        addSystemMessage('✅ Tüm mesajlar temizlendi!');
-                    }
-                }
-            }
-            
-            if (command === 'kanal' && parts[1]) {
-                if (isOwner || isAdmin) {
-                    currentChannel = parts[1];
-                    document.getElementById('currentChannel').textContent = currentChannel;
-                    addSystemMessage(`✅ Kanal değiştirildi: #${currentChannel}`);
-                }
-            }
-        }
-
         // ========== MODAL İŞLEMLERİ ==========
         function openAddMediaModal() {
             if (!canManageMedia()) {
-                addSystemMessage('⛔ Sadece Owner, Admin ve yetkili Co-Admin medya ekleyebilir!');
+                addSystemMessage('⛔ Medya ekleme yetkiniz yok!');
                 return;
             }
             document.getElementById('addMediaModal').classList.add('active');
@@ -2136,10 +2192,6 @@
         }
 
         // ========== DİĞER FONKSİYONLAR ==========
-        function openPrivateChat(username) {
-            addSystemMessage(`💬 ${username} ile özel sohbet başlatıldı`);
-        }
-
         function uploadAvatar() {
             document.getElementById('avatarUpload').click();
         }
@@ -2152,6 +2204,7 @@
                     document.getElementById('avatarImg').src = event.target.result;
                     document.getElementById('avatarImg').style.display = 'block';
                     document.getElementById('avatarText').style.display = 'none';
+                    addDebugLog('✅ Profil fotoğrafı yüklendi');
                 };
                 reader.readAsDataURL(file);
             }
@@ -2200,11 +2253,13 @@
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => track.stop());
             }
+            addDebugLog('🚪 Çıkış yapılıyor...');
             location.reload();
         }
 
         // ========== SAYFA YÜKLENDİĞİNDE ==========
         document.addEventListener('DOMContentLoaded', function() {
+            addDebugLog('🚀 Popbox başlatılıyor...');
             initializeFirebase();
             
             document.addEventListener('keypress', function(e) {
@@ -2227,6 +2282,7 @@
             });
             
             renderPlaylist();
+            addDebugLog('✅ Popbox hazır!');
         });
 
         // ========== GLOBAL FONKSİYONLAR ==========
@@ -2255,6 +2311,13 @@
         window.startLiveStream = startLiveStream;
         window.stopLiveStream = stopLiveStream;
         window.switchCamera = switchCamera;
+        window.clearDebugLog = clearDebugLog;
+        
+        // Private chat fonksiyonu
+        function openPrivateChat(username) {
+            addSystemMessage(`💬 ${username} ile özel sohbet başlatıldı`);
+        }
+        window.openPrivateChat = openPrivateChat;
     </script>
 </body>
 </html>
