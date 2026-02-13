@@ -3029,18 +3029,17 @@
         window.switchCamera = switchCamera;
         window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
     </script>
-
-      <!-- Mate Bot -->
+    <!-- Mate Bot -->
     <script src="https://raw.githubusercontent.com/popboxmusic/Popboxchat/main/matebot.js"></script>
 
-    <!-- ========== POPBOX KOMUT SİSTEMİ - ÇALIŞAN VERSİYON ========== -->
+    <!-- ========== POPBOX KOMUT SİSTEMİ - SON VERSİYON ========== -->
     <script>
         // Sayfa yüklendiğinde komut sistemini başlat
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 Komut sistemi hazırlanıyor...');
             setTimeout(function() {
                 setupCommandSystem();
-            }, 1500); // Mate Bot'un yüklenmesi için biraz bekle
+            }, 2000);
         });
 
         function setupCommandSystem() {
@@ -3055,6 +3054,7 @@
                 
                 if (!text || !currentUser || !database) return;
                 
+                // KOMUT KONTROLÜ
                 if (text.startsWith('/')) {
                     handleCommand(text);
                     input.value = '';
@@ -3081,35 +3081,59 @@
             };
             
             console.log('✅ Komut sistemi AKTİF!');
+            console.log('💡 /help yazarak komutları görebilirsiniz');
         }
 
+        // MESAJ GÖNDERME FONKSİYONU
+        function sendSystemMessage(text) {
+            if (typeof addSystemMessage === 'function') {
+                addSystemMessage(text);
+            } else {
+                // Doğrudan Firebase'e yaz
+                if (database) {
+                    database.ref('messages').push({
+                        sender: 'Sistem',
+                        text: text.replace(/\*\*/g, ''),
+                        type: 'system',
+                        timestamp: Date.now()
+                    });
+                } else {
+                    console.log('SİSTEM:', text);
+                }
+            }
+        }
+
+        // KOMUT İŞLEYİCİ
         function handleCommand(cmd) {
             const parts = cmd.substring(1).split(' ');
             const command = parts[0].toLowerCase();
             const args = parts.slice(1);
             
-            console.log('🎯 Komut alındı:', command, args);
+            console.log('🎯 Komut:', command, args);
             
+            // YARDIM
             if (command === 'help' || command === 'yardım' || command === 'h') {
-                let mesaj = '🎮 **POPBOX KOMUTLARI**\n';
+                let mesaj = '🎮 POPBOX KOMUTLARI\n';
                 mesaj += '─────────────────\n';
-                mesaj += '🔹 /help - Bu menüyü göster\n';
-                mesaj += '🔹 /ping - Bağlantı testi\n';
-                mesaj += '🔹 /me [yazı] - Aksiyon mesajı\n';
-                mesaj += '🔹 /temizle - Sohbeti temizle (Admin)\n';
-                addSystemMessage(mesaj);
+                mesaj += '/help - Bu menüyü göster\n';
+                mesaj += '/ping - Bağlantı testi\n';
+                mesaj += '/me [yazı] - Aksiyon mesajı\n';
+                mesaj += '/temizle - Sohbeti temizle (Admin)\n';
+                sendSystemMessage(mesaj);
                 return;
             }
             
+            // PING
             if (command === 'ping') {
-                addSystemMessage('🏓 **Pong!**');
+                sendSystemMessage('🏓 Pong!');
                 return;
             }
             
-            if (command === 'me' || command === 'action') {
+            // ME
+            if (command === 'me') {
                 const text = args.join(' ');
                 if (!text) {
-                    addSystemMessage('❌ /me [yapılan işlem]');
+                    sendSystemMessage('❌ /me [yapılan işlem]');
                     return;
                 }
                 database.ref('messages').push({
@@ -3122,20 +3146,22 @@
                 return;
             }
             
-            if (command === 'temizle' || command === 'clear' || command === 'cls') {
+            // TEMİZLE
+            if (command === 'temizle' || command === 'clear') {
                 if (isOwner || isAdmin) {
                     if (confirm('Sohbeti temizlemek istediğinize emin misiniz?')) {
                         database.ref('messages').remove();
-                        addSystemMessage('✅ **Sohbet temizlendi!**');
+                        sendSystemMessage('✅ Sohbet temizlendi!');
                     }
                 } else {
-                    addSystemMessage('⛔ Bu komut için yetkiniz yok!');
+                    sendSystemMessage('⛔ Bu komut için yetkiniz yok!');
                 }
                 return;
             }
             
-            addSystemMessage(`❌ Bilinmeyen komut: **/${command}**`);
-            addSystemMessage('💡 /help yazarak komutları görebilirsiniz');
+            // BİLİNMEYEN
+            sendSystemMessage(`❌ Bilinmeyen komut: /${command}`);
+            sendSystemMessage('💡 /help yazarak komutları görebilirsiniz');
         }
     </script>
 
