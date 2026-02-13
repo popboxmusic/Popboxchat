@@ -3030,8 +3030,134 @@
         window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
     </script>
 
-    <!-- IRC Komutları -->
-   <script src="https://raw.githubusercontent.com/popboxmusic/Popboxchat/main/komutlar.js"></script>
+    <!-- ========== POPBOX KOMUT SİSTEMİ - ÇALIŞAN VERSİYON ========== -->
+<script>
+    // Sayfa yüklendiğinde komut sistemini başlat
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('🚀 Komut sistemi hazırlanıyor...');
+        
+        // 1 saniye bekle, sonra komut sistemini kur
+        setTimeout(function() {
+            setupCommandSystem();
+        }, 1000);
+    });
+
+    // Komut sistemini kuran fonksiyon
+    function setupCommandSystem() {
+        console.log('✅ Komut sistemi kuruluyor...');
+        
+        // Mevcut sendMessage fonksiyonunu yedekle
+        if (window.originalSendMessage) return;
+        
+        window.originalSendMessage = window.sendMessage;
+        
+        // Yeni sendMessage - komutları yakala
+        window.sendMessage = function() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            
+            if (!text || !currentUser || !database) return;
+            
+            // KOMUT KONTROLÜ - en önce bu!
+            if (text.startsWith('/')) {
+                handleCommand(text);
+                input.value = '';
+                autoResize(input);
+                return;
+            }
+            
+            // Özel mesaj
+            if (activePrivateChat) {
+                sendPrivateMessage(activePrivateChat, text);
+                input.value = '';
+                autoResize(input);
+                return;
+            }
+            
+            // Normal mesaj
+            database.ref('messages').push({
+                sender: currentUser.name,
+                text: text,
+                role: currentUser.role,
+                timestamp: Date.now()
+            });
+            
+            input.value = '';
+            autoResize(input);
+        };
+        
+        console.log('✅ Komut sistemi AKTİF!');
+    }
+
+    // KOMUT İŞLEYİCİ - ana fonksiyon
+    function handleCommand(cmd) {
+        const parts = cmd.substring(1).split(' ');
+        const command = parts[0].toLowerCase();
+        const args = parts.slice(1);
+        
+        console.log('🎯 Komut alındı:', command, args);
+        
+        // ----- YARDIM KOMUTU -----
+        if (command === 'help' || command === 'yardım' || command === 'h') {
+            let mesaj = '🎮 **POPBOX KOMUTLARI**\n';
+            mesaj += '─────────────────\n';
+            mesaj += '🔹 /help - Bu menüyü göster\n';
+            mesaj += '🔹 /ping - Bağlantı testi\n';
+            mesaj += '🔹 /me [yazı] - Aksiyon mesajı\n';
+            mesaj += '🔹 /temizle - Sohbeti temizle (Admin)\n';
+            mesaj += '🔹 /join [kanal] - Kanala katıl\n';
+            addSystemMessage(mesaj);
+            return;
+        }
+        
+        // ----- PİNG KOMUTU -----
+        if (command === 'ping') {
+            addSystemMessage('🏓 **Pong!**');
+            return;
+        }
+        
+        // ----- ME / ACTION KOMUTU -----
+        if (command === 'me' || command === 'action') {
+            const text = args.join(' ');
+            if (!text) {
+                addSystemMessage('❌ /me [yapılan işlem]');
+                return;
+            }
+            database.ref('messages').push({
+                sender: currentUser.name,
+                text: `* ${currentUser.name} ${text}`,
+                role: currentUser.role,
+                type: 'action',
+                timestamp: Date.now()
+            });
+            return;
+        }
+        
+        // ----- TEMİZLE KOMUTU -----
+        if (command === 'temizle' || command === 'clear' || command === 'cls') {
+            if (isOwner || isAdmin) {
+                if (confirm('Sohbeti temizlemek istediğinize emin misiniz?')) {
+                    database.ref('messages').remove();
+                    addSystemMessage('✅ **Sohbet temizlendi!**');
+                }
+            } else {
+                addSystemMessage('⛔ Bu komut için yetkiniz yok!');
+            }
+            return;
+        }
+        
+        // ----- KANAL KATIL -----
+        if (command === 'join' || command === 'katil') {
+            const channel = args[0] || 'genel';
+            addSystemMessage(`✅ **${channel}** kanalına katıldınız!`);
+            return;
+        }
+        
+        // ----- BİLİNMEYEN KOMUT -----
+        addSystemMessage(`❌ Bilinmeyen komut: **/${command}**`);
+        addSystemMessage('💡 /help yazarak komutları görebilirsiniz');
+    }
+</script>
     
     <!-- Mate Bot -->
     <script src="https://raw.githubusercontent.com/popboxmusic/Popboxchat/main/matebot.js"></script>
