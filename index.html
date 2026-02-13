@@ -12,21 +12,603 @@
     <!-- FIREBASE -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+    
+    <!-- YOUTUBE API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
     
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-        body { background: #0f0f0f; color: #fff; overflow: hidden; height: 100vh; }
+        /* ========== RESET & GLOBAL ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: #0f0f0f;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .app {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* ========== SCROLLBAR ========== */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #3f3f3f; border-radius: 4px; }
         
-        /* LOGIN */
+        /* ========== SOL MENÜ ========== */
+        .sidebar {
+            width: 80px;
+            background: #0a0a0a;
+            border-right: 1px solid #2a2a2a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px 0;
+            gap: 24px;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .menu-item {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #aaa;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 20px;
+            position: relative;
+        }
+
+        .menu-item:hover { background: #272727; color: #fff; }
+        .menu-item.active { color: #fff; background: #3f3f3f; }
+
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ff4444;
+            color: white;
+            font-size: 11px;
+            min-width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            border: 2px solid #0a0a0a;
+        }
+
+        .user-avatar {
+            margin-top: auto;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #1a1a1a;
+            border: 2px solid #3f3f3f;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        /* ========== KULLANICI PANELİ ========== */
+        .users-panel {
+            width: 280px;
+            background: #0f0f0f;
+            border-right: 1px solid #2a2a2a;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .panel-header {
+            padding: 20px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .panel-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #fff;
+        }
+
+        .online-tabs {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 8px;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 20px;
+            color: #aaa;
+            font-size: 13px;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .tab.active {
+            background: #272727;
+            border-color: #3f3f3f;
+            color: #fff;
+        }
+
+        .user-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .user-item:hover { background: #1a1a1a; }
+
+        .user-avatar-small {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #1a1a1a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            color: #fff;
+        }
+
+        .user-info { flex: 1; }
+        .user-name {
+            font-weight: 500;
+            font-size: 14px;
+            color: #fff;
+        }
+        .user-status { font-size: 12px; color: #aaa; margin-top: 2px; }
+        .online-dot { width: 8px; height: 8px; border-radius: 50%; background: #2ba640; }
+
+        /* ========== CHAT PANELİ ========== */
+        .chat-panel {
+            flex: 1;
+            background: #0f0f0f;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .chat-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            max-width: 80%;
+            animation: fadeIn 0.3s;
+        }
+
+        .message.right { align-self: flex-end; }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .message-sender {
+            font-weight: 600;
+            font-size: 13px;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .message-time { font-size: 11px; color: #aaa; }
+        .message-text { font-size: 14px; color: #fff; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-input-container {
+            padding: 20px 24px;
+            background: #0a0a0a;
+            border-top: 1px solid #2a2a2a;
+        }
+
+        .input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 28px;
+            padding: 8px 8px 8px 20px;
+        }
+
+        .message-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 14px;
+            padding: 12px 0;
+            resize: none;
+            max-height: 120px;
+            outline: none;
+        }
+
+        .send-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: #272727;
+            border: 1px solid #3f3f3f;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .send-btn:hover { background: #3f3f3f; }
+
+        /* ========== MEDYA PANELİ ========== */
+        .media-panel {
+            width: 500px;
+            background: #0a0a0a;
+            border-left: 1px solid #2a2a2a;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .media-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .media-tabs {
+            display: flex;
+            gap: 8px;
+        }
+
+        .media-tab {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #1a1a1a;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 20px;
+        }
+
+        .media-tab.active { background: #ff0000; color: #fff; }
+        .media-tab.spotify.active { background: #1db954; }
+        .media-tab.live.active { background: #ff4444; }
+
+        .media-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .control-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .control-btn:hover { background: #272727; }
+
+        /* ========== YOUTUBE PLAYER ========== */
+        .youtube-player {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-bottom: 1px solid #2a2a2a;
+            display: none;
+        }
+
+        #youtubeContainer { width: 100%; height: 100%; }
+
+        .user-youtube-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            z-index: 200;
+        }
+
+        .user-youtube-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.8);
+            border: 2px solid #fff;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px;
+        }
+
+        /* ========== SPOTIFY PLAYER ========== */
+        .spotify-player {
+            width: 100%;
+            height: 352px;
+            background: #121212;
+            border-bottom: 1px solid #2a2a2a;
+            display: none;
+        }
+
+        .spotify-player iframe { width: 100%; height: 100%; border: none; }
+
+        /* ========== CANLI YAYIN PLAYER ========== */
+        .live-player {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-bottom: 1px solid #2a2a2a;
+            display: none;
+        }
+
+        .live-player video { width: 100%; height: 100%; object-fit: cover; }
+
+        .live-status {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background: rgba(255,68,68,0.9);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* ========== ŞU AN YAYINDA ========== */
+        .now-playing-bar {
+            padding: 10px 20px;
+            background: #0f0f0f;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+        }
+
+        /* ========== PLAYLIST ========== */
+        .playlist {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .playlist-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .playlist-title {
+            font-weight: 600;
+            font-size: 15px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .playlist-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            border: 1px solid transparent;
+        }
+
+        .playlist-item:hover { background: #1a1a1a; }
+
+        .playlist-item.active {
+            background: #1a1a1a;
+            border-left: 4px solid #ff0000;
+        }
+
+        .playlist-thumb {
+            width: 50px;
+            height: 50px;
+            border-radius: 6px;
+            background: #1a1a1a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #aaa;
+            font-size: 22px;
+        }
+
+        .playlist-title-text {
+            font-weight: 500;
+            font-size: 14px;
+            color: #fff;
+        }
+
+        .playlist-meta {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .role-badge {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            background: #272727;
+            color: #ccc;
+        }
+
+        .role-badge.owner { background: rgba(255,215,0,0.2); color: #ffd700; }
+        .role-badge.admin { background: rgba(255,0,0,0.2); color: #ff6b6b; }
+        .role-badge.coadmin { background: rgba(100,149,237,0.2); color: #6495ed; }
+
+        /* ========== MODAL ========== */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .modal.active { display: flex; }
+
+        .modal-content {
+            width: 500px;
+            max-width: 90%;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 16px;
+            padding: 28px;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .modal-header h3 { font-size: 20px; color: #fff; }
+
+        .modal-close {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #272727;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 16px;
+            background: #0f0f0f;
+            border: 1px solid #2a2a2a;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 15px;
+            margin-bottom: 16px;
+        }
+
+        .modal-btn {
+            width: 100%;
+            padding: 16px;
+            background: #ff0000;
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        /* ========== LOGIN ========== */
         .login-overlay {
             position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background: #0f0f0f;
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 3000;
         }
+
         .login-box {
             width: 420px;
             max-width: 90%;
@@ -35,12 +617,15 @@
             border-radius: 24px;
             padding: 40px;
         }
+
         .login-logo {
             display: flex;
             justify-content: center;
             margin-bottom: 32px;
         }
+
         .login-logo i { font-size: 56px; color: #ff0000; }
+
         .login-title {
             font-size: 28px;
             font-weight: 700;
@@ -48,15 +633,18 @@
             margin-bottom: 8px;
             color: #fff;
         }
+
         .login-subtitle {
             text-align: center;
             color: #aaa;
             font-size: 14px;
             margin-bottom: 32px;
         }
+
         .login-input {
             width: 100%;
             padding: 16px;
+            padding-right: 50px;
             background: #0f0f0f;
             border: 1px solid #2a2a2a;
             border-radius: 12px;
@@ -64,6 +652,7 @@
             font-size: 15px;
             margin-bottom: 16px;
         }
+
         .login-btn {
             width: 100%;
             padding: 16px;
@@ -75,146 +664,57 @@
             font-size: 16px;
             cursor: pointer;
         }
+
         .login-error {
-            color: #ff4444;
+            background: rgba(255,0,0,0.1);
+            border: 1px solid #ff0000;
+            border-radius: 8px;
+            padding: 12px;
+            color: #ff6b6b;
+            font-size: 13px;
             display: none;
             margin-bottom: 16px;
-            text-align: center;
         }
+
         .hidden { display: none !important; }
-        
-        /* APP */
-        .app {
-            display: flex;
-            height: 100vh;
+
+        .login-youtube-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 2900;
+            opacity: 0.15;
+            pointer-events: none;
+        }
+
+        .login-youtube-bg iframe {
             width: 100vw;
+            height: 100vh;
+            pointer-events: none;
         }
-        
-        /* SIDEBAR */
-        .sidebar {
-            width: 80px;
-            background: #0a0a0a;
-            border-right: 1px solid #2a2a2a;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 24px 0;
-            gap: 24px;
-        }
-        .menu-item {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #aaa;
-            cursor: pointer;
-            font-size: 20px;
-        }
-        .menu-item:hover { background: #272727; color: #fff; }
-        .menu-item.active { background: #3f3f3f; color: #fff; }
-        .user-avatar {
-            margin-top: auto;
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            background: #1a1a1a;
-            border: 2px solid #3f3f3f;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            color: #fff;
-        }
-        
-        /* CHAT */
-        .chat-panel {
-            flex: 1;
-            background: #0f0f0f;
-            display: flex;
-            flex-direction: column;
-        }
-        .chat-header {
-            padding: 16px 24px;
-            border-bottom: 1px solid #2a2a2a;
-        }
-        .chat-title {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-weight: 600;
-        }
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-        .message {
-            max-width: 80%;
-            padding: 12px 16px;
-            background: #1a1a1a;
-            border-radius: 18px;
-        }
-        .message.right {
-            align-self: flex-end;
-            background: #ff0000;
-        }
-        .message-sender {
-            font-size: 12px;
-            color: #aaa;
-            margin-bottom: 4px;
-        }
-        .message-time {
-            font-size: 10px;
-            color: #aaa;
-            margin-top: 4px;
-        }
-        .message-input-container {
-            padding: 20px 24px;
-            background: #0a0a0a;
-            border-top: 1px solid #2a2a2a;
-        }
-        .input-wrapper {
-            display: flex;
-            gap: 12px;
-            background: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-radius: 28px;
-            padding: 8px 8px 8px 20px;
-        }
-        .message-input {
-            flex: 1;
-            background: transparent;
-            border: none;
-            color: #fff;
-            font-size: 14px;
-            padding: 12px 0;
-            outline: none;
-        }
-        .send-btn {
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            background: #272727;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-        }
-        .send-btn:hover { background: #3f3f3f; }
-        
-        /* OWNER BUTONU */
-        #ownerPanelBtn {
-            border: 2px solid #ffd700;
-            color: #ffd700;
+
+        /* ========== MOBİL ========== */
+        @media screen and (max-width: 768px) {
+            .app { flex-direction: column; }
+            .media-panel { width: 100%; order: 1; }
+            .chat-panel { width: 100%; order: 2; flex: 1; }
+            .users-panel { width: 100%; order: 3; max-height: 250px; }
+            .sidebar { width: 100%; height: 60px; flex-direction: row; order: 4; justify-content: space-around; position: fixed; bottom: 0; }
+            .sidebar .menu-item { width: 44px; height: 44px; }
+            .sidebar .user-avatar { width: 40px; height: 40px; margin-top: 0; }
+            .user-youtube-controls { bottom: 10px; gap: 15px; }
+            .user-youtube-btn { width: 44px; height: 44px; font-size: 18px; }
         }
     </style>
 </head>
 <body>
+    <!-- LOGIN BACKGROUND -->
+    <div id="loginYoutubeBg" class="login-youtube-bg">
+        <iframe id="loginYoutubeIframe" src="https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&disablekb=1&fs=0&iv_load_policy=3&playsinline=1&loop=1&playlist=jfKfPfyJRdk" allow="autoplay; encrypted-media"></iframe>
+    </div>
+    
     <!-- LOGIN -->
     <div id="loginOverlay" class="login-overlay">
         <div class="login-box">
@@ -225,43 +725,81 @@
             <p class="login-subtitle">Yetkili medya kontrol paneli</p>
             
             <input type="text" id="nickname" class="login-input" placeholder="Kullanıcı adı">
-            <input type="password" id="password" class="login-input" placeholder="Şifre">
             
-            <div id="loginError" class="login-error">Hatalı şifre!</div>
+            <div style="position: relative;">
+                <input type="password" id="password" class="login-input" placeholder="Şifre" style="margin-bottom: 0;">
+                <i class="fas fa-eye" id="passwordToggle" style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: #aaa; cursor: pointer;"></i>
+            </div>
+            
+            <div id="loginError" class="login-error"></div>
             
             <button id="loginBtn" class="login-btn" onclick="handleLogin()">
                 <i class="fas fa-sign-in-alt"></i> Giriş Yap
             </button>
+            
+            <p style="color: #666; font-size: 12px; text-align: center; margin-top: 20px;">
+                👑 MateKy (owner) • ⚡ popbox (admin) • ⚡ popboxmusic (admin) • 🔧 coadmin
+            </p>
         </div>
     </div>
 
     <!-- ANA UYGULAMA -->
     <div id="app" class="app hidden">
-        <!-- SIDEBAR -->
+        <!-- SOL MENÜ -->
         <div class="sidebar">
-            <div class="menu-item active" onclick="showUsersPanel()">
+            <div id="themeToggle" class="menu-item" onclick="toggleTheme()" title="Tema değiştir">
+                <i id="themeIcon" class="fas fa-moon"></i>
+            </div>
+            
+            <div class="menu-item active" onclick="showUsersPanel()" title="Kullanıcılar">
                 <i class="fas fa-users"></i>
             </div>
-            <div class="menu-item" onclick="toggleNotificationPanel()">
+            
+            <div class="menu-item" onclick="toggleNotificationPanel()" title="Bildirimler">
                 <i class="fas fa-bell"></i>
             </div>
-            <div class="menu-item" onclick="focusMediaPanel()">
-                <i class="fab fa-youtube"></i>
+            
+            <div class="menu-item" onclick="focusMediaPanel()" title="Popbox Medya">
+                <i class="fab fa-youtube" style="color: #ff0000;"></i>
             </div>
-            <div id="ownerPanelBtn" class="menu-item" style="display: none;" onclick="window.location.href='owner.html'">
-                <i class="fas fa-crown"></i>
+            
+            <div class="menu-item" onclick="showComingSoon('Kanal listesi yakında aktif olacak!')" title="Kanallar (yakında)">
+                <i class="fas fa-list-ul"></i>
             </div>
-            <div class="user-avatar" id="userAvatar">
+            
+            <div id="ownerPanelBtn" class="menu-item" style="display: none; border: 2px solid #ffd700;" 
+                 onclick="window.location.href='owner.html'" title="👑 Owner Paneli">
+                <i class="fas fa-crown" style="color: #ffd700;"></i>
+            </div>
+            
+            <div class="user-avatar" id="userAvatar" onclick="openProfilePanel()" title="Profil">
                 <span id="avatarText"></span>
             </div>
         </div>
 
-        <!-- CHAT PANEL -->
+        <!-- KULLANICI PANELİ -->
+        <div class="users-panel">
+            <div class="panel-header">
+                <h3><i class="fas fa-users"></i> Kullanıcılar</h3>
+                <div class="online-tabs">
+                    <div class="tab active" onclick="switchUserTab('online')" id="onlineTab">Çevrimiçi (0)</div>
+                    <div class="tab" onclick="switchUserTab('chatting')" id="chattingTab">Sohbette (0)</div>
+                </div>
+            </div>
+            <div class="user-list" id="userList"></div>
+        </div>
+
+        <!-- CHAT PANELİ -->
         <div class="chat-panel">
             <div class="chat-header">
                 <div class="chat-title">
                     <i class="fas fa-hashtag"></i>
-                    <span id="currentChannel">genel sohbet</span>
+                    <span id="currentChannel">genel</span>
+                </div>
+                <div id="privateChatControls" style="display: none;">
+                    <button class="control-btn" onclick="closePrivateChat()" title="Kapat">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             </div>
             
@@ -269,17 +807,192 @@
             
             <div class="message-input-container">
                 <div class="input-wrapper">
-                    <textarea id="messageInput" class="message-input" placeholder="Mesaj yazın..." rows="1"></textarea>
+                    <textarea id="messageInput" class="message-input" placeholder="Mesaj yazın..." rows="1" oninput="autoResize(this)"></textarea>
                     <div class="send-btn" onclick="sendMessage()">
                         <i class="fas fa-paper-plane"></i>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- MEDYA PANELİ -->
+        <div class="media-panel">
+            <div class="media-header">
+                <div class="media-tabs">
+                    <div class="media-tab active" onclick="switchMediaTab('youtube')" id="youtubeTab">
+                        <i class="fab fa-youtube"></i>
+                    </div>
+                    <div class="media-tab spotify" onclick="switchMediaTab('spotify')" id="spotifyTab">
+                        <i class="fab fa-spotify"></i>
+                    </div>
+                    <div class="media-tab live" onclick="switchMediaTab('live')" id="liveTab">
+                        <i class="fas fa-video"></i>
+                    </div>
+                </div>
+                <div class="media-controls">
+                    <div class="control-btn" id="addMediaBtn" onclick="openAddMediaModal()" title="Ekle">
+                        <i class="fas fa-plus"></i>
+                    </div>
+                    <span class="admin-badge" id="adminBadge">SADECE YETKİLİ</span>
+                    <div class="control-btn" id="clearPlaylistBtn" onclick="clearPlaylist()" title="Temizle">
+                        <i class="fas fa-trash"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="nowPlayingBar" class="now-playing-bar">
+                <i class="fas fa-circle" style="color: #ff0000; font-size: 10px;"></i>
+                <span id="nowPlayingText">YouTube: Popbox Radio • 24/7 Canlı Müzik</span>
+                <span id="startedByText" style="color: #aaa; margin-left: auto;">👑 MateKy</span>
+            </div>
+            
+            <div id="youtubePlayer" class="youtube-player">
+                <div id="youtubeContainer"></div>
+                <div id="userYoutubeControls" class="user-youtube-controls">
+                    <div class="user-youtube-btn" id="youtubeMuteBtn" onclick="toggleMute()" title="Ses aç/kapat">
+                        <i class="fas fa-volume-up" id="muteIcon"></i>
+                    </div>
+                    <div class="user-youtube-btn" id="youtubePlayPauseBtn" onclick="togglePlayPause()" title="Oynat/durdur">
+                        <i class="fas fa-pause" id="playPauseIcon"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="spotifyPlayer" class="spotify-player">
+                <iframe id="spotifyIframe" src="https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M?utm_source=generator" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" loading="lazy"></iframe>
+            </div>
+            
+            <div id="livePlayer" class="live-player">
+                <video id="liveVideo" autoplay playsinline></video>
+                <div class="live-status">
+                    <i class="fas fa-circle"></i> CANLI YAYIN
+                </div>
+                <div class="live-controls">
+                    <div class="live-btn" id="switchCameraBtn" onclick="switchCamera()" title="Kamera değiştir">
+                        <i class="fas fa-camera-retro"></i>
+                    </div>
+                    <div class="live-btn stop" id="stopLiveBtn" onclick="stopLiveStream()" title="Yayını durdur">
+                        <i class="fas fa-stop"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="playlist" id="playlist"></div>
+        </div>
     </div>
 
+    <!-- MODALLAR -->
+    <div id="addMediaModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">YouTube Video Ekle</h3>
+                <button class="modal-close" onclick="closeAddMediaModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <input type="text" id="mediaUrl" class="modal-input" placeholder="Video/Playlist URL'si veya ID'si">
+            <input type="text" id="mediaTitle" class="modal-input" placeholder="Başlık">
+            <button id="addMediaConfirmBtn" class="modal-btn" onclick="addToPlaylist()">
+                <i class="fas fa-plus"></i> Playlist'e Ekle
+            </button>
+        </div>
+    </div>
+
+    <div id="mediaUploadModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-paperclip"></i> Resim/Video Gönder</h3>
+                <button class="modal-close" onclick="closeMediaUploadModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="media-upload-btn" onclick="document.getElementById('mediaFileInput').click()">
+                <i class="fas fa-cloud-upload-alt"></i> Dosya Seç
+            </div>
+            <input type="file" id="mediaFileInput" accept="image/*,video/*" style="display: none;">
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <input type="text" id="mediaCaption" class="modal-input" placeholder="Başlık (isteğe bağlı)" style="margin-bottom: 0;">
+            </div>
+            <img id="mediaPreview" src="#" alt="Önizleme" style="display: none; max-width: 100%; max-height: 200px; margin-top: 16px; border-radius: 8px;">
+            <button class="modal-btn" onclick="sendPrivateMedia()" style="margin-top: 16px;">
+                <i class="fas fa-paper-plane"></i> Gönder
+            </button>
+        </div>
+    </div>
+
+    <div id="liveStreamModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-video" style="color: #ff4444;"></i> Canlı Yayın Başlat</h3>
+                <button class="modal-close" onclick="closeLiveStreamModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <input type="text" id="liveTitle" class="modal-input" placeholder="Yayın başlığı">
+            <textarea id="liveDescription" class="modal-input" placeholder="Yayın açıklaması" rows="3"></textarea>
+            <button class="modal-btn live" onclick="startLiveStream()">
+                <i class="fas fa-video"></i> Yayını Başlat
+            </button>
+        </div>
+    </div>
+
+    <div id="profilePanelModal" class="modal">
+        <div class="modal-content" style="width: 500px; max-width: 95%;">
+            <div class="modal-header">
+                <h3><i class="fas fa-user-circle"></i> Profil</h3>
+                <button class="modal-close" onclick="closeProfilePanelModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div style="padding: 20px; text-align: center;">
+                <div class="user-avatar" style="width: 80px; height: 80px; margin: 0 auto 20px;">
+                    <span id="profileAvatarText" style="font-size: 36px;"></span>
+                </div>
+                <div id="profileDisplayName" style="font-size: 24px; font-weight: 700; margin-bottom: 8px;"></div>
+                <div id="profileDisplayRole" style="color: #aaa; margin-bottom: 24px;"></div>
+                <button class="modal-btn" onclick="uploadProfileImage()" style="background: #272727; margin-bottom: 12px;">
+                    <i class="fas fa-camera"></i> Fotoğraf Yükle
+                </button>
+                <button class="modal-btn" onclick="logout()" style="background: #ff4444;">
+                    <i class="fas fa-sign-out-alt"></i> Çıkış Yap
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="complaintModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-flag" style="color: #ff4444;"></i> Şikayet Et</h3>
+                <button class="modal-close" onclick="closeComplaintModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="complaintUserInfo" style="margin-bottom: 16px; padding: 12px; background: #0f0f0f; border-radius: 8px;">
+                <span id="complaintUsername" style="font-weight: 600;"></span> kullanıcısını şikayet ediyorsunuz.
+            </div>
+            <select id="complaintReason" class="modal-input">
+                <option value="spam">Spam / Reklam</option>
+                <option value="harassment">Taciz / Hakaret</option>
+                <option value="inappropriate">Uygunsuz İçerik</option>
+                <option value="other">Diğer</option>
+            </select>
+            <textarea id="complaintDescription" class="modal-input" rows="3" placeholder="Açıklama..."></textarea>
+            <button class="modal-btn" onclick="submitComplaint()" style="background: #ff4444;">
+                <i class="fas fa-paper-plane"></i> Gönder
+            </button>
+        </div>
+    </div>
+
+    <div id="ownerPanelModal" class="modal">
+        <div class="modal-content" style="width: 800px; max-width: 95%;">
+            <div class="modal-header">
+                <h3><i class="fas fa-crown" style="color: #ffd700;"></i> Owner Paneli</h3>
+                <button class="modal-close" onclick="closeOwnerPanelModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div style="padding: 20px; text-align: center;">
+                <p style="color: #ffd700;">Owner paneli yakında...</p>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
+    <input type="file" id="profileImageUpload" accept="image/*" style="display: none;">
+
+    <div id="activePanelIndicator" class="active-panel-indicator">Panel: Genel Sohbet</div>
+
     <script>
-        // 🔐 FIREBASE KONFİG - BURADA DURSUN, SONRA TAŞIRIZ
+        // ========== FIREBASE KONFİG ==========
         const firebaseConfig = {
             apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
             authDomain: "popboxmusicchat.firebaseapp.com",
@@ -295,71 +1008,72 @@
         let currentUser = null;
         let isOwner = false;
         let isAdmin = false;
+        let ytPlayer = null;
+        let isMuted = false;
+        let isPlaying = true;
+        let isDarkTheme = true;
+        let activeModal = null;
+        let activePrivateChat = null;
+        let onlineUsers = [];
+        let privateChats = {};
+        let unreadPrivateMessages = {};
+        let blockedUsers = {};
+        let mediaStream = null;
+        let currentFacingMode = 'user';
 
         // ========== FIREBASE BAŞLAT ==========
         function initFirebase() {
-            if (!firebase.apps.length) {
-                firebase.initializeApp(firebaseConfig);
-            }
+            if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
             database = firebase.database();
             console.log('✅ Firebase başlatıldı!');
             
-            // MESAJLARI DİNLE
             database.ref('messages').limitToLast(50).on('value', (snapshot) => {
-                const messages = snapshot.val();
-                if (messages) {
-                    updateMessages(messages);
-                }
+                updateMessages(snapshot.val());
+            });
+            
+            database.ref('onlineUsers').on('value', (snapshot) => {
+                updateOnlineUsers(snapshot.val());
             });
         }
 
         // ========== GİRİŞ ==========
         function handleLogin() {
-            const nickname = document.getElementById('nickname').value.trim();
-            const password = document.getElementById('password').value;
+            const nick = document.getElementById('nickname').value.trim();
+            const pwd = document.getElementById('password').value;
             
-            if (!nickname) {
-                showError('Kullanıcı adı gerekli!');
-                return;
-            }
+            if (!nick) { showError('Kullanıcı adı gerekli!'); return; }
             
-            // 🔐 OWNER KONTROLÜ
-            if (nickname.toLowerCase() === 'mateky') {
-                if (password !== 'Sahi17407@SCM') {
-                    showError('Hatalı şifre!');
-                    return;
-                }
-                isOwner = true;
-                isAdmin = true;
-                currentUser = { name: 'MateKy', role: 'owner' };
+            if (nick.toLowerCase() === 'mateky') {
+                if (pwd !== 'Sahi17407@SCM') { showError('Hatalı şifre!'); return; }
+                isOwner = isAdmin = true;
+                currentUser = { name: 'MateKy', role: 'owner', roleLevel: 5 };
                 document.getElementById('ownerPanelBtn').style.display = 'flex';
-            }
-            // 🔐 ADMIN KONTROLÜ
-            else if (nickname.toLowerCase() === 'popbox' || nickname.toLowerCase() === 'popboxmusic') {
-                currentUser = { name: nickname, role: 'admin' };
+            } else if (['popbox', 'popboxmusic'].includes(nick.toLowerCase())) {
+                currentUser = { name: nick, role: 'admin', roleLevel: 4 };
                 isAdmin = true;
-            }
-            else {
-                currentUser = { name: nickname, role: 'user' };
+            } else if (nick.toLowerCase() === 'coadmin') {
+                currentUser = { name: nick, role: 'coadmin', roleLevel: 3 };
+            } else {
+                currentUser = { name: nick, role: 'user', roleLevel: 1 };
             }
             
-            // GİRİŞ BAŞARILI
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('app').classList.remove('hidden');
             document.getElementById('avatarText').textContent = currentUser.name.charAt(0).toUpperCase();
+            document.getElementById('profileAvatarText').textContent = currentUser.name.charAt(0).toUpperCase();
+            document.getElementById('profileDisplayName').textContent = currentUser.name;
+            document.getElementById('profileDisplayRole').textContent = currentUser.role;
             
             initFirebase();
             
-            // ONLINE OLARAK KAYDET
-            if (database) {
-                database.ref(`onlineUsers/${currentUser.name}`).set({
-                    name: currentUser.name,
-                    role: currentUser.role,
-                    lastSeen: Date.now()
-                });
-            }
+            database.ref(`onlineUsers/${currentUser.name}`).set({
+                name: currentUser.name,
+                role: currentUser.role,
+                roleLevel: currentUser.roleLevel,
+                lastSeen: Date.now(),
+                online: true
+            });
             
-            // HOŞGELDİN MESAJI
             addSystemMessage(`🎉 ${currentUser.name} (${currentUser.role}) sohbete katıldı!`);
         }
 
@@ -367,17 +1081,15 @@
         function sendMessage() {
             const input = document.getElementById('messageInput');
             const text = input.value.trim();
-            
             if (!text || !database || !currentUser) return;
             
-            // KOMUT KONTROLÜ
             if (text.startsWith('/')) {
                 handleCommand(text);
                 input.value = '';
+                autoResize(input);
                 return;
             }
             
-            // NORMAL MESAJ
             database.ref('messages').push({
                 sender: currentUser.name,
                 text: text,
@@ -386,61 +1098,102 @@
             });
             
             input.value = '';
+            autoResize(input);
         }
 
-        // ========== KOMUT İŞLE ==========
+        // ========== KOMUTLAR ==========
         function handleCommand(cmd) {
             const parts = cmd.substring(1).split(' ');
             const command = parts[0].toLowerCase();
             
             if (command === 'help' || command === 'yardım') {
-                addSystemMessage('📋 KOMUTLAR: /help, /ping, /temizle');
-            }
-            else if (command === 'ping') {
+                addSystemMessage('🎮 KOMUTLAR: /help, /ping, /me, /temizle');
+            } else if (command === 'ping') {
                 addSystemMessage('🏓 Pong!');
-            }
-            else if (command === 'temizle' || command === 'clear') {
+            } else if (command === 'me') {
+                const text = parts.slice(1).join(' ');
+                if (text) addSystemMessage(`* ${currentUser.name} ${text}`);
+            } else if (command === 'temizle' || command === 'clear') {
                 if (isOwner || isAdmin) {
                     if (confirm('Sohbeti temizlemek istediğinize emin misiniz?')) {
                         database.ref('messages').remove();
                         addSystemMessage('✅ Sohbet temizlendi!');
                     }
-                } else {
-                    addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!');
-                }
-            }
-            else {
-                addSystemMessage(`❌ Bilinmeyen komut: ${cmd}`);
-            }
+                } else addSystemMessage('⛔ Yetkiniz yok!');
+            } else addSystemMessage(`❌ Bilinmeyen komut: ${cmd}`);
         }
 
         // ========== MESAJLARI GÜNCELLE ==========
         function updateMessages(messagesData) {
+            if (!messagesData) return;
+            if (activePrivateChat) { renderPrivateMessages(activePrivateChat); return; }
+            
             const container = document.getElementById('messages');
             container.innerHTML = '';
             
-            Object.values(messagesData).forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${msg.sender === currentUser?.name ? 'right' : ''}`;
+            Object.entries(messagesData).forEach(([id, msg]) => {
+                const isOwn = msg.sender === currentUser?.name;
+                const time = new Date(msg.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
                 
                 let sender = msg.sender;
                 if (msg.role === 'owner') sender = '👑 ' + sender;
                 else if (msg.role === 'admin') sender = '⚡ ' + sender;
+                else if (msg.role === 'coadmin') sender = '🔧 ' + sender;
                 
-                const time = new Date(msg.timestamp).toLocaleTimeString('tr-TR', {
-                    hour: '2-digit', minute: '2-digit'
-                });
-                
-                messageDiv.innerHTML = `
-                    <div class="message-sender">${sender}</div>
-                    <div>${msg.text}</div>
-                    <div class="message-time">${time}</div>
+                const msgDiv = document.createElement('div');
+                msgDiv.className = `message ${isOwn ? 'right' : ''}`;
+                msgDiv.innerHTML = `
+                    <div class="message-header">
+                        <span class="message-sender">${sender}</span>
+                        <span class="message-time">${time}</span>
+                    </div>
+                    <div class="message-text">${escapeHTML(msg.text)}</div>
                 `;
-                
-                container.appendChild(messageDiv);
+                container.appendChild(msgDiv);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ========== ONLINE KULLANICILAR ==========
+        function updateOnlineUsers(usersData) {
+            if (!usersData) return;
+            onlineUsers = [];
+            let count = 0;
+            
+            Object.entries(usersData).forEach(([key, data]) => {
+                if (data && data.name) {
+                    count++;
+                    onlineUsers.push(data);
+                }
             });
             
-            container.scrollTop = container.scrollHeight;
+            document.getElementById('onlineTab').textContent = `Çevrimiçi (${count})`;
+            renderUserList();
+        }
+
+        function renderUserList() {
+            const container = document.getElementById('userList');
+            let html = '';
+            
+            onlineUsers.filter(u => u.name !== currentUser?.name).forEach(user => {
+                let roleIcon = '';
+                if (user.role === 'owner') roleIcon = '👑 ';
+                else if (user.role === 'admin') roleIcon = '⚡ ';
+                else if (user.role === 'coadmin') roleIcon = '🔧 ';
+                
+                html += `
+                    <div class="user-item" onclick="openPrivateChat('${user.name}')">
+                        <div class="user-avatar-small">${user.name.charAt(0).toUpperCase()}</div>
+                        <div class="user-info">
+                            <div class="user-name">${roleIcon}${user.name}</div>
+                            <div class="user-status">${user.role || 'user'}</div>
+                        </div>
+                        <div class="online-dot"></div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html || '<div style="color: #aaa; text-align: center; padding: 32px;">Kimse online değil</div>';
         }
 
         // ========== SİSTEM MESAJI ==========
@@ -449,38 +1202,209 @@
             database.ref('messages').push({
                 sender: 'Sistem',
                 text: text,
-                role: 'system',
+                type: 'system',
                 timestamp: Date.now()
             });
         }
 
-        // ========== HATA GÖSTER ==========
-        function showError(message) {
-            const errorEl = document.getElementById('loginError');
-            errorEl.textContent = message;
-            errorEl.style.display = 'block';
-            setTimeout(() => { errorEl.style.display = 'none'; }, 3000);
+        // ========== ÖZEL MESAJ ==========
+        function openPrivateChat(username) {
+            activePrivateChat = username;
+            document.getElementById('currentChannel').textContent = `@${username}`;
+            document.getElementById('privateChatControls').style.display = 'flex';
+            addSystemMessage(`💬 ${username} ile özel sohbet başladı`);
         }
 
-        // ========== DUMMY FONKSİYONLAR ==========
-        function showUsersPanel() { console.log('users'); }
-        function toggleNotificationPanel() { console.log('notifications'); }
-        function focusMediaPanel() { console.log('media'); }
-        function switchUserTab(tab) { console.log('tab', tab); }
-        function switchMediaTab(tab) { console.log('media', tab); }
+        function closePrivateChat() {
+            activePrivateChat = null;
+            document.getElementById('currentChannel').textContent = 'genel';
+            document.getElementById('privateChatControls').style.display = 'none';
+        }
 
-        // ========== ENTER TUŞU ==========
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                if (document.activeElement.id === 'nickname' || document.activeElement.id === 'password') {
-                    handleLogin();
-                    e.preventDefault();
-                } else if (document.activeElement.id === 'messageInput') {
-                    sendMessage();
+        function renderPrivateMessages(username) {
+            // Özel mesaj gösterimi
+        }
+
+        // ========== YETKİ ==========
+        function canManageMedia() { return isOwner || isAdmin; }
+        function canStartLiveStream() { return isOwner || isAdmin; }
+
+        // ========== YOUTUBE ==========
+        function onYouTubeIframeAPIReady() {
+            ytPlayer = new YT.Player('youtubeContainer', {
+                height: '100%', width: '100%',
+                videoId: 'jfKfPfyJRdk',
+                playerVars: { autoplay: 1, controls: 0, playsinline: 1 },
+                events: { onReady: (e) => e.target.playVideo() }
+            });
+        }
+
+        function toggleMute() {
+            if (!ytPlayer) return;
+            if (isMuted) { ytPlayer.unMute(); document.getElementById('muteIcon').className = 'fas fa-volume-up'; }
+            else { ytPlayer.mute(); document.getElementById('muteIcon').className = 'fas fa-volume-mute'; }
+            isMuted = !isMuted;
+        }
+
+        function togglePlayPause() {
+            if (!ytPlayer) return;
+            if (isPlaying) ytPlayer.pauseVideo();
+            else ytPlayer.playVideo();
+            isPlaying = !isPlaying;
+        }
+
+        // ========== TEMA ==========
+        function toggleTheme() {
+            const body = document.body;
+            const icon = document.getElementById('themeIcon');
+            if (body.classList.contains('light-theme')) {
+                body.classList.remove('light-theme');
+                icon.className = 'fas fa-moon';
+            } else {
+                body.classList.add('light-theme');
+                icon.className = 'fas fa-sun';
+            }
+        }
+
+        // ========== PROFİL ==========
+        function openProfilePanel() {
+            document.getElementById('profilePanelModal').classList.add('active');
+        }
+        function closeProfilePanelModal() {
+            document.getElementById('profilePanelModal').classList.remove('active');
+        }
+        function uploadProfileImage() { document.getElementById('profileImageUpload').click(); }
+
+        // ========== MEDYA ==========
+        function switchMediaTab(tab) {
+            document.querySelectorAll('.media-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(tab + 'Tab').classList.add('active');
+            document.getElementById('youtubePlayer').style.display = tab === 'youtube' ? 'block' : 'none';
+            document.getElementById('spotifyPlayer').style.display = tab === 'spotify' ? 'block' : 'none';
+            document.getElementById('livePlayer').style.display = tab === 'live' ? 'block' : 'none';
+        }
+
+        function openAddMediaModal() { document.getElementById('addMediaModal').classList.add('active'); }
+        function closeAddMediaModal() { document.getElementById('addMediaModal').classList.remove('active'); }
+        function addToPlaylist() { addSystemMessage('✅ Video eklendi'); closeAddMediaModal(); }
+        function clearPlaylist() { addSystemMessage('🗑️ Playlist temizlendi'); }
+
+        function startLiveStream() { 
+            addSystemMessage('📹 Canlı yayın başlatıldı');
+            closeLiveStreamModal();
+        }
+        function stopLiveStream() { addSystemMessage('📹 Canlı yayın durduruldu'); }
+        function switchCamera() { addSystemMessage('📸 Kamera değiştirildi'); }
+        function openLiveStreamModal() { document.getElementById('liveStreamModal').classList.add('active'); }
+        function closeLiveStreamModal() { document.getElementById('liveStreamModal').classList.remove('active'); }
+
+        // ========== MODAL ==========
+        function closeAllModals() {
+            document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+        }
+        function closeMediaUploadModal() { document.getElementById('mediaUploadModal').classList.remove('active'); }
+        function openMediaUploadModal() { document.getElementById('mediaUploadModal').classList.add('active'); }
+        function sendPrivateMedia() { addSystemMessage('📸 Medya gönderildi'); closeMediaUploadModal(); }
+        function closeComplaintModal() { document.getElementById('complaintModal').classList.remove('active'); }
+        function submitComplaint() { addSystemMessage('✅ Şikayet gönderildi'); closeComplaintModal(); }
+        function closeOwnerPanelModal() { document.getElementById('ownerPanelModal').classList.remove('active'); }
+
+        // ========== DİĞER ==========
+        function showUsersPanel() {}
+        function toggleNotificationPanel() { addSystemMessage('🔔 Bildirimler'); }
+        function focusMediaPanel() {}
+        function switchUserTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(tab + 'Tab').classList.add('active');
+        }
+        function showComingSoon(msg) { addSystemMessage(`🚧 ${msg}`); }
+        function autoResize(t) {
+            t.style.height = 'auto';
+            t.style.height = Math.min(t.scrollHeight, 120) + 'px';
+        }
+        function escapeHTML(text) { 
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        function showError(msg) {
+            const err = document.getElementById('loginError');
+            err.textContent = msg;
+            err.style.display = 'block';
+            setTimeout(() => err.style.display = 'none', 3000);
+        }
+        function logout() { location.reload(); }
+
+        // ========== EVENT LISTENERS ==========
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('passwordToggle').addEventListener('click', function() {
+                const p = document.getElementById('password');
+                p.type = p.type === 'password' ? 'text' : 'password';
+                this.className = p.type === 'password' ? 'fas fa-eye' : 'fas fa-eye-slash';
+            });
+            
+            document.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    if (document.activeElement.id === 'nickname' || document.activeElement.id === 'password') handleLogin();
+                    else if (document.activeElement.id === 'messageInput') sendMessage();
                     e.preventDefault();
                 }
+            });
+            
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') closeAllModals();
+            });
+            
+            if (!window.YT) {
+                const tag = document.createElement('script');
+                tag.src = 'https://www.youtube.com/iframe_api';
+                document.getElementsByTagName('script')[0].parentNode.insertBefore(tag, document.getElementsByTagName('script')[0]);
             }
         });
+
+        // ========== GLOBAL ==========
+        window.handleLogin = handleLogin;
+        window.sendMessage = sendMessage;
+        window.switchMediaTab = switchMediaTab;
+        window.addToPlaylist = addToPlaylist;
+        window.playVideo = () => {};
+        window.playSpotify = () => {};
+        window.removeFromPlaylist = () => {};
+        window.removeFromSpotifyPlaylist = () => {};
+        window.clearPlaylist = clearPlaylist;
+        window.openAddMediaModal = openAddMediaModal;
+        window.closeAddMediaModal = closeAddMediaModal;
+        window.openPrivateChat = openPrivateChat;
+        window.closePrivateChat = closePrivateChat;
+        window.blockUser24h = () => {};
+        window.reportUser = () => document.getElementById('complaintModal').classList.add('active');
+        window.closeComplaintModal = closeComplaintModal;
+        window.submitComplaint = submitComplaint;
+        window.openProfilePanel = openProfilePanel;
+        window.closeProfilePanelModal = closeProfilePanelModal;
+        window.uploadProfileImage = uploadProfileImage;
+        window.toggleNotificationPanel = toggleNotificationPanel;
+        window.showUsersPanel = showUsersPanel;
+        window.switchUserTab = switchUserTab;
+        window.autoResize = autoResize;
+        window.logout = logout;
+        window.closeAllModals = closeAllModals;
+        window.toggleMute = toggleMute;
+        window.togglePlayPause = togglePlayPause;
+        window.toggleTheme = toggleTheme;
+        window.focusMediaPanel = focusMediaPanel;
+        window.showComingSoon = showComingSoon;
+        window.startLiveStream = startLiveStream;
+        window.stopLiveStream = stopLiveStream;
+        window.switchCamera = switchCamera;
+        window.openLiveStreamModal = openLiveStreamModal;
+        window.closeLiveStreamModal = closeLiveStreamModal;
+        window.openMediaUploadModal = openMediaUploadModal;
+        window.closeMediaUploadModal = closeMediaUploadModal;
+        window.sendPrivateMedia = sendPrivateMedia;
+        window.openOwnerPanel = () => document.getElementById('ownerPanelModal').classList.add('active');
+        window.closeOwnerPanelModal = closeOwnerPanelModal;
+        window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
     </script>
 </body>
 </html>
