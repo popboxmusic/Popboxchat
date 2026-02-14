@@ -1,5 +1,14 @@
-// ========== MOBIL.JS - CETCETY Sade Mobil Görünüm (Görseldeki Gibi) ==========
+// ========== MOBIL.JS - CETCETY Mobil Görünüm (ÇALIŞAN VERSİYON) ==========
 console.log('%c📱 CETCETY Mobil başlatılıyor...', 'color: #00ff00; font-size: 14px; font-weight: bold;');
+
+(function() {
+    // Sayfa yüklendiğinde çalıştır
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(() => {
+            new CETCETYMobil();
+        }, 500); // Diğer JS'lerin yüklenmesini bekle
+    });
+})();
 
 class CETCETYMobil {
     constructor() {
@@ -7,6 +16,8 @@ class CETCETYMobil {
         this.solMenuAcik = false;
         this.sagMenuAcik = false;
         this.videoAcik = false;
+        
+        console.log('📱 Mobil mod:', this.isMobile ? 'AKTİF' : 'PASİF');
         
         if (this.isMobile) {
             this.mobilGorunum();
@@ -22,11 +33,10 @@ class CETCETYMobil {
                 this.masaustuGorunum();
             }
         });
-        
-        console.log('%c✅ Mobil görünüm hazır!', 'color: #4caf50;');
     }
 
     mobilGorunum() {
+        console.log('📱 Mobil görünüm aktif ediliyor...');
         document.body.classList.add('mobil-gorunum');
         document.body.classList.remove('masaustu-gorunum');
         this.stilleriEkle();
@@ -41,19 +51,30 @@ class CETCETYMobil {
         
         // Masaüstünde normal görünüme dön
         const iconPanel = document.querySelector('.icon-panel');
-        if (iconPanel) iconPanel.style.position = 'relative';
+        if (iconPanel) {
+            iconPanel.style.position = 'relative';
+            iconPanel.style.left = '0';
+            iconPanel.classList.remove('acik');
+        }
         
         const mediaPanel = document.querySelector('.media-panel');
-        if (mediaPanel) mediaPanel.style.display = 'flex';
+        if (mediaPanel) {
+            mediaPanel.style.display = 'flex';
+            mediaPanel.classList.remove('acik');
+        }
         
         // Ekstra mobil elementleri temizle
         document.querySelectorAll('.mobil-ekstra').forEach(el => el.remove());
     }
 
     stilleriEkle() {
+        // Daha önce eklendiyse tekrar ekleme
+        if (document.getElementById('mobil-stiller')) return;
+        
         const style = document.createElement('style');
+        style.id = 'mobil-stiller';
         style.textContent = `
-            /* ========== MOBİL GÖRÜNÜM - GÖRSELDEKİ GİBİ ========== */
+            /* ========== MOBİL GÖRÜNÜM ========== */
             .mobil-gorunum {
                 --header-yukseklik: 60px;
                 --input-yukseklik: 80px;
@@ -66,650 +87,214 @@ class CETCETYMobil {
                 overflow: hidden;
             }
 
-            /* ========== SOL İKON PANELİ - Hamburger Menü ========== */
+            /* SOL İKON PANELİ - Hamburger Menü */
             .mobil-gorunum .icon-panel {
-                position: fixed;
-                left: -280px;
-                top: 0;
-                width: 280px;
-                height: 100vh;
-                background: #0a0a0a;
-                z-index: 1000;
-                transition: left 0.3s ease;
-                padding-top: 60px;
-                border-right: 1px solid #2a2a2a;
-                box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+                position: fixed !important;
+                left: -280px !important;
+                top: 0 !important;
+                width: 280px !important;
+                height: 100vh !important;
+                background: #0a0a0a !important;
+                z-index: 1000 !important;
+                transition: left 0.3s ease !important;
+                padding-top: 60px !important;
+                border-right: 1px solid #2a2a2a !important;
+                display: flex !important;
+                flex-direction: column !important;
             }
 
             .mobil-gorunum .icon-panel.acik {
-                left: 0;
+                left: 0 !important;
             }
 
-            /* ========== SAĞ PANEL - Online & Sohbetler ========== */
+            /* SAĞ PANEL - Online & Sohbetler */
             .mobil-gorunum .sag-panel {
-                position: fixed;
-                right: -300px;
-                top: 0;
-                width: 300px;
-                height: 100vh;
-                background: #0a0a0a;
-                z-index: 1000;
-                transition: right 0.3s ease;
-                border-left: 1px solid #2a2a2a;
-                display: flex;
-                flex-direction: column;
+                position: fixed !important;
+                right: -300px !important;
+                top: 0 !important;
+                width: 300px !important;
+                height: 100vh !important;
+                background: #0a0a0a !important;
+                z-index: 1000 !important;
+                transition: right 0.3s ease !important;
+                border-left: 1px solid #2a2a2a !important;
+                display: flex !important;
+                flex-direction: column !important;
             }
 
             .mobil-gorunum .sag-panel.acik {
-                right: 0;
+                right: 0 !important;
             }
 
             /* Sağ panel sekmeler */
             .mobil-gorunum .sag-sekmeler {
-                display: flex;
-                padding: 16px;
-                gap: 12px;
-                border-bottom: 1px solid #2a2a2a;
-                background: #0a0a0a;
+                display: flex !important;
+                padding: 16px !important;
+                gap: 12px !important;
+                border-bottom: 1px solid #2a2a2a !important;
+                background: #0a0a0a !important;
             }
 
             .mobil-gorunum .sag-sekme {
-                flex: 1;
-                padding: 12px;
-                text-align: center;
-                background: #1a1a1a;
-                border-radius: 8px;
-                color: #aaa;
-                cursor: pointer;
-                font-size: 14px;
-                font-weight: 600;
-                transition: 0.2s;
+                flex: 1 !important;
+                padding: 12px !important;
+                text-align: center !important;
+                background: #1a1a1a !important;
+                border-radius: 8px !important;
+                color: #aaa !important;
+                cursor: pointer !important;
+                font-size: 14px !important;
             }
 
             .mobil-gorunum .sag-sekme.aktif {
-                background: #ff0000;
-                color: white;
+                background: #ff0000 !important;
+                color: white !important;
             }
 
-            .mobil-gorunum .sag-sekme i {
-                margin-right: 6px;
-            }
-
-            /* Sağ panel içerik */
             .mobil-gorunum .sag-icerik {
-                flex: 1;
-                overflow-y: auto;
-                padding: 16px;
-                background: #0a0a0a;
+                flex: 1 !important;
+                overflow-y: auto !important;
+                padding: 16px !important;
             }
 
-            /* Online liste */
-            .mobil-gorunum .online-item {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                padding: 12px;
-                background: #1a1a1a;
-                border-radius: 12px;
-                margin-bottom: 8px;
-                cursor: pointer;
-            }
-
-            .mobil-gorunum .online-avatar {
-                width: 48px;
-                height: 48px;
-                border-radius: 50%;
-                background: #0a5c36;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 20px;
-                color: white;
-                font-weight: 600;
-            }
-
-            .mobil-gorunum .online-info {
-                flex: 1;
-            }
-
-            .mobil-gorunum .online-name {
-                font-weight: 600;
-                color: #fff;
-                margin-bottom: 4px;
-            }
-
-            .mobil-gorunum .online-status {
-                font-size: 11px;
-                color: #2ecc71;
-            }
-
-            /* Sohbetler listesi */
-            .mobil-gorunum .sohbet-item {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                padding: 12px;
-                background: #1a1a1a;
-                border-radius: 12px;
-                margin-bottom: 8px;
-                cursor: pointer;
-                position: relative;
-            }
-
-            .mobil-gorunum .sohbet-avatar {
-                width: 48px;
-                height: 48px;
-                border-radius: 50%;
-                background: #ff0000;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 20px;
-                color: white;
-                font-weight: 600;
-            }
-
-            .mobil-gorunum .sohbet-info {
-                flex: 1;
-            }
-
-            .mobil-gorunum .sohbet-name {
-                font-weight: 600;
-                color: #fff;
-                margin-bottom: 4px;
-            }
-
-            .mobil-gorunum .sohbet-son-mesaj {
-                font-size: 12px;
-                color: #aaa;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                max-width: 150px;
-            }
-
-            .mobil-gorunum .sohbet-bildirim {
-                position: absolute;
-                top: 8px;
-                right: 8px;
-                background: #ff4444;
-                color: white;
-                border-radius: 20px;
-                padding: 4px 8px;
-                font-size: 11px;
-                font-weight: 600;
-                min-width: 20px;
-                text-align: center;
-            }
-
-            /* ========== CHAT PANELİ - TAM EKRAN ========== */
+            /* Chat container tam ekran */
             .mobil-gorunum .chat-container {
-                width: 100%;
-                height: 100vh;
-                display: flex;
-                flex-direction: column;
-                background: #0f0f0f;
+                width: 100% !important;
+                height: 100vh !important;
+                display: flex !important;
+                flex-direction: column !important;
             }
 
-            /* Header - Görseldeki gibi "Canlı sohbet" */
+            /* Header düzenleme */
             .mobil-gorunum .chat-header {
-                padding: 12px 16px;
-                border-bottom: 1px solid #2a2a2a;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                background: #0a0a0a;
-                height: var(--header-yukseklik);
+                padding: 12px 16px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                background: #0a0a0a !important;
+                border-bottom: 1px solid #2a2a2a !important;
             }
 
             .mobil-gorunum .chat-title {
-                font-size: 18px;
-                font-weight: 600;
-                color: #fff;
-            }
-
-            .mobil-gorunum .chat-title i {
-                color: #ff0000;
-                margin-right: 8px;
+                font-size: 18px !important;
+                font-weight: 600 !important;
+                color: #fff !important;
             }
 
             .mobil-gorunum .header-butonlar {
-                display: flex;
-                gap: 12px;
+                display: flex !important;
+                gap: 12px !important;
             }
 
             .mobil-gorunum .header-buton {
-                width: 40px;
-                height: 40px;
-                border-radius: 50%;
-                background: #1a1a1a;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: #fff;
-                cursor: pointer;
-                font-size: 18px;
-                transition: 0.2s;
+                width: 40px !important;
+                height: 40px !important;
+                border-radius: 50% !important;
+                background: #1a1a1a !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                color: #fff !important;
+                cursor: pointer !important;
+                font-size: 18px !important;
             }
 
-            .mobil-gorunum .header-buton:active {
-                background: #ff0000;
-            }
-
-            /* MESAJLAR ALANI - Görseldeki gibi */
-            .mobil-gorunum .messages {
-                flex: 1;
-                overflow-y: auto;
-                padding: 16px;
-                background: #0f0f0f;
-            }
-
-            /* POPBOX mesajı - Görseldeki gibi */
-            .mobil-gorunum .popbox-mesaj {
-                background: #1a1a1a;
-                border-radius: 16px;
-                padding: 16px;
-                margin-bottom: 16px;
-                border-left: 4px solid #ff0000;
-            }
-
-            .mobil-gorunum .popbox-title {
-                color: #ff0000;
-                font-weight: 700;
-                font-size: 16px;
-                margin-bottom: 8px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-
-            .mobil-gorunum .popbox-title i {
-                font-size: 20px;
-            }
-
-            .mobil-gorunum .popbox-icerik {
-                color: #fff;
-                font-size: 14px;
-                line-height: 1.5;
-                margin-bottom: 12px;
-            }
-
-            .mobil-gorunum .popbox-alt {
-                color: #aaa;
-                font-size: 12px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-
-            /* Normal mesajlar */
-            .mobil-gorunum .message {
-                max-width: 100%;
-                margin-bottom: 12px;
-            }
-
-            .mobil-gorunum .kullanici-mesaj {
-                background: #1a1a1a;
-                border-radius: 16px;
-                padding: 12px 16px;
-            }
-
-            .mobil-gorunum .kullanici-adi {
-                color: #6495ed;
-                font-weight: 600;
-                font-size: 14px;
-                margin-bottom: 4px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-
-            .mobil-gorunum .kullanici-adi i {
-                font-size: 12px;
-                color: #ffd700;
-            }
-
-            .mobil-gorunum .mesaj-metni {
-                color: #fff;
-                font-size: 14px;
-                line-height: 1.5;
-                word-break: break-word;
-            }
-
-            .mobil-gorunum .mesaj-zamani {
-                font-size: 10px;
-                color: #aaa;
-                margin-top: 4px;
-                text-align: right;
-            }
-
-            /* Sistem mesajı */
-            .mobil-gorunum .system-message {
-                background: #1a1a1a;
-                border-radius: 30px;
-                padding: 12px 20px;
-                color: #aaa;
-                font-size: 13px;
-                text-align: center;
-                margin: 16px auto;
-                max-width: 90%;
-                border: 1px solid #2a2a2a;
-            }
-
-            /* MESAJ GİRİŞ ALANI - Altta sabit */
-            .mobil-gorunum .message-input-container {
-                padding: 12px 16px;
-                background: #0a0a0a;
-                border-top: 1px solid #2a2a2a;
-                height: var(--input-yukseklik);
-            }
-
-            .mobil-gorunum .input-wrapper {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                background: #1a1a1a;
-                border-radius: 30px;
-                padding: 4px 4px 4px 20px;
-                border: 1px solid #2a2a2a;
-            }
-
-            .mobil-gorunum .message-input {
-                flex: 1;
-                background: transparent;
-                border: none;
-                color: #fff;
-                font-size: 16px;
-                padding: 12px 0;
-                outline: none;
-            }
-
-            .mobil-gorunum .message-input::placeholder {
-                color: #666;
-            }
-
-            .mobil-gorunum .send-btn {
-                width: 48px;
-                height: 48px;
-                border-radius: 50%;
-                background: #ff0000;
-                color: white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                font-size: 18px;
-                transition: 0.2s;
-                border: none;
-            }
-
-            .mobil-gorunum .send-btn:active {
-                background: #cc0000;
-                transform: scale(0.95);
-            }
-
-            /* ========== VİDEO PANELİ - Ayrı sayfa ========== */
+            /* Media paneli - video sayfası */
             .mobil-gorunum .media-panel {
-                position: fixed;
-                top: 100%;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: #000;
-                z-index: 1200;
-                transition: top 0.3s ease;
-                display: flex;
-                flex-direction: column;
+                position: fixed !important;
+                top: 100% !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                background: #000 !important;
+                z-index: 1200 !important;
+                transition: top 0.3s ease !important;
+                display: flex !important;
+                flex-direction: column !important;
+                width: 100% !important;
             }
 
             .mobil-gorunum .media-panel.acik {
-                top: 0;
+                top: 0 !important;
             }
 
             .mobil-gorunum .video-header {
-                padding: 16px;
-                background: #0a0a0a;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                border-bottom: 1px solid #2a2a2a;
-            }
-
-            .mobil-gorunum .video-title {
-                font-size: 18px;
-                font-weight: 600;
-                color: #fff;
-            }
-
-            .mobil-gorunum .video-title i {
-                color: #ff0000;
-                margin-right: 8px;
+                padding: 16px !important;
+                background: #0a0a0a !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: space-between !important;
             }
 
             .mobil-gorunum .video-kapat {
-                width: 44px;
-                height: 44px;
-                border-radius: 50%;
-                background: #ff0000;
-                color: white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                font-size: 20px;
+                width: 40px !important;
+                height: 40px !important;
+                border-radius: 50% !important;
+                background: #ff0000 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                color: white !important;
+                cursor: pointer !important;
             }
 
-            .mobil-gorunum .youtube-player {
-                width: 100%;
-                aspect-ratio: 16/9;
-                background: #000;
-            }
-
-            .mobil-gorunum .video-actions {
-                display: flex;
-                gap: 12px;
-                padding: 16px;
-                background: #0a0a0a;
-                overflow-x: auto;
-                white-space: nowrap;
-            }
-
-            .mobil-gorunum .video-action-btn {
-                padding: 12px 20px;
-                background: #1a1a1a;
-                border: 1px solid #2a2a2a;
-                border-radius: 30px;
-                color: #fff;
-                font-size: 14px;
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                cursor: pointer;
-            }
-
-            .mobil-gorunum .video-action-btn i {
-                font-size: 16px;
-            }
-
-            .mobil-gorunum .video-action-btn:active {
-                background: #ff0000;
-            }
-
-            .mobil-gorunum .playlist-container {
-                flex: 1;
-                overflow-y: auto;
-                padding: 16px;
-                background: #0f0f0f;
-            }
-
-            /* ========== ÖZEL SOHBET - Tam ekran ========== */
+            /* Özel sohbet */
             .mobil-gorunum .private-chat-panel {
-                position: fixed;
-                top: 100%;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: #0a0a0a;
-                z-index: 1300;
-                transition: top 0.3s ease;
-                display: flex;
-                flex-direction: column;
+                position: fixed !important;
+                top: 100% !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                background: #0a0a0a !important;
+                z-index: 1300 !important;
+                transition: top 0.3s ease !important;
+                display: flex !important;
+                flex-direction: column !important;
             }
 
             .mobil-gorunum .private-chat-panel.active {
-                top: 0;
-            }
-
-            .mobil-gorunum .private-chat-header {
-                padding: 16px;
-                background: #0a0a0a;
-                border-bottom: 1px solid #2a2a2a;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-            }
-
-            .mobil-gorunum .private-chat-user {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-            }
-
-            .mobil-gorunum .private-chat-avatar {
-                width: 48px;
-                height: 48px;
-                border-radius: 50%;
-                background: #ff0000;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 20px;
-                color: white;
-            }
-
-            .mobil-gorunum .private-chat-name {
-                font-weight: 600;
-                color: #fff;
-                font-size: 16px;
-            }
-
-            .mobil-gorunum .private-chat-status {
-                font-size: 12px;
-                color: #2ecc71;
+                top: 0 !important;
             }
 
             .mobil-gorunum .private-chat-close {
-                width: 44px;
-                height: 44px;
-                border-radius: 50%;
-                background: #1a1a1a;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: #fff;
-                cursor: pointer;
-                font-size: 20px;
+                width: 40px !important;
+                height: 40px !important;
+                border-radius: 50% !important;
+                background: #1a1a1a !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                cursor: pointer !important;
             }
 
-            .mobil-gorunum .private-chat-messages {
-                flex: 1;
-                overflow-y: auto;
-                padding: 16px;
-                background: #0f0f0f;
-            }
-
-            .mobil-gorunum .private-message {
-                max-width: 90%;
-                margin-bottom: 12px;
-            }
-
-            .mobil-gorunum .private-message.right {
-                margin-left: auto;
-            }
-
-            .mobil-gorunum .private-message-text {
-                padding: 12px 16px;
-                background: #1a1a1a;
-                border-radius: 20px;
-                color: #fff;
-                font-size: 14px;
-            }
-
-            .mobil-gorunum .private-message.right .private-message-text {
-                background: #ff0000;
-            }
-
-            .mobil-gorunum .private-input-container {
-                padding: 12px 16px;
-                background: #0a0a0a;
-                border-top: 1px solid #2a2a2a;
-            }
-
-            .mobil-gorunum .private-input-wrapper {
-                display: flex;
-                gap: 12px;
-                background: #1a1a1a;
-                border-radius: 30px;
-                padding: 4px 4px 4px 20px;
-            }
-
-            .mobil-gorunum .private-input {
-                flex: 1;
-                background: transparent;
-                border: none;
-                color: #fff;
-                font-size: 16px;
-                padding: 12px 0;
-                outline: none;
-            }
-
-            .mobil-gorunum .private-send-btn {
-                width: 48px;
-                height: 48px;
-                border-radius: 50%;
-                background: #ff0000;
-                color: white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-            }
-
-            /* OVERLAY */
+            /* Overlay */
             .mobil-gorunum .mobil-overlay {
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(0,0,0,0.5);
-                backdrop-filter: blur(3px);
-                z-index: 900;
-                display: none;
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                background: rgba(0,0,0,0.5) !important;
+                z-index: 900 !important;
+                display: none !important;
             }
 
             .mobil-gorunum .mobil-overlay.acik {
-                display: block;
+                display: block !important;
             }
 
-            /* KAYDIRMA GÖSTERGESİ */
-            .mobil-gorunum .swipe-indicator {
-                position: absolute;
-                top: 10px;
-                left: 50%;
-                transform: translateX(-50%);
-                width: 40px;
-                height: 4px;
-                background: #333;
-                border-radius: 2px;
-                z-index: 10;
+            /* Masaüstünde medya paneli görünsün */
+            .masaustu-gorunum .media-panel {
+                display: flex !important;
+                position: relative !important;
+                width: 420px !important;
             }
         `;
         document.head.appendChild(style);
     }
 
     butonlariEkle() {
-        // Overlay
+        // Overlay ekle
         if (!document.querySelector('.mobil-overlay')) {
             const overlay = document.createElement('div');
             overlay.className = 'mobil-overlay';
@@ -717,163 +302,96 @@ class CETCETYMobil {
             document.body.appendChild(overlay);
         }
 
-        // Header butonlarını düzenle
+        // Header'ı düzenle
         const header = document.querySelector('.chat-header');
         if (header) {
-            header.innerHTML = `
-                <div class="chat-title">
-                    <i class="fas fa-comment"></i> Canlı sohbet
+            // Eski butonları temizle
+            const mevcutButonlar = header.querySelector('.header-butonlar');
+            if (mevcutButonlar) mevcutButonlar.remove();
+
+            // Yeni butonlar ekle
+            const butonDiv = document.createElement('div');
+            butonDiv.className = 'header-butonlar';
+            butonDiv.innerHTML = `
+                <div class="header-buton" onclick="window.mobilManager?.toggleSolMenu()">
+                    <i class="fas fa-bars"></i>
                 </div>
-                <div class="header-butonlar">
-                    <div class="header-buton" onclick="window.mobilManager.toggleSolMenu()">
-                        <i class="fas fa-bars"></i>
-                    </div>
-                    <div class="header-buton" onclick="window.mobilManager.toggleSagMenu()">
-                        <i class="fas fa-ellipsis-vertical"></i>
-                    </div>
+                <div class="header-buton" onclick="window.mobilManager?.toggleSagMenu()">
+                    <i class="fas fa-ellipsis-vertical"></i>
+                </div>
+                <div class="header-buton" onclick="window.mobilManager?.videoAc()">
+                    <i class="fas fa-video"></i>
                 </div>
             `;
+            header.appendChild(butonDiv);
         }
 
-        // Sağ panel
+        // Sağ panel ekle
         if (!document.querySelector('.sag-panel')) {
             const sagPanel = document.createElement('div');
             sagPanel.className = 'sag-panel mobil-ekstra';
             sagPanel.innerHTML = `
                 <div class="sag-sekmeler">
-                    <div class="sag-sekme aktif" data-sekme="online" onclick="window.mobilManager.sagSekmeDegistir('online')">
+                    <div class="sag-sekme aktif" data-sekme="online" onclick="window.mobilManager?.sagSekmeDegistir('online')">
                         <i class="fas fa-users"></i> Çevrimiçi
                     </div>
-                    <div class="sag-sekme" data-sekme="sohbetler" onclick="window.mobilManager.sagSekmeDegistir('sohbetler')">
+                    <div class="sag-sekme" data-sekme="sohbetler" onclick="window.mobilManager?.sagSekmeDegistir('sohbetler')">
                         <i class="fas fa-comment"></i> Sohbetler
                     </div>
                 </div>
-                <div class="sag-icerik" id="sagPanelIcerik">
-                    <!-- İçerik doldurulacak -->
-                </div>
+                <div class="sag-icerik" id="sagPanelIcerik"></div>
             `;
             document.body.appendChild(sagPanel);
-        }
-
-        // Video panelini düzenle
-        const mediaPanel = document.querySelector('.media-panel');
-        if (mediaPanel) {
-            mediaPanel.innerHTML = `
-                <div class="video-header">
-                    <div class="video-title">
-                        <i class="fab fa-youtube"></i> Video
-                    </div>
-                    <div class="video-kapat" onclick="window.mobilManager.videoKapat()">
-                        <i class="fas fa-times"></i>
-                    </div>
-                </div>
-                <div class="youtube-player">
-                    <div id="youtubeContainer"></div>
-                </div>
-                <div class="video-actions">
-                    <div class="video-action-btn" onclick="window.mediaManager?.showAddVideoModal()">
-                        <i class="fas fa-plus"></i> Video ekle
-                    </div>
-                    <div class="video-action-btn" onclick="window.mediaManager?.showLiveStreamModal()">
-                        <i class="fas fa-video"></i> Canlı yayın
-                    </div>
-                    <div class="video-action-btn" onclick="window.mediaManager?.showReportModal()">
-                        <i class="fas fa-flag"></i> Şikayet
-                    </div>
-                    <div class="video-action-btn" onclick="window.mediaManager?.toggleChannelHidden()">
-                        <i class="fas fa-eye-slash"></i> Gizle
-                    </div>
-                </div>
-                <div class="playlist-container">
-                    <div class="playlist-header">
-                        <span class="playlist-title">📋 Playlist</span>
-                        <span class="playlist-count" id="playlistCount">0</span>
-                    </div>
-                    <div id="playlistItems" class="playlist-items"></div>
-                </div>
-            `;
         }
     }
 
     duzenle() {
         // İkon panelini body'e taşı
         const iconPanel = document.querySelector('.icon-panel');
-        if (iconPanel) document.body.appendChild(iconPanel);
+        if (iconPanel) {
+            document.body.appendChild(iconPanel);
+        }
 
-        // Media paneli gizle (video butonuyla açılacak)
+        // Media panelini hazırla
         const mediaPanel = document.querySelector('.media-panel');
-        if (mediaPanel) mediaPanel.classList.remove('acik');
+        if (mediaPanel) {
+            mediaPanel.classList.remove('acik');
+            
+            // Video header ekle
+            const videoHeader = document.createElement('div');
+            videoHeader.className = 'video-header';
+            videoHeader.innerHTML = `
+                <div><i class="fab fa-youtube" style="color: #ff0000;"></i> Video</div>
+                <div class="video-kapat" onclick="window.mobilManager?.videoKapat()">
+                    <i class="fas fa-times"></i>
+                </div>
+            `;
+            mediaPanel.prepend(videoHeader);
+        }
 
-        // Örnek POPBOX mesajı ekle (görseldeki gibi)
-        this.ornekMesajEkle();
-        
         // Sağ panel içeriğini doldur
-        this.sagPanelDoldur('online');
-    }
-
-    ornekMesajEkle() {
-        const messagesDiv = document.getElementById('messages');
-        if (!messagesDiv) return;
-
-        // Görseldeki gibi POPBOX mesajı
-        const popbox = document.createElement('div');
-        popbox.className = 'popbox-mesaj';
-        popbox.innerHTML = `
-            <div class="popbox-title">
-                <i class="fas fa-gift"></i> POPBOX
-            </div>
-            <div class="popbox-icerik">
-                Sevgili ziyaretci.. gününüz aydın dilek!..
-            </div>
-            <div class="popbox-alt">
-                <i class="fas fa-user"></i> @AylinRustemli-i7t5k
-                <i class="fas fa-circle" style="font-size: 4px; color: #666;"></i>
-                <span>salam</span>
-            </div>
-        `;
-
-        // Sistem mesajı
-        const systemMsg = document.createElement('div');
-        systemMsg.className = 'system-message';
-        systemMsg.innerHTML = `
-            <i class="fas fa-info-circle"></i> 
-            Canlı sohbete hoş geldiniz! Gizliliğinizi korumayı ve topluluk kurallarımıza uymayı ihmal etmeyin.
-        `;
-
-        // Daha fazla bilgi butonu
-        const infoBtn = document.createElement('div');
-        infoBtn.className = 'system-message';
-        infoBtn.style.background = '#ff0000';
-        infoBtn.style.color = 'white';
-        infoBtn.style.cursor = 'pointer';
-        infoBtn.innerHTML = `
-            <i class="fas fa-arrow-right"></i> Daha fazla bilgi
-        `;
-        infoBtn.onclick = () => alert('Topluluk kuralları...');
-
-        messagesDiv.appendChild(popbox);
-        messagesDiv.appendChild(systemMsg);
-        messagesDiv.appendChild(infoBtn);
+        setTimeout(() => {
+            this.sagPanelDoldur('online');
+        }, 100);
     }
 
     sagPanelDoldur(sekme) {
         const container = document.getElementById('sagPanelIcerik');
         if (!container) return;
 
-        const aktifUser = JSON.parse(localStorage.getItem('cetcety_active_user'));
-        const channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {};
-        const currentCh = channels[currentChannel] || { onlineUsers: ['MateKy', 'Mehmet', 'Ahmet', 'Ayşe'] };
-
         if (sekme === 'online') {
             // Çevrimiçi listesi
+            const channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {};
+            const currentCh = channels[currentChannel] || { onlineUsers: ['MateKy', 'Mehmet', 'Ahmet'] };
+            
             let html = '';
             currentCh.onlineUsers.forEach(user => {
                 html += `
-                    <div class="online-item" onclick="openPrivateChat('${user}')">
-                        <div class="online-avatar">${user.charAt(0)}</div>
-                        <div class="online-info">
-                            <div class="online-name">${user}</div>
-                            <div class="online-status"><i class="fas fa-circle" style="font-size: 8px; color: #2ecc71;"></i> çevrimiçi</div>
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #1a1a1a; border-radius: 8px; margin-bottom: 8px; cursor: pointer;" onclick="openPrivateChat('${user}')">
+                        <div style="width: 40px; height: 40px; border-radius: 50%; background: #0a5c36; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600;">${user.charAt(0)}</div>
+                        <div>
+                            <div style="font-weight: 600; color: #fff;">${user}</div>
+                            <div style="font-size: 11px; color: #2ecc71;"><i class="fas fa-circle" style="font-size: 8px;"></i> çevrimiçi</div>
                         </div>
                     </div>
                 `;
@@ -881,54 +399,46 @@ class CETCETYMobil {
             container.innerHTML = html;
         } else {
             // Sohbetler listesi
-            const privates = JSON.parse(localStorage.getItem('cetcety_private_chats')) || {};
-            const sohbetler = [];
-
-            Object.keys(privates).forEach(chatId => {
-                const ids = chatId.split('_');
-                const karsiId = ids[0] == aktifUser?.id ? ids[1] : ids[0];
-                const sonMesaj = privates[chatId][privates[chatId].length - 1];
-                const okunmamis = privates[chatId].filter(m => m.senderId != aktifUser?.id && !m.read).length;
-
-                sohbetler.push({
-                    id: karsiId,
-                    sonMesaj: sonMesaj?.content || '...',
-                    okunmamis: okunmamis
-                });
-            });
-
-            if (sohbetler.length === 0) {
-                container.innerHTML = '<div style="color: #aaa; text-align: center; padding: 20px;">📭 Henüz sohbet yok</div>';
-                return;
-            }
-
-            let html = '';
-            sohbetler.forEach(sohbet => {
-                html += `
-                    <div class="sohbet-item" onclick="openPrivateChat('${sohbet.id}')">
-                        <div class="sohbet-avatar">${sohbet.id.charAt(0)}</div>
-                        <div class="sohbet-info">
-                            <div class="sohbet-name">${sohbet.id}</div>
-                            <div class="sohbet-son-mesaj">${sohbet.sonMesaj}</div>
+            container.innerHTML = '<div style="color: #aaa; text-align: center; padding: 20px;">Sohbetler yükleniyor...</div>';
+            
+            // Gerçek sohbetleri yükle
+            setTimeout(() => {
+                const privates = JSON.parse(localStorage.getItem('cetcety_private_chats')) || {};
+                const aktifUser = JSON.parse(localStorage.getItem('cetcety_active_user'));
+                
+                let html = '';
+                Object.keys(privates).forEach(chatId => {
+                    const ids = chatId.split('_');
+                    const karsiId = ids[0] == aktifUser?.id ? ids[1] : ids[0];
+                    const sonMesaj = privates[chatId][privates[chatId].length - 1];
+                    
+                    html += `
+                        <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #1a1a1a; border-radius: 8px; margin-bottom: 8px; cursor: pointer;" onclick="openPrivateChat('${karsiId}')">
+                            <div style="width: 40px; height: 40px; border-radius: 50%; background: #ff0000; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600;">${karsiId.charAt(0)}</div>
+                            <div>
+                                <div style="font-weight: 600; color: #fff;">${karsiId}</div>
+                                <div style="font-size: 11px; color: #aaa;">${sonMesaj?.content || '...'}</div>
+                            </div>
                         </div>
-                        ${sohbet.okunmamis > 0 ? `<div class="sohbet-bildirim">${sohbet.okunmamis}</div>` : ''}
-                    </div>
-                `;
-            });
-            container.innerHTML = html;
+                    `;
+                });
+                
+                if (html === '') {
+                    html = '<div style="color: #aaa; text-align: center; padding: 20px;">📭 Henüz sohbet yok</div>';
+                }
+                
+                container.innerHTML = html;
+            }, 100);
         }
     }
 
     sagSekmeDegistir(sekme) {
-        // Sekme stillerini güncelle
         document.querySelectorAll('.sag-sekme').forEach(el => {
             el.classList.remove('aktif');
             if (el.dataset.sekme === sekme) {
                 el.classList.add('aktif');
             }
         });
-
-        // İçeriği doldur
         this.sagPanelDoldur(sekme);
     }
 
@@ -941,9 +451,8 @@ class CETCETYMobil {
             overlay.classList.toggle('acik');
             this.solMenuAcik = iconPanel.classList.contains('acik');
             
-            // Sağ menü açıksa kapat
-            if (this.sagMenuAcik) {
-                document.querySelector('.sag-panel').classList.remove('acik');
+            if (this.solMenuAcik) {
+                document.querySelector('.sag-panel')?.classList.remove('acik');
                 this.sagMenuAcik = false;
             }
         }
@@ -958,14 +467,9 @@ class CETCETYMobil {
             overlay.classList.toggle('acik');
             this.sagMenuAcik = sagPanel.classList.contains('acik');
             
-            // Sol menü açıksa kapat
-            if (this.solMenuAcik) {
-                document.querySelector('.icon-panel').classList.remove('acik');
-                this.solMenuAcik = false;
-            }
-            
-            // İçeriği güncelle
             if (this.sagMenuAcik) {
+                document.querySelector('.icon-panel')?.classList.remove('acik');
+                this.solMenuAcik = false;
                 this.sagPanelDoldur('online');
             }
         }
@@ -995,93 +499,59 @@ class CETCETYMobil {
         this.sagMenuAcik = false;
     }
 
-    mobilOlaylar() {
-        // Kaydırarak kapatma (özel sohbet için)
-        let touchStartY = 0;
-        let touchStartX = 0;
+    mesajlariGuncelle() {
+        // Örnek POPBOX mesajı ekle
+        const messagesDiv = document.getElementById('messages');
+        if (!messagesDiv) return;
 
+        // Sadece boşsa ekle
+        if (messagesDiv.children.length <= 1) {
+            const popbox = document.createElement('div');
+            popbox.className = 'system-message';
+            popbox.style.background = '#1a1a1a';
+            popbox.style.borderLeft = '4px solid #ff0000';
+            popbox.style.textAlign = 'left';
+            popbox.style.padding = '16px';
+            popbox.innerHTML = `
+                <div style="color: #ff0000; font-weight: 700; margin-bottom: 8px;">
+                    <i class="fas fa-gift"></i> POPBOX
+                </div>
+                <div style="margin-bottom: 8px;">Sevgili ziyaretci.. gününüz aydın dilek!..</div>
+                <div style="color: #aaa; font-size: 12px;">
+                    <i class="fas fa-user"></i> @AylinRustemli-i7t5k • salam
+                </div>
+            `;
+            messagesDiv.appendChild(popbox);
+        }
+    }
+
+    mobilOlaylar() {
+        // Kaydırarak kapatma
+        let touchStartY = 0;
+        
         document.addEventListener('touchstart', (e) => {
             touchStartY = e.touches[0].clientY;
-            touchStartX = e.touches[0].clientX;
         });
 
         document.addEventListener('touchend', (e) => {
             const touchEndY = e.changedTouches[0].clientY;
-            const touchEndX = e.changedTouches[0].clientX;
             const diffY = touchEndY - touchStartY;
-            const diffX = touchEndX - touchStartX;
 
             // Özel sohbeti kapat (aşağı kaydırma)
             const privateChat = document.getElementById('privateChatPanel');
             if (privateChat?.classList.contains('active') && diffY > 100) {
                 privateChat.classList.remove('active');
-                currentPrivateChat = null;
+                if (window.currentPrivateChat) window.currentPrivateChat = null;
             }
 
-            // Video panelini kapat (aşağı kaydırma)
+            // Video panelini kapat
             const mediaPanel = document.querySelector('.media-panel');
             if (mediaPanel?.classList.contains('acik') && diffY > 100) {
                 this.videoKapat();
             }
-
-            // Menüleri kapat (sağa/sola kaydırma)
-            if (Math.abs(diffX) > 100) {
-                this.menuleriKapat();
-            }
         });
-
-        // Video butonunu ekle
-        const videoBtn = document.createElement('div');
-        videoBtn.className = 'header-buton';
-        videoBtn.innerHTML = '<i class="fas fa-video"></i>';
-        videoBtn.onclick = () => this.videoAc();
-        videoBtn.title = 'Video';
-        
-        const headerButtons = document.querySelector('.header-butonlar');
-        if (headerButtons) {
-            headerButtons.appendChild(videoBtn);
-        }
     }
 }
 
-// Global mobil yöneticisini başlat
+// Global mobil manager'ı window'a ekle
 window.mobilManager = new CETCETYMobil();
-
-// Storage değişikliklerini dinle
-window.addEventListener('storage', (e) => {
-    if (e.key === 'cetcety_private_chats' && window.mobilManager?.sagMenuAcik) {
-        const aktifSekme = document.querySelector('.sag-sekme.aktif')?.dataset.sekme || 'online';
-        window.mobilManager.sagPanelDoldur(aktifSekme);
-    }
-});
-
-// openPrivateChat fonksiyonunu güncelle (mobil için)
-const originalOpenPrivateChat = window.openPrivateChat;
-window.openPrivateChat = function(username) {
-    if (window.mobilManager?.isMobile) {
-        originalOpenPrivateChat(username);
-        
-        // Mobilde özel sohbeti düzenle
-        const privateChat = document.getElementById('privateChatPanel');
-        if (privateChat) {
-            privateChat.classList.add('active');
-            
-            // Kapatma butonu ekle (yoksa)
-            if (!privateChat.querySelector('.private-chat-close')) {
-                const header = privateChat.querySelector('.private-chat-header');
-                if (header) {
-                    const closeBtn = document.createElement('div');
-                    closeBtn.className = 'private-chat-close';
-                    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-                    closeBtn.onclick = () => {
-                        privateChat.classList.remove('active');
-                        currentPrivateChat = null;
-                    };
-                    header.appendChild(closeBtn);
-                }
-            }
-        }
-    } else {
-        originalOpenPrivateChat(username);
-    }
-};
