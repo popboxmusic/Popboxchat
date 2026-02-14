@@ -26,6 +26,7 @@ function initFirebase() {
         if (user) {
             currentUser = user;
             connectToChannel('genel');
+            loadPrivateChats(); // Sohbetleri yükle
         }
         
         return database;
@@ -58,27 +59,33 @@ function connectToChannel(channelName) {
     // Çıkışta sil
     onlineRef.onDisconnect().remove();
     
-    // ===== 1. VİDEO EŞZAMANLI =====
+    // ===== ONLINE LİSTE (SAĞ MENÜ) =====
+    database.ref(`channels/${channelName}/onlineUsers`).on('value', (snapshot) => {
+        const users = snapshot.val();
+        const onlineCount = users ? Object.keys(users).length : 0;
+        document.getElementById('channelUserCount').textContent = onlineCount;
+        
+        // SAĞ MENÜDEKİ ONLINE LİSTEYİ GÜNCELLE
+        updateOnlineList(users);
+    });
+    
+    // ===== VİDEO EŞZAMANLI =====
     database.ref(`channels/${channelName}/currentVideo`).on('value', (snapshot) => {
         const videoData = snapshot.val();
         if (videoData && window.mediaManager) {
-            console.log('🎬 Video değişti:', videoData.title);
-            
             if (window.mediaManager.ytPlayer && window.mediaManager.playerReady) {
                 window.mediaManager.ytPlayer.loadVideoById(videoData.id);
             } else {
                 window.mediaManager.pendingVideo = videoData.id;
             }
-            
             document.getElementById('nowPlayingTitle').textContent = videoData.title;
             document.getElementById('nowPlayingOwner').innerHTML = videoData.artist;
         }
     });
     
-    // ===== 2. PLAYLİST EŞZAMANLI =====
+    // ===== PLAYLİST EŞZAMANLI =====
     database.ref(`channels/${channelName}/playlist`).on('value', (snapshot) => {
         const playlistData = snapshot.val();
-        console.log('📋 Playlist güncellendi');
         
         const playlist = [];
         if (playlistData) {
@@ -90,29 +97,17 @@ function connectToChannel(channelName) {
             });
         }
         
-        // LocalStorage'e kaydet
         const channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {};
         if (!channels[channelName]) channels[channelName] = {};
         channels[channelName].playlist = playlist;
         localStorage.setItem('cetcety_channels', JSON.stringify(channels));
         
-        // Medya panelini güncelle
         if (window.mediaManager) {
             window.mediaManager.updatePlaylist();
         }
     });
     
-    // ===== 3. ONLINE LİSTE (SAĞ MENÜ) =====
-    database.ref(`channels/${channelName}/onlineUsers`).on('value', (snapshot) => {
-        const users = snapshot.val();
-        const onlineCount = users ? Object.keys(users).length : 0;
-        document.getElementById('channelUserCount').textContent = onlineCount;
-        
-        // SAĞ MENÜDEKİ ONLINE LİSTEYİ GÜNCELLE
-        updateOnlineList(users);
-    });
-    
-    // ===== 4. MESAJLAR EŞZAMANLI =====
+    // ===== MESAJLAR EŞZAMANLI =====
     database.ref(`channels/${channelName}/messages`).off();
     database.ref(`channels/${channelName}/messages`).on('child_added', (snapshot) => {
         const msg = snapshot.val();
@@ -120,41 +115,6 @@ function connectToChannel(channelName) {
             displayRealtimeMessage(msg);
         }
     });
-}
-
-// ========== VİDEO GÜNCELLE ==========
-function updateVideo(channelName, videoId, title, artist) {
-    if (!database) return;
-    console.log('🎬 Video güncelleniyor:', title);
-    database.ref(`channels/${channelName}/currentVideo`).set({
-        id: videoId,
-        title: title,
-        artist: artist,
-        updatedAt: Date.now(),
-        updatedBy: currentUser?.name
-    });
-}
-
-// ========== PLAYLİST'E VİDEO EKLE ==========
-function addToPlaylist(channelName, video) {
-    if (!database) return;
-    console.log('📋 Playlist\'e video ekleniyor:', video.title);
-    
-    const playlistRef = database.ref(`channels/${channelName}/playlist`).push();
-    playlistRef.set({
-        id: video.id,
-        title: video.title,
-        addedBy: video.addedBy || currentUser?.name,
-        role: video.role || currentUser?.role,
-        addedAt: Date.now()
-    });
-}
-
-// ========== PLAYLİST'TEN VİDEO SİL ==========
-function removeFromPlaylist(channelName, firebaseKey) {
-    if (!database) return;
-    console.log('📋 Playlist\'ten video siliniyor');
-    database.ref(`channels/${channelName}/playlist/${firebaseKey}`).remove();
 }
 
 // ========== ONLINE LİSTE GÜNCELLE (SAĞ MENÜ) ==========
@@ -184,6 +144,134 @@ function updateOnlineList(users) {
     container.innerHTML = html || '<div style="color: #666; padding: 20px;">Kimse yok</div>';
 }
 
+// ========== ÖZEL SOHBETLERİ YÜKLE ==========
+function loadPrivateChats() {
+    if (!database || !currentUser) return;
+    
+    database.ref('privateChats').on('value', (snapshot) => {
+        const allChats = snapshot.val() || {};
+        const myChats = [];
+        
+        // Kullanıcının olduğu sohbetleri bul
+        Object.keys(allChats).forEach(chatId => {
+            if (chatId.includes(currentUser.id)) {
+                const messages = Object.values(allChats[chatId]);
+                const sonMesaj = messages[messages.length - 1];
+                const okunmamis = messages.filter(m => m.senderId !== currentUser.id && !m.read).length;
+                
+                // Karşı kullanıcının ID'sini bul
+                const ids = chatId.split('_');
+                const otherId = ids[0] == currentUser.id ? ids[1] : ids[0];
+                
+                myChats.push({
+                    chatId: chatId,
+                    otherId: otherId,
+                    otherName: sonMesaj?.senderName || 'Kullanıcı',
+                    sonMesaj: sonMesaj?.text || '...',
+                    sonZaman: sonMesaj?.timestamp || Date.now(),
+                    okunmamis: okunmamis
+                });
+            }
+        });
+        
+        // Sohbetleri güncelle
+        updateChatList(myChats);
+    });
+}
+
+// ========== SOHBET LİSTESİNİ GÜNCELLE ==========
+function updateChatList(chats) {
+    const container = document.getElementById('sagMenuIcerik');
+    if (!container) return;
+    
+    // Sadece sohbetler sekmesi aktifse güncelle
+    const aktifSekme = document.querySelector('.sag-menu-sekme.aktif')?.dataset.sekme;
+    if (aktifSekme !== 'sohbetler') return;
+    
+    let html = '';
+    if (chats.length > 0) {
+        // Son mesaja göre sırala
+        chats.sort((a, b) => b.sonZaman - a.sonZaman);
+        
+        chats.forEach(chat => {
+            html += `
+                <div class="sohbet-item" onclick="openPrivateChat('${chat.otherName}')">
+                    <div class="sohbet-avatar">${chat.otherName.charAt(0)}</div>
+                    <div style="flex:1;">
+                        <div style="font-weight: 600;">${chat.otherName}</div>
+                        <div style="font-size: 12px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">
+                            ${chat.sonMesaj}
+                        </div>
+                    </div>
+                    ${chat.okunmamis > 0 ? `<div class="sohbet-bildirim">${chat.okunmamis}</div>` : ''}
+                </div>
+            `;
+        });
+    } else {
+        html = '<div style="color: #666; text-align: center; padding: 20px;">💬 Henüz sohbet yok</div>';
+    }
+    
+    container.innerHTML = html;
+}
+
+// ========== SEKMELERİ GÜNCELLE ==========
+function updateSagMenu(sekme) {
+    const container = document.getElementById('sagMenuIcerik');
+    if (!container) return;
+    
+    if (sekme === 'online') {
+        // Online listeyi Firebase'den al
+        database.ref(`channels/${currentChannelFirebase}/onlineUsers`).once('value', (snapshot) => {
+            updateOnlineList(snapshot.val());
+        });
+    } else {
+        // Sohbet listesini göster
+        loadPrivateChats();
+    }
+}
+
+// ========== ÖZEL SOHBET MESAJI GÖNDER ==========
+function sendPrivateMessageFirebase(toUserId, text, fromUser, fromUserId) {
+    if (!database) return;
+    
+    const chatId = [fromUserId, toUserId].sort().join('_');
+    database.ref(`privateChats/${chatId}`).push({
+        senderId: fromUserId,
+        senderName: fromUser,
+        text: text,
+        timestamp: Date.now(),
+        read: false
+    });
+}
+
+// ========== ÖZEL SOHBET MESAJLARINI DİNLE ==========
+function listenPrivateChat(otherUserId) {
+    if (!database || !currentUser) return;
+    
+    const chatId = [currentUser.id, otherUserId].sort().join('_');
+    
+    database.ref(`privateChats/${chatId}`).on('child_added', (snapshot) => {
+        const msg = snapshot.val();
+        if (msg && msg.senderId !== currentUser.id) {
+            displayPrivateMessage(msg);
+            // Okundu olarak işaretle
+            snapshot.ref.update({ read: true });
+        }
+    });
+}
+
+// ========== ÖZEL MESAJ GÖSTER ==========
+function displayPrivateMessage(msg) {
+    const container = document.getElementById('privateChatMessages');
+    if (!container) return;
+    
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `private-message ${msg.senderId === currentUser.id ? 'right' : ''}`;
+    msgDiv.innerHTML = `<div class="private-message-text">${escapeHTML(msg.text)}</div>`;
+    container.appendChild(msgDiv);
+    container.scrollTop = container.scrollHeight;
+}
+
 // ========== MESAJ GÖSTER ==========
 function displayRealtimeMessage(msg) {
     const messagesDiv = document.getElementById('messages');
@@ -210,6 +298,37 @@ function escapeHTML(text) {
     return div.innerHTML;
 }
 
+// ========== VİDEO GÜNCELLE ==========
+function updateVideo(channelName, videoId, title, artist) {
+    if (!database) return;
+    database.ref(`channels/${channelName}/currentVideo`).set({
+        id: videoId,
+        title: title,
+        artist: artist,
+        updatedAt: Date.now(),
+        updatedBy: currentUser?.name
+    });
+}
+
+// ========== PLAYLİST'E VİDEO EKLE ==========
+function addToPlaylist(channelName, video) {
+    if (!database) return;
+    const playlistRef = database.ref(`channels/${channelName}/playlist`).push();
+    playlistRef.set({
+        id: video.id,
+        title: video.title,
+        addedBy: video.addedBy || currentUser?.name,
+        role: video.role || currentUser?.role,
+        addedAt: Date.now()
+    });
+}
+
+// ========== PLAYLİST'TEN VİDEO SİL ==========
+function removeFromPlaylist(channelName, firebaseKey) {
+    if (!database) return;
+    database.ref(`channels/${channelName}/playlist/${firebaseKey}`).remove();
+}
+
 // ========== MESAJ GÖNDER ==========
 function sendFirebaseMessage(channelName, text, sender) {
     if (!database) return;
@@ -232,54 +351,16 @@ if (window.joinChannel) {
     };
 }
 
-// ========== MEDYA YÖNETİCİSİ FONKSİYONLARINI YAKALA ==========
+// ========== MEDYA YÖNETİCİSİNİ YAKALA ==========
 if (window.mediaManager) {
-    // Video oynatma
     const originalPlayVideo = window.mediaManager.playVideo;
     window.mediaManager.playVideo = function(videoId, title, addedBy, role) {
         originalPlayVideo.call(this, videoId, title, addedBy, role);
         
-        // Firebase'e video değişimini bildir
         if (window.updateVideo) {
             const artist = `${role === 'owner' ? '👑' : role === 'admin' ? '⚡' : role === 'coadmin' ? '🔧' : '🛠️'} ${addedBy}`;
             window.updateVideo(this.currentChannel, videoId, title, artist);
         }
-    };
-    
-    // Video ekleme
-    const originalAddVideo = window.mediaManager.addVideo;
-    window.mediaManager.addVideo = async function() {
-        const result = await originalAddVideo.call(this);
-        
-        const urlInput = document.getElementById('videoUrlInput');
-        const titleInput = document.getElementById('videoTitleInput');
-        const url = urlInput?.value.trim();
-        const title = titleInput?.value.trim();
-        const videoId = this.extractVideoId(url);
-        
-        if (videoId && title && window.addToPlaylist) {
-            window.addToPlaylist(this.currentChannel, {
-                id: videoId,
-                title: title,
-                addedBy: currentUser?.name,
-                role: currentUser?.role
-            });
-        }
-        
-        return result;
-    };
-    
-    // Playlist'ten silme
-    const originalRemoveFromPlaylist = window.mediaManager.removeFromPlaylist;
-    window.mediaManager.removeFromPlaylist = function(index) {
-        const channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {};
-        const channel = channels[this.currentChannel];
-        if (channel?.playlist && channel.playlist[index]?.firebaseKey) {
-            const firebaseKey = channel.playlist[index].firebaseKey;
-            window.removeFromPlaylist(this.currentChannel, firebaseKey);
-        }
-        
-        originalRemoveFromPlaylist.call(this, index);
     };
 }
 
@@ -298,6 +379,40 @@ if (window.sendMessage) {
     };
 }
 
+// ========== ÖZEL MESAJ GÖNDERMEYİ YAKALA ==========
+if (window.sendPrivateMessage) {
+    const originalSendPrivate = window.sendPrivateMessage;
+    window.sendPrivateMessage = function() {
+        const inp = document.getElementById('privateMessageInput');
+        const txt = inp.value.trim();
+        
+        if (txt && window.currentPrivateChat && currentUser) {
+            window.sendPrivateMessageFirebase(
+                window.currentPrivateChat.id,
+                txt,
+                currentUser.name,
+                currentUser.id
+            );
+        }
+        
+        originalSendPrivate();
+    };
+}
+
+// ========== SEKMELERİ YAKALA ==========
+function setupTabListeners() {
+    const onlineSekme = document.querySelector('.sag-menu-sekme[data-sekme="online"]');
+    const sohbetSekme = document.querySelector('.sag-menu-sekme[data-sekme="sohbetler"]');
+    
+    if (onlineSekme) {
+        onlineSekme.addEventListener('click', () => updateSagMenu('online'));
+    }
+    
+    if (sohbetSekme) {
+        sohbetSekme.addEventListener('click', () => updateSagMenu('sohbetler'));
+    }
+}
+
 // ========== GLOBAL YAP ==========
 window.database = database;
 window.initFirebase = initFirebase;
@@ -305,10 +420,14 @@ window.updateVideo = updateVideo;
 window.addToPlaylist = addToPlaylist;
 window.removeFromPlaylist = removeFromPlaylist;
 window.sendFirebaseMessage = sendFirebaseMessage;
+window.sendPrivateMessageFirebase = sendPrivateMessageFirebase;
+window.listenPrivateChat = listenPrivateChat;
+window.updateSagMenu = updateSagMenu;
 
 // Sayfa yüklendiğinde başlat
 document.addEventListener('DOMContentLoaded', function() {
     if (typeof initFirebase === 'function') {
         initFirebase();
     }
+    setTimeout(setupTabListeners, 1000);
 });
