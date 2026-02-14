@@ -150,14 +150,16 @@ function displayRealtimeMessage(msg) {
 }
 
 // ========== KANAL DEĞİŞTİRME YAKALAMA ==========
-// joinChannel fonksiyonunu yakala
-const originalJoinChannel = window.joinChannel;
-window.joinChannel = function(ch) {
-    if (originalJoinChannel) originalJoinChannel(ch);
-    if (database && currentUser) {
-        connectToChannel(ch);
-    }
-};
+// joinChannel fonksiyonunu yakala (varsa)
+if (window.joinChannel) {
+    const originalJoinChannel = window.joinChannel;
+    window.joinChannel = function(ch) {
+        if (originalJoinChannel) originalJoinChannel(ch);
+        if (database && currentUser) {
+            connectToChannel(ch);
+        }
+    };
+}
 
 // Global yap
 window.database = database;
@@ -189,3 +191,10 @@ window.connectToChannel = connectToChannel;
     };
     document.head.appendChild(script);
 })();
+
+// Sayfa yüklendiğinde Firebase'i başlat
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof initFirebase === 'function') {
+        initFirebase();
+    }
+});
