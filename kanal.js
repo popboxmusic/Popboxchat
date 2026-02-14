@@ -1,206 +1,270 @@
-// ========== KANAL.JS - PANEL FONKSİYONLARI ==========
+// ========== KANAL.JS - CETCETY Kanal Yöneticisi ==========
+console.log('%c📡 CETCETY Kanal Yöneticisi başlatılıyor...', 'color: #ff0000; font-size: 14px; font-weight: bold;');
 
-// Destek paneli
-function loadSupportPanel(panel) {
-    panel.innerHTML = `
-        <div class="panel-header">
-            <h3><i class="fas fa-headset" style="color:#7289da;"></i> Destek</h3>
-            <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
-        </div>
-        <div class="panel-content">
-            <div class="info-box">
-                <p><i class="fas fa-info-circle"></i> Canlı destek talebiniz #admin kanalına iletilir.</p>
-            </div>
-            <div style="background:#1a1a1a; border-radius:8px; padding:16px; margin-bottom:16px;">
-                <h4 style="color:#fff; margin-bottom:12px;">📋 Sık Sorulan Sorular</h4>
-                <div onclick="addSystemMessage('📌 Kanal açmak için sol menüde + ikonuna tıklayın.')" 
-                     style="cursor:pointer; padding:12px; background:#2a2a2a; border-radius:8px; margin-bottom:8px;">
-                    <i class="fas fa-question-circle" style="color:#7289da; margin-right:8px;"></i>
-                    Kanal nasıl açarım?
-                </div>
-                <div onclick="addSystemMessage('📌 Özel sohbetlerde resim/video gönderebilirsiniz.')" 
-                     style="cursor:pointer; padding:12px; background:#2a2a2a; border-radius:8px;">
-                    <i class="fas fa-question-circle" style="color:#7289da; margin-right:8px;"></i>
-                    Özel sohbet özellikleri
-                </div>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Destek Talebi</label>
-                <textarea id="supportMessage" class="form-input" placeholder="Sorununuzu yazın..." rows="3"></textarea>
-            </div>
-            <button class="form-button" style="background:#7289da;" onclick="sendSupportTicket()">Gönder</button>
-        </div>
-    `;
-}
+class CETCETYChannel {
+    constructor() {
+        this.currentChannel = 'genel';
+        this.channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {};
+        console.log('%c✅ Kanal Yöneticisi hazır!', 'color: #4caf50; font-size: 12px;');
+    }
 
-// Bildirimler paneli
-function loadNotificationsPanel(panel) {
-    panel.innerHTML = `
-        <div class="panel-header">
-            <h3><i class="fas fa-bell" style="color:#ff4444;"></i> Bildirimler</h3>
-            <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
-        </div>
-        <div class="panel-content">
-            <div style="display:flex; align-items:center; gap:12px; padding:12px; background:#1a1a1a; border-radius:8px; margin-bottom:8px;">
-                <i class="fas fa-info-circle" style="color:#6495ed;"></i>
-                <div style="flex:1;">
-                    <div style="font-size:13px; color:#fff;">#rock kanalında yeni video eklendi</div>
-                    <div style="font-size:10px; color:#aaa;">5 dk önce</div>
-                </div>
-            </div>
-            <div style="display:flex; align-items:center; gap:12px; padding:12px; background:#1a1a1a; border-radius:8px; margin-bottom:8px;">
-                <i class="fas fa-envelope" style="color:#ffd700;"></i>
-                <div style="flex:1;">
-                    <div style="font-size:13px; color:#fff;">Mehmet sana özel mesaj gönderdi</div>
-                    <div style="font-size:10px; color:#aaa;">12 dk önce</div>
-                </div>
-            </div>
-            <div style="display:flex; align-items:center; gap:12px; padding:12px; background:#1a1a1a; border-radius:8px;">
-                <i class="fas fa-fire" style="color:#ff4444;"></i>
-                <div style="flex:1;">
-                    <div style="font-size:13px; color:#fff;">#arabesk kanalı popüler oldu!</div>
-                    <div style="font-size:10px; color:#aaa;">1 saat önce</div>
-                </div>
-            </div>
-        </div>
-    `;
-}
+    // ========== KANAL VERİLERİ ==========
+    getChannels() {
+        return JSON.parse(localStorage.getItem('cetcety_channels')) || {};
+    }
 
-// Profil paneli
-function loadProfilePanel(panel) {
-    const user = ACTIVE_USER || { name: 'Misafir', role: 'user' };
-    panel.innerHTML = `
-        <div class="panel-header">
-            <h3><i class="fas fa-user" style="color:#ff0000;"></i> Profil</h3>
-            <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
-        </div>
-        <div class="panel-content">
-            <div style="display:flex; flex-direction:column; align-items:center; padding:20px 0;">
-                <div class="profile-avatar-panel" style="width:80px; height:80px; font-size:32px; margin-bottom:12px;">
-                    ${user.name.charAt(0).toUpperCase()}
-                </div>
-                <h2 style="font-size:20px; font-weight:700; color:#fff; margin-bottom:4px;">${user.name}</h2>
-                <span class="badge ${user.role === 'owner' ? 'badge-owner' : 'badge-user'}">
-                    ${user.role === 'owner' ? '👑 Kurucu' : '👤 Kullanıcı'}
-                </span>
-            </div>
-            <div style="display:flex; justify-content:space-around; padding:16px 0; border-top:1px solid #2a2a2a; border-bottom:1px solid #2a2a2a; margin:16px 0;">
-                <div style="text-align:center;">
-                    <div style="font-size:18px; font-weight:700; color:#fff;">${user.subscribedChannels?.length || 0}</div>
-                    <div style="font-size:11px; color:#aaa;">Abonelik</div>
-                </div>
-                <div style="text-align:center;">
-                    <div style="font-size:18px; font-weight:700; color:#fff;">0</div>
-                    <div style="font-size:11px; color:#aaa;">Kanalım</div>
-                </div>
-            </div>
-            <button class="form-button" onclick="logout()" style="margin-top:16px;">Çıkış Yap</button>
-        </div>
-    `;
-}
+    getChannel(name) {
+        const channels = this.getChannels();
+        return channels[name];
+    }
 
-// Kanal aç paneli
-function loadCreateChannelPanel(panel) {
-    panel.innerHTML = `
-        <div class="panel-header">
-            <h3><i class="fas fa-plus-circle" style="color:#ff0000;"></i> Kanal Aç</h3>
-            <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
-        </div>
-        <div class="panel-content">
-            <div class="form-group">
-                <label class="form-label">Kanal Adı</label>
-                <input type="text" id="newChannelName" class="form-input" placeholder="örnek: teknoloji" maxlength="20">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Açıklama</label>
-                <input type="text" id="newChannelDesc" class="form-input" placeholder="Kanalın konusu...">
-            </div>
-            <button class="form-button" onclick="createChannel()">Kanalı Oluştur</button>
-        </div>
-    `;
-}
+    saveChannels(channels) {
+        localStorage.setItem('cetcety_channels', JSON.stringify(channels));
+    }
 
-// Abonelikler paneli
-function loadSubscriptionsPanel(panel) {
-    const subs = ACTIVE_USER?.subscribedChannels || ['genel', 'rock', 'arabesk'];
-    let html = `
-        <div class="panel-header">
-            <h3><i class="fas fa-bell" style="color:#ffd700;"></i> Abonelikler</h3>
-            <span class="subscription-count">${subs.length}</span>
-            <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
-        </div>
-        <div class="panel-content">
-    `;
-    
-    subs.forEach(ch => {
-        html += `
-            <div class="subscription-item" onclick="joinChannel('${ch}')">
-                <div class="subscription-avatar"><i class="fas fa-hashtag"></i></div>
-                <div class="subscription-info">
-                    <div class="subscription-name">${ch}</div>
-                    <div class="subscription-meta">Kanal</div>
-                </div>
-            </div>
-        `;
-    });
-    
-    html += `</div>`;
-    panel.innerHTML = html;
-}
+    getActiveUser() {
+        return JSON.parse(localStorage.getItem('cetcety_active_user'));
+    }
 
-// Kanallar paneli
-function loadChannelsPanel(panel) {
-    let html = `
-        <div class="panel-header">
-            <h3><i class="fas fa-list-ul" style="color:#ff0000;"></i> Tüm Kanallar</h3>
-            <span class="subscription-count">${Object.keys(channels).length}</span>
-            <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
-        </div>
-        <div class="panel-content">
-    `;
-    
-    Object.values(channels).forEach(ch => {
-        if (!ch.isHidden) {
-            html += `
-                <div class="channel-item" onclick="joinChannel('${ch.name}')">
-                    <div class="channel-avatar"><i class="fas fa-hashtag"></i></div>
-                    <div class="channel-info">
-                        <div class="channel-name">${ch.name}</div>
-                        <div class="channel-meta">${ch.subscribers?.toLocaleString() || 0} abone</div>
+    // ========== KANAL İŞLEMLERİ ==========
+    joinChannel(ch) {
+        const channels = this.getChannels();
+        const user = this.getActiveUser();
+        
+        if (!channels[ch]) return;
+        if (ch === 'admin' && !(user?.role === 'owner' || user?.role === 'admin')) {
+            this.addSystemMessage('❌ Bu kanala erişim yetkiniz yok.');
+            return;
+        }
+
+        // Eski kanaldan çıkar
+        if (this.currentChannel && channels[this.currentChannel] && channels[this.currentChannel].onlineUsers) {
+            channels[this.currentChannel].onlineUsers = channels[this.currentChannel].onlineUsers.filter(u => u !== user?.name);
+        }
+
+        this.currentChannel = ch;
+        let c = channels[ch];
+
+        // Yeni kanala ekle
+        if (!c.onlineUsers.includes(user?.name)) {
+            c.onlineUsers.push(user?.name);
+        }
+        this.saveChannels(channels);
+
+        // UI güncelle
+        document.getElementById('currentChannelName').textContent = ch;
+        document.getElementById('currentChannelPlaylist').textContent = `#${ch} playlist`;
+        
+        let sub = c.subscribers || 0;
+        let fmt = sub >= 1000000 ? (sub/1000000).toFixed(1)+'M' : sub >= 1000 ? (sub/1000).toFixed(1)+'K' : sub;
+        document.getElementById('channelSubscribers').textContent = fmt;
+        document.getElementById('channelUserCount').textContent = c.onlineUsers.length;
+        
+        document.getElementById('nowPlayingTitle').textContent = c.currentTitle;
+        document.getElementById('nowPlayingOwner').innerHTML = `${c.ownerRole === 'owner' ? '👑' : '🔧'} ${c.owner}`;
+        
+        // Medya yöneticisini güncelle
+        if (window.mediaManager) {
+            window.mediaManager.setChannel(ch);
+        }
+
+        // Abone butonunu güncelle
+        const subBtn = document.getElementById('subscribeChannelBtn');
+        if (user?.subscribedChannels?.includes(ch)) {
+            subBtn.innerHTML = '<i class="fas fa-check"></i> Abone Olundu';
+            subBtn.classList.add('subscribed');
+        } else {
+            subBtn.innerHTML = '<i class="fas fa-plus"></i> Abone Ol';
+            subBtn.classList.remove('subscribed');
+        }
+
+        this.addSystemMessage(`📢 #${ch} kanalına katıldın! ${fmt} abone, ${c.onlineUsers.length} çevrimiçi.`);
+        
+        // Kanal mesajlarını yükle (global fonksiyon)
+        if (window.loadChannelMessages) {
+            window.loadChannelMessages(ch);
+        }
+    }
+
+    // ========== ABONELİK İŞLEMLERİ ==========
+    subscribeChannel(ch) {
+        const channels = this.getChannels();
+        const user = this.getActiveUser();
+        
+        if (!channels[ch]) {
+            channels[ch] = {
+                name: ch, owner: 'Sistem', ownerRole: 'user',
+                subscribers: 1000, online: 0, isHidden: false,
+                currentVideo: 'dQw4w9WgXcQ', currentTitle: `${ch} kanalı`,
+                currentArtist: '👤 Sistem', playlist: [], onlineUsers: []
+            };
+        }
+        
+        if (!user.subscribedChannels.includes(ch)) {
+            user.subscribedChannels.push(ch);
+            channels[ch].subscribers = (channels[ch].subscribers || 1000) + 1;
+            
+            this.saveChannels(channels);
+            localStorage.setItem('cetcety_active_user', JSON.stringify(user));
+            
+            this.addSystemMessage(`✅ #${ch} abone olundu!`);
+            this.updateAllBadges();
+            this.updatePopularChannels();
+        }
+    }
+
+    unsubscribeChannel(ch) {
+        const channels = this.getChannels();
+        const user = this.getActiveUser();
+        
+        const i = user.subscribedChannels.indexOf(ch);
+        if (i > -1) {
+            user.subscribedChannels.splice(i, 1);
+            if (channels[ch]) {
+                channels[ch].subscribers = Math.max(0, (channels[ch].subscribers || 1000) - 1);
+            }
+            
+            this.saveChannels(channels);
+            localStorage.setItem('cetcety_active_user', JSON.stringify(user));
+            
+            this.addSystemMessage(`❌ #${ch} abonelikten çıkıldı.`);
+            this.updateAllBadges();
+            this.updatePopularChannels();
+        }
+    }
+
+    toggleChannelSubscribe() {
+        const user = this.getActiveUser();
+        if (user.subscribedChannels.includes(this.currentChannel)) {
+            this.unsubscribeChannel(this.currentChannel);
+        } else {
+            this.subscribeChannel(this.currentChannel);
+        }
+    }
+
+    // ========== KANAL OLUŞTURMA ==========
+    createChannel() {
+        const user = this.getActiveUser();
+        const channels = this.getChannels();
+        
+        if (user.role !== 'owner' && user.myChannel) {
+            alert('Zaten bir kanalınız var!');
+            return;
+        }
+        
+        let name = document.getElementById('newChannelName')?.value?.toLowerCase().trim();
+        if (!name) {
+            alert('Kanal adı girin!');
+            return;
+        }
+        
+        if (channels[name]) {
+            alert('Bu kanal adı zaten mevcut!');
+            return;
+        }
+        
+        let desc = document.getElementById('newChannelDesc')?.value?.trim() || `${user.name} tarafından oluşturuldu.`;
+        
+        channels[name] = {
+            name, owner: user.name, ownerRole: 'coadmin',
+            coAdmins: [user.name], subscribers: 1, online: 1,
+            description: desc, isPrivate: false, isHidden: false,
+            currentVideo: 'jfKfPfyJRdk', currentTitle: 'CETCETY Radio',
+            currentArtist: `👑 ${user.name}`,
+            playlist: [{ id: 'jfKfPfyJRdk', title: 'CETCETY Radio', addedBy: user.name, role: 'coadmin' }],
+            onlineUsers: [user.name]
+        };
+        
+        this.saveChannels(channels);
+        
+        user.myChannel = name;
+        if (user.role !== 'owner') user.role = 'coadmin';
+        if (!user.subscribedChannels.includes(name)) user.subscribedChannels.push(name);
+        
+        localStorage.setItem('cetcety_active_user', JSON.stringify(user));
+        
+        this.updateAllBadges();
+        this.addSystemMessage(`✅ #${name} kanalı oluşturuldu!`);
+        this.joinChannel(name);
+    }
+
+    // ========== POPÜLER KANALLAR ==========
+    updatePopularChannels() {
+        const c = document.getElementById('popularChannelsList');
+        if (!c) return;
+        
+        const channels = this.getChannels();
+        const user = this.getActiveUser();
+        
+        c.innerHTML = '';
+        let vis = Object.values(channels).filter(ch => {
+            if (ch.name === 'admin' && !(user?.role === 'owner' || user?.role === 'admin')) return false;
+            return (user?.role === 'owner' || user?.role === 'admin') ? true : !ch.isHidden;
+        });
+        
+        vis.sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0))
+           .slice(0, 3)
+           .forEach(ch => {
+            let sub = ch.subscribers || 0;
+            let fmt = sub >= 1000000 ? (sub/1000000).toFixed(1)+'M' : sub >= 1000 ? (sub/1000).toFixed(1)+'K' : sub;
+            let isSub = user?.subscribedChannels?.includes(ch.name);
+            let hidden = ch.isHidden ? '<span class="badge badge-hidden">GİZLİ</span>' : '';
+            let roleClass = ch.ownerRole === 'owner' ? 'badge-owner' : ch.ownerRole === 'admin' ? 'badge-admin' : ch.ownerRole === 'coadmin' ? 'badge-coadmin' : 'badge-operator';
+            
+            c.innerHTML += `
+                <div class="popular-item" onclick="window.channelManager.joinChannel('${ch.name}')">
+                    <div class="popular-info">
+                        <div class="popular-name">
+                            ${ch.name} ${hidden}
+                            <span class="badge ${roleClass}">${ch.ownerRole === 'owner' ? '👑' : ch.ownerRole === 'admin' ? '⚡' : '🔧'}</span>
+                            ${ch.name === 'genel' ? '<span class="badge badge-owner">ANA</span>' : ''}
+                            ${ch.subscribers > 1000000 ? '<span class="badge badge-coadmin">POP</span>' : ''}
+                        </div>
+                        <div class="popular-subscribers">${fmt} abone</div>
                     </div>
+                    <button class="subscribe-btn ${isSub ? 'subscribed' : ''}" 
+                        onclick="event.stopPropagation(); ${isSub ? 'window.channelManager.unsubscribeChannel' : 'window.channelManager.subscribeChannel'}('${ch.name}')">
+                        <i class="fas ${isSub ? 'fa-check' : 'fa-plus'}"></i> ${isSub ? 'Abone Olundu' : 'Abone Ol'}
+                    </button>
                 </div>
             `;
-        }
-    });
-    
-    html += `</div>`;
-    panel.innerHTML = html;
-}
+        });
+    }
 
-// Yardımcı fonksiyonlar
-function sendSupportTicket() {
-    const msg = document.getElementById('supportMessage')?.value.trim();
-    if (msg) {
-        addSystemMessage(`🛟 Destek talebiniz iletildi: "${msg}"`);
-        closeLeftPanel();
+    // ========== BADGE GÜNCELLEME ==========
+    updateAllBadges() {
+        const user = this.getActiveUser();
+        document.getElementById('subscriptionBadge').textContent = user?.subscribedChannels?.length || 0;
+        document.getElementById('channelCountBadge').textContent = Object.keys(this.getChannels()).length;
+    }
+
+    // ========== SİSTEM MESAJI ==========
+    addSystemMessage(text) {
+        const messagesDiv = document.getElementById('messages');
+        if (!messagesDiv) return;
+        
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'system-message';
+        msgDiv.innerHTML = `<i class="fas fa-info-circle"></i> ${this.escapeHTML(text)}`;
+        messagesDiv.appendChild(msgDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    escapeHTML(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 
-function createChannel() {
-    const name = document.getElementById('newChannelName')?.value.trim().toLowerCase();
-    if (!name) { alert('Kanal adı girin!'); return; }
-    if (channels[name]) { alert('Bu kanal adı zaten var!'); return; }
-    
-    channels[name] = {
-        name: name,
-        owner: ACTIVE_USER.name,
-        subscribers: 1,
-        onlineUsers: [ACTIVE_USER.name],
-        isHidden: false
-    };
-    
-    saveChannels();
-    addSystemMessage(`✅ #${name} kanalı oluşturuldu!`);
-    joinChannel(name);
-    closeLeftPanel();
-}
+// Global kanal yöneticisini başlat
+window.channelManager = new CETCETYChannel();
+
+// Storage değişikliklerini dinle
+window.addEventListener('storage', (e) => {
+    if (e.key === 'cetcety_channels') {
+        window.channelManager.updatePopularChannels();
+        window.channelManager.updateAllBadges();
+    }
+});
