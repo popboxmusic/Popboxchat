@@ -1,7 +1,4 @@
 // ========== FIREBASE KONFİGÜRASYONU ==========
-// 🔐 BU DOSYAYI KİMSEYLE PAYLAŞMA!
-// 🔐 GITHUB'A YÜKLERKEN GİZLİ TUT!
-
 const FIREBASE_CONFIG = {
     apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
     authDomain: "popboxmusicchat.firebaseapp.com",
@@ -12,9 +9,10 @@ const FIREBASE_CONFIG = {
     appId: "1:206625719024:web:d28f478a2c96d10412f835"
 };
 
-// Firebase başlat
 let database;
 let storage;
+let currentChannelFirebase = 'genel';
+let currentUser = null;
 
 function initFirebase() {
     try {
@@ -25,8 +23,12 @@ function initFirebase() {
         storage = firebase.storage();
         console.log('✅ Firebase başlatıldı!');
         
-        // Eşzamanlı işlemleri başlat
-        initRealtimeFeatures();
+        // Kullanıcı varsa bağlan
+        const user = JSON.parse(localStorage.getItem('cetcety_active_user'));
+        if (user) {
+            currentUser = user;
+            connectToChannel('genel');
+        }
         
         return { database, storage };
     } catch (error) {
@@ -35,19 +37,21 @@ function initFirebase() {
     }
 }
 
-// ========== EŞZAMANLI ÖZELLİKLER ==========
-function initRealtimeFeatures() {
-    const user = JSON.parse(localStorage.getItem('cetcety_active_user'));
-    if (!user || !database) return;
+// ========== KANALA BAĞLAN ==========
+function connectToChannel(channelName) {
+    if (!database || !currentUser) return;
     
-    const currentChannel = 'genel'; // Varsayılan
-    const userId = user.id;
-    const userName = user.name;
+    // Eski kanaldan çık
+    if (currentChannelFirebase) {
+        database.ref(`channels/${currentChannelFirebase}/onlineUsers/${currentUser.id}`).remove();
+    }
     
-    // 1. ONLINE KULLANICILAR
-    const onlineRef = database.ref(`channels/${currentChannel}/onlineUsers/${userId}`);
+    currentChannelFirebase = channelName;
+    
+    // Yeni kanala ekle
+    const onlineRef = database.ref(`channels/${channelName}/onlineUsers/${currentUser.id}`);
     onlineRef.set({
-        name: userName,
+        name: currentUser.name,
         joined: Date.now()
     });
     
@@ -55,39 +59,59 @@ function initRealtimeFeatures() {
     onlineRef.onDisconnect().remove();
     
     // Online listeyi dinle
-    database.ref(`channels/${currentChannel}/onlineUsers`).on('value', (snapshot) => {
+    database.ref(`channels/${channelName}/onlineUsers`).on('value', (snapshot) => {
         const users = snapshot.val();
         const onlineCount = users ? Object.keys(users).length : 0;
         document.getElementById('channelUserCount').textContent = onlineCount;
-        
-        // Online listeyi güncelle (varsa)
         updateOnlineList(users);
     });
     
-    // 2. VİDEO EŞZAMANLI
-    database.ref(`channels/${currentChannel}/currentVideo`).on('value', (snapshot) => {
-        const videoId = snapshot.val();
-        if (videoId && window.mediaManager) {
-            window.mediaManager.playVideo(videoId);
+    // Video değişimini dinle
+    database.ref(`channels/${channelName}/currentVideo`).on('value', (snapshot) => {
+        const videoData = snapshot.val();
+        if (videoData && window.mediaManager) {
+            window.mediaManager.playVideo(videoData.id);
+            document.getElementById('nowPlayingTitle').textContent = videoData.title;
+            document.getElementById('nowPlayingOwner').innerHTML = videoData.artist;
         }
     });
     
-    // 3. MESAJLAR EŞZAMANLI
-    database.ref(`channels/${currentChannel}/messages`).on('child_added', (snapshot) => {
+    // Mesajları dinle
+    database.ref(`channels/${channelName}/messages`).limitToLast(50).on('child_added', (snapshot) => {
         const msg = snapshot.val();
-        if (msg && msg.sender !== userName) {
+        if (msg && msg.sender !== currentUser.name) {
             displayRealtimeMessage(msg);
         }
     });
 }
 
-// ========== YARDIMCI FONKSİYONLAR ==========
+// ========== VİDEO GÜNCELLE ==========
+function updateVideo(channelName, videoId, title, artist) {
+    if (!database) return;
+    database.ref(`channels/${channelName}/currentVideo`).set({
+        id: videoId,
+        title: title,
+        artist: artist,
+        updatedAt: Date.now()
+    });
+}
+
+// ========== MESAJ GÖNDER ==========
+function sendRealtimeMessage(channelName, text, sender) {
+    if (!database) return;
+    database.ref(`channels/${channelName}/messages`).push({
+        sender: sender,
+        text: text,
+        time: new Date().toLocaleTimeString('tr-TR'),
+        timestamp: Date.now()
+    });
+}
+
+// ========== ONLINE LİSTE GÜNCELLE ==========
 function updateOnlineList(users) {
-    // Sağ menüde online listeyi güncelle
     const container = document.getElementById('sagMenuIcerik');
     if (!container) return;
     
-    // Sadece online sekmesi aktifse güncelle
     const aktifSekme = document.querySelector('.sag-menu-sekme.aktif')?.dataset.sekme;
     if (aktifSekme !== 'online') return;
     
@@ -125,27 +149,15 @@ function displayRealtimeMessage(msg) {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// ========== VİDEO GÜNCELLEME ==========
-function updateVideo(channelName, videoId, title, artist) {
-    if (!database) return;
-    database.ref(`channels/${channelName}`).update({
-        currentVideo: videoId,
-        currentTitle: title,
-        currentArtist: artist,
-        updatedAt: Date.now()
-    });
-}
-
-// ========== MESAJ GÖNDERME ==========
-function sendRealtimeMessage(channelName, text, sender) {
-    if (!database) return;
-    database.ref(`channels/${channelName}/messages`).push({
-        sender: sender,
-        text: text,
-        time: new Date().toLocaleTimeString('tr-TR'),
-        timestamp: Date.now()
-    });
-}
+// ========== KANAL DEĞİŞTİRME YAKALAMA ==========
+// joinChannel fonksiyonunu yakala
+const originalJoinChannel = window.joinChannel;
+window.joinChannel = function(ch) {
+    if (originalJoinChannel) originalJoinChannel(ch);
+    if (database && currentUser) {
+        connectToChannel(ch);
+    }
+};
 
 // Global yap
 window.database = database;
@@ -153,10 +165,15 @@ window.storage = storage;
 window.initFirebase = initFirebase;
 window.updateVideo = updateVideo;
 window.sendRealtimeMessage = sendRealtimeMessage;
+window.connectToChannel = connectToChannel;
 
-// Sayfa yüklendiğinde Firebase'i başlat
-document.addEventListener('DOMContentLoaded', function() {
-    // Firebase script'ini yükle
+// Firebase script'lerini yükle
+(function loadFirebase() {
+    if (window.firebase) {
+        initFirebase();
+        return;
+    }
+    
     const script = document.createElement('script');
     script.src = 'https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js';
     script.onload = () => {
@@ -171,4 +188,4 @@ document.addEventListener('DOMContentLoaded', function() {
         document.head.appendChild(dbScript);
     };
     document.head.appendChild(script);
-});
+})();
