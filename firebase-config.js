@@ -26,7 +26,7 @@ function initFirebase() {
         if (user) {
             currentUser = user;
             connectToChannel('genel');
-            loadPrivateChats(); // Sohbetleri yükle
+            loadPrivateChats();
         }
         
         return database;
@@ -59,17 +59,20 @@ function connectToChannel(channelName) {
     // Çıkışta sil
     onlineRef.onDisconnect().remove();
     
-    // ===== ONLINE LİSTE (SAĞ MENÜ) =====
+    // ===== ONLINE LİSTE =====
     database.ref(`channels/${channelName}/onlineUsers`).on('value', (snapshot) => {
         const users = snapshot.val();
         const onlineCount = users ? Object.keys(users).length : 0;
         document.getElementById('channelUserCount').textContent = onlineCount;
         
-        // SAĞ MENÜDEKİ ONLINE LİSTEYİ GÜNCELLE
-        updateOnlineList(users);
+        // SAĞ MENÜDEKİ ONLINE LİSTEYİ GÜNCELLE (sadece online sekmesi aktifse)
+        const aktifSekme = document.querySelector('.sag-menu-sekme.aktif')?.dataset.sekme;
+        if (aktifSekme === 'online') {
+            updateOnlineList(users);
+        }
     });
     
-    // ===== VİDEO EŞZAMANLI =====
+    // ===== VİDEO =====
     database.ref(`channels/${channelName}/currentVideo`).on('value', (snapshot) => {
         const videoData = snapshot.val();
         if (videoData && window.mediaManager) {
@@ -83,7 +86,7 @@ function connectToChannel(channelName) {
         }
     });
     
-    // ===== PLAYLİST EŞZAMANLI =====
+    // ===== PLAYLİST =====
     database.ref(`channels/${channelName}/playlist`).on('value', (snapshot) => {
         const playlistData = snapshot.val();
         
@@ -107,7 +110,7 @@ function connectToChannel(channelName) {
         }
     });
     
-    // ===== MESAJLAR EŞZAMANLI =====
+    // ===== MESAJLAR =====
     database.ref(`channels/${channelName}/messages`).off();
     database.ref(`channels/${channelName}/messages`).on('child_added', (snapshot) => {
         const msg = snapshot.val();
@@ -117,18 +120,13 @@ function connectToChannel(channelName) {
     });
 }
 
-// ========== ONLINE LİSTE GÜNCELLE (SAĞ MENÜ) ==========
+// ========== ONLINE LİSTE GÜNCELLE ==========
 function updateOnlineList(users) {
-    // Sağ menüdeki online listeyi güncelle
     const container = document.getElementById('sagMenuIcerik');
     if (!container) return;
     
-    // Sadece online sekmesi aktifse güncelle
-    const aktifSekme = document.querySelector('.sag-menu-sekme.aktif')?.dataset.sekme;
-    if (aktifSekme !== 'online') return;
-    
     let html = '';
-    if (users) {
+    if (users && Object.keys(users).length > 0) {
         Object.values(users).forEach(user => {
             html += `
                 <div class="online-item" onclick="openPrivateChat('${user.name}')">
@@ -140,8 +138,11 @@ function updateOnlineList(users) {
                 </div>
             `;
         });
+    } else {
+        html = '<div style="color: #666; text-align: center; padding: 20px;">👥 Çevrimiçi kimse yok</div>';
     }
-    container.innerHTML = html || '<div style="color: #666; padding: 20px;">Kimse yok</div>';
+    
+    container.innerHTML = html;
 }
 
 // ========== ÖZEL SOHBETLERİ YÜKLE ==========
@@ -152,21 +153,22 @@ function loadPrivateChats() {
         const allChats = snapshot.val() || {};
         const myChats = [];
         
-        // Kullanıcının olduğu sohbetleri bul
         Object.keys(allChats).forEach(chatId => {
             if (chatId.includes(currentUser.id)) {
                 const messages = Object.values(allChats[chatId]);
                 const sonMesaj = messages[messages.length - 1];
                 const okunmamis = messages.filter(m => m.senderId !== currentUser.id && !m.read).length;
                 
-                // Karşı kullanıcının ID'sini bul
                 const ids = chatId.split('_');
                 const otherId = ids[0] == currentUser.id ? ids[1] : ids[0];
+                
+                // Karşı kullanıcının adını bul
+                let otherName = sonMesaj?.senderName || 'Kullanıcı';
                 
                 myChats.push({
                     chatId: chatId,
                     otherId: otherId,
-                    otherName: sonMesaj?.senderName || 'Kullanıcı',
+                    otherName: otherName,
                     sonMesaj: sonMesaj?.text || '...',
                     sonZaman: sonMesaj?.timestamp || Date.now(),
                     okunmamis: okunmamis
@@ -174,8 +176,15 @@ function loadPrivateChats() {
             }
         });
         
-        // Sohbetleri güncelle
-        updateChatList(myChats);
+        // Sohbet listesini güncelle (sadece sohbetler sekmesi aktifse)
+        const aktifSekme = document.querySelector('.sag-menu-sekme.aktif')?.dataset.sekme;
+        if (aktifSekme === 'sohbetler') {
+            updateChatList(myChats);
+        }
+        
+        // Toplam okunmamış sayısını badge'e yaz
+        const totalUnread = myChats.reduce((sum, chat) => sum + chat.okunmamis, 0);
+        document.getElementById('chatListBadge').textContent = totalUnread;
     });
 }
 
@@ -184,13 +193,8 @@ function updateChatList(chats) {
     const container = document.getElementById('sagMenuIcerik');
     if (!container) return;
     
-    // Sadece sohbetler sekmesi aktifse güncelle
-    const aktifSekme = document.querySelector('.sag-menu-sekme.aktif')?.dataset.sekme;
-    if (aktifSekme !== 'sohbetler') return;
-    
     let html = '';
     if (chats.length > 0) {
-        // Son mesaja göre sırala
         chats.sort((a, b) => b.sonZaman - a.sonZaman);
         
         chats.forEach(chat => {
@@ -208,7 +212,7 @@ function updateChatList(chats) {
             `;
         });
     } else {
-        html = '<div style="color: #666; text-align: center; padding: 20px;">💬 Henüz sohbet yok</div>';
+        html = '<div style="color: #666; text-align: center; padding: 20px;">💬 Henüz özel sohbet yok</div>';
     }
     
     container.innerHTML = html;
@@ -216,17 +220,14 @@ function updateChatList(chats) {
 
 // ========== SEKMELERİ GÜNCELLE ==========
 function updateSagMenu(sekme) {
-    const container = document.getElementById('sagMenuIcerik');
-    if (!container) return;
+    if (!database) return;
     
     if (sekme === 'online') {
-        // Online listeyi Firebase'den al
         database.ref(`channels/${currentChannelFirebase}/onlineUsers`).once('value', (snapshot) => {
             updateOnlineList(snapshot.val());
         });
     } else {
-        // Sohbet listesini göster
-        loadPrivateChats();
+        loadPrivateChats(); // Bu zaten listener'ı tetikleyecek
     }
 }
 
@@ -250,11 +251,11 @@ function listenPrivateChat(otherUserId) {
     
     const chatId = [currentUser.id, otherUserId].sort().join('_');
     
+    database.ref(`privateChats/${chatId}`).off(); // Önceki dinleyicileri temizle
     database.ref(`privateChats/${chatId}`).on('child_added', (snapshot) => {
         const msg = snapshot.val();
         if (msg && msg.senderId !== currentUser.id) {
             displayPrivateMessage(msg);
-            // Okundu olarak işaretle
             snapshot.ref.update({ read: true });
         }
     });
@@ -396,6 +397,19 @@ if (window.sendPrivateMessage) {
         }
         
         originalSendPrivate();
+    };
+}
+
+// ========== ÖZEL SOHBET AÇMAYI YAKALA ==========
+if (window.openPrivateChat) {
+    const originalOpenPrivate = window.openPrivateChat;
+    window.openPrivateChat = function(username) {
+        originalOpenPrivate(username);
+        if (currentUser) {
+            // Karşı kullanıcının ID'sini bulmamız lazım
+            // Şimdilik username ile id'yi aynı kabul ediyoruz
+            window.listenPrivateChat(username);
+        }
     };
 }
 
