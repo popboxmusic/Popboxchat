@@ -13,7 +13,7 @@ let database;
 let currentChannelFirebase = 'genel';
 let currentUser = null;
 
-// Firebase başlat
+// ========== FIREBASE BAŞLAT ==========
 function initFirebase() {
     try {
         if (!firebase.apps.length) {
@@ -27,6 +27,11 @@ function initFirebase() {
             currentUser = user;
             connectToChannel('genel');
             loadPrivateChats();
+            
+            // MateBot'u ekle (owner kontrolü)
+            if (user.role === 'owner') {
+                addMateBot();
+            }
         }
         
         return database;
@@ -34,6 +39,19 @@ function initFirebase() {
         console.error('❌ Firebase hatası:', error);
         return null;
     }
+}
+
+// ========== MATEBOT EKLE ==========
+function addMateBot() {
+    if (!database) return;
+    
+    const botRef = database.ref(`channels/${currentChannelFirebase}/onlineUsers/matebot`);
+    botRef.set({
+        name: 'MateBot',
+        role: 'bot',
+        joined: Date.now(),
+        isBot: true
+    });
 }
 
 // ========== KANALA BAĞLAN ==========
@@ -53,26 +71,28 @@ function connectToChannel(channelName) {
     const onlineRef = database.ref(`channels/${channelName}/onlineUsers/${currentUser.id}`);
     onlineRef.set({
         name: currentUser.name,
-        joined: Date.now()
+        role: currentUser.role,
+        joined: Date.now(),
+        isBot: false
     });
     
     // Çıkışta sil
     onlineRef.onDisconnect().remove();
     
-    // ===== ONLINE LİSTE =====
+    // ===== 1. ONLINE LİSTE (CANLI) =====
     database.ref(`channels/${channelName}/onlineUsers`).on('value', (snapshot) => {
         const users = snapshot.val();
         const onlineCount = users ? Object.keys(users).length : 0;
         document.getElementById('channelUserCount').textContent = onlineCount;
         
-        // SAĞ MENÜDEKİ ONLINE LİSTEYİ GÜNCELLE (sadece online sekmesi aktifse)
+        // SAĞ MENÜDEKİ ONLINE LİSTEYİ GÜNCELLE
         const aktifSekme = document.querySelector('.sag-menu-sekme.aktif')?.dataset.sekme;
-        if (aktifSekme === 'online') {
+        if (aktifSekme === 'online' || !aktifSekme) {
             updateOnlineList(users);
         }
     });
     
-    // ===== VİDEO =====
+    // ===== 2. VİDEO EŞZAMANLI =====
     database.ref(`channels/${channelName}/currentVideo`).on('value', (snapshot) => {
         const videoData = snapshot.val();
         if (videoData && window.mediaManager) {
@@ -86,7 +106,7 @@ function connectToChannel(channelName) {
         }
     });
     
-    // ===== PLAYLİST =====
+    // ===== 3. PLAYLİST EŞZAMANLI =====
     database.ref(`channels/${channelName}/playlist`).on('value', (snapshot) => {
         const playlistData = snapshot.val();
         
@@ -110,7 +130,7 @@ function connectToChannel(channelName) {
         }
     });
     
-    // ===== MESAJLAR =====
+    // ===== 4. MESAJLAR EŞZAMANLI =====
     database.ref(`channels/${channelName}/messages`).off();
     database.ref(`channels/${channelName}/messages`).on('child_added', (snapshot) => {
         const msg = snapshot.val();
@@ -118,22 +138,39 @@ function connectToChannel(channelName) {
             displayRealtimeMessage(msg);
         }
     });
+    
+    // ===== 5. ÖZEL SOHBETLER (CANLI) =====
+    database.ref('privateChats').on('value', (snapshot) => {
+        loadPrivateChats();
+    });
 }
 
-// ========== ONLINE LİSTE GÜNCELLE ==========
+// ========== ONLINE LİSTE GÜNCELLE (SAĞ MENÜ) ==========
 function updateOnlineList(users) {
     const container = document.getElementById('sagMenuIcerik');
     if (!container) return;
     
     let html = '';
     if (users && Object.keys(users).length > 0) {
-        Object.values(users).forEach(user => {
+        // Kullanıcıları isme göre sırala (botlar en sonda)
+        const userList = Object.values(users).sort((a, b) => {
+            if (a.isBot && !b.isBot) return 1;
+            if (!a.isBot && b.isBot) return -1;
+            return a.name.localeCompare(b.name);
+        });
+        
+        userList.forEach(user => {
+            const isBot = user.isBot ? 'bot' : '';
+            const statusColor = user.isBot ? '#9c27b0' : '#4caf50';
+            const statusText = user.isBot ? 'bot' : 'çevrimiçi';
+            const avatarBg = user.isBot ? '#9c27b0' : '#0a5c36';
+            
             html += `
-                <div class="online-item" onclick="openPrivateChat('${user.name}')">
-                    <div class="online-avatar">${user.name.charAt(0)}</div>
+                <div class="online-item" onclick="${!user.isBot ? `openPrivateChat('${user.name}')` : ''}" style="${user.isBot ? 'opacity:0.8;' : ''}">
+                    <div class="online-avatar" style="background: ${avatarBg};">${user.name.charAt(0)}</div>
                     <div style="flex:1;">
-                        <div style="font-weight: 600;">${user.name}</div>
-                        <div style="font-size: 12px; color: #4caf50;">● çevrimiçi</div>
+                        <div style="font-weight: 600;">${user.name} ${user.isBot ? '🤖' : ''}</div>
+                        <div style="font-size: 12px; color: ${statusColor};">● ${statusText}</div>
                     </div>
                 </div>
             `;
@@ -149,7 +186,7 @@ function updateOnlineList(users) {
 function loadPrivateChats() {
     if (!database || !currentUser) return;
     
-    database.ref('privateChats').on('value', (snapshot) => {
+    database.ref('privateChats').once('value', (snapshot) => {
         const allChats = snapshot.val() || {};
         const myChats = [];
         
@@ -176,7 +213,7 @@ function loadPrivateChats() {
             }
         });
         
-        // Sohbet listesini güncelle (sadece sohbetler sekmesi aktifse)
+        // Sohbet listesini güncelle
         const aktifSekme = document.querySelector('.sag-menu-sekme.aktif')?.dataset.sekme;
         if (aktifSekme === 'sohbetler') {
             updateChatList(myChats);
@@ -227,7 +264,7 @@ function updateSagMenu(sekme) {
             updateOnlineList(snapshot.val());
         });
     } else {
-        loadPrivateChats(); // Bu zaten listener'ı tetikleyecek
+        loadPrivateChats();
     }
 }
 
@@ -251,7 +288,7 @@ function listenPrivateChat(otherUserId) {
     
     const chatId = [currentUser.id, otherUserId].sort().join('_');
     
-    database.ref(`privateChats/${chatId}`).off(); // Önceki dinleyicileri temizle
+    database.ref(`privateChats/${chatId}`).off();
     database.ref(`privateChats/${chatId}`).on('child_added', (snapshot) => {
         const msg = snapshot.val();
         if (msg && msg.senderId !== currentUser.id) {
@@ -341,7 +378,7 @@ function sendFirebaseMessage(channelName, text, sender) {
     });
 }
 
-// ========== KANAL DEĞİŞTİRMEYİ YAKALA ==========
+// ========== FONKSİYONLARI YAKALA ==========
 if (window.joinChannel) {
     const originalJoinChannel = window.joinChannel;
     window.joinChannel = function(ch) {
@@ -352,7 +389,6 @@ if (window.joinChannel) {
     };
 }
 
-// ========== MEDYA YÖNETİCİSİNİ YAKALA ==========
 if (window.mediaManager) {
     const originalPlayVideo = window.mediaManager.playVideo;
     window.mediaManager.playVideo = function(videoId, title, addedBy, role) {
@@ -365,7 +401,6 @@ if (window.mediaManager) {
     };
 }
 
-// ========== MESAJ GÖNDERMEYİ YAKALA ==========
 if (window.sendMessage) {
     const originalSendMessage = window.sendMessage;
     window.sendMessage = function() {
@@ -380,7 +415,6 @@ if (window.sendMessage) {
     };
 }
 
-// ========== ÖZEL MESAJ GÖNDERMEYİ YAKALA ==========
 if (window.sendPrivateMessage) {
     const originalSendPrivate = window.sendPrivateMessage;
     window.sendPrivateMessage = function() {
@@ -400,14 +434,11 @@ if (window.sendPrivateMessage) {
     };
 }
 
-// ========== ÖZEL SOHBET AÇMAYI YAKALA ==========
 if (window.openPrivateChat) {
     const originalOpenPrivate = window.openPrivateChat;
     window.openPrivateChat = function(username) {
         originalOpenPrivate(username);
         if (currentUser) {
-            // Karşı kullanıcının ID'sini bulmamız lazım
-            // Şimdilik username ile id'yi aynı kabul ediyoruz
             window.listenPrivateChat(username);
         }
     };
