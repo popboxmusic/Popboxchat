@@ -22,8 +22,6 @@ function userJoined(user) {
     
     currentUser = user;
     
-    // HTML'deki currentChannel değişkenini GÜVENLİ şekilde al
-    // window.currentChannel henüz tanımlı olmayabilir, o yüzden kontrol et
     setTimeout(() => {
         const channel = (window.currentChannel && typeof window.currentChannel === 'string') 
             ? window.currentChannel 
@@ -51,27 +49,41 @@ function userJoined(user) {
             const countEl = document.getElementById('channelUserCount');
             if (countEl) countEl.textContent = onlineCount;
             
-            // Online listeyi güncelle
+            // Sağ paneldeki online listeyi güncelle
             updateOnlineList(users);
+            
+            // Eğer online sekmesi açıksa göster
+            const tabOnline = document.getElementById('tabOnline');
+            if (tabOnline && tabOnline.classList.contains('active')) {
+                showOnlineTabFromFirebase(users);
+            }
         });
+        
+        // Kanal bilgilerini dinle (playlist, video)
+        listenChannelInfo(channel);
         
         // Kanal mesajlarını dinle
         listenMessages(channel);
         
-    }, 500); // 500ms bekle, HTML'in yüklenmesini sağla
+        // Kanal bilgilerini gönder (mevcut kanal bilgileri)
+        setTimeout(() => {
+            syncChannelToFirebase(channel);
+        }, 1000);
+        
+    }, 500);
 }
 
 // ========== ONLINE LİSTEYİ GÜNCELLE ==========
 function updateOnlineList(users) {
-    // Sol paneldeki online listeyi bul (farklı HTML yapısı olabilir)
-    const onlineContainer = document.querySelector('#chatPanelContent, .online-list, [data-panel="online"]');
-    if (!onlineContainer) return;
+    const container = document.getElementById('chatPanelContent');
+    if (!container) return;
+    
+    const tabOnline = document.getElementById('tabOnline');
+    if (!tabOnline || !tabOnline.classList.contains('active')) return;
     
     let html = '';
     if (users) {
-        // Kullanıcıları isme göre sırala
         const userList = Object.values(users).sort((a, b) => a.name.localeCompare(b.name));
-        
         userList.forEach(user => {
             html += `
                 <div class="online-item" onclick="openPrivateChat('${user.name}')">
@@ -84,8 +96,97 @@ function updateOnlineList(users) {
             `;
         });
     }
+    container.innerHTML = html || '<div style="color:#aaa; text-align:center; padding:20px;">👥 Çevrimiçi kimse yok</div>';
+}
+
+// ========== ONLINE SEKMESİNİ GÖSTER ==========
+function showOnlineTabFromFirebase(users) {
+    const container = document.getElementById('chatPanelContent');
+    if (!container) return;
     
-    onlineContainer.innerHTML = html || '<div style="color:#aaa; text-align:center; padding:20px;">👥 Çevrimiçi kimse yok</div>';
+    let html = '';
+    if (users) {
+        const userList = Object.values(users).sort((a, b) => a.name.localeCompare(b.name));
+        userList.forEach(user => {
+            html += `
+                <div class="online-item" onclick="openPrivateChat('${user.name}')">
+                    <div class="online-avatar">${user.name.charAt(0)}</div>
+                    <div class="online-info">
+                        <div class="online-name">${user.name}<span class="online-status"></span></div>
+                        <div class="online-meta">● çevrimiçi</div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    container.innerHTML = html || '<div style="color:#aaa; text-align:center; padding:20px;">👥 Çevrimiçi kimse yok</div>';
+}
+
+// ========== KANAL BİLGİLERİNİ FIREBASE'E GÖNDER ==========
+function syncChannelToFirebase(channelName) {
+    if (!window.channels || !window.channels[channelName]) return;
+    
+    const channelData = window.channels[channelName];
+    
+    database.ref(`channels/${channelName}/info`).set({
+        name: channelName,
+        owner: channelData.owner || 'Sistem',
+        ownerRole: channelData.ownerRole || 'admin',
+        subscribers: channelData.subscribers || 0,
+        currentVideo: channelData.currentVideo || 'jfKfPfyJRdk',
+        currentTitle: channelData.currentTitle || 'CETCETY Radio',
+        currentArtist: channelData.currentArtist || '👑 CETCETY',
+        playlist: channelData.playlist || []
+    });
+}
+
+// ========== KANAL BİLGİLERİNİ DİNLE ==========
+function listenChannelInfo(channelName) {
+    database.ref(`channels/${channelName}/info`).off();
+    database.ref(`channels/${channelName}/info`).on('value', (snapshot) => {
+        const info = snapshot.val();
+        if (!info) return;
+        
+        console.log('📡 Kanal bilgisi güncellendi:', info);
+        
+        // localStorage'ı güncelle
+        if (!window.channels) window.channels = {};
+        if (!window.channels[channelName]) window.channels[channelName] = {};
+        
+        window.channels[channelName] = {
+            ...window.channels[channelName],
+            ...info
+        };
+        
+        localStorage.setItem('cetcety_channels', JSON.stringify(window.channels));
+        
+        // UI'ı güncelle
+        if (window.currentChannel === channelName) {
+            // Abone sayısını güncelle
+            const sub = info.subscribers || 0;
+            const fmt = sub >= 1000000 ? (sub/1000000).toFixed(1)+'M' : sub >= 1000 ? (sub/1000).toFixed(1)+'K' : sub;
+            document.getElementById('channelSubscribers').textContent = fmt;
+            
+            // Şu an oynayan videoyu güncelle
+            if (info.currentVideo) {
+                document.getElementById('nowPlayingTitle').textContent = info.currentTitle || 'CETCETY Radio';
+                document.getElementById('nowPlayingOwner').innerHTML = `${info.ownerRole === 'owner' ? '👑' : '👤'} ${info.owner}`;
+                
+                // medya.js'deki player'ı güncelle
+                if (window.mediaManager && window.mediaManager.ytPlayer) {
+                    const currentVideoId = window.mediaManager.ytPlayer.getVideoData()?.video_id;
+                    if (currentVideoId !== info.currentVideo) {
+                        window.mediaManager.loadVideo(info.currentVideo);
+                    }
+                }
+            }
+            
+            // Playlist'i güncelle
+            if (info.playlist && window.mediaManager && window.mediaManager.updatePlaylist) {
+                window.mediaManager.updatePlaylist(info.playlist);
+            }
+        }
+    });
 }
 
 // ========== KANAL DEĞİŞTİRİNCE ==========
@@ -94,7 +195,6 @@ function changeChannel(channelName) {
     
     console.log(`📡 Kanal değişiyor: ${channelName}`);
     
-    // Eski kanaldan çık (window.currentChannel güvenli)
     const eskiKanal = (window.currentChannel && typeof window.currentChannel === 'string') 
         ? window.currentChannel 
         : 'genel';
@@ -109,7 +209,7 @@ function changeChannel(channelName) {
         lastSeen: Date.now()
     });
     
-    // Yeni kanalın online listesini dinle (eski dinleyiciyi kaldır)
+    // Yeni kanalın online listesini dinle
     database.ref(`online/${eskiKanal}`).off();
     database.ref(`online/${channelName}`).on('value', (snapshot) => {
         const users = snapshot.val();
@@ -121,8 +221,18 @@ function changeChannel(channelName) {
         updateOnlineList(users);
     });
     
-    // Mesaj dinleyicisini değiştir
+    // Yeni kanalın bilgilerini dinle
+    database.ref(`channels/${eskiKanal}/info`).off();
+    listenChannelInfo(channelName);
+    
+    // Yeni kanalın mesajlarını dinle
+    database.ref(`channels/${eskiKanal}/messages`).off();
     listenMessages(channelName);
+    
+    // Kanal bilgilerini senkronize et
+    setTimeout(() => {
+        syncChannelToFirebase(channelName);
+    }, 500);
 }
 
 // ========== MESAJ GÖNDER ==========
@@ -170,6 +280,18 @@ function displayRealtimeMessage(msg) {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
+// ========== PLAYLIST GÜNCELLEME ==========
+function updatePlaylistInFirebase(channelName, playlist) {
+    database.ref(`channels/${channelName}/info/playlist`).set(playlist);
+}
+
+function updateCurrentVideoInFirebase(channelName, videoId, title) {
+    database.ref(`channels/${channelName}/info`).update({
+        currentVideo: videoId,
+        currentTitle: title
+    });
+}
+
 // ========== HTML ESCAPE ==========
 function escapeHTML(text) {
     if (!text) return '';
@@ -184,32 +306,63 @@ window.userJoined = userJoined;
 window.changeChannel = changeChannel;
 window.sendFirebaseMessage = sendFirebaseMessage;
 window.listenMessages = listenMessages;
+window.updatePlaylistInFirebase = updatePlaylistInFirebase;
+window.updateCurrentVideoInFirebase = updateCurrentVideoInFirebase;
+window.syncChannelToFirebase = syncChannelToFirebase;
 
-// ========== HTML'DEKİ joinChannel FONKSİYONUNU YAKALA ==========
-// Orijinal joinChannel fonksiyonunu koru ama Firebase'i de güncelle
+// ========== HTML'DEKİ FONKSİYONLARI YAKALA ==========
 const originalJoinChannel = window.joinChannel;
 window.joinChannel = function(ch) {
-    // Orijinal fonksiyonu çağır
     if (originalJoinChannel) originalJoinChannel(ch);
-    
-    // Firebase'i güncelle
     changeChannel(ch);
 };
+
+// medya.js'deki video ekleme fonksiyonunu yakala
+document.addEventListener('DOMContentLoaded', () => {
+    // medya.js yüklendikten sonra
+    setTimeout(() => {
+        if (window.mediaManager) {
+            const originalAddVideo = window.mediaManager.addVideo;
+            if (originalAddVideo) {
+                window.mediaManager.addVideo = function(videoData) {
+                    originalAddVideo.call(this, videoData);
+                    
+                    // Firebase'i güncelle
+                    const channel = window.currentChannel || 'genel';
+                    setTimeout(() => {
+                        syncChannelToFirebase(channel);
+                    }, 100);
+                };
+            }
+            
+            const originalPlayVideo = window.mediaManager.playVideo;
+            if (originalPlayVideo) {
+                window.mediaManager.playVideo = function(index) {
+                    originalPlayVideo.call(this, index);
+                    
+                    // Firebase'i güncelle
+                    const channel = window.currentChannel || 'genel';
+                    setTimeout(() => {
+                        syncChannelToFirebase(channel);
+                    }, 100);
+                };
+            }
+        }
+    }, 2000);
+});
 
 // Sayfa yüklendiğinde
 document.addEventListener('DOMContentLoaded', () => {
     const user = JSON.parse(localStorage.getItem('cetcety_active_user'));
     if (user) {
-        // Biraz bekle, HTML'deki currentChannel'ın tanımlanmasını sağla
         setTimeout(() => {
             userJoined(user);
         }, 1000);
     }
     
-    // Orijinal joinChannel'i sakla
     if (window.joinChannel) {
         window.originalJoinChannel = window.joinChannel;
     }
 });
 
-console.log('✅ Firebase config düzeltildi, window.currentChannel hatası giderildi');
+console.log('✅ Firebase config tam sürüm aktif - tüm eşzamanlılık özellikleri eklendi');
