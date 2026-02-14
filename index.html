@@ -24,7 +24,7 @@
     <script src="mobil.js" defer></script>
     
     <style>
-        /* ========== RESET & GENEL ========== */
+        /* Tüm stil kodları aynen korundu */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         body { background: #0f0f0f; color: #fff; overflow: hidden; height: 100vh; transition: 0.2s; }
         body.light-theme { background: #f5f5f5; color: #1a1a1a; }
@@ -40,15 +40,12 @@
         .login-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             z-index: 1000; transition: opacity 0.3s;
-            
-            /* WhatsApp desenli arka plan */
             background-color: #0a0a0a;
             background-image: 
                 radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
                 radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
             background-size: 50px 50px;
             background-position: 0 0, 25px 25px;
-            
             display: flex;
             align-items: center;
             justify-content: center;
@@ -568,20 +565,20 @@
     </style>
 </head>
 <body>
-    <!-- GİRİŞ EKRANI - WhatsApp desenli -->
+    <!-- GİRİŞ EKRANI -->
     <div id="loginOverlay" class="login-overlay">
         <div class="login-panel">
             <h2>🎧 CETCETY</h2>
             <div class="form-group">
-                <label>KULLANICI ADI</label>
-                <input type="text" id="loginNick" placeholder="Kullanıcı adınız" autocomplete="off">
+                <label>Kullanıcı Adı</label>
+                <input type="text" id="loginNick" placeholder="Kullanıcı adı" autocomplete="off">
             </div>
             <div class="form-group">
-                <label>ŞİFRE</label>
+                <label>Şifre</label>
                 <input type="password" id="loginPassword" placeholder="••••••••">
             </div>
-            <button onclick="handleLogin()">GİRİŞ YAP / KAYIT OL</button>
-            <div class="login-info">Yeni kullanıcılar otomatik kayıt olur</div>
+            <button onclick="handleLogin()">Giriş Yap / Kayıt Ol</button>
+            <div class="login-info">Yeni kullanıcılar sadece nick yazarak girebilir.</div>
         </div>
     </div>
 
@@ -771,7 +768,7 @@
             }
         });
 
-        // ========== GİRİŞ (GÜVENLİ - aynı nick alınmaz) ==========
+        // ========== GİRİŞ (DÜZELTİLDİ) ==========
         function handleLogin() {
             const nick = document.getElementById('loginNick').value.trim();
             const pass = document.getElementById('loginPassword').value.trim();
@@ -781,27 +778,28 @@
                 return; 
             }
 
-            // Aynı nick var mı kontrol (büyük/küçük harf duyarsız)
-            const existingUser = USERS_DB.find(u => u.name.toLowerCase() === nick.toLowerCase());
-            
-            if (existingUser) {
-                // Mevcut kullanıcı girişi
-                if (existingUser.password && existingUser.password !== pass) { 
+            let users = JSON.parse(localStorage.getItem('cetcety_users')) || [];
+            let user = users.find(u => u.name.toLowerCase() === nick.toLowerCase());
+
+            if (user) {
+                // Mevcut kullanıcı
+                if (user.password && user.password !== pass) { 
                     alert('Hatalı şifre!'); 
                     return; 
                 }
                 
-                // Owner kontrolü - owner.js'den al
+                // Owner kontrolü
                 if (nick.toLowerCase() === 'mateky') {
                     if (window.ownerSystem && pass !== window.ownerSystem.ownerPassword) {
                         alert('Owner şifresi hatalı!');
                         return;
                     }
+                    user.role = 'owner';
                 }
                 
-                ACTIVE_USER = existingUser;
+                ACTIVE_USER = user;
             } else {
-                // YENİ KULLANICI - aynı nick yoksa kaydet
+                // Yeni kullanıcı
                 ACTIVE_USER = {
                     id: Date.now(),
                     name: nick,
@@ -815,8 +813,8 @@
                     privateMode: 'all',
                     blockedNicks: []
                 };
-                USERS_DB.push(ACTIVE_USER);
-                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+                users.push(ACTIVE_USER);
+                localStorage.setItem('cetcety_users', JSON.stringify(users));
             }
 
             localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
@@ -1045,9 +1043,6 @@
                 let unread = PRIVATE_CHATS[chatId].filter(m => m.senderId != ACTIVE_USER.id && !m.read).length;
                 chats.push({ name: otherUser.name, lastMsg: lastMsg ? (lastMsg.type==='text'?lastMsg.content:'📎 medya') : '...', time: lastMsg ? new Date(lastMsg.timestamp).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}) : '', unread });
             }
-            if (chats.length === 0) {
-                // Demo mesaj yok - sadece boş liste
-            }
             let h = '';
             chats.forEach(chat=>{
                 h+=`<div class="chat-item" onclick="openPrivateChat('${chat.name}')"><div class="chat-avatar"><span>${chat.name.charAt(0)}</span></div><div class="chat-info"><div class="chat-name">${chat.name}${chat.unread>0?'<span class="subscription-notification" style="margin-left:8px;"></span>':''}</div><div class="chat-meta"><span>${chat.lastMsg}</span><span>• ${chat.time}</span></div></div>${chat.unread>0?`<div class="subscription-stats" style="color:#ff4444;">${chat.unread}</div>`:''}</div>`;
@@ -1060,7 +1055,6 @@
         function showOnlineTab() {
             let c = document.getElementById('chatPanelContent');
             let users = channels[currentChannel]?.onlineUsers || [];
-            // MateBot'u filtrele
             users = users.filter(u => u !== MateBot.name);
             let h = '';
             users.forEach(u=>{
@@ -1178,41 +1172,6 @@
 
             h += `</div>`;
             panel.innerHTML = h;
-        }
-
-        // ---------- DESTEK ----------
-        function loadSupportPanel(panel) {
-            let h = `<div class="panel-header"><h3><i class="fas fa-headset" style="color:#7289da;"></i> Destek</h3><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div>
-            <div class="panel-content"><div class="info-box"><p><i class="fas fa-info-circle"></i> Canlı destek talebiniz #admin kanalına iletilir.</p></div>
-            <div style="background:#1a1a1a; border-radius:8px; padding:16px; margin-bottom:16px;"><h4 style="color:#fff; margin-bottom:12px;">📋 Sık Sorulan Sorular</h4>
-                <div onclick="addSystemMessage('📌 Kanal açmak için sol menüde + ikonuna tıklayın.')" style="cursor:pointer; padding:8px; border-radius:6px; background:#2a2a2a; color:#ddd; font-size:13px; margin-bottom:8px;"><i class="fas fa-question-circle" style="color:#7289da; margin-right:8px;"></i> Kanal nasıl açarım?</div>
-                <div onclick="addSystemMessage('📌 Yetki sistemi: Owner her şeyi görür, Admin sistem genelinde, Co-admin kendi kanalında yetkilidir.')" style="cursor:pointer; padding:8px; border-radius:6px; background:#2a2a2a; color:#ddd; font-size:13px;"><i class="fas fa-question-circle" style="color:#7289da; margin-right:8px;"></i> Yetki sistemi nasıl çalışır?</div>
-                <div onclick="addSystemMessage('📌 Özel sohbetlerde resim/video gönderebilirsiniz.')" style="cursor:pointer; padding:8px; border-radius:6px; background:#2a2a2a; color:#ddd; font-size:13px;"><i class="fas fa-question-circle" style="color:#7289da; margin-right:8px;"></i> Özel sohbet özellikleri</div>
-            </div>
-            <div class="form-group"><label class="form-label">Destek Talebi</label><textarea id="supportMessage" class="form-input" placeholder="Sorununuzu yazın..." rows="3"></textarea></div>
-            <button class="form-button" style="background:#7289da;" onclick="sendSupportTicket()">Gönder</button></div>`;
-            panel.innerHTML = h;
-        }
-        function sendSupportTicket() {
-            let msg = document.getElementById('supportMessage')?.value.trim();
-            if(msg) { addSystemMessage(`🛟 Destek talebiniz #admin kanalına iletildi: "${msg}"`); document.getElementById('supportMessage').value=''; loadLeftPanel('notifications'); }
-        }
-
-        // ---------- POPÜLER ----------
-        function updatePopularChannels() {
-            let c = document.getElementById('popularChannelsList'); if(!c) return;
-            c.innerHTML = '';
-            let vis = Object.values(channels).filter(ch=> {
-                if (ch.name === 'admin' && !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin')) return false;
-                return (ACTIVE_USER.role==='owner'||ACTIVE_USER.role==='admin') ? true : !ch.isHidden;
-            });
-            vis.sort((a,b)=>(b.subscribers||0)-(a.subscribers||0)).slice(0,3).forEach(ch=>{
-                let sub = ch.subscribers||0, fmt = sub>=1000000?(sub/1000000).toFixed(1)+'M': sub>=1000?(sub/1000).toFixed(1)+'K':sub;
-                let isSub = ACTIVE_USER.subscribedChannels.includes(ch.name);
-                let hidden = ch.isHidden?'<span class="badge badge-hidden">GİZLİ</span>':'';
-                let roleClass = ch.ownerRole==='owner'?'badge-owner':ch.ownerRole==='admin'?'badge-admin':ch.ownerRole==='coadmin'?'badge-coadmin':'badge-operator';
-                c.innerHTML += `<div class="popular-item" onclick="joinChannel('${ch.name}')"><div class="popular-info"><div class="popular-name">${ch.name} ${hidden}<span class="badge ${roleClass}">${ch.ownerRole==='owner'?'👑':ch.ownerRole==='admin'?'⚡':ch.ownerRole==='coadmin'?'🔧':'🛠️'}</span>${ch.name==='genel'?'<span class="badge badge-owner">ANA</span>':''}${ch.subscribers>1000000?'<span class="badge badge-coadmin">POP</span>':''}</div><div class="popular-subscribers">${fmt} abone</div></div><button class="subscribe-btn ${isSub?'subscribed':''}" onclick="event.stopPropagation(); ${isSub?'unsubscribeChannel':'subscribeChannel'}('${ch.name}')"><i class="fas ${isSub?'fa-check':'fa-plus'}"></i> ${isSub?'Abone Olundu':'Abone Ol'}</button></div>`;
-            });
         }
 
         // ---------- PROFİL FONKSİYONLARI ----------
@@ -1373,6 +1332,41 @@
                 html += `</div>`;
             });
             resultDiv.innerHTML = html || 'Bu kullanıcıya ait özel mesaj bulunamadı.';
+        }
+
+        // ---------- DESTEK ----------
+        function loadSupportPanel(panel) {
+            let h = `<div class="panel-header"><h3><i class="fas fa-headset" style="color:#7289da;"></i> Destek</h3><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div>
+            <div class="panel-content"><div class="info-box"><p><i class="fas fa-info-circle"></i> Canlı destek talebiniz #admin kanalına iletilir.</p></div>
+            <div style="background:#1a1a1a; border-radius:8px; padding:16px; margin-bottom:16px;"><h4 style="color:#fff; margin-bottom:12px;">📋 Sık Sorulan Sorular</h4>
+                <div onclick="addSystemMessage('📌 Kanal açmak için sol menüde + ikonuna tıklayın.')" style="cursor:pointer; padding:8px; border-radius:6px; background:#2a2a2a; color:#ddd; font-size:13px; margin-bottom:8px;"><i class="fas fa-question-circle" style="color:#7289da; margin-right:8px;"></i> Kanal nasıl açarım?</div>
+                <div onclick="addSystemMessage('📌 Yetki sistemi: Owner her şeyi görür, Admin sistem genelinde, Co-admin kendi kanalında yetkilidir.')" style="cursor:pointer; padding:8px; border-radius:6px; background:#2a2a2a; color:#ddd; font-size:13px;"><i class="fas fa-question-circle" style="color:#7289da; margin-right:8px;"></i> Yetki sistemi nasıl çalışır?</div>
+                <div onclick="addSystemMessage('📌 Özel sohbetlerde resim/video gönderebilirsiniz.')" style="cursor:pointer; padding:8px; border-radius:6px; background:#2a2a2a; color:#ddd; font-size:13px;"><i class="fas fa-question-circle" style="color:#7289da; margin-right:8px;"></i> Özel sohbet özellikleri</div>
+            </div>
+            <div class="form-group"><label class="form-label">Destek Talebi</label><textarea id="supportMessage" class="form-input" placeholder="Sorununuzu yazın..." rows="3"></textarea></div>
+            <button class="form-button" style="background:#7289da;" onclick="sendSupportTicket()">Gönder</button></div>`;
+            panel.innerHTML = h;
+        }
+        function sendSupportTicket() {
+            let msg = document.getElementById('supportMessage')?.value.trim();
+            if(msg) { addSystemMessage(`🛟 Destek talebiniz #admin kanalına iletildi: "${msg}"`); document.getElementById('supportMessage').value=''; loadLeftPanel('notifications'); }
+        }
+
+        // ---------- POPÜLER ----------
+        function updatePopularChannels() {
+            let c = document.getElementById('popularChannelsList'); if(!c) return;
+            c.innerHTML = '';
+            let vis = Object.values(channels).filter(ch=> {
+                if (ch.name === 'admin' && !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin')) return false;
+                return (ACTIVE_USER.role==='owner'||ACTIVE_USER.role==='admin') ? true : !ch.isHidden;
+            });
+            vis.sort((a,b)=>(b.subscribers||0)-(a.subscribers||0)).slice(0,3).forEach(ch=>{
+                let sub = ch.subscribers||0, fmt = sub>=1000000?(sub/1000000).toFixed(1)+'M': sub>=1000?(sub/1000).toFixed(1)+'K':sub;
+                let isSub = ACTIVE_USER.subscribedChannels.includes(ch.name);
+                let hidden = ch.isHidden?'<span class="badge badge-hidden">GİZLİ</span>':'';
+                let roleClass = ch.ownerRole==='owner'?'badge-owner':ch.ownerRole==='admin'?'badge-admin':ch.ownerRole==='coadmin'?'badge-coadmin':'badge-operator';
+                c.innerHTML += `<div class="popular-item" onclick="joinChannel('${ch.name}')"><div class="popular-info"><div class="popular-name">${ch.name} ${hidden}<span class="badge ${roleClass}">${ch.ownerRole==='owner'?'👑':ch.ownerRole==='admin'?'⚡':ch.ownerRole==='coadmin'?'🔧':'🛠️'}</span>${ch.name==='genel'?'<span class="badge badge-owner">ANA</span>':''}${ch.subscribers>1000000?'<span class="badge badge-coadmin">POP</span>':''}</div><div class="popular-subscribers">${fmt} abone</div></div><button class="subscribe-btn ${isSub?'subscribed':''}" onclick="event.stopPropagation(); ${isSub?'unsubscribeChannel':'subscribeChannel'}('${ch.name}')"><i class="fas ${isSub?'fa-check':'fa-plus'}"></i> ${isSub?'Abone Olundu':'Abone Ol'}</button></div>`;
+            });
         }
 
         // ========== ÖZEL SOHBET ==========
