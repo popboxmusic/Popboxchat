@@ -13,6 +13,7 @@ let database;
 let currentChannelFirebase = 'genel';
 let currentUser = null;
 
+// Firebase başlat (sadece database)
 function initFirebase() {
     try {
         if (!firebase.apps.length) {
@@ -21,6 +22,7 @@ function initFirebase() {
         database = firebase.database();
         console.log('✅ Firebase başlatıldı!');
         
+        // Kullanıcı varsa bağlan
         const user = JSON.parse(localStorage.getItem('cetcety_active_user'));
         if (user) {
             currentUser = user;
@@ -34,23 +36,28 @@ function initFirebase() {
     }
 }
 
+// Kanala bağlan
 function connectToChannel(channelName) {
     if (!database || !currentUser) return;
     
+    // Eski kanaldan çık
     if (currentChannelFirebase) {
         database.ref(`channels/${currentChannelFirebase}/onlineUsers/${currentUser.id}`).remove();
     }
     
     currentChannelFirebase = channelName;
     
+    // Yeni kanala ekle
     const onlineRef = database.ref(`channels/${channelName}/onlineUsers/${currentUser.id}`);
     onlineRef.set({
         name: currentUser.name,
         joined: Date.now()
     });
     
+    // Çıkışta sil
     onlineRef.onDisconnect().remove();
     
+    // Online listeyi dinle
     database.ref(`channels/${channelName}/onlineUsers`).on('value', (snapshot) => {
         const users = snapshot.val();
         const onlineCount = users ? Object.keys(users).length : 0;
