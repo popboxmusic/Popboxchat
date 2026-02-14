@@ -738,7 +738,7 @@
             }
         }
 
-        // ========== STORAGE EVENT - EŞZAMANLILIK İÇİN ==========
+        // ========== STORAGE EVENT - EŞZAMANLILIK İÇİN (DÜZELTİLDİ) ==========
         window.addEventListener('storage', function(e) {
             if (e.key === 'cetcety_channel_messages') {
                 let newMessages = JSON.parse(e.newValue);
@@ -759,20 +759,63 @@
             }
             else if (e.key === 'cetcety_channels') {
                 let newChannels = JSON.parse(e.newValue);
-                if (newChannels && currentChannel) {
-                    let oldOnline = channels[currentChannel]?.onlineUsers.length || 0;
+                if (newChannels) {
+                    // Eski kanal verilerini güncelle
+                    let oldChannelData = channels[currentChannel] ? {...channels[currentChannel]} : null;
                     channels = newChannels;
-                    let newOnline = channels[currentChannel]?.onlineUsers.length || 0;
-                    if (oldOnline !== newOnline) {
-                        document.getElementById('channelUserCount').textContent = newOnline;
-                        if (document.getElementById('tabOnline')?.classList.contains('active')) {
-                            showOnlineTab();
+                    
+                    // Şu anki kanalı güncelle
+                    if (currentChannel && channels[currentChannel]) {
+                        // Online sayısı değişti mi kontrol et
+                        if (oldChannelData && oldChannelData.onlineUsers?.length !== channels[currentChannel].onlineUsers?.length) {
+                            document.getElementById('channelUserCount').textContent = channels[currentChannel].onlineUsers?.length || 0;
+                            if (document.getElementById('tabOnline')?.classList.contains('active')) {
+                                showOnlineTab();
+                            }
+                        }
+                        
+                        // Abone sayısını güncelle
+                        let sub = channels[currentChannel].subscribers || 0;
+                        let fmt = sub >= 1000000 ? (sub/1000000).toFixed(1)+'M' : sub >= 1000 ? (sub/1000).toFixed(1)+'K' : sub;
+                        document.getElementById('channelSubscribers').textContent = fmt;
+                        
+                        // Şu an oynayan videoyu güncelle
+                        if (channels[currentChannel].currentVideo) {
+                            document.getElementById('nowPlayingTitle').textContent = channels[currentChannel].currentTitle || 'CETCETY Radio';
+                            document.getElementById('nowPlayingOwner').innerHTML = `${channels[currentChannel].ownerRole === 'owner' ? '👑' : '👤'} ${channels[currentChannel].owner}`;
+                        }
+                        
+                        // Playlist'i güncelle (medya.js üzerinden)
+                        if (window.mediaManager && window.mediaManager.updatePlaylist) {
+                            window.mediaManager.updatePlaylist(channels[currentChannel].playlist || []);
                         }
                     }
-                    // Medya panelini güncelle
-                    if (window.mediaManager) {
-                        window.mediaManager.setChannel(currentChannel);
+                    
+                    // Sol paneldeki kanal listesini güncelle
+                    let panelHeader = document.querySelector('.panel-header h3');
+                    if (panelHeader) {
+                        if (panelHeader.innerText.includes('Tüm Kanallar')) {
+                            loadChannelsPanel(document.getElementById('leftPanel'));
+                        } else if (panelHeader.innerText.includes('Abonelikler')) {
+                            loadSubscriptionsPanel(document.getElementById('leftPanel'));
+                        }
                     }
+                }
+            }
+            else if (e.key === 'cetcety_users' || e.key === 'cetcety_active_user') {
+                // Kullanıcı bilgileri güncellendi
+                let newActiveUser = JSON.parse(localStorage.getItem('cetcety_active_user'));
+                if (newActiveUser && ACTIVE_USER && newActiveUser.id === ACTIVE_USER.id) {
+                    ACTIVE_USER = newActiveUser;
+                    USERS_DB = JSON.parse(localStorage.getItem('cetcety_users')) || [];
+                    
+                    // Profil panelini güncelle
+                    if (document.querySelector('.panel-header h3')?.innerText.includes('Profil')) {
+                        loadProfilePanel(document.getElementById('leftPanel'));
+                    }
+                    
+                    // Avatar'ı güncelle
+                    document.getElementById('avatarText').textContent = ACTIVE_USER.avatar || ACTIVE_USER.name.charAt(0).toUpperCase();
                 }
             }
         });
@@ -1545,10 +1588,11 @@
             if (tab !== 'chat') addSystemMessage('🔜 Bu özellik yakında aktif olacak.'); 
         }
 
-        // ========== KANAL İŞLEMLERİ ==========
+        // ========== KANAL İŞLEMLERİ (DÜZELTİLDİ) ==========
         function joinChannel(ch) {
             if (!channels[ch]) return;
 
+            // Eski kanaldan çık
             if (currentChannel && channels[currentChannel] && channels[currentChannel].onlineUsers) {
                 channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
             }
@@ -1556,27 +1600,32 @@
             currentChannel = ch;
             let c = channels[ch];
 
+            // Yeni kanala ekle
             if (!c.onlineUsers.includes(ACTIVE_USER.name)) {
                 c.onlineUsers.push(ACTIVE_USER.name);
             }
             saveChannels();
 
+            // UI güncellemeleri
             document.getElementById('currentChannelName').textContent = ch;
             document.getElementById('currentChannelPlaylist').textContent = `#${ch} playlist`;
+            
             let sub = c.subscribers || 0;
             let fmt = sub >= 1000000 ? (sub/1000000).toFixed(1)+'M' : sub >= 1000 ? (sub/1000).toFixed(1)+'K' : sub;
             document.getElementById('channelSubscribers').textContent = fmt;
             document.getElementById('channelUserCount').textContent = c.onlineUsers.length;
             
-            document.getElementById('nowPlayingTitle').textContent = c.currentTitle;
+            document.getElementById('nowPlayingTitle').textContent = c.currentTitle || 'CETCETY Radio';
             document.getElementById('nowPlayingOwner').innerHTML = `${c.ownerRole === 'owner' ? '👑' : '👤'} ${c.owner}`;
             
+            // Medya yöneticisini güncelle
             if (window.mediaManager) {
                 window.mediaManager.setChannel(ch);
             }
 
             loadChannelMessages(ch);
 
+            // Abone butonunu güncelle
             let subBtn = document.getElementById('subscribeChannelBtn');
             if (ACTIVE_USER.subscribedChannels.includes(ch)) { 
                 subBtn.innerHTML = '<i class="fas fa-check"></i> Abone Olundu'; 
@@ -1586,10 +1635,20 @@
                 subBtn.classList.remove('subscribed'); 
             }
 
-            // Online listesini güncelle
+            // Online listesini güncelle (eğer açıksa)
             if (document.getElementById('tabOnline')?.classList.contains('active')) {
                 showOnlineTab();
             }
+            
+            // Tüm sekmelerdeki online sayılarını güncelle
+            document.querySelectorAll('.subscription-item, .channel-item').forEach(el => {
+                let chName = el.querySelector('.subscription-name, .channel-name')?.innerText.split(' ')[0];
+                if (chName && channels[chName]) {
+                    let count = channels[chName].onlineUsers?.length || 0;
+                    let countEl = el.querySelector('.subscription-stats');
+                    if (countEl) countEl.textContent = count;
+                }
+            });
 
             addSystemMessage(`📢 #${ch} kanalına katıldın! ${fmt} abone, ${c.onlineUsers.length} çevrimiçi.`);
         }
@@ -2006,6 +2065,46 @@
             else if (active === 'profile') document.querySelector('.profile-avatar')?.classList.add('active');
             else if (active === 'support') document.querySelector('.icon-item[onclick*="openSupportPanel"]')?.classList.add('active');
         }
+
+        // ========== PERİYODİK SENKRONİZASYON (EKLENDİ) ==========
+        setInterval(function() {
+            if (ACTIVE_USER) {
+                // localStorage'dan en güncel verileri al
+                let storedChannels = localStorage.getItem('cetcety_channels');
+                if (storedChannels) {
+                    let newChannels = JSON.parse(storedChannels);
+                    if (JSON.stringify(channels) !== storedChannels) {
+                        channels = newChannels;
+                        
+                        // UI'ı güncelle
+                        if (currentChannel && channels[currentChannel]) {
+                            document.getElementById('channelUserCount').textContent = channels[currentChannel].onlineUsers?.length || 0;
+                            
+                            // Playlist değişti mi kontrol et
+                            if (window.mediaManager && window.mediaManager.updatePlaylist) {
+                                window.mediaManager.updatePlaylist(channels[currentChannel].playlist || []);
+                            }
+                            
+                            // Şu an oynayan videoyu güncelle
+                            if (channels[currentChannel].currentVideo) {
+                                document.getElementById('nowPlayingTitle').textContent = channels[currentChannel].currentTitle || 'CETCETY Radio';
+                                document.getElementById('nowPlayingOwner').innerHTML = `${channels[currentChannel].ownerRole === 'owner' ? '👑' : '👤'} ${channels[currentChannel].owner}`;
+                            }
+                        }
+                    }
+                }
+                
+                // Özel sohbetleri kontrol et
+                let storedPrivate = localStorage.getItem('cetcety_private_chats');
+                if (storedPrivate && JSON.stringify(PRIVATE_CHATS) !== storedPrivate) {
+                    PRIVATE_CHATS = JSON.parse(storedPrivate);
+                    if (currentPrivateChat) {
+                        loadPrivateMessages();
+                    }
+                    updateUnreadBadge();
+                }
+            }
+        }, 3000); // 3 saniyede bir kontrol et
 
         // ========== BAŞLANGIÇ ==========
         document.addEventListener('DOMContentLoaded', function () {
