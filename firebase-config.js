@@ -15,7 +15,6 @@ const database = firebase.database();
 console.log('🔥 Firebase başlatıldı!');
 
 let currentUser = null;
-// DİKKAT: currentChannel BURADA TANIMLANMADI! HTML'deki currentChannel kullanılacak.
 
 // ========== KULLANICI GİRİŞ YAPINCA ==========
 function userJoined(user) {
@@ -23,41 +22,50 @@ function userJoined(user) {
     
     currentUser = user;
     
-    // HTML'deki currentChannel değişkenini kullan
-    const channel = window.currentChannel || 'genel';
-    
-    // Online kullanıcılara ekle
-    database.ref(`online/${channel}/${user.id}`).set({
-        name: user.name,
-        lastSeen: Date.now(),
-        joined: Date.now()
-    });
-    
-    // Çıkışta sil
-    database.ref(`online/${channel}/${user.id}`).onDisconnect().remove();
-    
-    // Online listeyi dinle
-    database.ref(`online/${channel}`).on('value', (snapshot) => {
-        const users = snapshot.val();
-        const onlineCount = users ? Object.keys(users).length : 0;
+    // HTML'deki currentChannel değişkenini GÜVENLİ şekilde al
+    // window.currentChannel henüz tanımlı olmayabilir, o yüzden kontrol et
+    setTimeout(() => {
+        const channel = (window.currentChannel && typeof window.currentChannel === 'string') 
+            ? window.currentChannel 
+            : 'genel';
         
-        // Online sayısını güncelle
-        const countEl = document.getElementById('channelUserCount');
-        if (countEl) countEl.textContent = onlineCount;
+        console.log(`📡 Kullanıcı ${channel} kanalına katıldı:`, user.name);
         
-        // Sağ menüdeki online listeyi güncelle (eğer online sekmesi açıksa)
-        updateOnlineList(users);
-    });
+        // Online kullanıcılara ekle
+        const userRef = database.ref(`online/${channel}/${user.id}`);
+        userRef.set({
+            name: user.name,
+            lastSeen: Date.now(),
+            joined: Date.now()
+        });
+        
+        // Çıkışta sil
+        userRef.onDisconnect().remove();
+        
+        // Online listeyi dinle
+        database.ref(`online/${channel}`).on('value', (snapshot) => {
+            const users = snapshot.val();
+            const onlineCount = users ? Object.keys(users).length : 0;
+            
+            // Online sayısını güncelle
+            const countEl = document.getElementById('channelUserCount');
+            if (countEl) countEl.textContent = onlineCount;
+            
+            // Online listeyi güncelle
+            updateOnlineList(users);
+        });
+        
+        // Kanal mesajlarını dinle
+        listenMessages(channel);
+        
+    }, 500); // 500ms bekle, HTML'in yüklenmesini sağla
 }
 
 // ========== ONLINE LİSTEYİ GÜNCELLE ==========
 function updateOnlineList(users) {
-    const container = document.getElementById('sagMenuIcerik');
-    if (!container) return;
-    
-    // Sadece online sekmesi aktifse güncelle
-    const aktifSekme = document.querySelector('.sag-menu-sekme.aktif')?.dataset.sekme;
-    if (aktifSekme !== 'online' && aktifSekme !== undefined) return;
+    // Sol paneldeki online listeyi bul (farklı HTML yapısı olabilir)
+    const onlineContainer = document.querySelector('#chatPanelContent, .online-list, [data-panel="online"]');
+    if (!onlineContainer) return;
     
     let html = '';
     if (users) {
@@ -68,25 +76,32 @@ function updateOnlineList(users) {
             html += `
                 <div class="online-item" onclick="openPrivateChat('${user.name}')">
                     <div class="online-avatar">${user.name.charAt(0)}</div>
-                    <div style="flex:1;">
-                        <div style="font-weight: 600;">${user.name}</div>
-                        <div style="font-size: 12px; color: #4caf50;">● çevrimiçi</div>
+                    <div class="online-info">
+                        <div class="online-name">${user.name}<span class="online-status"></span></div>
+                        <div class="online-meta">● çevrimiçi</div>
                     </div>
                 </div>
             `;
         });
     }
     
-    container.innerHTML = html || '<div style="color:#666; text-align:center; padding:20px;">👥 Çevrimiçi kimse yok</div>';
+    onlineContainer.innerHTML = html || '<div style="color:#aaa; text-align:center; padding:20px;">👥 Çevrimiçi kimse yok</div>';
 }
 
 // ========== KANAL DEĞİŞTİRİNCE ==========
 function changeChannel(channelName) {
     if (!database || !currentUser) return;
     
-    // Eski kanaldan çık
-    const eskiKanal = window.currentChannel || 'genel';
-    database.ref(`online/${eskiKanal}/${currentUser.id}`).remove();
+    console.log(`📡 Kanal değişiyor: ${channelName}`);
+    
+    // Eski kanaldan çık (window.currentChannel güvenli)
+    const eskiKanal = (window.currentChannel && typeof window.currentChannel === 'string') 
+        ? window.currentChannel 
+        : 'genel';
+    
+    if (eskiKanal !== channelName) {
+        database.ref(`online/${eskiKanal}/${currentUser.id}`).remove();
+    }
     
     // Yeni kanala ekle
     database.ref(`online/${channelName}/${currentUser.id}`).set({
@@ -94,13 +109,20 @@ function changeChannel(channelName) {
         lastSeen: Date.now()
     });
     
-    // Yeni kanalın online listesini dinle
+    // Yeni kanalın online listesini dinle (eski dinleyiciyi kaldır)
+    database.ref(`online/${eskiKanal}`).off();
     database.ref(`online/${channelName}`).on('value', (snapshot) => {
         const users = snapshot.val();
         const onlineCount = users ? Object.keys(users).length : 0;
-        document.getElementById('channelUserCount').textContent = onlineCount;
+        
+        const countEl = document.getElementById('channelUserCount');
+        if (countEl) countEl.textContent = onlineCount;
+        
         updateOnlineList(users);
     });
+    
+    // Mesaj dinleyicisini değiştir
+    listenMessages(channelName);
 }
 
 // ========== MESAJ GÖNDER ==========
@@ -118,6 +140,8 @@ function sendFirebaseMessage(channelName, text, sender) {
 // ========== MESAJLARI DİNLE ==========
 function listenMessages(channelName) {
     if (!database) return;
+    
+    console.log(`📡 Mesajlar dinleniyor: ${channelName}`);
     
     database.ref(`channels/${channelName}/messages`).off();
     database.ref(`channels/${channelName}/messages`).on('child_added', (snapshot) => {
@@ -154,39 +178,38 @@ function escapeHTML(text) {
     return div.innerHTML;
 }
 
-// ========== SEKMELERİ YAKALA ==========
-function setupTabListeners() {
-    const onlineSekme = document.querySelector('.sag-menu-sekme[data-sekme="online"]');
-    const sohbetSekme = document.querySelector('.sag-menu-sekme[data-sekme="sohbetler"]');
-    
-    if (onlineSekme) {
-        onlineSekme.addEventListener('click', function() {
-            const channel = window.currentChannel || 'genel';
-            database.ref(`online/${channel}`).once('value', (snapshot) => {
-                updateOnlineList(snapshot.val());
-            });
-        });
-    }
-}
-
-// ========== GLOBAL YAP ==========
+// ========== GLOBAL FONKSİYONLAR ==========
 window.database = database;
 window.userJoined = userJoined;
 window.changeChannel = changeChannel;
 window.sendFirebaseMessage = sendFirebaseMessage;
 window.listenMessages = listenMessages;
 
+// ========== HTML'DEKİ joinChannel FONKSİYONUNU YAKALA ==========
+// Orijinal joinChannel fonksiyonunu koru ama Firebase'i de güncelle
+const originalJoinChannel = window.joinChannel;
+window.joinChannel = function(ch) {
+    // Orijinal fonksiyonu çağır
+    if (originalJoinChannel) originalJoinChannel(ch);
+    
+    // Firebase'i güncelle
+    changeChannel(ch);
+};
+
 // Sayfa yüklendiğinde
 document.addEventListener('DOMContentLoaded', () => {
     const user = JSON.parse(localStorage.getItem('cetcety_active_user'));
     if (user) {
-        userJoined(user);
-        
-        // Mevcut kanalın mesajlarını dinle
-        const channel = window.currentChannel || 'genel';
-        listenMessages(channel);
+        // Biraz bekle, HTML'deki currentChannel'ın tanımlanmasını sağla
+        setTimeout(() => {
+            userJoined(user);
+        }, 1000);
     }
     
-    // Tab listener'ları kur
-    setTimeout(setupTabListeners, 1000);
+    // Orijinal joinChannel'i sakla
+    if (window.joinChannel) {
+        window.originalJoinChannel = window.joinChannel;
+    }
 });
+
+console.log('✅ Firebase config düzeltildi, window.currentChannel hatası giderildi');
