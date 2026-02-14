@@ -12,6 +12,8 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     <!-- YouTube API -->
     <script src="https://www.youtube.com/iframe_api"></script>
+    <!-- IRC Komut Sistemi (YENİ) -->
+    <script type="module" src="irc-commands.js"></script>
     <style>
         /* Tüm stiller aynen korundu (önceki versiyondaki gibi) */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
@@ -834,7 +836,7 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
         // ========== FIREBASE KONFİG ==========
         const firebaseConfig = {
             apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
@@ -856,7 +858,7 @@
         let BLOCKED_USERS = JSON.parse(localStorage.getItem('cetcety_blocks')) || {};
         let BANNED_WORDS = JSON.parse(localStorage.getItem('cetcety_banned_words')) || ['spam', 'reklam', 'şiddet', 'hakaret'];
         let CUSTOM_COMMANDS = JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
-        let BOTS = JSON.parse(localStorage.getItem('cetcety_bots')) || []; // owner tarafından oluşturulan botlar
+        let BOTS = JSON.parse(localStorage.getItem('cetcety_bots')) || [];
 
         let currentPrivateChat = null;
         let currentChannel = 'genel';
@@ -867,10 +869,17 @@
 
         const OWNER_PASSWORD = 'Sahi17407@SCM';
 
-        // Kanallar - sadece genel kaldı, diğer demo kanallar silindi. (operators listesi eklendi)
+        // Kanallar
         let channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {
             'genel': { name:'genel', owner:'MateKy', ownerRole:'owner', coAdmins:[], operators:[], subscribers:15000000, online:15420, isHidden:false, currentVideo:'jfKfPfyJRdk', currentTitle:'CETCETY Radio', currentArtist:'👑 MateKy', playlist:[{id:'jfKfPfyJRdk',title:'CETCETY Radio',addedBy:'MateKy',role:'owner'}], onlineUsers:[] }
         };
+
+        // ========== IRC KOMUT SİSTEMİNİ İMPORT ET ==========
+        import { handleCommand, initIRCSystem } from './irc-commands.js';
+        
+        // Global yap
+        window.handleCommand = handleCommand;
+        window.initIRCSystem = initIRCSystem;
 
         function saveChannels() {
             localStorage.setItem('cetcety_channels', JSON.stringify(channels));
@@ -973,14 +982,15 @@
             document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
         }
 
-        function addSystemMessage(text, saveToFirebase = true) {
+        function addSystemMessage(text, saveToFirebase = true, targetChannel = null) {
             let d = document.createElement('div');
             d.className = 'system-message';
             d.innerHTML = `<i class="fas fa-info-circle"></i> ${escapeHTML(text)}`;
             document.getElementById('messages').appendChild(d);
             document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-            if (saveToFirebase && database && currentChannel) {
-                database.ref('messages/' + currentChannel).push({
+            if (saveToFirebase && database) {
+                const channel = targetChannel || currentChannel;
+                database.ref('messages/' + channel).push({
                     sender: 'Sistem',
                     text: text,
                     type: 'system',
@@ -989,7 +999,7 @@
             }
         }
 
-        // ========== ÖZEL MESAJLARI DİNLE ==========
+        // ========== ÖZEL MESAJLARI DİNLE (GÜNCELLENDİ) ==========
         function listenToPrivateMessages() {
             if (!database || !ACTIVE_USER) return;
             if (privateMessagesListener) privateMessagesListener.off();
@@ -1093,6 +1103,11 @@
 
             MateBot.init();
             addSystemMessage(`👋 Hoş geldin, ${ACTIVE_USER.name}!`, true);
+            
+            // IRC sistemini başlat
+            if (typeof initIRCSystem === 'function') {
+                initIRCSystem();
+            }
         }
 
         document.addEventListener('keydown', function(e) {
@@ -2017,12 +2032,25 @@
             if (document.querySelector('.panel-header h3')?.innerText.includes('Tüm Kanallar')) loadChannelsPanel(document.getElementById('leftPanel'));
         }
 
-        // ========== MESAJ GÖNDER ==========
+        // ========== MESAJ GÖNDER (GÜNCELLENDİ) ==========
         function sendMessage() {
             MateBot.checkSpam();
-            let inp = document.getElementById('messageInput'); let txt = inp.value.trim();
+            let inp = document.getElementById('messageInput'); 
+            let txt = inp.value.trim();
             if (!txt) return;
-            if (txt.startsWith('/')) { handleCommand(txt); inp.value = ''; autoResize(inp); return; }
+            
+            // KOMUT KONTROLÜ - YENİ: handleCommand fonksiyonunu çağır
+            if (txt.startsWith('/')) { 
+                if (typeof handleCommand === 'function') {
+                    handleCommand(txt);
+                } else {
+                    console.error('handleCommand fonksiyonu bulunamadı!');
+                    addSystemMessage('❌ Komut sistemi yüklenemedi!', true);
+                }
+                inp.value = ''; 
+                autoResize(inp); 
+                return; 
+            }
             
             let banned = checkBannedWords(txt);
             if (banned) {
@@ -2041,183 +2069,6 @@
                 });
             }
             inp.value = ''; autoResize(inp);
-        }
-
-        // ========== KOMUT İŞLEYİCİ ==========
-        function handleCommand(cmd) {
-            let parts = cmd.substring(1).split(' '); let main = parts[0].toLowerCase();
-            let custom = CUSTOM_COMMANDS.find(c => c.command === '/' + main || c.command === main);
-            if (custom) { addSystemMessage(`🤖 ${custom.response}`, true); return; }
-
-            if (main === 'help') {
-                addSystemMessage('📋 KOMUTLAR:\n/join #kanal - kanala katıl\n/part - kanaldan ayrıl (genel hariç)\n/msg kullanıcı mesaj - özel mesaj\n/kick kullanıcı - kanaldan at (yetki: operator+, coadmin+)\n/ban kullanıcı - 24 saat yasakla (yetki: operator+, coadmin+)\n/unban kullanıcı - yasağı kaldır (admin+)\n/op kullanıcı - coadmin yap (kendi kanalında, admin+)\n/deop kullanıcı - coadmin yetkisi al (admin+)\n/addadmin kullanıcı - admin yap (sadece owner)\n/removeadmin kullanıcı - admin yetkisi al (owner)\n/users - kanaldaki çevrimiçiler\n/ping - pong\n/temizle - sohbeti temizle (admin+)\n/abonelikler - aboneliklerin\n/populer - popüler kanallar\n/kanal - kanal bilgisi\n/kanalac - kanal aç\n/yayin - canlı yayın başlat (yetki: coadmin+)', true);
-            }
-            else if (main === 'join') {
-                let ch = parts[1]?.replace('#','');
-                if (ch && channels[ch]) joinChannel(ch);
-                else addSystemMessage('❌ Kanal bulunamadı.', true);
-            }
-            else if (main === 'part') {
-                if (currentChannel === 'genel') addSystemMessage('❌ Genel kanaldan ayrılamazsın.', true);
-                else {
-                    let oldChannel = currentChannel;
-                    if (channels[oldChannel] && channels[oldChannel].onlineUsers) {
-                        channels[oldChannel].onlineUsers = channels[oldChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
-                        saveChannels();
-                    }
-                    if (database && ACTIVE_USER) {
-                        database.ref('onlineUsers/' + ACTIVE_USER.name).update({ channel: 'genel' });
-                    }
-                    addSystemMessage(`⬅️ #${oldChannel} kanalından ayrıldın.`, true);
-                    joinChannel('genel');
-                }
-            }
-            else if (main === 'msg') {
-                let target = parts[1]; let msg = parts.slice(2).join(' ');
-                if (target && msg) {
-                    let user = USERS_DB.find(u => u.name.toLowerCase() === target.toLowerCase());
-                    if (user) {
-                        openPrivateChat(user.name);
-                        setTimeout(() => {
-                            document.getElementById('privateMessageInput').value = msg;
-                            sendPrivateMessage();
-                        }, 300);
-                    } else addSystemMessage('❌ Kullanıcı bulunamadı.', true);
-                } else addSystemMessage('Kullanım: /msg kullanıcı mesaj', true);
-            }
-            else if (main === 'kick') {
-                let target = parts[1];
-                if (!target) { addSystemMessage('Kullanım: /kick kullanıcı', true); return; }
-                let ch = channels[currentChannel];
-                let canKick = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || ch.coAdmins?.includes(ACTIVE_USER.name) || ch.operators?.includes(ACTIVE_USER.name));
-                if (!canKick) { addSystemMessage('❌ Bu komut için yetkin yok!', true); return; }
-                if (target === ACTIVE_USER.name) { addSystemMessage('❌ Kendini atamazsın!', true); return; }
-                if (!ch.onlineUsers.includes(target)) { addSystemMessage(`❌ ${target} kanalda değil.`, true); return; }
-                ch.onlineUsers = ch.onlineUsers.filter(u => u !== target);
-                saveChannels();
-                addSystemMessage(`👢 ${target} kanaldan atıldı.`, true);
-                MateBot.sendToAdmin(`${ACTIVE_USER.name}, ${target}'i #${currentChannel} kanalından attı.`);
-            }
-            else if (main === 'ban') {
-                let target = parts[1];
-                if (!target) { addSystemMessage('Kullanım: /ban kullanıcı', true); return; }
-                let ch = channels[currentChannel];
-                let canBan = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || ch.coAdmins?.includes(ACTIVE_USER.name) || ch.operators?.includes(ACTIVE_USER.name));
-                if (!canBan) { addSystemMessage('❌ Yetkin yok!', true); return; }
-                if (target === ACTIVE_USER.name) { addSystemMessage('❌ Kendini yasaklayamazsın!', true); return; }
-                let user = USERS_DB.find(u => u.name === target);
-                if (!user) { addSystemMessage('❌ Kullanıcı bulunamadı.', true); return; }
-                let blockKey = `${ACTIVE_USER.id}_${target}`;
-                BLOCKED_USERS[blockKey] = { userId: user.id, userName: target, expiry: Date.now() + 24*60*60*1000, blockedBy: ACTIVE_USER.id };
-                localStorage.setItem('cetcety_blocks', JSON.stringify(BLOCKED_USERS));
-                addSystemMessage(`🚫 ${target} 24 saat yasaklandı.`, true);
-                if (channels[currentChannel].onlineUsers.includes(target)) {
-                    channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== target);
-                    saveChannels();
-                }
-            }
-            else if (main === 'unban') {
-                let target = parts[1];
-                if (!target) { addSystemMessage('Kullanım: /unban kullanıcı', true); return; }
-                let canUnban = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin');
-                if (!canUnban) { addSystemMessage('❌ Sadece owner/admin unban yapabilir.', true); return; }
-                let found = false;
-                for (let key in BLOCKED_USERS) {
-                    if (BLOCKED_USERS[key].userName === target) {
-                        delete BLOCKED_USERS[key]; found = true;
-                    }
-                }
-                if (found) { localStorage.setItem('cetcety_blocks', JSON.stringify(BLOCKED_USERS)); addSystemMessage(`✅ ${target} yasağı kaldırıldı.`, true); }
-                else addSystemMessage(`❌ ${target} için yasak bulunamadı.`, true);
-            }
-            else if (main === 'op') {
-                let target = parts[1];
-                if (!target) { addSystemMessage('Kullanım: /op kullanıcı', true); return; }
-                let ch = channels[currentChannel];
-                let canOp = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.owner === ACTIVE_USER.name));
-                if (!canOp) { addSystemMessage('❌ Yetkin yok!', true); return; }
-                let user = USERS_DB.find(u => u.name === target);
-                if (!user) { addSystemMessage('❌ Kullanıcı bulunamadı.', true); return; }
-                if (!ch.coAdmins) ch.coAdmins = [];
-                if (!ch.coAdmins.includes(target)) {
-                    ch.coAdmins.push(target);
-                    user.role = 'coadmin';
-                    let userIndex = USERS_DB.findIndex(u => u.id === user.id);
-                    if (userIndex !== -1) USERS_DB[userIndex].role = 'coadmin';
-                    localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                    saveChannels();
-                    addSystemMessage(`🔧 ${target} artık #${currentChannel} kanalında coadmin.`, true);
-                } else addSystemMessage(`ℹ️ ${target} zaten coadmin.`, true);
-            }
-            else if (main === 'deop') {
-                let target = parts[1];
-                if (!target) { addSystemMessage('Kullanım: /deop kullanıcı', true); return; }
-                let ch = channels[currentChannel];
-                let canDeop = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.owner === ACTIVE_USER.name));
-                if (!canDeop) { addSystemMessage('❌ Yetkin yok!', true); return; }
-                if (ch.coAdmins && ch.coAdmins.includes(target)) {
-                    ch.coAdmins = ch.coAdmins.filter(u => u !== target);
-                    saveChannels();
-                    addSystemMessage(`🔨 ${target} coadmin yetkisi alındı.`, true);
-                } else addSystemMessage(`ℹ️ ${target} coadmin değil.`, true);
-            }
-            else if (main === 'addadmin') {
-                let target = parts[1];
-                if (!target) { addSystemMessage('Kullanım: /addadmin kullanıcı', true); return; }
-                if (ACTIVE_USER.role !== 'owner') { addSystemMessage('❌ Sadece owner admin atayabilir.', true); return; }
-                let user = USERS_DB.find(u => u.name === target);
-                if (!user) { addSystemMessage('❌ Kullanıcı bulunamadı.', true); return; }
-                if (user.role === 'admin') { addSystemMessage('ℹ️ Zaten admin.', true); return; }
-                user.role = 'admin';
-                let userIndex = USERS_DB.findIndex(u => u.id === user.id);
-                if (userIndex !== -1) USERS_DB[userIndex] = user;
-                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                addSystemMessage(`✅ ${target} admin yapıldı.`, true);
-                MateBot.sendToAdmin(`${ACTIVE_USER.name}, ${target}'i admin yaptı.`);
-            }
-            else if (main === 'removeadmin') {
-                let target = parts[1];
-                if (!target) { addSystemMessage('Kullanım: /removeadmin kullanıcı', true); return; }
-                if (ACTIVE_USER.role !== 'owner') { addSystemMessage('❌ Sadece owner admin yetkisi alabilir.', true); return; }
-                let user = USERS_DB.find(u => u.name === target);
-                if (!user) { addSystemMessage('❌ Kullanıcı bulunamadı.', true); return; }
-                if (user.role !== 'admin') { addSystemMessage(`❌ ${target} admin değil.`, true); return; }
-                user.role = 'user';
-                let userIndex = USERS_DB.findIndex(u => u.id === user.id);
-                if (userIndex !== -1) USERS_DB[userIndex] = user;
-                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                addSystemMessage(`✅ ${target} admin yetkisi alındı.`, true);
-                MateBot.sendToAdmin(`${ACTIVE_USER.name}, ${target}'in admin yetkisini aldı.`);
-            }
-            else if (main === 'users') {
-                let list = channels[currentChannel].onlineUsers.filter(u => u !== MateBot.name).join(', ');
-                addSystemMessage(`👥 #${currentChannel} çevrimiçi: ${list}`, true);
-            }
-            else if (main === 'ping') addSystemMessage('🏓 Pong!', true);
-            else if (main === 'temizle' || main === 'clear') { 
-                if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
-                    if (confirm('Tüm mesajları silmek istediğinize emin misiniz?')) {
-                        database.ref('messages/' + currentChannel).remove();
-                        document.getElementById('messages').innerHTML = '';
-                        addSystemMessage('✅ Sohbet temizlendi!', true);
-                    }
-                } else {
-                    addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!', true);
-                }
-            }
-            else if (main === 'abonelikler') addSystemMessage('📺 Aboneliklerin: ' + ACTIVE_USER.subscribedChannels.map(ch => '#' + ch).join(', '), true);
-            else if (main === 'populer') {
-                let v = Object.values(channels).filter(ch => (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') ? true : !ch.isHidden).sort((a,b)=>(b.subscribers||0)-(a.subscribers||0)).slice(0,5);
-                addSystemMessage('🔥 Popüler kanallar:\n' + v.map(ch => `• #${ch.name} - ${(ch.subscribers||0).toLocaleString()} abone`).join('\n'), true);
-            }
-            else if (main === 'kanal') {
-                let ch = channels[currentChannel];
-                let f = (ch.subscribers||0)>=1000000?((ch.subscribers||0)/1000000).toFixed(1)+'M': (ch.subscribers||0)>=1000?((ch.subscribers||0)/1000).toFixed(1)+'K':(ch.subscribers||0);
-                addSystemMessage(`📢 #${currentChannel} • ${f} abone • ${ch.onlineUsers ? ch.onlineUsers.length : 0} çevrimiçi • Sahip: ${ch.ownerRole==='owner'?'👑':ch.ownerRole==='admin'?'⚡':ch.ownerRole==='coadmin'?'🔧':ch.ownerRole==='operator'?'🛡️':''} ${ch.owner}`, true);
-            }
-            else if (main === 'kanalac') openCreateChannelPanel();
-            else if (main === 'yayin') openLiveStreamModal();
-            else addSystemMessage(`❌ Bilinmeyen komut: ${cmd}`, true);
         }
 
         // ========== CANLI YAYIN ==========
@@ -2385,10 +2236,32 @@
             }
         }
 
+        // ========== GLOBAL FONKSİYONLARI WINDOW'A EKLE ==========
+        window.database = database;
+        window.storage = storage;
+        window.USERS_DB = USERS_DB;
+        window.ACTIVE_USER = ACTIVE_USER;
+        window.BLOCKED_USERS = BLOCKED_USERS;
+        window.BANNED_WORDS = BANNED_WORDS;
+        window.CUSTOM_COMMANDS = CUSTOM_COMMANDS;
+        window.channels = channels;
+        window.currentChannel = currentChannel;
+        window.MateBot = MateBot;
+        window.addSystemMessage = addSystemMessage;
+        window.joinChannel = joinChannel;
+        window.openPrivateChat = openPrivateChat;
+        window.sendPrivateMessage = sendPrivateMessage;
+        window.saveChannels = saveChannels;
+        window.getRoleLevel = getRoleLevel;
+        window.updatePlaylist = updatePlaylist;
+        window.appendPrivateMessage = appendPrivateMessage;
+
         // ========== BAŞLANGIÇ ==========
         document.addEventListener('DOMContentLoaded', function () {
             if (localStorage.getItem('cetcety_theme') === 'light') document.body.classList.add('light-theme');
             ACTIVE_USER = JSON.parse(localStorage.getItem('cetcety_active_user'));
+            window.ACTIVE_USER = ACTIVE_USER;
+            
             if (ACTIVE_USER) {
                 if (!channels.genel.onlineUsers.includes(ACTIVE_USER.name)) {
                     channels.genel.onlineUsers.push(ACTIVE_USER.name);
@@ -2422,6 +2295,11 @@
 
                 MateBot.init();
                 addSystemMessage(`👋 Tekrar hoş geldin, ${ACTIVE_USER.name}!`, true);
+                
+                // IRC sistemini başlat
+                if (typeof initIRCSystem === 'function') {
+                    initIRCSystem();
+                }
             } else {
                 document.getElementById('loginOverlay').classList.remove('hidden');
                 document.getElementById('app').style.display = 'none';
