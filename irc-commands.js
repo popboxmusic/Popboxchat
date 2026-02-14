@@ -8,15 +8,14 @@
 const { 
     database, channels, ACTIVE_USER, USERS_DB, BLOCKED_USERS, BANNED_WORDS, 
     addSystemMessage, joinChannel, openPrivateChat, sendPrivateMessage, 
-    currentChannel, MateBot, saveChannels, updatePlaylist, getRoleLevel,
-    CUSTOM_COMMANDS: customCommandsFromMain
+    currentChannel, MateBot, saveChannels, updatePlaylist, getRoleLevel
 } = window;
 
 // Özel mesaj izleme sistemi (Owner için)
 let PRIVATE_MESSAGE_WATCHERS = JSON.parse(localStorage.getItem('cetcety_private_watchers')) || {};
 
-// Özel komutlar (CUSTOM_COMMANDS'i main'den al veya boş başlat)
-let CUSTOM_COMMANDS = customCommandsFromMain || JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
+// Özel komutlar
+let CUSTOM_COMMANDS = JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
 
 // ========== YARDIMCI FONKSİYONLAR ==========
 function saveWatchers() {
@@ -25,25 +24,38 @@ function saveWatchers() {
 
 function saveCustomCommands() {
     localStorage.setItem('cetcety_custom_commands', JSON.stringify(CUSTOM_COMMANDS));
-    // Ana window'daki CUSTOM_COMMANDS'i de güncelle
-    if (window.CUSTOM_COMMANDS) {
-        window.CUSTOM_COMMANDS = CUSTOM_COMMANDS;
-    }
 }
+
+// ========== OWNER KONTROLÜ ==========
+function isOwner() {
+    return ACTIVE_USER && ACTIVE_USER.role === 'owner';
+}
+
+// ========== SPAM KORUMASINI ATLA (Owner için) ==========
+const originalCheckSpam = MateBot.checkSpam;
+MateBot.checkSpam = function() {
+    if (isOwner()) {
+        // Owner spam kontrolünden muaf
+        return;
+    }
+    // Normal kullanıcılar için spam kontrolü yap
+    if (typeof originalCheckSpam === 'function') {
+        originalCheckSpam.call(this);
+    }
+};
 
 // ========== ÖZEL MESAJ DİNLEYİCİ (İZLEME SİSTEMİ) ==========
 export function setupPrivateMessageWatcher() {
     if (!database || !ACTIVE_USER) return;
     
     // Sadece Owner izleme yapabilir
-    if (ACTIVE_USER.role !== 'owner') return;
+    if (!isOwner()) return;
     
     // Tüm kullanıcıların özel mesajlarını dinle (owner olarak)
     database.ref('privateMessages').on('child_added', (snapshot) => {
         const userName = snapshot.key; // Mesajı alan kullanıcı
-        const messagesRef = snapshot.ref;
         
-        messagesRef.on('child_added', (msgSnapshot) => {
+        snapshot.ref.on('child_added', (msgSnapshot) => {
             const msg = msgSnapshot.val();
             if (!msg) return;
             
@@ -54,22 +66,21 @@ export function setupPrivateMessageWatcher() {
                 // Hedef kanal var mı kontrol et
                 if (channels[targetChannel]) {
                     // Medya içeriğini formatla
-                    let mediaHtml = '';
+                    let mediaInfo = '';
                     if (msg.mediaUrl) {
                         if (msg.mediaType && msg.mediaType.startsWith('image/')) {
-                            mediaHtml = ` 🖼️ [Resim: ${msg.mediaUrl.substring(0, 50)}...]`;
+                            mediaInfo = ` 🖼️ [Resim]`;
                         } else if (msg.mediaType && msg.mediaType.startsWith('video/')) {
-                            mediaHtml = ` 🎥 [Video: ${msg.mediaUrl.substring(0, 50)}...]`;
+                            mediaInfo = ` 🎥 [Video]`;
                         }
                     }
                     
                     // İzleme mesajını hedef kanala gönder
-                    const watchMsg = `🔍 [GİZLİ İZLEME] ${msg.sender} → ${userName}: ${msg.text || ''}${mediaHtml}`;
+                    const watchMsg = `🔍 [GİZLİ İZLEME] ${msg.sender} → ${userName}: ${msg.text || ''}${mediaInfo}`;
                     
-                    // Sisteme mesaj olarak ekle
                     addSystemMessage(watchMsg, true, targetChannel);
                     
-                    // Firebase'e de kaydet (isteğe bağlı)
+                    // Firebase'e kaydet
                     if (database) {
                         database.ref('messages/' + targetChannel).push({
                             sender: `🔍 Gizli Servis`,
@@ -87,78 +98,100 @@ export function setupPrivateMessageWatcher() {
 
 // ========== YENİ KOMUT: /komutekle (Owner) ==========
 function handleAddCommand(args) {
-    if (ACTIVE_USER.role !== 'owner') {
-        addSystemMessage('❌ Bu komutu sadece OWNER kullanabilir!', true);
+    if (!isOwner()) {
+        addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!', true);
         return;
     }
     
     if (args.length < 2) {
         addSystemMessage('⚠️ Kullanım: /komutekle <komutAdı> <parametreler>', true);
         addSystemMessage('Örnek: /komutekle kick <nick> <sebep>', true);
-        addSystemMessage('Örnek: /komutekle addadmin <nick>', true);
-        addSystemMessage('Örnek: /komutekle deadmin <nick>', true);
+        addSystemMessage('Örnek: /komutekle selam <mesaj>', true);
         return;
     }
     
     const commandName = args[0].toLowerCase();
     const commandParams = args.slice(1).join(' ');
     
-    // Komut yapısını oluştur
     const newCommand = {
         command: commandName,
         fullCommand: `/${commandName}`,
         params: commandParams,
-        paramList: args.slice(1), // Parametreleri ayrı ayrı da sakla
+        paramList: args.slice(1),
         type: 'dynamic',
         createdBy: ACTIVE_USER.name,
         createdAt: new Date().toISOString()
     };
     
-    // Aynı isimde komut var mı kontrol et
     const existingIndex = CUSTOM_COMMANDS.findIndex(c => c.command === commandName);
     if (existingIndex !== -1) {
         CUSTOM_COMMANDS[existingIndex] = newCommand;
-        addSystemMessage(`🔄 '/${commandName}' komutu güncellendi!`, true);
+        addSystemMessage(`🔄 '/${commandName}' komutu güncellendi! (Sadece owner görebilir)`, true);
     } else {
         CUSTOM_COMMANDS.push(newCommand);
-        addSystemMessage(`✅ Yeni komut eklendi: '/${commandName} ${commandParams}'`, true);
+        addSystemMessage(`✅ Yeni komut eklendi: '/${commandName} ${commandParams}' (Sadece owner görebilir)`, true);
     }
     
-    // Kaydet
     saveCustomCommands();
+}
+
+// ========== YENİ KOMUT: /komutsil (Owner) ==========
+function handleRemoveCommand(args) {
+    if (!isOwner()) {
+        addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!', true);
+        return;
+    }
+    
+    if (args.length < 1) {
+        addSystemMessage('⚠️ Kullanım: /komutsil <komutAdı>', true);
+        addSystemMessage('Örnek: /komutsil kick', true);
+        addSystemMessage('Örnek: /komutsil selam', true);
+        return;
+    }
+    
+    const commandName = args[0].toLowerCase();
+    
+    const index = CUSTOM_COMMANDS.findIndex(c => c.command === commandName);
+    
+    if (index === -1) {
+        addSystemMessage(`❌ '/${commandName}' komutu bulunamadı!`, true);
+        return;
+    }
+    
+    const removedCommand = CUSTOM_COMMANDS[index];
+    CUSTOM_COMMANDS.splice(index, 1);
+    saveCustomCommands();
+    
+    addSystemMessage(`🗑️ '/${commandName}' komutu silindi!`, true);
 }
 
 // ========== YENİ KOMUT: /ozeloku (Owner) ==========
 function handlePrivateRead(args) {
-    if (ACTIVE_USER.role !== 'owner') {
-        addSystemMessage('❌ Bu komutu sadece OWNER kullanabilir!', true);
+    if (!isOwner()) {
+        addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!', true);
         return;
     }
     
     if (args.length < 2) {
         addSystemMessage('⚠️ Kullanım: /ozeloku <kullanıcıAdı> <hedefKanal>', true);
         addSystemMessage('Örnek: /ozeloku ahmet #owner', true);
-        addSystemMessage('Örnek: /ozeloku mehmet #gizli', true);
         return;
     }
     
     const targetUser = args[0];
     const targetChannel = args[1].replace('#', '');
     
-    // Hedef kanal var mı?
     if (!channels[targetChannel]) {
         addSystemMessage(`❌ '#${targetChannel}' kanalı bulunamadı!`, true);
         return;
     }
     
-    // Kullanıcı var mı?
     const userExists = USERS_DB.some(u => u.name === targetUser);
     if (!userExists) {
         addSystemMessage(`❌ '${targetUser}' kullanıcısı bulunamadı!`, true);
         return;
     }
     
-    // İzlemeye ekle
     PRIVATE_MESSAGE_WATCHERS[targetUser] = targetChannel;
     saveWatchers();
     
@@ -168,8 +201,8 @@ function handlePrivateRead(args) {
 
 // ========== YENİ KOMUT: /izlemeyidurdur (Owner) ==========
 function handleStopWatching(args) {
-    if (ACTIVE_USER.role !== 'owner') {
-        addSystemMessage('❌ Bu komutu sadece OWNER kullanabilir!', true);
+    if (!isOwner()) {
+        addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!', true);
         return;
     }
     
@@ -191,8 +224,8 @@ function handleStopWatching(args) {
 
 // ========== YENİ KOMUT: /izlenenler (Owner) ==========
 function handleListWatched() {
-    if (ACTIVE_USER.role !== 'owner') {
-        addSystemMessage('❌ Bu komutu sadece OWNER kullanabilir!', true);
+    if (!isOwner()) {
+        addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!', true);
         return;
     }
     
@@ -211,20 +244,128 @@ function handleListWatched() {
     addSystemMessage(message, true);
 }
 
+// ========== YENİ KOMUT: /ownerhelp (Sadece Owner görür) ==========
+function handleOwnerHelp() {
+    if (!isOwner()) {
+        addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!', true);
+        return;
+    }
+    
+    let helpText = `👑 OWNER GİZLİ KOMUTLARI:\n`;
+    helpText += `─────────────────────\n`;
+    helpText += `🔐 YETKİ YÖNETİMİ:\n`;
+    helpText += `  /addadmin <nick> - Admin ekle\n`;
+    helpText += `  /removeadmin <nick> - Admin sil\n`;
+    helpText += `  /op <nick> - Coadmin yap\n`;
+    helpText += `  /deop <nick> - Coadmin sil\n`;
+    helpText += `─────────────────────\n`;
+    helpText += `🤖 ÖZEL KOMUTLAR:\n`;
+    helpText += `  /komutekle <ad> <param> - Yeni komut ekle\n`;
+    helpText += `  /komutsil <ad> - Komut sil\n`;
+    helpText += `  /komutlar - Tüm özel komutları listele\n`;
+    helpText += `─────────────────────\n`;
+    helpText += `🕵️ İZLEME SİSTEMİ:\n`;
+    helpText += `  /ozeloku <kullanıcı> <#kanal> - Özel mesajları izle\n`;
+    helpText += `  /izlemeyidurdur <kullanıcı> - İzlemeyi durdur\n`;
+    helpText += `  /izlenenler - İzlenenleri listele\n`;
+    helpText += `─────────────────────\n`;
+    helpText += `⚡ TANRI MODU:\n`;
+    helpText += `  /tanrimodu - Owner ayrıcalıklarını göster\n`;
+    helpText += `  /sistem - Sistem durumu\n`;
+    helpText += `  /tümözel - Tüm özel mesajları görüntüle\n`;
+    helpText += `─────────────────────\n`;
+    helpText += `📊 KANAL YÖNETİMİ:\n`;
+    helpText += `  /kanalgizle <kanal> - Kanalı gizle\n`;
+    helpText += `  /kanalgöster <kanal> - Kanalı göster\n`;
+    helpText += `  /kanalsil <kanal> - Kanalı sil\n`;
+    helpText += `─────────────────────\n`;
+    helpText += `⚠️ SİSTEM KOMUTLARI:\n`;
+    helpText += `  /temizlehepsi - Tüm mesajları sil\n`;
+    helpText += `  /sıfırla - Tüm verileri sıfırla\n`;
+    
+    addSystemMessage(helpText, true);
+}
+
+// ========== YENİ KOMUT: /komutlar (Tüm özel komutları listele) ==========
+function handleListCommands() {
+    if (!isOwner()) {
+        addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!', true);
+        return;
+    }
+    
+    const dynamicCmds = CUSTOM_COMMANDS.filter(c => c.type === 'dynamic');
+    
+    if (dynamicCmds.length === 0) {
+        addSystemMessage('📭 Hiç özel komut eklenmemiş.', true);
+        return;
+    }
+    
+    let message = '📋 ÖZEL KOMUTLAR:\n';
+    message += `────────────────\n`;
+    dynamicCmds.forEach((cmd, index) => {
+        message += `  ${index+1}. /${cmd.command} ${cmd.params}\n`;
+    });
+    message += `────────────────\n`;
+    message += `Toplam: ${dynamicCmds.length} komut`;
+    
+    addSystemMessage(message, true);
+}
+
+// ========== YENİ KOMUT: /tanrimodu (Owner) ==========
+function handleGodMode() {
+    if (!isOwner()) {
+        addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!', true);
+        return;
+    }
+    
+    addSystemMessage('👑 TANRI MODU AKTİF!', true);
+    addSystemMessage('✨ Owner olarak hiçbir kısıtlamaya tabi değilsiniz:', true);
+    addSystemMessage('   • Spam koruması yok', true);
+    addSystemMessage('   • Yasaklı kelime kontrolü yok', true);
+    addSystemMessage('   • Banlanamazsınız', true);
+    addSystemMessage('   • Kicklenemezsiniz', true);
+    addSystemMessage('   • Tüm özel mesajları görebilirsiniz', true);
+    addSystemMessage('   • Tüm kanalları yönetebilirsiniz', true);
+}
+
+// ========== YENİ KOMUT: /sistem (Sistem durumu) ==========
+function handleSystemStatus() {
+    if (!isOwner()) {
+        addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!', true);
+        return;
+    }
+    
+    const userCount = USERS_DB.length;
+    const channelCount = Object.keys(channels).length;
+    const onlineCount = Object.keys(channels).reduce((sum, ch) => sum + (channels[ch].onlineUsers?.length || 0), 0);
+    const commandCount = CUSTOM_COMMANDS.length;
+    const watcherCount = Object.keys(PRIVATE_MESSAGE_WATCHERS).length;
+    
+    let status = `📊 SİSTEM DURUMU:\n`;
+    status += `────────────────\n`;
+    status += `👥 Toplam Kullanıcı: ${userCount}\n`;
+    status += `📡 Çevrimiçi: ${onlineCount}\n`;
+    status += `📺 Toplam Kanal: ${channelCount}\n`;
+    status += `🤖 Özel Komut: ${commandCount}\n`;
+    status += `🕵️ İzlenen: ${watcherCount}\n`;
+    status += `────────────────\n`;
+    status += `💾 Firebase: Bağlı\n`;
+    status += `⚡ Owner: ${ACTIVE_USER.name}`;
+    
+    addSystemMessage(status, true);
+}
+
 // ========== DİNAMİK KOMUT ÇALIŞTIRICI ==========
 function executeDynamicCommand(commandName, args) {
     const command = CUSTOM_COMMANDS.find(c => c.command === commandName);
     
-    if (!command) return false; // Komut bulunamadı
+    if (!command) return false;
     
-    // Owner'ın eklediği komutları çalıştır
     if (command.type === 'dynamic') {
-        // Parametreleri birleştir
         const fullParams = args.join(' ');
         
-        // Komut tipine göre özel işlemler
+        // Owner'ın eklediği komutları çalıştır
         if (commandName === 'kick') {
-            // /kick nick sebep
             const nick = args[0];
             const reason = args.slice(1).join(' ') || 'Sebep belirtilmedi';
             
@@ -233,18 +374,21 @@ function executeDynamicCommand(commandName, args) {
                 return true;
             }
             
-            // Yetki kontrolü yap
-            const ch = channels[currentChannel];
-            const canKick = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || 
-                            ch?.coAdmins?.includes(ACTIVE_USER.name) || ch?.operators?.includes(ACTIVE_USER.name));
-            
-            if (!canKick) {
-                addSystemMessage('❌ Bu komut için yetkiniz yok!', true);
+            // Owner kendini kickleyemez
+            if (nick === ACTIVE_USER.name) {
+                addSystemMessage('❌ Kendinizi kickleyemezsiniz!', true);
                 return true;
             }
             
-            if (nick === ACTIVE_USER.name) {
-                addSystemMessage('❌ Kendinizi kickleyemezsiniz!', true);
+            const ch = channels[currentChannel];
+            
+            // Yetki kontrolü - Owner her zaman yetkili
+            const canKick = isOwner() || ACTIVE_USER.role === 'admin' || 
+                           ch?.coAdmins?.includes(ACTIVE_USER.name) || 
+                           ch?.operators?.includes(ACTIVE_USER.name);
+            
+            if (!canKick) {
+                addSystemMessage('❌ Bu komut için yetkiniz yok!', true);
                 return true;
             }
             
@@ -253,13 +397,11 @@ function executeDynamicCommand(commandName, args) {
                 return true;
             }
             
-            // Kullanıcıyı kanaldan çıkar
             ch.onlineUsers = ch.onlineUsers.filter(u => u !== nick);
             saveChannels();
             
             addSystemMessage(`👢 ${nick} kanaldan atıldı. Sebep: ${reason}`, true);
             
-            // Firebase'deki online durumunu güncelle
             if (database) {
                 database.ref('onlineUsers/' + nick).remove();
             }
@@ -267,7 +409,6 @@ function executeDynamicCommand(commandName, args) {
             return true;
         }
         else if (commandName === 'ban') {
-            // /ban nick sebep
             const nick = args[0];
             const reason = args.slice(1).join(' ') || 'Sebep belirtilmedi';
             
@@ -276,17 +417,21 @@ function executeDynamicCommand(commandName, args) {
                 return true;
             }
             
-            const ch = channels[currentChannel];
-            const canBan = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || 
-                           ch?.coAdmins?.includes(ACTIVE_USER.name) || ch?.operators?.includes(ACTIVE_USER.name));
-            
-            if (!canBan) {
-                addSystemMessage('❌ Bu komut için yetkiniz yok!', true);
+            // Owner kendini banlayamaz
+            if (nick === ACTIVE_USER.name) {
+                addSystemMessage('❌ Kendinizi banlayamazsınız!', true);
                 return true;
             }
             
-            if (nick === ACTIVE_USER.name) {
-                addSystemMessage('❌ Kendinizi banlayamazsınız!', true);
+            const ch = channels[currentChannel];
+            
+            // Yetki kontrolü - Owner her zaman yetkili
+            const canBan = isOwner() || ACTIVE_USER.role === 'admin' || 
+                          ch?.coAdmins?.includes(ACTIVE_USER.name) || 
+                          ch?.operators?.includes(ACTIVE_USER.name);
+            
+            if (!canBan) {
+                addSystemMessage('❌ Bu komut için yetkiniz yok!', true);
                 return true;
             }
             
@@ -296,7 +441,6 @@ function executeDynamicCommand(commandName, args) {
                 return true;
             }
             
-            // 24 saatlik ban
             const blockKey = `${ACTIVE_USER.id}_${nick}`;
             BLOCKED_USERS[blockKey] = {
                 userId: user.id,
@@ -317,10 +461,9 @@ function executeDynamicCommand(commandName, args) {
             return true;
         }
         else if (commandName === 'addadmin') {
-            // /addadmin nick
             const nick = args[0];
             
-            if (ACTIVE_USER.role !== 'owner') {
+            if (!isOwner()) {
                 addSystemMessage('❌ Sadece OWNER admin atayabilir!', true);
                 return true;
             }
@@ -347,12 +490,11 @@ function executeDynamicCommand(commandName, args) {
             addSystemMessage(`✅ ${nick} admin yapıldı!`, true);
             return true;
         }
-        else if (commandName === 'deadmin') {
-            // /deadmin nick
+        else if (commandName === 'deadmin' || commandName === 'removeadmin') {
             const nick = args[0];
             
-            if (ACTIVE_USER.role !== 'owner') {
-                addSystemMessage('❌ Sadece OWNER admin yetkisi alabilir!', true);
+            if (!isOwner()) {
+                addSystemMessage('❌ Sadece OWNER admin silebilir!', true);
                 return true;
             }
             
@@ -396,16 +538,25 @@ export function handleCommand(commandLine) {
     const mainCommand = parts[0].toLowerCase();
     const args = parts.slice(1);
     
-    // 1. ÖNCE DİNAMİK KOMUTLARI DENE (Owner'ın ekledikleri)
+    // 1. ÖNCE DİNAMİK KOMUTLARI DENE
     if (executeDynamicCommand(mainCommand, args)) {
         return true;
     }
     
     // 2. YERLEŞİK KOMUTLAR
     switch (mainCommand) {
-        // --- OWNER ÖZEL KOMUTLARI ---
+        // --- OWNER ÖZEL KOMUTLARI (GİZLİ) ---
+        case 'ownerhelp':
+            handleOwnerHelp();
+            break;
         case 'komutekle':
             handleAddCommand(args);
+            break;
+        case 'komutsil':
+            handleRemoveCommand(args);
+            break;
+        case 'komutlar':
+            handleListCommands();
             break;
         case 'ozeloku':
             handlePrivateRead(args);
@@ -416,8 +567,14 @@ export function handleCommand(commandLine) {
         case 'izlenenler':
             handleListWatched();
             break;
+        case 'tanrimodu':
+            handleGodMode();
+            break;
+        case 'sistem':
+            handleSystemStatus();
+            break;
             
-        // --- YARDIM ---
+        // --- NORMAL KULLANICILAR İÇİN YARDIM (Owner yetkileri GÖRÜNMEZ) ---
         case 'help':
             let helpText = `📋 CETCETY KOMUTLARI:\n`;
             helpText += `─────────────────\n`;
@@ -442,33 +599,17 @@ export function handleCommand(commandLine) {
             helpText += `  /temizle - Sohbeti temizle\n`;
             helpText += `  /yayin - Canlı yayın başlat\n`;
             
-            if (ACTIVE_USER.role === 'owner') {
+            // Owner için gizli bir ipucu bile yok!
+            if (isOwner()) {
+                // Owner'a sadece özel komut olduğunu hatırlat
                 helpText += `─────────────────\n`;
-                helpText += `👑 OWNER ÖZEL:\n`;
-                helpText += `  /addadmin kullanıcı - Admin yap\n`;
-                helpText += `  /removeadmin kullanıcı - Admin al\n`;
-                helpText += `  /komutekle - Yeni komut ekle\n`;
-                helpText += `  /ozeloku kullanıcı #kanal - Özel izle\n`;
-                helpText += `  /izlemeyidurdur kullanıcı - İzlemeyi durdur\n`;
-                helpText += `  /izlenenler - İzlenenleri listele\n`;
-            }
-            
-            // Özel komutları da göster
-            if (CUSTOM_COMMANDS.length > 0) {
-                const dynamicCmds = CUSTOM_COMMANDS.filter(c => c.type === 'dynamic');
-                if (dynamicCmds.length > 0) {
-                    helpText += `─────────────────\n`;
-                    helpText += `⚡ ÖZEL EKLENENLER:\n`;
-                    dynamicCmds.forEach(cmd => {
-                        helpText += `  /${cmd.command} ${cmd.params}\n`;
-                    });
-                }
+                helpText += `👑 Owner özel komutları için: /ownerhelp\n`;
             }
             
             addSystemMessage(helpText, true);
             break;
             
-        // --- DİĞER YERLEŞİK KOMUTLAR (orijinal HTML'den taşınanlar) ---
+        // --- DİĞER YERLEŞİK KOMUTLAR ---
         case 'join':
             const channel = args[0]?.replace('#', '');
             if (channel && channels[channel]) {
@@ -538,7 +679,7 @@ export function handleCommand(commandLine) {
             
         case 'populer':
             const popular = Object.values(channels)
-                .filter(ch => ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' ? true : !ch.isHidden)
+                .filter(ch => isOwner() || ACTIVE_USER.role === 'admin' ? true : !ch.isHidden)
                 .sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0))
                 .slice(0, 5);
             addSystemMessage('🔥 POPÜLER KANALLAR:\n' + popular.map(ch => `• #${ch.name} - ${(ch.subscribers || 0).toLocaleString()} abone`).join('\n'), true);
@@ -567,9 +708,10 @@ export function handleCommand(commandLine) {
         case 'removeadmin':
         case 'temizle':
         case 'clear':
-            // Bu komutlar dinamik olarak da tanımlanabilir, ama yerleşik olarak da çalışsın
-            // Orijinal HTML'deki komutları buraya da ekleyebiliriz, ama dinamik sistem zaten onları yakalayacak
-            addSystemMessage(`ℹ️ '/${mainCommand}' komutu dinamik olarak da tanımlanabilir.`, true);
+            // Bu komutlar zaten dinamik sistemde
+            if (!executeDynamicCommand(mainCommand, args)) {
+                addSystemMessage(`❌ '/${mainCommand}' komutu için yetkiniz yok veya komut bulunamadı.`, true);
+            }
             break;
             
         default:
@@ -585,9 +727,9 @@ export function initIRCSystem() {
     console.log('🔌 IRC Komut Sistemi başlatıldı');
     
     // Özel mesaj izleme sistemini başlat (sadece owner için)
-    if (ACTIVE_USER && ACTIVE_USER.role === 'owner') {
+    if (isOwner()) {
         setupPrivateMessageWatcher();
-        console.log('👑 Owner izleme sistemi aktif');
+        console.log('👑 Owner izleme sistemi aktif - Tanrı modu');
     }
     
     // Özel komutları yükle
