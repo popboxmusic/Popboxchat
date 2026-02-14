@@ -127,6 +127,44 @@ class CETCETYMedia {
         return match ? match[1] : null;
     }
 
+    // ========== MEDYA UI GÜNCELLE (EK) ==========
+    updateMediaUI() {
+        console.log('🔄 Medya UI güncelleniyor...');
+        const user = this.getActiveUser();
+        const channel = this.getChannelData(this.currentChannel);
+        
+        const isAuthorized = user?.role === 'owner' || 
+                            user?.role === 'admin' || 
+                            channel?.coAdmins?.includes(user?.name);
+        
+        // Video ekle butonu
+        const addBtn = document.getElementById('addMediaBtn');
+        if (addBtn) {
+            addBtn.style.opacity = isAuthorized ? '1' : '0.4';
+            addBtn.style.pointerEvents = isAuthorized ? 'auto' : 'none';
+            addBtn.title = isAuthorized ? 'Video Ekle' : 'Yetkiniz yok';
+        }
+        
+        // Canlı yayın butonu
+        const liveBtn = document.getElementById('liveStreamBtn');
+        if (liveBtn) {
+            liveBtn.style.opacity = isAuthorized ? '1' : '0.4';
+            liveBtn.style.pointerEvents = isAuthorized ? 'auto' : 'none';
+            liveBtn.title = isAuthorized ? 'Canlı Yayın' : 'Yetkiniz yok';
+        }
+        
+        // Kanal gizle butonu
+        const hideBtn = document.getElementById('hideChannelBtn');
+        if (hideBtn) {
+            const canHide = user?.role === 'owner' || user?.role === 'admin';
+            hideBtn.style.opacity = canHide ? '1' : '0.4';
+            hideBtn.style.pointerEvents = canHide ? 'auto' : 'none';
+            hideBtn.title = canHide ? 'Kanalı Gizle/Göster' : 'Sadece Owner/Admin';
+        }
+        
+        console.log('✅ Medya UI güncellendi');
+    }
+
     // ========== VİDEO EKLEME MODALI ==========
     showAddVideoModal() {
         const user = this.getActiveUser();
@@ -319,7 +357,7 @@ class CETCETYMedia {
         }, 1000);
     }
 
-    // ========== KANAL DEĞİŞTİR ==========
+    // ========== KANAL DEĞİŞTİR (DÜZELTİLDİ) ==========
     setChannel(channelName) {
         console.log('setChannel çağrıldı:', channelName);
         this.currentChannel = channelName;
@@ -343,7 +381,7 @@ class CETCETYMedia {
         }
         
         this.updatePlaylist();
-        this.updateMediaUI();
+        this.updateMediaUI(); // ŞİMDİ ÇALIŞACAK!
     }
 
     // ========== PLAYLİST GÜNCELLE ==========
@@ -374,7 +412,7 @@ class CETCETYMedia {
                         <div class="playlist-info" style="flex: 1;">
                             <div class="playlist-song" style="font-size: 13px; font-weight: 500;">${this.escapeHTML(item.title)}</div>
                             <div class="playlist-artist" style="font-size: 11px; color: #aaa;">
-                                <span>${item.role === 'owner' ? '👑' : item.role === 'admin' ? '⚡' : '🔧'} ${this.escapeHTML(item.addedBy)}</span>
+                                <span>${item.role === 'owner' ? '👑' : item.role === 'admin' ? '⚡' : item.role === 'coadmin' ? '🔧' : '🛠️'} ${this.escapeHTML(item.addedBy)}</span>
                             </div>
                         </div>
                         ${canDelete ? `
@@ -458,37 +496,6 @@ class CETCETYMedia {
         localStorage.setItem('cetcety_channels', JSON.stringify(channels));
         this.updatePlaylist();
         this.addSystemMessage(`🗑️ "${removed.title}" playlistten kaldırıldı.`);
-    }
-
-    // ========== MEDYA UI GÜNCELLE (EKLENDİ) ==========
-    updateMediaUI() {
-        const user = this.getActiveUser();
-        const channel = this.getChannelData(this.currentChannel);
-        
-        const isAuthorized = user?.role === 'owner' || 
-                            user?.role === 'admin' || 
-                            channel?.coAdmins?.includes(user?.name);
-        
-        const addBtn = document.getElementById('addMediaBtn');
-        if (addBtn) {
-            addBtn.style.opacity = isAuthorized ? '1' : '0.4';
-            addBtn.style.pointerEvents = isAuthorized ? 'auto' : 'none';
-        }
-        
-        const liveBtn = document.getElementById('liveStreamBtn');
-        if (liveBtn) {
-            liveBtn.style.opacity = isAuthorized ? '1' : '0.4';
-            liveBtn.style.pointerEvents = isAuthorized ? 'auto' : 'none';
-        }
-        
-        const hideBtn = document.getElementById('hideChannelBtn');
-        if (hideBtn) {
-            const canHide = user?.role === 'owner' || user?.role === 'admin';
-            hideBtn.style.opacity = canHide ? '1' : '0.4';
-            hideBtn.style.pointerEvents = canHide ? 'auto' : 'none';
-        }
-        
-        console.log('✅ Medya UI güncellendi');
     }
 
     // ========== MUTE TOGGLE ==========
