@@ -711,6 +711,11 @@
             if (window.mediaManager) {
                 window.mediaManager.setChannel(currentChannel);
             }
+
+            // Firebase'e kullanıcıyı bildir
+            if (window.userJoined) {
+                window.userJoined(ACTIVE_USER);
+            }
         }
 
         document.addEventListener('keydown', function(e) {
@@ -719,7 +724,10 @@
             }
         });
 
-        function logout() { localStorage.removeItem('cetcety_active_user'); location.reload(); }
+        function logout() { 
+            localStorage.removeItem('cetcety_active_user'); 
+            location.reload(); 
+        }
 
         // ========== MATE BOT ==========
         const MateBot = {
@@ -1335,7 +1343,6 @@
             document.getElementById('nowPlayingTitle').textContent = c.currentTitle;
             document.getElementById('nowPlayingOwner').innerHTML = `${c.ownerRole === 'owner' ? '👑' : '🔧'} ${c.owner}`;
             
-            // Medya yöneticisini güncelle
             if (window.mediaManager) {
                 window.mediaManager.setChannel(ch);
             }
@@ -1346,7 +1353,7 @@
             if (ACTIVE_USER.subscribedChannels.includes(ch)) { subBtn.innerHTML = '<i class="fas fa-check"></i> Abone Olundu'; subBtn.classList.add('subscribed'); }
             else { subBtn.innerHTML = '<i class="fas fa-plus"></i> Abone Ol'; subBtn.classList.remove('subscribed'); }
 
-            // FIREBASE kanal değişimini bildir
+            // Firebase kanal değişimini bildir
             if (window.changeFirebaseChannel) {
                 window.changeFirebaseChannel(ch);
             }
@@ -1441,7 +1448,6 @@
 
             let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
             
-            // Mesajı LOCALSTORAGE'e kaydet
             let msg = {
                 sender: ACTIVE_USER.name,
                 text: txt,
@@ -1453,14 +1459,12 @@
             CHANNEL_MESSAGES[currentChannel].push(msg);
             localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
 
-            // Mesajı FIREBASE'e gönder (eşzamanlı)
+            // Firebase'e gönder
             if (window.sendFirebaseMessage) {
                 window.sendFirebaseMessage(currentChannel, txt, ACTIVE_USER.name);
             }
 
-            // Mesajı hemen göster (kendi mesajın)
             appendMessageToChat(msg, true);
-            
             inp.value = ''; 
             autoResize(inp);
         }
@@ -1705,9 +1709,13 @@
                     if (!channels.admin.onlineUsers.includes(ACTIVE_USER.name)) channels.admin.onlineUsers.push(ACTIVE_USER.name);
                     saveChannels();
                 }
-                // Medya yöneticisini başlat
                 if (window.mediaManager) {
                     window.mediaManager.setChannel(currentChannel);
+                }
+                
+                // Firebase'e kullanıcıyı bildir
+                if (window.userJoined) {
+                    window.userJoined(ACTIVE_USER);
                 }
             } else {
                 document.getElementById('loginOverlay').classList.remove('hidden');
@@ -1715,7 +1723,6 @@
             }
         });
 
-        // Sayfa kapanırken güvenli çıkış
         window.addEventListener('beforeunload', function() {
             if (ACTIVE_USER && currentChannel && channels[currentChannel]) {
                 channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
@@ -1733,7 +1740,6 @@
     
     <!-- PANEL DÜZELTME - channelManager'e yönlendir -->
     <script>
-        // ========== PANEL FONKSİYONLARINI KANAL YÖNETİCİSİNE YÖNLENDİR ==========
         function loadSubscriptionsPanel(panel) {
             if (window.channelManager) window.channelManager.loadSubscriptionsPanel(panel);
         }
@@ -1756,7 +1762,6 @@
             if (window.channelManager) window.channelManager.loadProfilePanel(panel);
         }
         
-        // TEST - Konsola yaz
         console.log('✅ Panel düzeltme aktif');
         setTimeout(() => {
             if (typeof openSubscriptions === 'function') {
@@ -1766,6 +1771,35 @@
                 console.log('✅ channelManager var');
             }
         }, 1000);
+    </script>
+    
+    <!-- SAĞ MENÜ SEKMELERİ İÇİN DÜZELTME -->
+    <script>
+        // Sağ menü sekmelerini ayarla
+        setTimeout(() => {
+            const onlineSekme = document.querySelector('.sag-menu-sekme[data-sekme="online"]');
+            const sohbetSekme = document.querySelector('.sag-menu-sekme[data-sekme="sohbetler"]');
+            
+            if (onlineSekme) {
+                onlineSekme.onclick = function() {
+                    document.querySelectorAll('.sag-menu-sekme').forEach(s => s.classList.remove('aktif'));
+                    this.classList.add('aktif');
+                    if (window.updateSagMenu) {
+                        window.updateSagMenu('online');
+                    }
+                };
+            }
+            
+            if (sohbetSekme) {
+                sohbetSekme.onclick = function() {
+                    document.querySelectorAll('.sag-menu-sekme').forEach(s => s.classList.remove('aktif'));
+                    this.classList.add('aktif');
+                    if (window.updateSagMenu) {
+                        window.updateSagMenu('sohbetler');
+                    }
+                };
+            }
+        }, 1500);
     </script>
 </body>
 </html>
