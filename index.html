@@ -738,7 +738,7 @@
             }
         }
 
-        // ========== STORAGE EVENT - EŞZAMANLILIK İÇİN (DÜZELTİLDİ) ==========
+        // ========== STORAGE EVENT - EŞZAMANLILIK İÇİN ==========
         window.addEventListener('storage', function(e) {
             if (e.key === 'cetcety_channel_messages') {
                 let newMessages = JSON.parse(e.newValue);
@@ -760,62 +760,18 @@
             else if (e.key === 'cetcety_channels') {
                 let newChannels = JSON.parse(e.newValue);
                 if (newChannels) {
-                    // Eski kanal verilerini güncelle
-                    let oldChannelData = channels[currentChannel] ? {...channels[currentChannel]} : null;
                     channels = newChannels;
-                    
-                    // Şu anki kanalı güncelle
                     if (currentChannel && channels[currentChannel]) {
-                        // Online sayısı değişti mi kontrol et
-                        if (oldChannelData && oldChannelData.onlineUsers?.length !== channels[currentChannel].onlineUsers?.length) {
-                            document.getElementById('channelUserCount').textContent = channels[currentChannel].onlineUsers?.length || 0;
-                            if (document.getElementById('tabOnline')?.classList.contains('active')) {
-                                showOnlineTab();
-                            }
-                        }
-                        
-                        // Abone sayısını güncelle
+                        document.getElementById('channelUserCount').textContent = channels[currentChannel].onlineUsers?.length || 0;
                         let sub = channels[currentChannel].subscribers || 0;
                         let fmt = sub >= 1000000 ? (sub/1000000).toFixed(1)+'M' : sub >= 1000 ? (sub/1000).toFixed(1)+'K' : sub;
                         document.getElementById('channelSubscribers').textContent = fmt;
                         
-                        // Şu an oynayan videoyu güncelle
-                        if (channels[currentChannel].currentVideo) {
-                            document.getElementById('nowPlayingTitle').textContent = channels[currentChannel].currentTitle || 'CETCETY Radio';
-                            document.getElementById('nowPlayingOwner').innerHTML = `${channels[currentChannel].ownerRole === 'owner' ? '👑' : '👤'} ${channels[currentChannel].owner}`;
-                        }
-                        
-                        // Playlist'i güncelle (medya.js üzerinden)
-                        if (window.mediaManager && window.mediaManager.updatePlaylist) {
-                            window.mediaManager.updatePlaylist(channels[currentChannel].playlist || []);
+                        // Firebase'den gelen güncellemeleri de kontrol et
+                        if (window.database) {
+                            window.syncChannelToFirebase?.(currentChannel);
                         }
                     }
-                    
-                    // Sol paneldeki kanal listesini güncelle
-                    let panelHeader = document.querySelector('.panel-header h3');
-                    if (panelHeader) {
-                        if (panelHeader.innerText.includes('Tüm Kanallar')) {
-                            loadChannelsPanel(document.getElementById('leftPanel'));
-                        } else if (panelHeader.innerText.includes('Abonelikler')) {
-                            loadSubscriptionsPanel(document.getElementById('leftPanel'));
-                        }
-                    }
-                }
-            }
-            else if (e.key === 'cetcety_users' || e.key === 'cetcety_active_user') {
-                // Kullanıcı bilgileri güncellendi
-                let newActiveUser = JSON.parse(localStorage.getItem('cetcety_active_user'));
-                if (newActiveUser && ACTIVE_USER && newActiveUser.id === ACTIVE_USER.id) {
-                    ACTIVE_USER = newActiveUser;
-                    USERS_DB = JSON.parse(localStorage.getItem('cetcety_users')) || [];
-                    
-                    // Profil panelini güncelle
-                    if (document.querySelector('.panel-header h3')?.innerText.includes('Profil')) {
-                        loadProfilePanel(document.getElementById('leftPanel'));
-                    }
-                    
-                    // Avatar'ı güncelle
-                    document.getElementById('avatarText').textContent = ACTIVE_USER.avatar || ACTIVE_USER.name.charAt(0).toUpperCase();
                 }
             }
         });
@@ -1500,6 +1456,12 @@
                 timestamp: Date.now()
             });
             localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
+            
+            // Firebase'e özel mesaj gönder
+            if (window.sendPrivateMessageToFirebase) {
+                window.sendPrivateMessageToFirebase(ACTIVE_USER.id, currentPrivateChat.id, text);
+            }
+            
             input.value = ''; 
             loadPrivateMessages(); 
             updateUnreadBadge();
@@ -1588,11 +1550,10 @@
             if (tab !== 'chat') addSystemMessage('🔜 Bu özellik yakında aktif olacak.'); 
         }
 
-        // ========== KANAL İŞLEMLERİ (DÜZELTİLDİ) ==========
+        // ========== KANAL İŞLEMLERİ ==========
         function joinChannel(ch) {
             if (!channels[ch]) return;
 
-            // Eski kanaldan çık
             if (currentChannel && channels[currentChannel] && channels[currentChannel].onlineUsers) {
                 channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
             }
@@ -1600,32 +1561,27 @@
             currentChannel = ch;
             let c = channels[ch];
 
-            // Yeni kanala ekle
             if (!c.onlineUsers.includes(ACTIVE_USER.name)) {
                 c.onlineUsers.push(ACTIVE_USER.name);
             }
             saveChannels();
 
-            // UI güncellemeleri
             document.getElementById('currentChannelName').textContent = ch;
             document.getElementById('currentChannelPlaylist').textContent = `#${ch} playlist`;
-            
             let sub = c.subscribers || 0;
             let fmt = sub >= 1000000 ? (sub/1000000).toFixed(1)+'M' : sub >= 1000 ? (sub/1000).toFixed(1)+'K' : sub;
             document.getElementById('channelSubscribers').textContent = fmt;
             document.getElementById('channelUserCount').textContent = c.onlineUsers.length;
             
-            document.getElementById('nowPlayingTitle').textContent = c.currentTitle || 'CETCETY Radio';
+            document.getElementById('nowPlayingTitle').textContent = c.currentTitle;
             document.getElementById('nowPlayingOwner').innerHTML = `${c.ownerRole === 'owner' ? '👑' : '👤'} ${c.owner}`;
             
-            // Medya yöneticisini güncelle
             if (window.mediaManager) {
                 window.mediaManager.setChannel(ch);
             }
 
             loadChannelMessages(ch);
 
-            // Abone butonunu güncelle
             let subBtn = document.getElementById('subscribeChannelBtn');
             if (ACTIVE_USER.subscribedChannels.includes(ch)) { 
                 subBtn.innerHTML = '<i class="fas fa-check"></i> Abone Olundu'; 
@@ -1635,22 +1591,16 @@
                 subBtn.classList.remove('subscribed'); 
             }
 
-            // Online listesini güncelle (eğer açıksa)
             if (document.getElementById('tabOnline')?.classList.contains('active')) {
                 showOnlineTab();
             }
-            
-            // Tüm sekmelerdeki online sayılarını güncelle
-            document.querySelectorAll('.subscription-item, .channel-item').forEach(el => {
-                let chName = el.querySelector('.subscription-name, .channel-name')?.innerText.split(' ')[0];
-                if (chName && channels[chName]) {
-                    let count = channels[chName].onlineUsers?.length || 0;
-                    let countEl = el.querySelector('.subscription-stats');
-                    if (countEl) countEl.textContent = count;
-                }
-            });
 
             addSystemMessage(`📢 #${ch} kanalına katıldın! ${fmt} abone, ${c.onlineUsers.length} çevrimiçi.`);
+            
+            // FIREBASE: Kanal değişikliğini Firebase'e bildir
+            if (window.changeChannel) {
+                window.changeChannel(ch);
+            }
         }
 
         function loadChannelMessages(channel) {
@@ -1702,14 +1652,12 @@
                 addSystemMessage(`✅ #${ch} abone olundu!`);
                 updateAllBadges();
                 
-                // Abone butonunu güncelle
                 if (ch === currentChannel) {
                     let subBtn = document.getElementById('subscribeChannelBtn');
                     subBtn.innerHTML = '<i class="fas fa-check"></i> Abone Olundu';
                     subBtn.classList.add('subscribed');
                 }
                 
-                // Kanallar panelini güncelle
                 if (document.querySelector('.panel-header h3')?.innerText.includes('Tüm Kanallar')) {
                     loadChannelsPanel(document.getElementById('leftPanel'));
                 }
@@ -1728,14 +1676,12 @@
                 addSystemMessage(`❌ #${ch} abonelikten çıkıldı.`);
                 updateAllBadges();
                 
-                // Abone butonunu güncelle
                 if (ch === currentChannel) {
                     let subBtn = document.getElementById('subscribeChannelBtn');
                     subBtn.innerHTML = '<i class="fas fa-plus"></i> Abone Ol';
                     subBtn.classList.remove('subscribed');
                 }
                 
-                // Kanallar panelini güncelle
                 if (document.querySelector('.panel-header h3')?.innerText.includes('Tüm Kanallar')) {
                     loadChannelsPanel(document.getElementById('leftPanel'));
                 }
@@ -2066,26 +2012,22 @@
             else if (active === 'support') document.querySelector('.icon-item[onclick*="openSupportPanel"]')?.classList.add('active');
         }
 
-        // ========== PERİYODİK SENKRONİZASYON (EKLENDİ) ==========
+        // ========== PERİYODİK SENKRONİZASYON ==========
         setInterval(function() {
             if (ACTIVE_USER) {
-                // localStorage'dan en güncel verileri al
                 let storedChannels = localStorage.getItem('cetcety_channels');
                 if (storedChannels) {
                     let newChannels = JSON.parse(storedChannels);
                     if (JSON.stringify(channels) !== storedChannels) {
                         channels = newChannels;
                         
-                        // UI'ı güncelle
                         if (currentChannel && channels[currentChannel]) {
                             document.getElementById('channelUserCount').textContent = channels[currentChannel].onlineUsers?.length || 0;
                             
-                            // Playlist değişti mi kontrol et
                             if (window.mediaManager && window.mediaManager.updatePlaylist) {
                                 window.mediaManager.updatePlaylist(channels[currentChannel].playlist || []);
                             }
                             
-                            // Şu an oynayan videoyu güncelle
                             if (channels[currentChannel].currentVideo) {
                                 document.getElementById('nowPlayingTitle').textContent = channels[currentChannel].currentTitle || 'CETCETY Radio';
                                 document.getElementById('nowPlayingOwner').innerHTML = `${channels[currentChannel].ownerRole === 'owner' ? '👑' : '👤'} ${channels[currentChannel].owner}`;
@@ -2094,7 +2036,6 @@
                     }
                 }
                 
-                // Özel sohbetleri kontrol et
                 let storedPrivate = localStorage.getItem('cetcety_private_chats');
                 if (storedPrivate && JSON.stringify(PRIVATE_CHATS) !== storedPrivate) {
                     PRIVATE_CHATS = JSON.parse(storedPrivate);
@@ -2104,15 +2045,42 @@
                     updateUnreadBadge();
                 }
             }
-        }, 3000); // 3 saniyede bir kontrol et
+        }, 3000);
+
+        // ========== FIREBASE SENKRONİZASYON KONTROL ==========
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('📡 HTML Firebase kontrolü yapılıyor...');
+            
+            setTimeout(function() {
+                if (window.sendFirebaseMessage) {
+                    console.log('✅ sendFirebaseMessage hazır');
+                } else {
+                    console.warn('⚠️ sendFirebaseMessage TANIMLI DEĞİL!');
+                }
+                
+                if (window.userJoined) {
+                    console.log('✅ userJoined hazır');
+                } else {
+                    console.warn('⚠️ userJoined TANIMLI DEĞİL!');
+                }
+                
+                if (window.changeChannel) {
+                    console.log('✅ changeChannel hazır');
+                } else {
+                    console.warn('⚠️ changeChannel TANIMLI DEĞİL!');
+                }
+                
+                if (window.ACTIVE_USER && window.userJoined) {
+                    window.userJoined(window.ACTIVE_USER);
+                }
+            }, 2000);
+        });
 
         // ========== BAŞLANGIÇ ==========
         document.addEventListener('DOMContentLoaded', function () {
             if (localStorage.getItem('cetcety_theme') === 'light') document.body.classList.add('light-theme');
             
-            // Demo kanalları ve kullanıcıları temizle
             if (!localStorage.getItem('cetcety_channels')) {
-                // Sadece genel kanal var
                 channels = {
                     'genel': { 
                         name:'genel', 
@@ -2150,7 +2118,6 @@
                     window.mediaManager.setChannel(currentChannel);
                 }
                 
-                // Firebase'e kullanıcıyı bildir
                 if (window.userJoined) {
                     window.userJoined(ACTIVE_USER);
                 }
