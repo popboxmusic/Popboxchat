@@ -38,15 +38,18 @@
         }
         body.light-theme .login-panel { background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.1); color: #333; }
         .login-panel h2 { text-align: center; margin-bottom: 24px; font-size: 24px; font-weight: 600; }
-        .form-group { margin-bottom: 20px; }
+        .form-group { margin-bottom: 20px; position: relative; }
         .login-panel label { display: block; margin-bottom: 8px; font-size: 13px; color: #aaa; }
         body.light-theme .login-panel label { color: #666; }
         .login-panel input {
             width: 100%; padding: 12px 16px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 8px; color: #fff; font-size: 14px; outline: none;
+            border-radius: 8px; color: #fff; font-size: 14px; outline: none; padding-right: 40px;
         }
         body.light-theme .login-panel input { background: rgba(255,255,255,0.5); border: 1px solid rgba(0,0,0,0.2); color: #333; }
         .login-panel input:focus { border-color: #ff0000; }
+        .login-panel .password-toggle {
+            position: absolute; right: 12px; top: 38px; cursor: pointer; color: #aaa; font-size: 18px;
+        }
         .login-panel button {
             width: 100%; padding: 14px; background: #ff0000; border: none; border-radius: 8px;
             color: #fff; font-weight: 600; font-size: 16px; cursor: pointer; transition: 0.2s; margin-top: 8px;
@@ -564,6 +567,7 @@
             <div class="form-group">
                 <label>Şifre</label>
                 <input type="password" id="loginPassword" placeholder="••••••••">
+                <i class="fas fa-eye password-toggle" id="togglePassword" onclick="togglePasswordVisibility()"></i>
             </div>
             <button onclick="handleLogin()">Giriş Yap / Kayıt Ol</button>
             <div class="login-info">Yeni kullanıcılar sadece nick yazarak girebilir.</div>
@@ -581,7 +585,7 @@
             <div class="icon-item" onclick="openCreateChannelPanel()" title="Kanal Aç"><i class="fas fa-plus-circle"></i></div>
             <div class="icon-item" onclick="openNotificationPanel()" title="Bildirimler"><i class="fas fa-bell"></i><span class="icon-badge" id="notificationBadge">0</span></div>
             <div class="icon-item" onclick="openSupportPanel()" title="Destek"><i class="fas fa-headset"></i></div>
-            <!-- Yetki İkonları (girişte rolüne göre görünür) -->
+            <!-- Yetki İkonları: sadece ilgili rol görecek (dinamik olarak js'de ayarlanır) -->
             <div id="ownerPanelIcon" class="icon-item" onclick="openOwnerPanel()" title="👑 Owner Paneli" style="display: none;">
                 <i class="fas fa-crown" style="color: #ffd700;"></i>
             </div>
@@ -679,7 +683,8 @@
                 <div class="youtube-player"><div id="youtubeContainer"></div>
                     <div class="player-controls">
                         <div class="player-btn" id="playerMuteBtn" onclick="toggleMute()"><i class="fas fa-volume-up" id="muteIcon"></i></div>
-                        <div class="player-btn" id="playerPlayPauseBtn" onclick="togglePlayPause()"><i class="fas fa-pause" id="playPauseIcon"></i></div>
+                        <!-- Play/Pause sadece yetkililer için görünür olacak, js'de ayarlanacak -->
+                        <div class="player-btn" id="playerPlayPauseBtn" onclick="togglePlayPause()" style="display: none;"><i class="fas fa-pause" id="playPauseIcon"></i></div>
                     </div>
                 </div>
                 <div class="now-playing"><i class="fas fa-circle"></i><span id="nowPlayingTitle">CETCETY Radio</span><span id="nowPlayingOwner" style="color: #6495ed; margin-left: auto;">👑 MateKy</span></div>
@@ -699,33 +704,29 @@
                 <button class="role-panel-close" onclick="closeOwnerPanel()"><i class="fas fa-times"></i></button>
             </div>
 
-            <!-- Kullanıcı Yönetimi -->
+            <!-- Kullanıcı Yönetimi (Admin, Coadmin, Operator atama) -->
             <div class="panel-section">
                 <h3><i class="fas fa-users"></i> Kullanıcı Yönetimi</h3>
-                <div style="margin-bottom: 16px;">
-                    <input type="text" id="ownerUserSearch" placeholder="Kullanıcı ara..." style="width: 100%; padding: 12px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 8px; color: #fff;">
-                </div>
-                <div id="ownerUserList" style="max-height: 300px; overflow-y: auto;"></div>
+                <div id="ownerUserList"></div>
             </div>
 
-            <!-- Kanal Yönetimi -->
+            <!-- Bot Oluşturma -->
             <div class="panel-section">
-                <h3><i class="fas fa-hashtag"></i> Kanal Yönetimi</h3>
-                <div id="ownerChannelList"></div>
-                <button class="form-button secondary" onclick="ownerCreateChannel()" style="margin-top: 16px;">Yeni Kanal Oluştur</button>
-            </div>
-
-            <!-- Özel Sohbet İzleme -->
-            <div class="panel-section">
-                <h3><i class="fas fa-envelope"></i> Özel Sohbet İzleme</h3>
-                <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-                    <input type="text" id="ownerPrivateSearch" placeholder="Kullanıcı adı yazın..." style="flex: 1; padding: 12px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 8px; color: #fff;">
-                    <button class="form-button secondary" onclick="ownerViewPrivateChats()">Göster</button>
+                <h3><i class="fas fa-robot"></i> Bot Oluştur</h3>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <input type="text" id="botName" placeholder="Bot adı" style="flex:2; padding: 12px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 8px; color: #fff;">
+                    <select id="botType" style="flex:1; padding: 12px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 8px; color: #fff;">
+                        <option value="chat">Sohbet Botu</option>
+                        <option value="music">Müzik Botu</option>
+                        <option value="game">Oyun Botu</option>
+                    </select>
+                    <select id="botChannel" style="flex:1; padding: 12px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 8px; color: #fff;"></select>
+                    <button class="form-button secondary" onclick="createBot()">Oluştur</button>
                 </div>
-                <div id="ownerPrivateMessages" style="max-height: 300px; overflow-y: auto; background: #0f0f0f; border-radius: 8px; padding: 16px;"></div>
+                <div id="botList" style="margin-top: 16px;"></div>
             </div>
 
-            <!-- Yasaklı Kelimeler -->
+            <!-- Yasaklı Kelimeler ve Komutlar -->
             <div class="panel-section">
                 <h3><i class="fas fa-ban"></i> Yasaklı Kelimeler</h3>
                 <div style="display: flex; gap: 8px; margin-bottom: 16px;">
@@ -746,10 +747,28 @@
                 <div id="ownerCommandsList" style="background: #0f0f0f; border-radius: 8px; padding: 12px;"></div>
             </div>
 
+            <!-- Tüm Özel Sohbetleri İzle (medya dahil) -->
+            <div class="panel-section">
+                <h3><i class="fas fa-envelope"></i> Tüm Özel Sohbetler</h3>
+                <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                    <input type="text" id="ownerPrivateSearch" placeholder="Kullanıcı adı yazın (boş bırakırsanız tüm kullanıcıların son iletileri)" style="flex: 1; padding: 12px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 8px; color: #fff;">
+                    <button class="form-button secondary" onclick="ownerViewAllPrivateChats()">Göster</button>
+                </div>
+                <div id="ownerPrivateMessages" style="max-height: 400px; overflow-y: auto; background: #0f0f0f; border-radius: 8px; padding: 16px; font-size: 12px;"></div>
+            </div>
+
+            <!-- Kanal Yönetimi -->
+            <div class="panel-section">
+                <h3><i class="fas fa-hashtag"></i> Kanal Yönetimi</h3>
+                <div id="ownerChannelList"></div>
+                <button class="form-button secondary" onclick="ownerCreateChannel()" style="margin-top: 16px;">Yeni Kanal Oluştur</button>
+            </div>
+
             <!-- Sistem Genel -->
             <div class="panel-section">
                 <h3><i class="fas fa-database"></i> Sistem</h3>
                 <button class="form-button danger" onclick="ownerClearAllMessages()">Tüm Mesajları Sil</button>
+                <button class="form-button danger" onclick="ownerResetAllData()">Tüm Verileri Sıfırla (Kullanıcılar/Kanallar)</button>
             </div>
         </div>
     </div>
@@ -762,12 +781,11 @@
                 <button class="role-panel-close" onclick="closeAdminPanel()"><i class="fas fa-times"></i></button>
             </div>
             <div class="panel-section">
-                <h3><i class="fas fa-users"></i> Kullanıcı Yönetimi</h3>
-                <p>Admin, coadmin ve operator atayabilir, kullanıcıları silebilir.</p>
+                <h3><i class="fas fa-users"></i> Kullanıcı Yönetimi (Coadmin, Operator atayabilir)</h3>
                 <div id="adminUserList"></div>
             </div>
             <div class="panel-section">
-                <h3><i class="fas fa-hashtag"></i> Kanal Yönetimi</h3>
+                <h3><i class="fas fa-hashtag"></i> Kanal Yönetimi (Gizle/Sil)</h3>
                 <div id="adminChannelList"></div>
             </div>
         </div>
@@ -777,17 +795,23 @@
     <div id="coadminPanel" class="role-panel">
         <div class="role-panel-content">
             <div class="role-panel-header">
-                <h2><i class="fas fa-tools" style="color:#6495ed;"></i> 🔧 Co-Admin Paneli</h2>
+                <h2><i class="fas fa-tools" style="color:#6495ed;"></i> 🔧 Co-Admin Paneli (Kendi Kanalınız)</h2>
                 <button class="role-panel-close" onclick="closeCoAdminPanel()"><i class="fas fa-times"></i></button>
             </div>
             <div class="panel-section">
-                <h3><i class="fas fa-users"></i> Kanal Üyeleri</h3>
-                <p>Kendi kanalınızda operator atayabilir, üyeleri yönetebilirsiniz.</p>
+                <h3><i class="fas fa-users"></i> Kanal Üyeleri ve Operator Yönetimi</h3>
                 <div id="coadminMemberList"></div>
+                <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <input type="text" id="newOperatorNick" placeholder="Kullanıcı adı" style="flex:2; padding: 12px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 8px; color: #fff;">
+                    <button class="form-button secondary" onclick="coadminAddOperator()">Operator Yap</button>
+                    <button class="form-button secondary" onclick="coadminRemoveOperator()">Operator Sil</button>
+                </div>
+                <div id="coadminOperatorsList" style="margin-top: 16px; background: #0f0f0f; border-radius: 8px; padding: 12px;"></div>
             </div>
             <div class="panel-section">
                 <h3><i class="fas fa-music"></i> Playlist Yönetimi</h3>
                 <button class="form-button secondary" onclick="openAddMediaModal()">Video Ekle</button>
+                <button class="form-button secondary" onclick="clearPlaylist()">Playlist'i Temizle</button>
             </div>
         </div>
     </div>
@@ -832,6 +856,7 @@
         let BLOCKED_USERS = JSON.parse(localStorage.getItem('cetcety_blocks')) || {};
         let BANNED_WORDS = JSON.parse(localStorage.getItem('cetcety_banned_words')) || ['spam', 'reklam', 'şiddet', 'hakaret'];
         let CUSTOM_COMMANDS = JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
+        let BOTS = JSON.parse(localStorage.getItem('cetcety_bots')) || []; // owner tarafından oluşturulan botlar
 
         let currentPrivateChat = null;
         let currentChannel = 'genel';
@@ -842,12 +867,9 @@
 
         const OWNER_PASSWORD = 'Sahi17407@SCM';
 
-        // Kanallar
+        // Kanallar - sadece genel kaldı, diğer demo kanallar silindi. (operators listesi eklendi)
         let channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {
-            'genel': { name:'genel', owner:'MateKy', ownerRole:'owner', coAdmins:[], subscribers:15000000, online:15420, isHidden:false, currentVideo:'jfKfPfyJRdk', currentTitle:'CETCETY Radio', currentArtist:'👑 MateKy', playlist:[{id:'jfKfPfyJRdk',title:'CETCETY Radio',addedBy:'MateKy',role:'owner'}], onlineUsers:[] },
-            'rock': { name:'rock', owner:'Mehmet', ownerRole:'coadmin', coAdmins:['Mehmet'], subscribers:1200000, online:1240, isHidden:false, currentVideo:'tAGnKpE4NCI', currentTitle:'Metallica - Nothing Else Matters', currentArtist:'🔧 Mehmet', playlist:[{id:'tAGnKpE4NCI',title:'Metallica',addedBy:'Mehmet',role:'coadmin'}], onlineUsers:[] },
-            'arabesk': { name:'arabesk', owner:'Ahmet', ownerRole:'coadmin', coAdmins:['Ahmet'], subscribers:892000, online:567, isHidden:false, currentVideo:'GrAchTdFqVg', currentTitle:'Ferdi Tayfur', currentArtist:'🔧 Ahmet', playlist:[{id:'GrAchTdFqVg',title:'Ferdi Tayfur',addedBy:'Ahmet',role:'coadmin'}], onlineUsers:[] },
-            'admin': { name:'admin', owner:'MateKy', ownerRole:'owner', coAdmins:['MateKy'], subscribers:5, online:2, isHidden:true, currentVideo:'jfKfPfyJRdk', currentTitle:'Admin Kanalı', currentArtist:'👑 MateKy', playlist:[], onlineUsers:[] }
+            'genel': { name:'genel', owner:'MateKy', ownerRole:'owner', coAdmins:[], operators:[], subscribers:15000000, online:15420, isHidden:false, currentVideo:'jfKfPfyJRdk', currentTitle:'CETCETY Radio', currentArtist:'👑 MateKy', playlist:[{id:'jfKfPfyJRdk',title:'CETCETY Radio',addedBy:'MateKy',role:'owner'}], onlineUsers:[] }
         };
 
         function saveChannels() {
@@ -860,6 +882,21 @@
             if (role === 'coadmin') return 3;
             if (role === 'operator') return 2;
             return 1;
+        }
+
+        // Giriş ekranında şifre göster/gizle
+        function togglePasswordVisibility() {
+            const pwd = document.getElementById('loginPassword');
+            const icon = document.getElementById('togglePassword');
+            if (pwd.type === 'password') {
+                pwd.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                pwd.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
         }
 
         // ========== ONLINE KULLANICI TAKİBİ ==========
@@ -1029,11 +1066,21 @@
             updateAllBadges();
             updatePlaylist();
 
-            // Yetki ikonlarını göster
-            if (ACTIVE_USER.role === 'owner') document.getElementById('ownerPanelIcon').style.display = 'flex';
-            if (ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner') document.getElementById('adminPanelIcon').style.display = 'flex';
-            if (ACTIVE_USER.role === 'coadmin' || ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner') document.getElementById('coadminPanelIcon').style.display = 'flex';
-            if (ACTIVE_USER.role === 'operator' || ACTIVE_USER.role === 'coadmin' || ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner') document.getElementById('operatorPanelIcon').style.display = 'flex';
+            // Yetki ikonlarını sadece kendi rolüne göre göster
+            document.getElementById('ownerPanelIcon').style.display = 'none';
+            document.getElementById('adminPanelIcon').style.display = 'none';
+            document.getElementById('coadminPanelIcon').style.display = 'none';
+            document.getElementById('operatorPanelIcon').style.display = 'none';
+
+            if (ACTIVE_USER.role === 'owner') {
+                document.getElementById('ownerPanelIcon').style.display = 'flex';
+            } else if (ACTIVE_USER.role === 'admin') {
+                document.getElementById('adminPanelIcon').style.display = 'flex';
+            } else if (ACTIVE_USER.role === 'coadmin') {
+                document.getElementById('coadminPanelIcon').style.display = 'flex';
+            } else if (ACTIVE_USER.role === 'operator') {
+                document.getElementById('operatorPanelIcon').style.display = 'flex';
+            }
 
             initOnlineStatus();
             listenToMessages();
@@ -1046,11 +1093,6 @@
 
             MateBot.init();
             addSystemMessage(`👋 Hoş geldin, ${ACTIVE_USER.name}!`, true);
-
-            if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
-                if (!ACTIVE_USER.subscribedChannels.includes('admin')) ACTIVE_USER.subscribedChannels.push('admin');
-                saveChannels();
-            }
         }
 
         document.addEventListener('keydown', function(e) {
@@ -1132,7 +1174,7 @@
             }
         });
 
-        // ========== SOL PANEL (kısaltılmış) ==========
+        // ========== SOL PANEL (dinamik) ==========
         function loadLeftPanel(panelName) {
             if (!ACTIVE_USER) return;
             const panel = document.getElementById('leftPanel');
@@ -1153,19 +1195,16 @@
         }
 
         function loadSubscriptionsPanel(panel) {
-            // ... (orijinal kod, uzunluktan kısaltıldı, ama çalışır)
             let html = `<div class="panel-header"><h3><i class="fas fa-bell" style="color:#ffd700;"></i> Abonelikler</h3><span class="subscription-count">${ACTIVE_USER.subscribedChannels.length}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
             html += `<div class="search-container"><i class="fas fa-search"></i><input type="text" class="search-input" placeholder="Kanal, kullanıcı ara..." id="panelSearchInput"></div>`;
             let visible = ACTIVE_USER.subscribedChannels.filter(ch => {
                 let c = channels[ch]; if (!c) return true;
-                if (ch === 'admin' && !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin')) return false;
                 return (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') ? true : !c.isHidden;
             });
             if (visible.length===0) html += '<div style="color:#aaa; padding:16px; text-align:center;">Abone olunan kanal yok.</div>';
             else visible.forEach(ch=>{
                 let c = channels[ch]||{owner:'Sistem',subscribers:1000,online:0,ownerRole:'user',isHidden:false};
                 let icon = 'fa-hashtag';
-                if(ch==='rock') icon='fa-guitar'; else if(ch==='arabesk') icon='fa-music'; else if(ch==='jazz') icon='fa-saxophone'; else if(ch==='hiphop') icon='fa-headphones'; else if(ch==='pop') icon='fa-microphone'; else if(ch==='admin') icon='fa-shield-alt';
                 let sub = c.subscribers||1000;
                 let fmt = sub>=1000000?(sub/1000000).toFixed(1)+'M': sub>=1000?(sub/1000).toFixed(1)+'K':sub;
                 let active = ch===currentChannel?'active':'';
@@ -1244,7 +1283,6 @@
         }
 
         function loadProfilePanel(panel) {
-            // Kısaltılmış profil paneli (owner paneli ayrı)
             let date = ACTIVE_USER.joinDate ? new Date(ACTIVE_USER.joinDate) : new Date();
             let fmtDate = `${date.getDate()}.${date.getMonth()+1}.${date.getFullYear()}`;
             let roleText = ACTIVE_USER.role==='owner'?'👑 Kurucu': ACTIVE_USER.role==='admin'?'⚡ Admin': ACTIVE_USER.role==='coadmin'?'🔧 Co-Admin': ACTIVE_USER.role==='operator'?'🛡️ Operator':'👤 Kullanıcı';
@@ -1282,100 +1320,6 @@
                 <div style="margin-top:24px;"><button class="form-button" onclick="logout()">Güvenli Çıkış</button></div>
             </div>`;
             panel.innerHTML = h;
-        }
-
-        function changeAvatar() {
-            let em = prompt('Avatar olarak bir emoji veya harf girin (tek karakter):', ACTIVE_USER.avatar || ACTIVE_USER.name.charAt(0).toUpperCase());
-            if (em && em.length > 0) {
-                ACTIVE_USER.avatar = em.charAt(0).toUpperCase();
-                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                loadLeftPanel('profile');
-                document.getElementById('avatarText').textContent = em.charAt(0).toUpperCase();
-                addSystemMessage('✅ Avatar güncellendi.', true);
-            }
-        }
-        function changeNick() {
-            let newNick = document.getElementById('profileNick')?.value.trim();
-            if (!newNick) return;
-            if (USERS_DB.find(u => u.name.toLowerCase() === newNick.toLowerCase() && u.id !== ACTIVE_USER.id)) {
-                alert('Bu kullanıcı adı zaten kullanılıyor!'); return;
-            }
-            ACTIVE_USER.name = newNick;
-            localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-            const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-            if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-            localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-            document.getElementById('avatarText').textContent = newNick.charAt(0).toUpperCase();
-            loadLeftPanel('profile');
-            addSystemMessage(`✅ Kullanıcı adı değiştirildi: ${newNick}`, true);
-        }
-        function changePassword() {
-            let pwd = document.getElementById('profilePassword')?.value.trim();
-            if (pwd) {
-                ACTIVE_USER.password = pwd;
-                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                addSystemMessage('✅ Şifre güncellendi.', true);
-                document.getElementById('profilePassword').value = '';
-            } else alert('Şifre boş olamaz!');
-        }
-        function changePrivateMode() {
-            let mode = document.getElementById('privateModeSelect')?.value;
-            if (mode) {
-                ACTIVE_USER.privateMode = mode;
-                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                addSystemMessage(`🔒 Özel sohbet modu: ${mode==='all'?'Herkese Açık':mode==='none'?'Herkese Kapalı':'Sadece Engellenenler'}`, true);
-            }
-        }
-        function blockSpecificNick() {
-            let nick = document.getElementById('blockNickInput')?.value.trim();
-            if (!nick) return;
-            if (!ACTIVE_USER.blockedNicks) ACTIVE_USER.blockedNicks = [];
-            if (!ACTIVE_USER.blockedNicks.includes(nick)) {
-                ACTIVE_USER.blockedNicks.push(nick);
-                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                addSystemMessage(`🚫 ${nick} engellendi.`, true);
-                loadLeftPanel('profile');
-            }
-        }
-        function unblockNick(nick) {
-            if (ACTIVE_USER.blockedNicks) {
-                ACTIVE_USER.blockedNicks = ACTIVE_USER.blockedNicks.filter(n => n !== nick);
-                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                addSystemMessage(`✅ ${nick} engeli kaldırıldı.`, true);
-                loadLeftPanel('profile');
-            }
-        }
-        function deleteMyChannel() {
-            if (!ACTIVE_USER.myChannel) return;
-            if (confirm(`#${ACTIVE_USER.myChannel} kanalını kalıcı olarak silmek istediğinize emin misiniz?`)) {
-                delete channels[ACTIVE_USER.myChannel];
-                saveChannels();
-                ACTIVE_USER.myChannel = null;
-                if (ACTIVE_USER.role !== 'owner') ACTIVE_USER.role = 'user';
-                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                addSystemMessage('🗑️ Kanalınız silindi.', true);
-                updateAllBadges();
-                joinChannel('genel');
-                loadLeftPanel('profile');
-            }
         }
 
         function loadSupportPanel(panel) {
@@ -1513,14 +1457,13 @@
             document.getElementById('ownerPanel').classList.remove('active');
         }
         function refreshOwnerPanel() {
-            // Kullanıcı listesi
             let userListHtml = '';
             USERS_DB.sort((a,b) => getRoleLevel(b.role) - getRoleLevel(a.role)).forEach(user => {
                 userListHtml += `
                 <div class="user-list-item">
                     <div><strong>${user.name}</strong> (${user.role})</div>
                     <div class="user-actions">
-                        <select class="role-select" onchange="ownerChangeRole('${user.name}', this.value)">
+                        <select onchange="ownerChangeRole('${user.name}', this.value)">
                             <option value="user" ${user.role==='user'?'selected':''}>user</option>
                             <option value="operator" ${user.role==='operator'?'selected':''}>operator</option>
                             <option value="coadmin" ${user.role==='coadmin'?'selected':''}>coadmin</option>
@@ -1533,7 +1476,6 @@
             });
             document.getElementById('ownerUserList').innerHTML = userListHtml || '<p>Kullanıcı yok.</p>';
 
-            // Kanal listesi
             let channelListHtml = '';
             Object.keys(channels).forEach(chName => {
                 let ch = channels[chName];
@@ -1548,19 +1490,29 @@
             });
             document.getElementById('ownerChannelList').innerHTML = channelListHtml || '<p>Kanal yok.</p>';
 
-            // Yasaklı kelimeler
             let bannedHtml = '';
             BANNED_WORDS.forEach(word => {
                 bannedHtml += `<span class="command-chip">${word} <i class="fas fa-times" onclick="ownerRemoveBannedWord('${word}')"></i></span>`;
             });
             document.getElementById('ownerBannedWordsList').innerHTML = bannedHtml || '<p>Yasaklı kelime yok.</p>';
 
-            // Özel komutlar
             let cmdHtml = '';
             CUSTOM_COMMANDS.forEach(cmd => {
                 cmdHtml += `<span class="command-chip">${cmd.command} → ${cmd.response} <i class="fas fa-times" onclick="ownerRemoveCommand('${cmd.command}')"></i></span>`;
             });
             document.getElementById('ownerCommandsList').innerHTML = cmdHtml || '<p>Özel komut yok.</p>';
+
+            let botHtml = '';
+            BOTS.forEach((bot, index) => {
+                botHtml += `<div class="user-list-item"><span>${bot.name} (${bot.type}) - #${bot.channel}</span><button onclick="deleteBot(${index})">Sil</button></div>`;
+            });
+            document.getElementById('botList').innerHTML = botHtml || '<p>Bot yok.</p>';
+
+            let channelOptions = '';
+            Object.keys(channels).forEach(ch => {
+                channelOptions += `<option value="${ch}">#${ch}</option>`;
+            });
+            document.getElementById('botChannel').innerHTML = channelOptions;
         }
         function ownerChangeRole(username, newRole) {
             if (ACTIVE_USER.role !== 'owner') return;
@@ -1607,7 +1559,7 @@
             name = name.toLowerCase().trim();
             if (channels[name]) { alert('Bu kanal zaten var!'); return; }
             channels[name] = {
-                name, owner: ACTIVE_USER.name, ownerRole: 'owner', coAdmins: [ACTIVE_USER.name],
+                name, owner: ACTIVE_USER.name, ownerRole: 'owner', coAdmins: [ACTIVE_USER.name], operators: [],
                 subscribers: 1, online: 1, isHidden: false,
                 currentVideo: 'jfKfPfyJRdk', currentTitle: 'CETCETY Radio', currentArtist: `👑 ${ACTIVE_USER.name}`,
                 playlist: [{ id: 'jfKfPfyJRdk', title: 'CETCETY Radio', addedBy: ACTIVE_USER.name, role: 'owner' }],
@@ -1616,19 +1568,6 @@
             saveChannels();
             addSystemMessage(`👑 #${name} kanalı oluşturuldu.`, true);
             refreshOwnerPanel();
-        }
-        function ownerViewPrivateChats() {
-            let username = document.getElementById('ownerPrivateSearch').value.trim();
-            if (!username) return;
-            database.ref('privateMessages/' + username).once('value', (snapshot) => {
-                let msgs = snapshot.val() || {};
-                let html = '';
-                Object.values(msgs).forEach(msg => {
-                    let time = new Date(msg.timestamp).toLocaleString('tr-TR');
-                    html += `<div style="border-bottom:1px solid #333; padding:8px;"><strong>${msg.sender}</strong> (${msg.role}): ${msg.text || '📎 medya'} <span style="color:#aaa;">${time}</span></div>`;
-                });
-                document.getElementById('ownerPrivateMessages').innerHTML = html || 'Mesaj yok.';
-            });
         }
         function ownerAddBannedWord() {
             let word = document.getElementById('newBannedWordOwner').value.trim();
@@ -1672,6 +1611,70 @@
                 addSystemMessage('👑 Tüm mesajlar silindi.', true);
             }
         }
+        function ownerResetAllData() {
+            if (ACTIVE_USER.role !== 'owner') return;
+            if (confirm('TÜM VERİLER SIFIRLANACAK! (Kullanıcılar, Kanallar, Mesajlar) Emin misiniz?')) {
+                localStorage.clear();
+                database.ref().remove();
+                location.reload();
+            }
+        }
+        function createBot() {
+            let name = document.getElementById('botName').value.trim();
+            let type = document.getElementById('botType').value;
+            let channel = document.getElementById('botChannel').value;
+            if (!name) return;
+            let bot = { name, type, channel, role: 'bot', online: true };
+            BOTS.push(bot);
+            localStorage.setItem('cetcety_bots', JSON.stringify(BOTS));
+            if (!channels[channel].onlineUsers.includes(name)) channels[channel].onlineUsers.push(name);
+            saveChannels();
+            addSystemMessage(`🤖 Bot ${name} oluşturuldu ve #${channel} kanalına eklendi.`, true);
+            refreshOwnerPanel();
+        }
+        function deleteBot(index) {
+            let bot = BOTS[index];
+            if (confirm(`Bot ${bot.name} silinsin mi?`)) {
+                BOTS.splice(index, 1);
+                localStorage.setItem('cetcety_bots', JSON.stringify(BOTS));
+                Object.keys(channels).forEach(ch => {
+                    channels[ch].onlineUsers = channels[ch].onlineUsers.filter(u => u !== bot.name);
+                });
+                saveChannels();
+                addSystemMessage(`🤖 Bot ${bot.name} silindi.`, true);
+                refreshOwnerPanel();
+            }
+        }
+        function ownerViewAllPrivateChats() {
+            let username = document.getElementById('ownerPrivateSearch').value.trim();
+            if (username) {
+                database.ref('privateMessages/' + username).once('value', (snapshot) => {
+                    let msgs = snapshot.val() || {};
+                    let html = '';
+                    Object.values(msgs).forEach(msg => {
+                        let time = new Date(msg.timestamp).toLocaleString('tr-TR');
+                        let media = msg.mediaUrl ? (msg.mediaType.startsWith('image/') ? `<img src="${msg.mediaUrl}" style="max-width:100px;">` : `<video src="${msg.mediaUrl}" style="max-width:100px;"></video>`) : '';
+                        html += `<div style="border-bottom:1px solid #333; padding:8px;"><strong>${msg.sender}</strong> (${msg.role}): ${msg.text || ''} ${media} <span style="color:#aaa;">${time}</span></div>`;
+                    });
+                    document.getElementById('ownerPrivateMessages').innerHTML = html || 'Mesaj yok.';
+                });
+            } else {
+                database.ref('privateMessages').once('value', (snapshot) => {
+                    let all = snapshot.val() || {};
+                    let html = '';
+                    Object.keys(all).forEach(user => {
+                        let msgs = all[user];
+                        let lastMsg = Object.values(msgs).pop();
+                        if (lastMsg) {
+                            let time = new Date(lastMsg.timestamp).toLocaleString('tr-TR');
+                            let media = lastMsg.mediaUrl ? (lastMsg.mediaType.startsWith('image/') ? `<img src="${lastMsg.mediaUrl}" style="max-width:100px;">` : `<video src="${lastMsg.mediaUrl}" style="max-width:100px;"></video>`) : '';
+                            html += `<div style="border-bottom:1px solid #333; padding:8px;"><strong>${user}</strong> son mesaj: ${lastMsg.text || ''} ${media} <span style="color:#aaa;">${time}</span></div>`;
+                        }
+                    });
+                    document.getElementById('ownerPrivateMessages').innerHTML = html || 'Mesaj yok.';
+                });
+            }
+        }
 
         // ========== ADMIN PANELİ ==========
         function openAdminPanel() {
@@ -1683,10 +1686,9 @@
             document.getElementById('adminPanel').classList.remove('active');
         }
         function refreshAdminPanel() {
-            // Admin için kullanıcı listesi (sadece coadmin, operator, user atayabilir)
             let userListHtml = '';
             USERS_DB.sort((a,b) => getRoleLevel(b.role) - getRoleLevel(a.role)).forEach(user => {
-                if (user.role === 'owner') return; // owner'ı gösterme
+                if (user.role === 'owner' || user.role === 'admin') return;
                 userListHtml += `
                 <div class="user-list-item">
                     <div><strong>${user.name}</strong> (${user.role})</div>
@@ -1695,7 +1697,6 @@
                             <option value="user" ${user.role==='user'?'selected':''}>user</option>
                             <option value="operator" ${user.role==='operator'?'selected':''}>operator</option>
                             <option value="coadmin" ${user.role==='coadmin'?'selected':''}>coadmin</option>
-                            <option value="admin" ${user.role==='admin'?'selected':''} disabled>admin</option>
                         </select>
                         <button onclick="adminDeleteUser('${user.name}')">Sil</button>
                     </div>
@@ -1703,7 +1704,6 @@
             });
             document.getElementById('adminUserList').innerHTML = userListHtml || '<p>Kullanıcı yok.</p>';
 
-            // Kanal listesi (admin gizleme/silme yapabilir)
             let channelListHtml = '';
             Object.keys(channels).forEach(chName => {
                 let ch = channels[chName];
@@ -1721,7 +1721,7 @@
         function adminChangeRole(username, newRole) {
             if (!(ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner')) return;
             let user = USERS_DB.find(u => u.name === username);
-            if (!user) return;
+            if (!user || user.role === 'owner' || user.role === 'admin') return;
             user.role = newRole;
             localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
             addSystemMessage(`⚡ ${username} rolü ${newRole} olarak değiştirildi.`, true);
@@ -1730,7 +1730,7 @@
         function adminDeleteUser(username) {
             if (!(ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner')) return;
             let user = USERS_DB.find(u => u.name === username);
-            if (!user || user.role === 'owner' || user.role === 'admin') return; // admin kendini silemez, adminleri silemez
+            if (!user || user.role === 'owner' || user.role === 'admin') return;
             if (confirm(`${username} kullanıcısını silmek istediğinize emin misiniz?`)) {
                 USERS_DB = USERS_DB.filter(u => u.name !== username);
                 localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
@@ -1769,10 +1769,10 @@
             document.getElementById('coadminPanel').classList.remove('active');
         }
         function refreshCoAdminPanel() {
-            // Sadece kendi kanalının üyelerini göster
             let myChannel = ACTIVE_USER.myChannel;
             if (!myChannel) {
-                document.getElementById('coadminMemberList').innerHTML = '<p>Kendi kanalınız yok.</p>';
+                document.getElementById('coadminMemberList').innerHTML = '<p>Kendi kanalınız yok. Lütfen önce bir kanal açın.</p>';
+                document.getElementById('coadminOperatorsList').innerHTML = '';
                 return;
             }
             let ch = channels[myChannel];
@@ -1780,6 +1780,59 @@
             let members = ch.onlineUsers || [];
             let html = '<p>Kanal üyeleri: ' + members.join(', ') + '</p>';
             document.getElementById('coadminMemberList').innerHTML = html;
+
+            let opsHtml = '<strong>Mevcut Operatorler:</strong> ';
+            if (ch.operators && ch.operators.length > 0) {
+                opsHtml += ch.operators.map(op => `<span class="command-chip">${op} <i class="fas fa-times" onclick="coadminRemoveOperatorByName('${op}')"></i></span>`).join('');
+            } else {
+                opsHtml += 'Yok';
+            }
+            document.getElementById('coadminOperatorsList').innerHTML = opsHtml;
+        }
+        function coadminAddOperator() {
+            let nick = document.getElementById('newOperatorNick').value.trim();
+            if (!nick) return;
+            let myChannel = ACTIVE_USER.myChannel;
+            if (!myChannel) { alert('Kendi kanalınız yok!'); return; }
+            let ch = channels[myChannel];
+            if (!ch) return;
+            let user = USERS_DB.find(u => u.name === nick);
+            if (!user) { alert('Kullanıcı bulunamadı!'); return; }
+            if (user.role === 'operator' || user.role === 'coadmin' || user.role === 'admin' || user.role === 'owner') {
+                alert('Bu kullanıcı zaten daha üst bir role sahip!');
+                return;
+            }
+            user.role = 'operator';
+            if (!ch.operators) ch.operators = [];
+            if (!ch.operators.includes(nick)) ch.operators.push(nick);
+            localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+            saveChannels();
+            addSystemMessage(`🔧 ${nick} artık #${myChannel} kanalında operator.`, true);
+            refreshCoAdminPanel();
+        }
+        function coadminRemoveOperator() {
+            let nick = document.getElementById('newOperatorNick').value.trim();
+            coadminRemoveOperatorByName(nick);
+        }
+        function coadminRemoveOperatorByName(nick) {
+            if (!nick) return;
+            let myChannel = ACTIVE_USER.myChannel;
+            if (!myChannel) { alert('Kendi kanalınız yok!'); return; }
+            let ch = channels[myChannel];
+            if (!ch) return;
+            if (ch.operators && ch.operators.includes(nick)) {
+                ch.operators = ch.operators.filter(op => op !== nick);
+                let user = USERS_DB.find(u => u.name === nick);
+                if (user && user.role === 'operator') {
+                    user.role = 'user';
+                }
+                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+                saveChannels();
+                addSystemMessage(`🔨 ${nick} operator yetkisi alındı.`, true);
+                refreshCoAdminPanel();
+            } else {
+                alert(`${nick} operator listesinde bulunamadı.`);
+            }
         }
 
         // ========== OPERATOR PANELİ ==========
@@ -1814,10 +1867,6 @@
         // ========== KANAL İŞLEMLERİ ==========
         function joinChannel(ch) {
             if (!channels[ch]) return;
-            if (ch === 'admin' && !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin')) {
-                addSystemMessage('❌ Bu kanala erişim yetkiniz yok.', true); return;
-            }
-
             if (currentChannel && channels[currentChannel] && channels[currentChannel].onlineUsers) {
                 channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
             }
@@ -1851,39 +1900,30 @@
             else { subBtn.innerHTML = '<i class="fas fa-plus"></i> Abone Ol'; subBtn.classList.remove('subscribed'); }
 
             let addBtn = document.getElementById('addMediaBtn');
+            let liveBtn = document.getElementById('liveStreamBtn');
+            let hideBtn = document.getElementById('hideChannelBtn');
+            let playPauseBtn = document.getElementById('playerPlayPauseBtn');
+
             if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name)) {
                 addBtn.classList.remove('disabled'); addBtn.style.opacity = '1'; addBtn.style.pointerEvents = 'auto';
-            } else { addBtn.classList.add('disabled'); addBtn.style.opacity = '0.4'; addBtn.style.pointerEvents = 'none'; }
-
-            let liveBtn = document.getElementById('liveStreamBtn');
-            if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name)) {
                 liveBtn.classList.remove('disabled'); liveBtn.style.opacity = '1'; liveBtn.style.pointerEvents = 'auto';
-            } else { liveBtn.classList.add('disabled'); liveBtn.style.opacity = '0.4'; liveBtn.style.pointerEvents = 'none'; }
-
-            let hideBtn = document.getElementById('hideChannelBtn'), hideIcon = document.getElementById('hideIcon');
-            hideIcon.className = c.isHidden ? 'fas fa-eye-slash' : 'fas fa-eye';
-            // Owner ve admin artık gizleyebilir
-            if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name)) {
-                hideBtn.classList.remove('disabled');
-                hideBtn.style.opacity = '1';
-                hideBtn.style.pointerEvents = 'auto';
-                hideBtn.title = c.isHidden ? 'Kanalı Göster' : 'Kanalı Gizle';
+                hideBtn.classList.remove('disabled'); hideBtn.style.opacity = '1'; hideBtn.style.pointerEvents = 'auto';
+                playPauseBtn.style.display = 'flex';
             } else {
-                hideBtn.classList.add('disabled');
-                hideBtn.style.opacity = '0.4';
-                hideBtn.style.pointerEvents = 'none';
-                hideBtn.title = 'Yetkiniz yok';
+                addBtn.classList.add('disabled'); addBtn.style.opacity = '0.4'; addBtn.style.pointerEvents = 'none';
+                liveBtn.classList.add('disabled'); liveBtn.style.opacity = '0.4'; liveBtn.style.pointerEvents = 'none';
+                hideBtn.classList.add('disabled'); hideBtn.style.opacity = '0.4'; hideBtn.style.pointerEvents = 'none';
+                playPauseBtn.style.display = 'none';
             }
 
-            document.getElementById('reportChannelBtn').classList.remove('disabled');
-            document.getElementById('reportChannelBtn').style.opacity = '1'; document.getElementById('reportChannelBtn').style.pointerEvents = 'auto';
+            let reportBtn = document.getElementById('reportChannelBtn');
+            reportBtn.classList.remove('disabled'); reportBtn.style.opacity = '1'; reportBtn.style.pointerEvents = 'auto';
 
             addSystemMessage(`📢 #${ch} kanalına katıldın! ${fmt} abone, ${c.onlineUsers.length} çevrimiçi.`, true);
         }
 
         function toggleChannelHidden() {
             let c = channels[currentChannel]; if (!c) return;
-            // Owner ve admin artık gizleyebilir
             if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name)) {
                 c.isHidden = !c.isHidden;
                 saveChannels();
@@ -1902,7 +1942,9 @@
             c.playlist.forEach((item, i) => {
                 let active = item.id === c.currentVideo ? 'active' : '';
                 let canDel = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (c.coAdmins?.includes(ACTIVE_USER.name) && item.addedBy === ACTIVE_USER.name);
-                html += `<div class="playlist-item ${active}" onclick="playVideo('${item.id}','${escapeHTML(item.title)}','${escapeHTML(item.addedBy)}','${item.role}')"><div class="playlist-thumb"><i class="fab fa-youtube"></i></div><div class="playlist-info"><div class="playlist-song">${escapeHTML(item.title)}</div><div class="playlist-artist"><span>${item.role === 'owner' ? '👑' : item.role === 'admin' ? '⚡' : '🔧'} ${escapeHTML(item.addedBy)}</span><span class="badge ${item.role === 'owner' ? 'badge-owner' : item.role === 'admin' ? 'badge-admin' : 'badge-coadmin'}">${item.role}</span></div></div>${canDel ? `<div class="playlist-actions"><div class="playlist-action" onclick="event.stopPropagation(); removeFromPlaylist(${i})"><i class="fas fa-trash"></i></div></div>` : ''}</div>`;
+                let canClick = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name));
+                let clickAction = canClick ? `onclick="playVideo('${item.id}','${escapeHTML(item.title)}','${escapeHTML(item.addedBy)}','${item.role}')"` : '';
+                html += `<div class="playlist-item ${active}" ${clickAction}><div class="playlist-thumb"><i class="fab fa-youtube"></i></div><div class="playlist-info"><div class="playlist-song">${escapeHTML(item.title)}</div><div class="playlist-artist"><span>${item.role === 'owner' ? '👑' : item.role === 'admin' ? '⚡' : '🔧'} ${escapeHTML(item.addedBy)}</span><span class="badge ${item.role === 'owner' ? 'badge-owner' : item.role === 'admin' ? 'badge-admin' : 'badge-coadmin'}">${item.role}</span></div></div>${canDel ? `<div class="playlist-actions"><div class="playlist-action" onclick="event.stopPropagation(); removeFromPlaylist(${i})"><i class="fas fa-trash"></i></div></div>` : ''}</div>`;
             });
             cont.innerHTML = html; document.getElementById('playlistCount').textContent = `${c.playlist.length} video`;
         }
@@ -1925,6 +1967,16 @@
             let url = prompt('YouTube URL/ID:', ''); if (!url) return;
             let vid = ''; if (url.includes('youtube.com/watch?v=')) vid = url.split('v=')[1]?.split('&')[0]; else if (url.includes('youtu.be/')) vid = url.split('youtu.be/')[1]?.split('?')[0]; else vid = url;
             if (vid) { let t = prompt('Başlık:', `Video ${c.playlist.length + 1}`); c.playlist.push({ id: vid, title: t || `Video ${c.playlist.length + 1}`, addedBy: ACTIVE_USER.name, role: ACTIVE_USER.role }); updatePlaylist(); saveChannels(); addSystemMessage(`✅ "${t}" eklendi!`, true); }
+        }
+        function clearPlaylist() {
+            let c = channels[currentChannel];
+            if (!(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name))) { alert('Yetkiniz yok!'); return; }
+            if (confirm('Playlist temizlensin mi?')) {
+                c.playlist = [];
+                saveChannels();
+                updatePlaylist();
+                addSystemMessage('🗑️ Playlist temizlendi.', true);
+            }
         }
 
         // ========== ABONELİK ==========
@@ -1998,14 +2050,12 @@
             if (custom) { addSystemMessage(`🤖 ${custom.response}`, true); return; }
 
             if (main === 'help') {
-                addSystemMessage('📋 KOMUTLAR:\n/join #kanal, /part, /msg kullanıcı mesaj, /kick kullanıcı, /ban kullanıcı, /unban kullanıcı, /op kullanıcı, /deop kullanıcı, /addadmin kullanıcı, /removeadmin kullanıcı, /users, /ping, /temizle, /abonelikler, /populer, /kanal, /kanalac, /yayin', true);
+                addSystemMessage('📋 KOMUTLAR:\n/join #kanal - kanala katıl\n/part - kanaldan ayrıl (genel hariç)\n/msg kullanıcı mesaj - özel mesaj\n/kick kullanıcı - kanaldan at (yetki: operator+, coadmin+)\n/ban kullanıcı - 24 saat yasakla (yetki: operator+, coadmin+)\n/unban kullanıcı - yasağı kaldır (admin+)\n/op kullanıcı - coadmin yap (kendi kanalında, admin+)\n/deop kullanıcı - coadmin yetkisi al (admin+)\n/addadmin kullanıcı - admin yap (sadece owner)\n/removeadmin kullanıcı - admin yetkisi al (owner)\n/users - kanaldaki çevrimiçiler\n/ping - pong\n/temizle - sohbeti temizle (admin+)\n/abonelikler - aboneliklerin\n/populer - popüler kanallar\n/kanal - kanal bilgisi\n/kanalac - kanal aç\n/yayin - canlı yayın başlat (yetki: coadmin+)', true);
             }
             else if (main === 'join') {
                 let ch = parts[1]?.replace('#','');
-                if (ch && channels[ch]) {
-                    if (ch === 'admin' && !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin')) addSystemMessage('❌ Admin kanalına erişim yetkiniz yok.', true);
-                    else joinChannel(ch);
-                } else addSystemMessage('❌ Kanal bulunamadı.', true);
+                if (ch && channels[ch]) joinChannel(ch);
+                else addSystemMessage('❌ Kanal bulunamadı.', true);
             }
             else if (main === 'part') {
                 if (currentChannel === 'genel') addSystemMessage('❌ Genel kanaldan ayrılamazsın.', true);
@@ -2039,7 +2089,7 @@
                 let target = parts[1];
                 if (!target) { addSystemMessage('Kullanım: /kick kullanıcı', true); return; }
                 let ch = channels[currentChannel];
-                let canKick = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.coAdmins?.includes(ACTIVE_USER.name)));
+                let canKick = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || ch.coAdmins?.includes(ACTIVE_USER.name) || ch.operators?.includes(ACTIVE_USER.name));
                 if (!canKick) { addSystemMessage('❌ Bu komut için yetkin yok!', true); return; }
                 if (target === ACTIVE_USER.name) { addSystemMessage('❌ Kendini atamazsın!', true); return; }
                 if (!ch.onlineUsers.includes(target)) { addSystemMessage(`❌ ${target} kanalda değil.`, true); return; }
@@ -2051,7 +2101,8 @@
             else if (main === 'ban') {
                 let target = parts[1];
                 if (!target) { addSystemMessage('Kullanım: /ban kullanıcı', true); return; }
-                let canBan = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (channels[currentChannel].coAdmins?.includes(ACTIVE_USER.name)));
+                let ch = channels[currentChannel];
+                let canBan = (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || ch.coAdmins?.includes(ACTIVE_USER.name) || ch.operators?.includes(ACTIVE_USER.name));
                 if (!canBan) { addSystemMessage('❌ Yetkin yok!', true); return; }
                 if (target === ACTIVE_USER.name) { addSystemMessage('❌ Kendini yasaklayamazsın!', true); return; }
                 let user = USERS_DB.find(u => u.name === target);
@@ -2217,6 +2268,7 @@
         function autoResize(t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 80) + 'px'; }
         function escapeHTML(t) { if (!t) return ''; let d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
 
+        // ========== KANAL OLUŞTUR ==========
         function createChannel() {
             if (ACTIVE_USER.role !== 'owner' && ACTIVE_USER.myChannel) { alert('Zaten bir kanalınız var!'); return; }
             let name = document.getElementById('newChannelName')?.value?.toLowerCase().trim();
@@ -2224,7 +2276,7 @@
             if (channels[name]) { alert('Bu kanal adı zaten mevcut!'); return; }
             let desc = document.getElementById('newChannelDesc')?.value?.trim() || `${ACTIVE_USER.name} tarafından oluşturuldu.`;
             channels[name] = {
-                name, owner: ACTIVE_USER.name, ownerRole: 'coadmin', coAdmins: [ACTIVE_USER.name],
+                name, owner: ACTIVE_USER.name, ownerRole: 'coadmin', coAdmins: [ACTIVE_USER.name], operators: [],
                 subscribers: 1, online: 1, description: desc, isPrivate: false, isHidden: false,
                 currentVideo: 'jfKfPfyJRdk', currentTitle: 'CETCETY Radio', currentArtist: `👑 ${ACTIVE_USER.name}`,
                 playlist: [{ id: 'jfKfPfyJRdk', title: 'CETCETY Radio', addedBy: ACTIVE_USER.name, role: 'coadmin' }],
@@ -2236,6 +2288,101 @@
             if (!ACTIVE_USER.subscribedChannels.includes(name)) ACTIVE_USER.subscribedChannels.push(name);
             localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
             updateAllBadges(); addSystemMessage(`✅ #${name} kanalı oluşturuldu!`, true); joinChannel(name); loadLeftPanel('channels');
+        }
+
+        // ========== PROFİL FONKSİYONLARI ==========
+        function changeAvatar() {
+            let em = prompt('Avatar olarak bir emoji veya harf girin (tek karakter):', ACTIVE_USER.avatar || ACTIVE_USER.name.charAt(0).toUpperCase());
+            if (em && em.length > 0) {
+                ACTIVE_USER.avatar = em.charAt(0).toUpperCase();
+                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
+                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
+                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+                loadLeftPanel('profile');
+                document.getElementById('avatarText').textContent = em.charAt(0).toUpperCase();
+                addSystemMessage('✅ Avatar güncellendi.', true);
+            }
+        }
+        function changeNick() {
+            let newNick = document.getElementById('profileNick')?.value.trim();
+            if (!newNick) return;
+            if (USERS_DB.find(u => u.name.toLowerCase() === newNick.toLowerCase() && u.id !== ACTIVE_USER.id)) {
+                alert('Bu kullanıcı adı zaten kullanılıyor!'); return;
+            }
+            ACTIVE_USER.name = newNick;
+            localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+            const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
+            if (index !== -1) USERS_DB[index] = ACTIVE_USER;
+            localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+            document.getElementById('avatarText').textContent = newNick.charAt(0).toUpperCase();
+            loadLeftPanel('profile');
+            addSystemMessage(`✅ Kullanıcı adı değiştirildi: ${newNick}`, true);
+        }
+        function changePassword() {
+            let pwd = document.getElementById('profilePassword')?.value.trim();
+            if (pwd) {
+                ACTIVE_USER.password = pwd;
+                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
+                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
+                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+                addSystemMessage('✅ Şifre güncellendi.', true);
+                document.getElementById('profilePassword').value = '';
+            } else alert('Şifre boş olamaz!');
+        }
+        function changePrivateMode() {
+            let mode = document.getElementById('privateModeSelect')?.value;
+            if (mode) {
+                ACTIVE_USER.privateMode = mode;
+                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
+                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
+                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+                addSystemMessage(`🔒 Özel sohbet modu: ${mode==='all'?'Herkese Açık':mode==='none'?'Herkese Kapalı':'Sadece Engellenenler'}`, true);
+            }
+        }
+        function blockSpecificNick() {
+            let nick = document.getElementById('blockNickInput')?.value.trim();
+            if (!nick) return;
+            if (!ACTIVE_USER.blockedNicks) ACTIVE_USER.blockedNicks = [];
+            if (!ACTIVE_USER.blockedNicks.includes(nick)) {
+                ACTIVE_USER.blockedNicks.push(nick);
+                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
+                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
+                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+                addSystemMessage(`🚫 ${nick} engellendi.`, true);
+                loadLeftPanel('profile');
+            }
+        }
+        function unblockNick(nick) {
+            if (ACTIVE_USER.blockedNicks) {
+                ACTIVE_USER.blockedNicks = ACTIVE_USER.blockedNicks.filter(n => n !== nick);
+                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
+                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
+                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+                addSystemMessage(`✅ ${nick} engeli kaldırıldı.`, true);
+                loadLeftPanel('profile');
+            }
+        }
+        function deleteMyChannel() {
+            if (!ACTIVE_USER.myChannel) return;
+            if (confirm(`#${ACTIVE_USER.myChannel} kanalını kalıcı olarak silmek istediğinize emin misiniz?`)) {
+                delete channels[ACTIVE_USER.myChannel];
+                saveChannels();
+                ACTIVE_USER.myChannel = null;
+                if (ACTIVE_USER.role !== 'owner') ACTIVE_USER.role = 'user';
+                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+                const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
+                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
+                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+                addSystemMessage('🗑️ Kanalınız silindi.', true);
+                updateAllBadges();
+                joinChannel('genel');
+                loadLeftPanel('profile');
+            }
         }
 
         // ========== BAŞLANGIÇ ==========
@@ -2254,10 +2401,20 @@
                 updateAllBadges();
                 updatePlaylist();
 
-                if (ACTIVE_USER.role === 'owner') document.getElementById('ownerPanelIcon').style.display = 'flex';
-                if (ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner') document.getElementById('adminPanelIcon').style.display = 'flex';
-                if (ACTIVE_USER.role === 'coadmin' || ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner') document.getElementById('coadminPanelIcon').style.display = 'flex';
-                if (ACTIVE_USER.role === 'operator' || ACTIVE_USER.role === 'coadmin' || ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner') document.getElementById('operatorPanelIcon').style.display = 'flex';
+                document.getElementById('ownerPanelIcon').style.display = 'none';
+                document.getElementById('adminPanelIcon').style.display = 'none';
+                document.getElementById('coadminPanelIcon').style.display = 'none';
+                document.getElementById('operatorPanelIcon').style.display = 'none';
+
+                if (ACTIVE_USER.role === 'owner') {
+                    document.getElementById('ownerPanelIcon').style.display = 'flex';
+                } else if (ACTIVE_USER.role === 'admin') {
+                    document.getElementById('adminPanelIcon').style.display = 'flex';
+                } else if (ACTIVE_USER.role === 'coadmin') {
+                    document.getElementById('coadminPanelIcon').style.display = 'flex';
+                } else if (ACTIVE_USER.role === 'operator') {
+                    document.getElementById('operatorPanelIcon').style.display = 'flex';
+                }
 
                 initOnlineStatus();
                 listenToMessages();
@@ -2265,10 +2422,6 @@
 
                 MateBot.init();
                 addSystemMessage(`👋 Tekrar hoş geldin, ${ACTIVE_USER.name}!`, true);
-                if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
-                    if (!ACTIVE_USER.subscribedChannels.includes('admin')) ACTIVE_USER.subscribedChannels.push('admin');
-                    saveChannels();
-                }
             } else {
                 document.getElementById('loginOverlay').classList.remove('hidden');
                 document.getElementById('app').style.display = 'none';
