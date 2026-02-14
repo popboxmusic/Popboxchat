@@ -25,13 +25,11 @@ class CETCETYMedia {
             return;
         }
 
-        // YouTube API script'ini yükle
         const tag = document.createElement('script');
         tag.src = 'https://www.youtube.com/iframe_api';
         const firstScriptTag = document.getElementsByTagName('script')[0];
         firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
         
-        // Callback'i bekle
         window.onYouTubeIframeAPIReady = () => {
             console.log('%c✅ YouTube API yüklendi!', 'color: #4caf50; font-size: 12px;');
             this.onYouTubeIframeAPIReady();
@@ -41,7 +39,6 @@ class CETCETYMedia {
     onYouTubeIframeAPIReady() {
         console.log('%c✅ YouTube API hazır!', 'color: #4caf50; font-size: 12px;');
         
-        // Player zaten varsa tekrar oluşturma
         if (this.ytPlayer) return;
         
         const channel = this.getChannelData(this.currentChannel);
@@ -68,7 +65,6 @@ class CETCETYMedia {
                         console.log('%c🎥 YouTube Player hazır!', 'color: #4caf50; font-size: 12px;');
                         this.playerReady = true;
                         
-                        // Bekleyen video varsa yükle
                         if (this.pendingVideo) {
                             try {
                                 e.target.loadVideoById(this.pendingVideo);
@@ -81,7 +77,6 @@ class CETCETYMedia {
                             e.target.playVideo();
                         }
                         
-                        // Bekleyen kanal varsa işle
                         if (this.pendingChannel) {
                             this.setChannel(this.pendingChannel);
                             this.pendingChannel = null;
@@ -99,7 +94,6 @@ class CETCETYMedia {
             console.log('YouTube player oluşturuldu');
         } catch (error) {
             console.error('YouTube player oluşturma hatası:', error);
-            // 2 saniye sonra tekrar dene
             setTimeout(() => this.onYouTubeIframeAPIReady(), 2000);
         }
     }
@@ -133,7 +127,7 @@ class CETCETYMedia {
         return match ? match[1] : null;
     }
 
-    // Video ekleme modalı
+    // ========== VİDEO EKLEME MODALI ==========
     showAddVideoModal() {
         const user = this.getActiveUser();
         const channel = this.getChannelData(this.currentChannel);
@@ -265,7 +259,7 @@ class CETCETYMedia {
         document.body.appendChild(modal);
     }
 
-    // Video ekleme işlemi
+    // ========== VİDEO EKLEME İŞLEMİ ==========
     async addVideo() {
         const urlInput = document.getElementById('videoUrlInput');
         const titleInput = document.getElementById('videoTitleInput');
@@ -300,26 +294,32 @@ class CETCETYMedia {
 
         if (!channel.playlist) channel.playlist = [];
 
-        channel.playlist.push({
+        const newVideo = {
             id: videoId,
             title: customTitle,
             addedBy: this.getActiveUser()?.name || 'Bilinmiyor',
             role: this.getActiveUser()?.role || 'user',
             addedAt: Date.now()
-        });
+        };
 
+        channel.playlist.push(newVideo);
         localStorage.setItem('cetcety_channels', JSON.stringify(channels));
         
         statusDiv.innerHTML = `✅ Video eklendi: "${customTitle}"`;
         
         this.updatePlaylist();
         
+        // Firebase'e ekle
+        if (window.addToPlaylist) {
+            window.addToPlaylist(this.currentChannel, newVideo);
+        }
+        
         setTimeout(() => {
             document.querySelector('.media-modal')?.remove();
         }, 1000);
     }
 
-    // Kanal değiştir (DÜZELTİLDİ)
+    // ========== KANAL DEĞİŞTİR ==========
     setChannel(channelName) {
         console.log('setChannel çağrıldı:', channelName);
         this.currentChannel = channelName;
@@ -327,7 +327,6 @@ class CETCETYMedia {
         
         if (!channel) return;
         
-        // YouTube player kontrolü
         if (this.ytPlayer && this.playerReady) {
             try {
                 const videoId = channel.currentVideo || 'jfKfPfyJRdk';
@@ -347,7 +346,7 @@ class CETCETYMedia {
         this.updateMediaUI();
     }
 
-    // Playlist'i güncelle
+    // ========== PLAYLİST GÜNCELLE ==========
     updatePlaylist() {
         const channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {};
         const channel = channels[this.currentChannel];
@@ -394,7 +393,7 @@ class CETCETYMedia {
         if (countEl) countEl.textContent = `${channel.playlist?.length || 0} video`;
     }
 
-    // Video oynat
+    // ========== VİDEO OYNAT ==========
     playVideo(videoId, title, addedBy, role) {
         const channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {};
         const channel = channels[this.currentChannel];
@@ -403,7 +402,7 @@ class CETCETYMedia {
         
         channel.currentVideo = videoId;
         channel.currentTitle = title;
-        channel.currentArtist = `${role === 'owner' ? '👑' : role === 'admin' ? '⚡' : '🔧'} ${addedBy}`;
+        channel.currentArtist = `${role === 'owner' ? '👑' : role === 'admin' ? '⚡' : role === 'coadmin' ? '🔧' : '🛠️'} ${addedBy}`;
         
         localStorage.setItem('cetcety_channels', JSON.stringify(channels));
         
@@ -416,12 +415,17 @@ class CETCETYMedia {
         }
         
         document.getElementById('nowPlayingTitle').textContent = title;
-        document.getElementById('nowPlayingOwner').innerHTML = `${role === 'owner' ? '👑' : role === 'admin' ? '⚡' : '🔧'} ${addedBy}`;
+        document.getElementById('nowPlayingOwner').innerHTML = channel.currentArtist;
         
         this.updatePlaylist();
+        
+        // Firebase'e bildir
+        if (window.updateVideo) {
+            window.updateVideo(this.currentChannel, videoId, title, channel.currentArtist);
+        }
     }
 
-    // Playlist'ten sil
+    // ========== PLAYLİST'TEN SİL ==========
     removeFromPlaylist(index) {
         const channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {};
         const channel = channels[this.currentChannel];
@@ -429,6 +433,12 @@ class CETCETYMedia {
         if (!channel?.playlist) return;
         
         const removed = channel.playlist[index];
+        
+        // Firebase'den sil
+        if (removed.firebaseKey && window.removeFromPlaylist) {
+            window.removeFromPlaylist(this.currentChannel, removed.firebaseKey);
+        }
+        
         channel.playlist.splice(index, 1);
         
         if (removed.id === channel.currentVideo && channel.playlist.length > 0) {
@@ -450,7 +460,38 @@ class CETCETYMedia {
         this.addSystemMessage(`🗑️ "${removed.title}" playlistten kaldırıldı.`);
     }
 
-    // Mute toggle
+    // ========== MEDYA UI GÜNCELLE (EKLENDİ) ==========
+    updateMediaUI() {
+        const user = this.getActiveUser();
+        const channel = this.getChannelData(this.currentChannel);
+        
+        const isAuthorized = user?.role === 'owner' || 
+                            user?.role === 'admin' || 
+                            channel?.coAdmins?.includes(user?.name);
+        
+        const addBtn = document.getElementById('addMediaBtn');
+        if (addBtn) {
+            addBtn.style.opacity = isAuthorized ? '1' : '0.4';
+            addBtn.style.pointerEvents = isAuthorized ? 'auto' : 'none';
+        }
+        
+        const liveBtn = document.getElementById('liveStreamBtn');
+        if (liveBtn) {
+            liveBtn.style.opacity = isAuthorized ? '1' : '0.4';
+            liveBtn.style.pointerEvents = isAuthorized ? 'auto' : 'none';
+        }
+        
+        const hideBtn = document.getElementById('hideChannelBtn');
+        if (hideBtn) {
+            const canHide = user?.role === 'owner' || user?.role === 'admin';
+            hideBtn.style.opacity = canHide ? '1' : '0.4';
+            hideBtn.style.pointerEvents = canHide ? 'auto' : 'none';
+        }
+        
+        console.log('✅ Medya UI güncellendi');
+    }
+
+    // ========== MUTE TOGGLE ==========
     toggleMute() {
         if (!this.ytPlayer || !this.playerReady) return;
         if (this.isMuted) {
@@ -463,7 +504,7 @@ class CETCETYMedia {
         this.isMuted = !this.isMuted;
     }
 
-    // Play/Pause toggle
+    // ========== PLAY/PAUSE TOGGLE ==========
     togglePlayPause() {
         if (!this.ytPlayer || !this.playerReady) return;
         if (this.isPlaying) {
@@ -480,7 +521,7 @@ class CETCETYMedia {
         }
     }
 
-    // Sistem mesajı ekle
+    // ========== SİSTEM MESAJI ==========
     addSystemMessage(text) {
         const messagesDiv = document.getElementById('messages');
         if (!messagesDiv) return;
@@ -492,7 +533,7 @@ class CETCETYMedia {
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
-    // HTML escape
+    // ========== HTML ESCAPE ==========
     escapeHTML(text) {
         if (!text) return '';
         const div = document.createElement('div');
@@ -500,17 +541,17 @@ class CETCETYMedia {
         return div.innerHTML;
     }
 
-    // Canlı yayın modalı (basit)
+    // ========== CANLI YAYIN MODALI ==========
     showLiveStreamModal() {
         alert('Canlı yayın özelliği yakında!');
     }
 
-    // Şikayet modalı (basit)
+    // ========== ŞİKAYET MODALI ==========
     showReportModal() {
         alert('Şikayet gönderildi!');
     }
 
-    // Kanal gizle (basit)
+    // ========== KANAL GİZLE ==========
     toggleChannelHidden() {
         alert('Kanal gizleme özelliği yakında!');
     }
