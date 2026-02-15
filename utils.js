@@ -1,7 +1,18 @@
-// ========== utils.js ==========
-// YARDIMCI FONKSİYONLAR
-
+// ========== UTILS.JS ==========
 const Utils = {
+    // Şifre göster/gizle
+    togglePassword: function() {
+        const input = document.getElementById('loginPassword');
+        const icon = document.getElementById('togglePassword');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'fas fa-eye-slash password-toggle';
+        } else {
+            input.type = 'password';
+            icon.className = 'fas fa-eye password-toggle';
+        }
+    },
+    
     // HTML escape
     escapeHTML: function(t) {
         if (!t) return '';
@@ -25,17 +36,11 @@ const Utils = {
         document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
     },
     
-    // Şifre göster/gizle
-    togglePassword: function() {
-        const input = document.getElementById('loginPassword');
-        const icon = document.getElementById('togglePassword');
-        if (input.type === 'password') {
-            input.type = 'text';
-            icon.className = 'fas fa-eye-slash password-toggle';
-        } else {
-            input.type = 'password';
-            icon.className = 'fas fa-eye password-toggle';
-        }
+    // Sayı formatla
+    formatNumber: function(num) {
+        if (num >= 1000000) return (num/1000000).toFixed(1) + 'M';
+        if (num >= 1000) return (num/1000).toFixed(1) + 'K';
+        return num;
     },
     
     // Tema değiştir
@@ -46,12 +51,17 @@ const Utils = {
         localStorage.setItem('theme', document.body.classList.contains('light-theme') ? 'light' : 'dark');
     },
     
-    // Sayı formatla
-    formatNumber: function(num) {
-        if (num >= 1000000) return (num/1000000).toFixed(1) + 'M';
-        if (num >= 1000) return (num/1000).toFixed(1) + 'K';
-        return num;
+    // Yasaklı kelime kontrolü
+    checkBannedWords: function(text) {
+        if (!text) return false;
+        const lower = text.toLowerCase();
+        const words = ['spam', 'reklam', 'şiddet', 'hakaret', 'küfür'];
+        for (let word of words) {
+            if (lower.includes(word)) return word;
+        }
+        return false;
     }
 };
 
 window.Utils = Utils;
+console.log('✅ Utils.js yüklendi');
