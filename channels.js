@@ -9,23 +9,42 @@ const Channels = {
         const index = App.currentUser.subscribedChannels.indexOf(channelName);
         
         if (index === -1) {
-            // Abone ol
             App.currentUser.subscribedChannels.push(channelName);
-            App.channels[channelName].subscribers = (App.channels[channelName].subscribers || 0) + 1;
             Utils.addSystemMessage(`✅ #${channelName} abone olundu!`);
+            
+            // Butonu güncelle
+            const btn = document.getElementById('subscribeChannelBtn');
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-check"></i> Abone Olundu';
+                btn.classList.add('subscribed');
+            }
         } else {
-            // Abonelikten çık
             App.currentUser.subscribedChannels.splice(index, 1);
-            App.channels[channelName].subscribers = Math.max(0, (App.channels[channelName].subscribers || 1) - 1);
             Utils.addSystemMessage(`❌ #${channelName} abonelikten çıkıldı.`);
+            
+            // Butonu güncelle
+            const btn = document.getElementById('subscribeChannelBtn');
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-plus"></i> Abone Ol';
+                btn.classList.remove('subscribed');
+            }
         }
         
-        // Kaydet
         localStorage.setItem('cetcety_user', JSON.stringify(App.currentUser));
-        
-        // UI'ı güncelle
         UI.updateChannelList();
-        UI.loadLeftPanel('channels');
+    },
+    
+    // Kanal gizle/göster
+    toggleHidden: function() {
+        Utils.addSystemMessage('👁️ Bu özellik yakında...');
+    },
+    
+    // Şikayet et
+    report: function() {
+        const reason = prompt('Şikayet sebebi:');
+        if (reason) {
+            Utils.addSystemMessage(`🚩 #${App.currentChannel} şikayet edildi: ${reason}`);
+        }
     }
 };
 
