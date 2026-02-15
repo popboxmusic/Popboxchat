@@ -145,4 +145,23 @@ const Media = {
         });
         
         container.innerHTML = html;
-        document.getElementById('playlistCount').textContent = `${ch
+        document.getElementById('playlistCount').textContent = `${ch.playlist.length} video`;
+    },
+    
+    // Canlı yayın
+    openLiveStreamModal: function() {
+        if (!App.hasPermission('coadmin', App.currentChannel)) {
+            alert('Canlı yayın başlatma yetkiniz yok!');
+            return;
+        }
+        
+        const streamKey = prompt('YouTube Canlı Yayın Anahtarı:');
+        if (streamKey) {
+            Utils.addSystemMessage(`📹 ${App.currentUser.name} canlı yayın başlattı!`);
+            this.playVideo('jfKfPfyJRdk', '🔴 CANLI YAYIN', App.currentUser.name);
+        }
+    }
+};
+
+window.Media = Media;
+console.log('✅ Media.js yüklendi');
