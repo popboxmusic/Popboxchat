@@ -177,7 +177,7 @@ const Media = {
     
     // ===== MODAL İŞLEMLERİ =====
     
-    // Video ekleme modalını aç
+    // Video ekleme modalını aç (HTML BUTONU İÇİN)
     openAddModal: function() {
         console.log('📹 Video ekleme modalı açılıyor...');
         if (!Auth.hasPermission('coadmin', Channels.currentChannel)) {
@@ -195,7 +195,7 @@ const Media = {
         overlay.classList.toggle('active');
     },
     
-    // Canlı yayın modalını aç
+    // Canlı yayın modalını aç (HTML BUTONU İÇİN)
     openLiveModal: function() {
         console.log('🎥 Canlı yayın modalı açılıyor...');
         if (!Auth.hasPermission('coadmin', Channels.currentChannel)) {
