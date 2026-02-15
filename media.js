@@ -63,7 +63,6 @@ const Media = {
         const key = `playlist_${channel}`;
         localStorage.setItem(key, JSON.stringify(playlist));
         
-        // Firebase'e de kaydet (eşzamanlılık için)
         if (window.database) {
             window.database.ref(`playlists/${channel}`).set(playlist);
         }
@@ -108,7 +107,6 @@ const Media = {
         this.ytPlayer.loadVideoById(videoId);
         document.getElementById('nowPlayingTitle').textContent = title || 'Video';
         
-        // Şu an oynayanı kaydet
         const channel = Channels.currentChannel;
         localStorage.setItem(`nowplaying_${channel}`, JSON.stringify({
             id: videoId,
@@ -116,7 +114,6 @@ const Media = {
             index: index
         }));
         
-        // Firebase'e de kaydet
         if (window.database) {
             window.database.ref(`nowplaying/${channel}`).set({
                 id: videoId,
@@ -139,48 +136,36 @@ const Media = {
         }
     },
     
-    // ===== VİDEO FİLTRELEME (DÜZELTİLDİ) =====
+    // ===== VİDEO FİLTRELEME =====
     bannedWords: [
-        // Şiddet içerenler
         'şiddet', 'violence', 'kan', 'blood', 'ölüm', 'death', 
         'cinayet', 'murder', 'kavga', 'fight', 'dayak', 'beat',
         'işkence', 'torture', 'savaş', 'war', 'katliam', 'massacre',
-        
-        // Cinsel içerikli
         'cinsel', 'sexual', 'porn', 'xxx', 'sex', 'porno',
         'çıplak', 'nude', '18+', 'yetiskin', 'adult', 'nsfw',
-        
-        // Küfürlü
         'küfür', 'hakaret', 'swear',
-        
-        // Diğer yasaklılar
         'terör', 'terror', 'bomba', 'bomb', 'silah', 'gun',
         'uyuşturucu', 'drug', 'eroin', 'kokain'
     ],
     
-    // Güvenli kelimeler (yanlış algılamayı önler)
     safeWords: [
         'bölüm', 'chapter', 'part', 'section',
         'ölümsüz', 'immortal', 'deadpool',
         'kanal', 'channel', 'canlı', 'live'
     ],
     
-    // Video başlığını kontrol et (DÜZELTİLDİ)
     checkVideoTitle: function(title) {
         if (!title) return { safe: true, bannedWord: null };
         
         const lowerTitle = title.toLowerCase();
         
-        // Önce güvenli kelimeleri kontrol et
         for (let safe of this.safeWords) {
             if (lowerTitle.includes(safe)) {
-                return { safe: true, bannedWord: null }; // Güvenli kelime varsa engelleme
+                return { safe: true, bannedWord: null };
             }
         }
         
-        // Sonra yasaklı kelimeleri kontrol et
         for (let word of this.bannedWords) {
-            // Tam kelime eşleşmesi yap (içinde geçmesi değil)
             const regex = new RegExp(`\\b${word}\\b`, 'i');
             if (regex.test(lowerTitle)) {
                 return { safe: false, bannedWord: word };
@@ -190,20 +175,47 @@ const Media = {
         return { safe: true, bannedWord: null };
     },
     
-    // Video ekleme modal
-    toggleAddModal: function() {
+    // ===== MODAL İŞLEMLERİ =====
+    
+    // Video ekleme modalını aç
+    openAddModal: function() {
+        console.log('📹 Video ekleme modalı açılıyor...');
         if (!Auth.hasPermission('coadmin', Channels.currentChannel)) {
             alert('Video ekleme yetkiniz yok!');
             return;
         }
-        
+        this.toggleAddModal();
+    },
+    
+    // Video ekleme modalını aç/kapa
+    toggleAddModal: function() {
         const modal = document.getElementById('addVideoModal');
         const overlay = document.getElementById('modalOverlay');
         modal.classList.toggle('active');
         overlay.classList.toggle('active');
     },
     
-    // Filtreli video ekle (DÜZELTİLDİ)
+    // Canlı yayın modalını aç
+    openLiveModal: function() {
+        console.log('🎥 Canlı yayın modalı açılıyor...');
+        if (!Auth.hasPermission('coadmin', Channels.currentChannel)) {
+            alert('Canlı yayın yetkiniz yok!');
+            return;
+        }
+        
+        this.getCameras();
+        this.toggleLiveModal();
+    },
+    
+    // Canlı yayın modalını aç/kapa
+    toggleLiveModal: function() {
+        const modal = document.getElementById('liveStreamModal');
+        const overlay = document.getElementById('modalOverlay');
+        modal.classList.toggle('active');
+        overlay.classList.toggle('active');
+    },
+    
+    // Filtreli video ekle
     addWithFilter: function() {
         const url = document.getElementById('videoUrl').value.trim();
         let title = document.getElementById('videoTitle').value.trim();
@@ -213,7 +225,6 @@ const Media = {
             return;
         }
         
-        // YouTube ID çıkar
         let videoId = '';
         if (url.includes('youtube.com/watch?v=')) {
             videoId = url.split('v=')[1]?.split('&')[0];
@@ -228,12 +239,10 @@ const Media = {
             return;
         }
         
-        // Başlık yoksa video ID'sini kullan
         if (!title) {
             title = `Video ${videoId.substring(0, 6)}`;
         }
         
-        // FİLTRE KONTROLÜ (DÜZELTİLDİ)
         const check = this.checkVideoTitle(title);
         if (!check.safe) {
             alert(`🚫 Bu video eklenemez! Yasaklı kelime tespit edildi: "${check.bannedWord}"`);
@@ -241,7 +250,6 @@ const Media = {
             return;
         }
         
-        // Playlist'e ekle
         const channel = Channels.currentChannel;
         const playlist = this.getPlaylist(channel);
         
@@ -254,7 +262,6 @@ const Media = {
         
         this.savePlaylist(channel, playlist);
         
-        // Modal'ı kapat
         document.getElementById('videoUrl').value = '';
         document.getElementById('videoTitle').value = '';
         this.toggleAddModal();
@@ -263,16 +270,26 @@ const Media = {
     },
     
     // ===== CANLI YAYIN =====
-    toggleLiveModal: function() {
-        if (!Auth.hasPermission('coadmin', Channels.currentChannel)) {
-            alert('Canlı yayın yetkiniz yok!');
-            return;
+    
+    // Kamera listesini al
+    getCameras: async function() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            
+            const select = document.getElementById('cameraSelect');
+            if (select) {
+                select.innerHTML = '';
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Kamera ${index + 1}`;
+                    select.appendChild(option);
+                });
+            }
+        } catch (err) {
+            console.error('Kamera listesi alınamadı:', err);
         }
-        
-        const modal = document.getElementById('liveStreamModal');
-        const overlay = document.getElementById('modalOverlay');
-        modal.classList.toggle('active');
-        overlay.classList.toggle('active');
     },
     
     // Kamerayı başlat
@@ -308,16 +325,13 @@ const Media = {
         const cameraSelect = document.getElementById('cameraSelect');
         const deviceId = cameraSelect?.value;
         
-        // Kamerayı başlat
         const stream = await this.startCamera(deviceId);
         
-        // Butonu değiştir
         const liveBtn = document.getElementById('liveStreamBtn');
         liveBtn.innerHTML = '<i class="fas fa-stop-circle"></i>';
         liveBtn.onclick = () => this.stopLive(stream);
         this.isLive = true;
         
-        // Yayını başlat (test videosu)
         this.playVideo('jfKfPfyJRdk', `🔴 CANLI: ${title}`);
         
         Utils.addSystemMessage(`📹 ${Auth.currentUser.name} canlı yayın başlattı!`);
@@ -330,31 +344,10 @@ const Media = {
         
         const liveBtn = document.getElementById('liveStreamBtn');
         liveBtn.innerHTML = '<i class="fas fa-video"></i>';
-        liveBtn.onclick = () => this.toggleLiveModal();
+        liveBtn.onclick = () => this.openLiveModal();
         this.isLive = false;
         
         Utils.addSystemMessage('📹 Canlı yayın sona erdi');
-    },
-    
-       // Kamera listesini al
-    getCameras: async function() {
-        try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const videoDevices = devices.filter(device => device.kind === 'videoinput');
-            
-            const select = document.getElementById('cameraSelect');
-            if (select) {
-                select.innerHTML = '';
-                videoDevices.forEach((device, index) => {
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.text = device.label || `Kamera ${index + 1}`;
-                    select.appendChild(option);
-                });
-            }
-        } catch (err) {
-            console.error('Kamera listesi alınamadı:', err);
-        }
     },
     
     // Ses aç/kapa
