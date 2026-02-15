@@ -566,28 +566,19 @@
     </div>
 
     <script>
-        // ========== FIREBASE KONFİGÜRASYONU (YORUM SATIRI YAPILDI - ÇAKIŞMAYI ÖNLEMEK İÇİN) ==========
-        // const firebaseConfig = {
-        //     apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
-        //     authDomain: "popboxmusicchat.firebaseapp.com",
-        //     databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
-        //     projectId: "popboxmusicchat",
-        //     storageBucket: "popboxmusicchat.appspot.com",
-        //     messagingSenderId: "206625719024",
-        //     appId: "1:206625719024:web:d28f478a2c96d10412f835"
-        // };
+        // ========== FIREBASE KONFİGÜRASYONU ==========
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
+            authDomain: "popboxmusicchat.firebaseapp.com",
+            databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
+            projectId: "popboxmusicchat",
+            storageBucket: "popboxmusicchat.appspot.com",
+            messagingSenderId: "206625719024",
+            appId: "1:206625719024:web:d28f478a2c96d10412f835"
+        };
         
         // Firebase'in daha önce başlatılıp başlatılmadığını kontrol et
         if (!firebase.apps.length) {
-            const firebaseConfig = {
-                apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
-                authDomain: "popboxmusicchat.firebaseapp.com",
-                databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
-                projectId: "popboxmusicchat",
-                storageBucket: "popboxmusicchat.appspot.com",
-                messagingSenderId: "206625719024",
-                appId: "1:206625719024:web:d28f478a2c96d10412f835"
-            };
             firebase.initializeApp(firebaseConfig);
         }
         
@@ -608,6 +599,7 @@
 
         let currentPrivateChat = null;
         let currentChannel = 'genel';
+        let firebaseListenerActive = false;
 
         const OWNER_PASSWORD = 'Sahi17407@SCM';
 
@@ -662,7 +654,6 @@
                             showOnlineTab();
                         }
                     }
-                    // Diğer kanal bilgileri (abone sayısı, gizlilik) güncellenebilir
                 }
             }
         });
@@ -676,8 +667,15 @@
             let user = USERS_DB.find(u => u.name.toLowerCase() === nick.toLowerCase());
             if (user) {
                 if (user.password && user.password !== pass) { alert('Hatalı şifre!'); return; }
-                if (nick.toLowerCase() === 'mateky' && pass !== OWNER_PASSWORD) { alert('Owner şifresi hatalı!'); return; }
+                // MateKy özel şifre kontrolü
+                if (nick.toLowerCase() === 'mateky') {
+                    if (pass !== OWNER_PASSWORD) {
+                        alert('Owner şifresi hatalı!');
+                        return;
+                    }
+                }
             } else {
+                // Yeni kullanıcı oluştur
                 user = {
                     id: Date.now(),
                     name: nick,
@@ -704,15 +702,6 @@
             }
             saveChannels();
 
-            // ========== FIREBASE'E KULLANICI EKLE ==========
-            const userRef = database.ref(`online/${currentChannel}/${ACTIVE_USER.id}`);
-            userRef.set({
-                name: ACTIVE_USER.name,
-                role: ACTIVE_USER.role,
-                lastSeen: Date.now()
-            });
-            userRef.onDisconnect().remove();
-
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('app').style.display = 'flex';
 
@@ -728,6 +717,51 @@
                 if (!channels.admin.onlineUsers.includes(ACTIVE_USER.name)) channels.admin.onlineUsers.push(ACTIVE_USER.name);
                 saveChannels();
             }
+            
+            // Firebase bağlantılarını başlat
+            initFirebaseListeners();
+        }
+
+        // Firebase dinleyicilerini başlat
+        function initFirebaseListeners() {
+            if (!ACTIVE_USER) return;
+            
+            // Önce eski dinleyicileri temizle
+            if (firebaseListenerActive) {
+                database.ref(`online/${currentChannel}`).off();
+                database.ref(`chats/${currentChannel}`).off();
+            }
+            
+            // Online kullanıcıları dinle
+            database.ref(`online/${currentChannel}`).on('value', (snapshot) => {
+                const users = snapshot.val();
+                const count = users ? Object.keys(users).length : 0;
+                document.getElementById('channelUserCount').textContent = count;
+                
+                // Online listesini güncelle
+                if (document.getElementById('tabOnline')?.classList.contains('active')) {
+                    showOnlineTab();
+                }
+            });
+            
+            // Kanal mesajlarını dinle
+            database.ref(`chats/${currentChannel}`).on('child_added', (snapshot) => {
+                const msg = snapshot.val();
+                if (msg && msg.sender !== ACTIVE_USER.name) {
+                    appendMessageToChat(msg, false);
+                }
+            });
+            
+            // Kullanıcıyı Firebase'e ekle
+            const userRef = database.ref(`online/${currentChannel}/${ACTIVE_USER.id}`);
+            userRef.set({
+                name: ACTIVE_USER.name,
+                role: ACTIVE_USER.role,
+                lastSeen: Date.now()
+            });
+            userRef.onDisconnect().remove();
+            
+            firebaseListenerActive = true;
         }
 
         document.addEventListener('keydown', function(e) {
@@ -736,7 +770,13 @@
             }
         });
 
-        function logout() { localStorage.removeItem('cetcety_active_user'); location.reload(); }
+        function logout() { 
+            if (ACTIVE_USER) {
+                database.ref(`online/${currentChannel}/${ACTIVE_USER.id}`).remove();
+            }
+            localStorage.removeItem('cetcety_active_user'); 
+            location.reload(); 
+        }
 
         // ========== MATE BOT ==========
         const MateBot = {
@@ -1380,6 +1420,14 @@
             // Eski kanaldan çıkar
             if (currentChannel && channels[currentChannel] && channels[currentChannel].onlineUsers) {
                 channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
+                // Firebase'den eski kanaldaki kullanıcıyı kaldır
+                database.ref(`online/${currentChannel}/${ACTIVE_USER.id}`).remove();
+            }
+
+            // Firebase dinleyicilerini güncelle
+            if (firebaseListenerActive) {
+                database.ref(`online/${currentChannel}`).off();
+                database.ref(`chats/${currentChannel}`).off();
             }
 
             currentChannel = ch;
@@ -1390,12 +1438,6 @@
                 c.onlineUsers.push(ACTIVE_USER.name);
             }
             saveChannels();
-
-            // ========== FIREBASE KANAL DEĞİŞİMİ ==========
-            database.ref(`online/${currentChannel}/${ACTIVE_USER.id}`).set({
-                name: ACTIVE_USER.name,
-                role: ACTIVE_USER.role
-            });
 
             document.getElementById('currentChannelName').textContent = ch;
             document.getElementById('currentChannelPlaylist').textContent = `#${ch} playlist`;
@@ -1437,6 +1479,9 @@
             document.getElementById('reportChannelBtn').style.opacity = '1'; document.getElementById('reportChannelBtn').style.pointerEvents = 'auto';
 
             addSystemMessage(`📢 #${ch} kanalına katıldın! ${fmt} abone, ${c.onlineUsers.length} çevrimiçi.`);
+
+            // Firebase dinleyicilerini yeniden başlat
+            initFirebaseListeners();
         }
 
         // Mesajları UI'a ekleme fonksiyonu
@@ -1608,6 +1653,8 @@
                     let oldChannel = currentChannel;
                     if (channels[oldChannel] && channels[oldChannel].onlineUsers) {
                         channels[oldChannel].onlineUsers = channels[oldChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
+                        // Firebase'den kullanıcıyı kaldır
+                        database.ref(`online/${oldChannel}/${ACTIVE_USER.id}`).remove();
                         saveChannels();
                     }
                     addSystemMessage(`⬅️ #${oldChannel} kanalından ayrıldın.`);
@@ -1822,38 +1869,8 @@
                     saveChannels();
                 }
                 
-                // ========== FIREBASE DİNLEYİCİLERİ ==========
-                // Online kullanıcıları dinle
-                database.ref(`online/${currentChannel}`).on('value', (snapshot) => {
-                    const users = snapshot.val();
-                    const count = users ? Object.keys(users).length : 0;
-                    document.getElementById('channelUserCount').textContent = count;
-                    
-                    // Online listesini güncelle
-                    if (document.getElementById('tabOnline')?.classList.contains('active')) {
-                        showOnlineTab();
-                    }
-                });
-                
-                // Kanal mesajlarını dinle
-                database.ref(`chats/${currentChannel}`).on('child_added', (snapshot) => {
-                    const msg = snapshot.val();
-                    if (msg.sender !== ACTIVE_USER.name) {
-                        appendMessageToChat(msg, false);
-                    }
-                });
-                
-                // Owner tüm özel mesajları dinle
-                if (ACTIVE_USER.role === 'owner') {
-                    database.ref('private').on('child_added', (snapshot) => {
-                        snapshot.ref.on('child_added', (msgSnapshot) => {
-                            const msg = msgSnapshot.val();
-                            if (msg.senderId !== ACTIVE_USER.id) {
-                                addSystemMessage(`🔒 ${msg.senderName}: ${msg.type === 'text' ? msg.content : (msg.type === 'image' ? '📸 Resim' : '🎥 Video')}`);
-                            }
-                        });
-                    });
-                }
+                // Firebase dinleyicilerini başlat
+                initFirebaseListeners();
                 
             } else {
                 document.getElementById('loginOverlay').classList.remove('hidden');
