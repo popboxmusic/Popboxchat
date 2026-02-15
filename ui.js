@@ -1,18 +1,55 @@
 // ========== ui.js ==========
-// UI İŞLEMLERİ - TÜM FONKSİYONLAR EKLENDİ
+// UI İŞLEMLERİ - TÜM FONKSİYONLAR
 
 const UI = {
     // Kanal listesini güncelle
     updateChannelList: function() {
         console.log('🔄 Kanal listesi güncelleniyor...');
-        // Abonelik rozetini güncelle
         if (App.currentUser) {
             document.getElementById('subscriptionBadge').textContent = 
                 App.currentUser.subscribedChannels.length;
         }
-        // Kanal sayısı rozetini güncelle
         document.getElementById('channelCountBadge').textContent = 
             Object.keys(App.channels).length;
+    },
+    
+    // Ana sayfa
+    showHome: function() {
+        Utils.addSystemMessage('🏠 Ana sayfa hazırlanıyor...');
+    },
+    
+    // Kanal aç paneli
+    openCreateChannelPanel: function() {
+        const panel = document.getElementById('leftPanel');
+        panel.innerHTML = `
+            <div class="panel-header">
+                <h3><i class="fas fa-plus-circle" style="color:#ff0000;"></i> Kanal Aç</h3>
+                <div class="panel-close" onclick="UI.loadLeftPanel('subscriptions')">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+            <div class="panel-content">
+                <div class="form-group">
+                    <label class="form-label">Kanal Adı</label>
+                    <input type="text" id="newChannelName" class="form-input" placeholder="kanaladı">
+                </div>
+                <button class="form-button" onclick="Channels.create()">Kanalı Oluştur</button>
+            </div>
+        `;
+    },
+    
+    // Yönetici paneli
+    toggleAdminPanel: function() {
+        const panel = document.getElementById('adminPanel');
+        const overlay = document.getElementById('modalOverlay');
+        
+        if (panel.classList.contains('active')) {
+            panel.classList.remove('active');
+            overlay.classList.remove('active');
+        } else {
+            panel.classList.add('active');
+            overlay.classList.add('active');
+        }
     },
     
     // Sol paneli yükle
@@ -31,11 +68,76 @@ const UI = {
             case 'profile':
                 this.showProfile(panel);
                 break;
+            case 'chatlist':
+                this.showChatList(panel);
+                break;
+            case 'notifications':
+                this.showNotifications(panel);
+                break;
+            case 'support':
+                this.showSupport(panel);
+                break;
             default:
                 this.showSubscriptions(panel);
         }
         
         this.setActiveIcon(panelName);
+    },
+    
+    // Sohbet listesi
+    showChatList: function(panel) {
+        panel.innerHTML = `
+            <div class="panel-header">
+                <h3><i class="fas fa-comment" style="color:#7289da;"></i> Sohbetlerim</h3>
+                <div class="panel-close" onclick="UI.loadLeftPanel('subscriptions')">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+            <div class="panel-tabs">
+                <div class="panel-tab active" onclick="UI.switchChatTab('chats')">Sohbetler</div>
+                <div class="panel-tab" onclick="UI.switchChatTab('online')">Çevrimiçi</div>
+            </div>
+            <div class="panel-content" id="chatPanelContent">
+                <div style="color:#aaa; text-align:center; padding:20px;">
+                    <i class="fas fa-spinner fa-spin"></i> Yükleniyor...
+                </div>
+            </div>
+        `;
+    },
+    
+    // Bildirimler
+    showNotifications: function(panel) {
+        panel.innerHTML = `
+            <div class="panel-header">
+                <h3><i class="fas fa-bell" style="color:#ff4444;"></i> Bildirimler</h3>
+                <div class="panel-close" onclick="UI.loadLeftPanel('subscriptions')">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+            <div class="panel-content">
+                <div style="color:#aaa; text-align:center; padding:20px;">Henüz bildirim yok</div>
+            </div>
+        `;
+    },
+    
+    // Destek
+    showSupport: function(panel) {
+        panel.innerHTML = `
+            <div class="panel-header">
+                <h3><i class="fas fa-headset" style="color:#7289da;"></i> Destek</h3>
+                <div class="panel-close" onclick="UI.loadLeftPanel('subscriptions')">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+            <div class="panel-content">
+                <div class="info-box" style="background:#1a1a1a; padding:16px; border-radius:8px; margin-bottom:16px;">
+                    <p><i class="fas fa-info-circle"></i> Canlı destek yakında...</p>
+                </div>
+                <button class="form-button" style="background:#7289da;" onclick="Utils.addSystemMessage('🛟 Destek talebi iletildi')">
+                    Destek Talebi Gönder
+                </button>
+            </div>
+        `;
     },
     
     // Abonelikler
@@ -96,18 +198,13 @@ const UI = {
         Object.values(App.channels).forEach(ch => {
             const isSub = App.currentUser.subscribedChannels.includes(ch.name);
             const subCount = Utils.formatNumber(ch.subscribers || 0);
-            const onlineCount = ch.onlineUsers ? Object.keys(ch.onlineUsers).length : 0;
             
             html += `
                 <div class="channel-item" onclick="App.joinChannel('${ch.name}')">
                     <div class="channel-avatar"><i class="fas fa-hashtag"></i></div>
                     <div class="channel-info">
                         <div class="channel-name">${ch.name}</div>
-                        <div class="channel-meta">
-                            <span>${ch.owner}</span>
-                            <span>• ${subCount} abone</span>
-                            <span>• ${onlineCount} çevrimiçi</span>
-                        </div>
+                        <div class="channel-meta">${subCount} abone</div>
                     </div>
                     <button class="subscribe-btn ${isSub ? 'subscribed' : ''}" 
                             onclick="event.stopPropagation(); Channels.toggleSubscribe('${ch.name}')">
@@ -125,9 +222,7 @@ const UI = {
     // Profil
     showProfile: function(panel) {
         const user = App.currentUser;
-        const roleText = user.role === 'owner' ? '👑 Kurucu' : 
-                        user.role === 'admin' ? '⚡ Admin' : '👤 Kullanıcı';
-        const roleClass = user.role === 'owner' ? 'badge-owner' : '';
+        const roleText = user.role === 'owner' ? '👑 Kurucu' : '👤 Kullanıcı';
         
         panel.innerHTML = `
             <div class="panel-header">
@@ -137,56 +232,48 @@ const UI = {
                 </div>
             </div>
             <div class="panel-content">
-                <div style="text-align: center; padding: 20px 0;">
-                    <div class="profile-avatar-panel" style="width:80px; height:80px; font-size:32px; margin:0 auto 10px; background:#ff0000; color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center;">
+                <div style="text-align:center; padding:20px 0;">
+                    <div style="width:80px; height:80px; border-radius:50%; background:#ff0000; color:#fff; display:flex; align-items:center; justify-content:center; font-size:32px; margin:0 auto 10px;">
                         ${user.avatar}
                     </div>
-                    <h2 style="margin-bottom:4px;">${user.name}</h2>
-                    <span class="badge ${roleClass}" style="margin-bottom:16px;">${roleText}</span>
+                    <h2>${user.name}</h2>
+                    <span class="badge badge-owner">${roleText}</span>
                 </div>
-                
-                <div style="display:flex; justify-content:space-around; padding:16px 0; border-top:1px solid #2a2a2a; border-bottom:1px solid #2a2a2a; margin-bottom:16px;">
-                    <div style="text-align:center;">
-                        <div style="font-size:18px; font-weight:700;">${user.subscribedChannels.length}</div>
-                        <div style="font-size:11px; color:#aaa;">Abonelik</div>
-                    </div>
-                    <div style="text-align:center;">
-                        <div style="font-size:18px; font-weight:700;">${user.myChannel ? '1' : '0'}</div>
-                        <div style="font-size:11px; color:#aaa;">Kanalım</div>
-                    </div>
-                </div>
-                
-                <button class="form-button" onclick="App.logout()" style="margin-top:20px; width:100%; padding:12px; background:#ff0000; border:none; border-radius:8px; color:#fff; cursor:pointer;">
+                <button class="form-button" onclick="App.logout()" style="width:100%; padding:12px; background:#ff0000; border:none; border-radius:8px; color:#fff; cursor:pointer;">
                     Güvenli Çıkış
                 </button>
             </div>
         `;
     },
     
-    // Kanal bilgilerini güncelle
-    updateChannelInfo: function() {
-        const ch = App.channels[App.currentChannel];
-        if (ch) {
-            document.getElementById('channelSubscribers').textContent = 
-                Utils.formatNumber(ch.subscribers || 0);
-        }
-    },
-    
     // Aktif ikonu ayarla
     setActiveIcon: function(active) {
         document.querySelectorAll('.icon-item').forEach(el => el.classList.remove('active'));
         
-        const icons = {
-            'subscriptions': '.icon-item[onclick*="openSubscriptions"], .icon-item[onclick*="loadLeftPanel(\'subscriptions\')"]',
-            'channels': '.icon-item[onclick*="openChannelPanel"], .icon-item[onclick*="loadLeftPanel(\'channels\')"]',
-            'profile': '.icon-item[onclick*="openProfilePanel"], .icon-item[onclick*="loadLeftPanel(\'profile\')"], .profile-avatar'
+        const selectors = {
+            'subscriptions': '.icon-item[onclick*="loadLeftPanel(\'subscriptions\')"]',
+            'channels': '.icon-item[onclick*="loadLeftPanel(\'channels\')"]',
+            'profile': '.profile-avatar',
+            'chatlist': '.icon-item[onclick*="loadLeftPanel(\'chatlist\')"]',
+            'notifications': '.icon-item[onclick*="loadLeftPanel(\'notifications\')"]',
+            'support': '.icon-item[onclick*="loadLeftPanel(\'support\')"]'
         };
         
-        if (icons[active]) {
-            document.querySelectorAll(icons[active]).forEach(el => el.classList.add('active'));
+        if (selectors[active]) {
+            document.querySelectorAll(selectors[active]).forEach(el => el.classList.add('active'));
+        }
+    },
+    
+    // Chat tab değiştir
+    switchChatTab: function(tab) {
+        const content = document.getElementById('chatPanelContent');
+        if (tab === 'online') {
+            content.innerHTML = '<div style="color:#aaa; padding:20px; text-align:center;">Çevrimiçi kullanıcılar yakında...</div>';
+        } else {
+            content.innerHTML = '<div style="color:#aaa; padding:20px; text-align:center;">Sohbetler yakında...</div>';
         }
     }
 };
 
 window.UI = UI;
-console.log('✅ UI.js yüklendi - tüm fonksiyonlar hazır');
+console.log('✅ UI.js yüklendi');
