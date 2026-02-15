@@ -1,5 +1,5 @@
 // ========== app.js ==========
-// ANA UYGULAMA - TÜM FONKSİYONLAR BURADA
+// ANA UYGULAMA - DÜZELTİLDİ
 
 const App = {
     // Kullanıcı bilgileri
@@ -11,6 +11,17 @@ const App = {
     init: function() {
         console.log('🚀 App başlatılıyor...');
         
+        // Varsayılan kanalları oluştur
+        this.channels = {
+            genel: {
+                name: 'genel',
+                owner: 'MateKy',
+                subscribers: 15000000,
+                onlineUsers: {},
+                playlist: []
+            }
+        };
+        
         // Kayıtlı kullanıcı var mı?
         const savedUser = localStorage.getItem('cetcety_user');
         if (savedUser) {
@@ -21,7 +32,7 @@ const App = {
         }
         
         // Firebase bağlantısını dinle
-        if (window.FIREBASE_READY) {
+        if (window.database) {
             this.listenFirebase();
         }
     },
@@ -30,29 +41,20 @@ const App = {
     listenFirebase: function() {
         if (!database) return;
         
-        // Tüm kanalları dinle
-        database.ref('channels').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                this.channels = data;
-                this.updateUI();
-            }
-        });
-        
         // Online kullanıcıları dinle
         database.ref('online').on('value', (snapshot) => {
             const online = snapshot.val();
             if (online && this.currentChannel) {
                 const channelOnline = online[this.currentChannel] || {};
-                document.getElementById('channelUserCount').textContent = 
-                    Object.keys(channelOnline).length;
+                const count = Object.keys(channelOnline).length;
+                document.getElementById('channelUserCount').textContent = count;
             }
         });
         
         // Mesajları dinle
         database.ref('messages').on('child_added', (snapshot) => {
             const msg = snapshot.val();
-            if (msg.channel === this.currentChannel && msg.sender !== this.currentUser?.name) {
+            if (msg && msg.channel === this.currentChannel && msg.sender !== this.currentUser?.name) {
                 this.displayMessage(msg);
             }
         });
@@ -85,8 +87,9 @@ const App = {
             id: Date.now().toString(),
             name: nick,
             role: role,
-            roleLevel: role === 'owner' ? 5 : role === 'admin' ? 4 : 1,
+            roleLevel: role === 'owner' ? 5 : 1,
             subscribedChannels: ['genel'],
+            myChannel: null,
             avatar: nick.charAt(0).toUpperCase()
         };
         
@@ -119,25 +122,39 @@ const App = {
         this.loadChannels();
     },
     
-    // Kanalları yükle
+    // Kanalları yükle (DÜZELTİLDİ)
     loadChannels: function() {
-        // Varsayılan kanallar
-        if (!this.channels.genel) {
-            this.channels = {
-                genel: {
-                    name: 'genel',
-                    owner: 'MateKy',
-                    subscribers: 15000000,
-                    playlist: []
-                }
-            };
+        console.log('📡 Kanallar yükleniyor...');
+        
+        // UI'ı güncelle
+        if (typeof UI !== 'undefined' && UI.updateChannelList) {
+            UI.updateChannelList();
+        } else {
+            console.warn('UI.updateChannelList fonksiyonu bulunamadı');
         }
         
-        UI.updateChannelList();
+        // Sol paneli yükle
+        if (typeof UI !== 'undefined' && UI.loadLeftPanel) {
+            UI.loadLeftPanel('subscriptions');
+        }
+        
+        // Kanal bilgilerini güncelle
+        document.getElementById('currentChannelName').textContent = this.currentChannel;
+        
+        const ch = this.channels[this.currentChannel];
+        if (ch) {
+            document.getElementById('channelSubscribers').textContent = 
+                Utils.formatNumber(ch.subscribers || 0);
+        }
     },
     
     // Kanal değiştir
     joinChannel: function(channelName) {
+        if (!this.channels[channelName]) {
+            Utils.addSystemMessage('❌ Kanal bulunamadı.');
+            return;
+        }
+        
         const oldChannel = this.currentChannel;
         this.currentChannel = channelName;
         
@@ -152,8 +169,16 @@ const App = {
         
         // UI güncelle
         document.getElementById('currentChannelName').textContent = channelName;
-        UI.updateChannelInfo();
+        document.getElementById('messages').innerHTML = '';
         Utils.addSystemMessage(`📢 #${channelName} kanalına katıldın!`);
+        
+        // Online sayısını güncelle
+        if (database) {
+            database.ref(`online/${channelName}`).once('value', (snapshot) => {
+                const users = snapshot.val() || {};
+                document.getElementById('channelUserCount').textContent = Object.keys(users).length;
+            });
+        }
     },
     
     // Mesaj gönder
@@ -184,7 +209,7 @@ const App = {
         msgDiv.innerHTML = `
             <div class="message-header" style="${isMe ? 'justify-content: flex-end;' : ''}">
                 <span class="message-time">${msg.time}</span>
-                <span class="message-sender">${msg.sender}</span>
+                <span class="message-sender">${Utils.escapeHTML(msg.sender)}</span>
             </div>
             <div class="message-text">${Utils.escapeHTML(msg.text)}</div>
         `;
@@ -196,7 +221,6 @@ const App = {
     hasPermission: function(requiredRole, channelName = null) {
         if (!this.currentUser) return false;
         if (this.currentUser.role === 'owner') return true;
-        if (this.currentUser.role === 'admin') return requiredRole !== 'owner';
         return false;
     },
     
