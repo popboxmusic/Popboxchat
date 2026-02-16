@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CetCety · havada asılı paneller</title>
+    <title>CetCety · REAL-TIME + MEDYA</title>
     
     <!-- Font Awesome 6 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -13,14 +13,14 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     
-    <!-- CETCETY STYLE (tek dosya) -->
+    <!-- CETCETY STYLE -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <!-- LOGO -->
     <div class="logo-area">
         <i class="fas fa-comment-dots logo-icon"></i>
-        <div class="logo-text">CetCety <span>· floating</span></div>
+        <div class="logo-text">CetCety <span>· media</span></div>
     </div>
 
     <div class="app">
@@ -37,7 +37,7 @@
             </div>
         </div>
 
-        <!-- DAR PANEL -->
+        <!-- DAR PANEL (ONLINE/ONCHAT) -->
         <div class="side-panel">
             <div class="panel-tabs">
                 <div class="panel-tab active" onclick="switchPanelTab('online')" id="tabOnline">Online</div>
@@ -48,7 +48,7 @@
             </div>
         </div>
 
-        <!-- SOHBET ALANI -->
+        <!-- SOHBET ALANI (GENEL) -->
         <div class="chat-area">
             <div class="chat-header">
                 <i class="fas fa-hashtag"></i>
@@ -151,6 +151,9 @@
         const db = firebase.database();
         const storage = firebase.storage();
 
+        console.log('🔥 Firebase başlatıldı');
+        console.log('📦 Storage kuralları:', 'Herkese açık (test modu)');
+
         // ========== KULLANICI ==========
         let userName = localStorage.getItem('cetcety_username');
         if (!userName) {
@@ -172,9 +175,9 @@
         window.activeChats = {};
         window.currentPanelTab = 'online';
 
-        console.log('✅ CetCety başladı', window.ACTIVE_USER);
+        console.log('✅ Kullanıcı:', window.ACTIVE_USER);
 
-        // ========== KANAL İŞLEMLERİ ==========
+        // ========== KANAL ==========
         function loadChannels() {
             db.ref('channels').once('value', (snapshot) => {
                 const channels = snapshot.val() || {};
@@ -211,7 +214,7 @@
             updateOnlineStatus();
         };
 
-        // ========== MESAJLAR ==========
+        // ========== MESAJLAR (GENEL) ==========
         window.sendMessage = function() {
             const input = document.getElementById('messageInput');
             const text = input.value.trim();
@@ -226,7 +229,8 @@
                 role: window.ACTIVE_USER.role
             };
 
-            db.ref(`chats/${window.currentChannel}`).push(message);
+            db.ref(`chats/${window.currentChannel}`).push(message)
+                .then(() => console.log('📨 Mesaj gönderildi:', text));
             input.value = '';
         };
 
@@ -258,7 +262,7 @@
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
-        // ========== ONLINE KULLANICILAR ==========
+        // ========== ONLINE KULLANICILAR (GERÇEK ZAMANLI) ==========
         function updateOnlineStatus() {
             const userStatusRef = db.ref(`online/${window.currentChannel}/${window.ACTIVE_USER.id}`);
             
@@ -273,29 +277,36 @@
             db.ref(`online/${window.currentChannel}`).on('value', (snapshot) => {
                 const users = snapshot.val() || {};
                 
+                // SADECE son 15 saniye içinde aktif olanlar
                 const now = Date.now();
                 const activeUsers = {};
                 
                 Object.keys(users).forEach(userId => {
                     const user = users[userId];
-                    if (now - user.lastSeen < 10000) {
+                    if (now - user.lastSeen < 15000) {
                         activeUsers[userId] = user;
+                    } else {
+                        // Eski kayıtları temizle
+                        db.ref(`online/${window.currentChannel}/${userId}`).remove();
                     }
                 });
                 
                 window.onlineUsers = activeUsers;
                 document.getElementById('onlineCount').textContent = `${Object.keys(activeUsers).length} çevrimiçi`;
                 updatePanel();
+                
+                console.log('👥 Online:', Object.keys(activeUsers).length);
             });
             
+            // Heartbeat - her 5 saniyede bir
             setInterval(() => {
                 db.ref(`online/${window.currentChannel}/${window.ACTIVE_USER.id}`).update({
                     lastSeen: Date.now()
                 });
-            }, 3000);
+            }, 5000);
         }
 
-        // ========== AKTİF CHATLER ==========
+        // ========== AKTİF CHATLER (KARŞILIKLI) ==========
         function trackPrivateChat(userId, userName, isReceived = false) {
             if (!window.activeChats[userId]) {
                 window.activeChats[userId] = {
@@ -427,9 +438,11 @@
                 const msg = snapshot.val();
                 addPrivateMessage(msg);
                 
+                // Karşıdan mesaj geldiyse track et
                 if (msg.from !== window.ACTIVE_USER.id && msg.from === userId) {
                     trackPrivateChat(userId, msg.fromName, true);
                     
+                    // Eğer bu sohbet açıksa okundu olarak işaretle
                     if (window.currentPrivateUser && window.currentPrivateUser.id === userId) {
                         markChatAsRead(userId);
                     }
@@ -451,11 +464,11 @@
                 content = `<div class="private-message-content">${msg.text}</div>`;
             } else if (msg.type === 'image') {
                 content = `<div class="private-message-content">
-                    <img src="${msg.url}" class="private-message-media" onclick="window.open('${msg.url}')">
+                    <img src="${msg.url}" class="private-message-media" onclick="window.open('${msg.url}')" style="max-width: 100%; border-radius: 8px;">
                 </div>`;
             } else if (msg.type === 'video') {
                 content = `<div class="private-message-content">
-                    <video src="${msg.url}" class="private-message-media" controls></video>
+                    <video src="${msg.url}" class="private-message-media" controls style="max-width: 100%; border-radius: 8px;"></video>
                 </div>`;
             }
             
@@ -492,10 +505,15 @@
             input.value = '';
         };
 
-        // Medya yükleme
+        // ========== MEDYA YÜKLEME (ÇALIŞIYOR) ==========
         document.getElementById('privateFileInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (!file || !window.currentPrivateUser) {
+            if (!file) {
+                alert('Lütfen bir dosya seçin');
+                return;
+            }
+            
+            if (!window.currentPrivateUser) {
                 alert('Lütfen önce bir kullanıcı seçin');
                 return;
             }
@@ -508,29 +526,64 @@
                 return;
             }
             
+            // Yükleme başladı
+            console.log('📤 Dosya yükleniyor:', file.name, file.type, (file.size/1024).toFixed(2) + 'KB');
+            
             const fileName = `${Date.now()}_${file.name}`;
             const storageRef = storage.ref(`private/${window.ACTIVE_USER.id}/${fileName}`);
             
-            storageRef.put(file).then((snapshot) => {
-                return snapshot.ref.getDownloadURL();
-            }).then((downloadURL) => {
-                const chatId = [window.ACTIVE_USER.id, window.currentPrivateUser.id].sort().join('_');
-                
-                return db.ref(`private/${chatId}`).push({
+            // Metadata
+            const metadata = {
+                contentType: file.type,
+                customMetadata: {
                     from: window.ACTIVE_USER.id,
                     fromName: window.ACTIVE_USER.name,
-                    url: downloadURL,
-                    type: isImage ? 'image' : 'video',
-                    time: new Date().toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'}),
-                    timestamp: Date.now(),
-                    fileName: file.name
-                });
-            }).then(() => {
-                trackPrivateChat(window.currentPrivateUser.id, window.currentPrivateUser.name, false);
-            }).catch((error) => {
-                alert('Dosya yüklenemedi: ' + error.message);
-            });
+                    to: window.currentPrivateUser.id,
+                    toName: window.currentPrivateUser.name
+                }
+            };
             
+            // Upload
+            const uploadTask = storageRef.put(file, metadata);
+            
+            uploadTask.on('state_changed',
+                (snapshot) => {
+                    // İlerleme
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    console.log(`📊 Yükleme: %${progress.toFixed(1)}`);
+                },
+                (error) => {
+                    // HATA
+                    console.error('❌ Yükleme hatası:', error);
+                    alert('Dosya yüklenemedi!\nHata: ' + error.message);
+                },
+                () => {
+                    // BAŞARILI
+                    uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
+                        console.log('✅ URL alındı:', downloadURL);
+                        
+                        const chatId = [window.ACTIVE_USER.id, window.currentPrivateUser.id].sort().join('_');
+                        
+                        const message = {
+                            from: window.ACTIVE_USER.id,
+                            fromName: window.ACTIVE_USER.name,
+                            url: downloadURL,
+                            type: isImage ? 'image' : 'video',
+                            time: new Date().toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'}),
+                            timestamp: Date.now(),
+                            fileName: file.name
+                        };
+                        
+                        db.ref(`private/${chatId}`).push(message)
+                            .then(() => {
+                                console.log('✅ Mesaj gönderildi');
+                                trackPrivateChat(window.currentPrivateUser.id, window.currentPrivateUser.name, false);
+                            });
+                    });
+                }
+            );
+            
+            // Input'u temizle
             e.target.value = '';
         });
 
