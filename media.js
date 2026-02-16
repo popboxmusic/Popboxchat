@@ -31,6 +31,9 @@ const Media = {
             }
         });
         
+        // Sayfa yüklendiğinde playlist'i yükle
+        setTimeout(() => this.updatePlaylistUI(), 1000);
+        
         console.log('🎬 YouTube player hazır');
     },
     
@@ -65,6 +68,9 @@ const Media = {
         console.log('🎥 Canlı yayın modalı açılıyor');
         document.getElementById('liveStreamModal').classList.add('active');
         document.getElementById('modalOverlay').classList.add('active');
+        
+        // Kamerayı önizleme olarak başlat
+        this.startPreview();
     },
     
     closeModals: function() {
@@ -72,6 +78,40 @@ const Media = {
         document.getElementById('liveStreamModal').classList.remove('active');
         document.getElementById('adminPanel').classList.remove('active');
         document.getElementById('modalOverlay').classList.remove('active');
+        
+        // Kamerayı durdur
+        this.stopPreview();
+    },
+    
+    // Kamera önizleme başlat
+    startPreview: function() {
+        const preview = document.getElementById('cameraPreview');
+        if (!preview) return;
+        
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                .then(function(stream) {
+                    preview.srcObject = stream;
+                    window.previewStream = stream;
+                    console.log('📹 Kamera önizleme başladı');
+                })
+                .catch(function(err) {
+                    console.error('Kamera önizleme hatası:', err);
+                    preview.innerHTML = '<div style="color:red; padding:20px;">Kamera bulunamadı</div>';
+                });
+        }
+    },
+    
+    // Kamera önizleme durdur
+    stopPreview: function() {
+        if (window.previewStream) {
+            window.previewStream.getTracks().forEach(track => track.stop());
+            window.previewStream = null;
+        }
+        const preview = document.getElementById('cameraPreview');
+        if (preview) {
+            preview.srcObject = null;
+        }
     },
     
     // Video oynat (playlist'ten tıklayınca)
@@ -111,18 +151,8 @@ const Media = {
             title = `Video ${videoId.substring(0, 6)}`;
         }
         
-        // Playlist'e ekle (localStorage'a kaydet)
-        const playlist = this.getPlaylist();
-        playlist.push({
-            id: videoId,
-            title: title,
-            addedBy: Auth.currentUser?.name || 'Misafir',
-            date: new Date().toLocaleDateString()
-        });
-        this.savePlaylist(playlist);
-        
-        // Playlist'i güncelle
-        this.updatePlaylistUI();
+        // Playlist'e ekle
+        this.addToPlaylist(videoId, title);
         
         // Modal'ı kapat ve inputları temizle
         document.getElementById('videoUrl').value = '';
@@ -130,6 +160,26 @@ const Media = {
         this.closeModals();
         
         Utils.addSystemMessage(`✅ Video eklendi: ${title}`);
+    },
+    
+    // Playlist'e video ekle
+    addToPlaylist: function(videoId, title) {
+        // Mevcut playlist'i al
+        const playlist = this.getPlaylist();
+        
+        // Yeni videoyu ekle
+        playlist.push({
+            id: videoId,
+            title: title,
+            addedBy: Auth.currentUser?.name || 'Misafir',
+            date: new Date().toLocaleDateString()
+        });
+        
+        // Playlist'i kaydet
+        this.savePlaylist(playlist);
+        
+        // UI'ı güncelle
+        this.updatePlaylistUI();
     },
     
     // Playlist'i localStorage'dan al
@@ -150,6 +200,12 @@ const Media = {
         
         if (!container) return;
         
+        if (playlist.length === 0) {
+            container.innerHTML = '<div style="color:#aaa; text-align:center; padding:20px;">Henüz video eklenmemiş</div>';
+            document.getElementById('playlistCount').textContent = '0 video';
+            return;
+        }
+        
         let html = '';
         playlist.forEach((item, index) => {
             html += `
@@ -163,7 +219,7 @@ const Media = {
             `;
         });
         
-        container.innerHTML = html || '<div style="color:#aaa; text-align:center; padding:20px;">Henüz video eklenmemiş</div>';
+        container.innerHTML = html;
         document.getElementById('playlistCount').textContent = `${playlist.length} video`;
     },
     
@@ -171,11 +227,14 @@ const Media = {
     startLive: function() {
         const title = document.getElementById('streamTitle')?.value || 'CETCETY Canlı Yayın';
         
-        // Tarayıcı kamera izni iste
+        // Önizlemeyi durdur
+        this.stopPreview();
+        
+        // Gerçek yayını başlat (sesli)
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             navigator.mediaDevices.getUserMedia({ video: true, audio: true })
                 .then(function(stream) {
-                    console.log('📹 Kamera başlatıldı');
+                    console.log('📹 Canlı yayın kamerası başlatıldı');
                     
                     // Kamerayı durdurmak için stream'i sakla
                     window.localStream = stream;
@@ -199,6 +258,9 @@ const Media = {
                     }
                     
                     Utils.addSystemMessage(`📹 ${Auth.currentUser?.name} canlı yayın başlattı: ${title}`);
+                    
+                    // Modal'ı kapat
+                    Media.closeModals();
                 })
                 .catch(function(err) {
                     console.error('Kamera hatası:', err);
@@ -207,8 +269,6 @@ const Media = {
         } else {
             alert('Tarayıcınız kamera desteği sunmuyor.');
         }
-        
-        this.closeModals();
     }
 };
 
