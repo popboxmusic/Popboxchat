@@ -1,57 +1,910 @@
-<!-- SOL İKON PANELİ - DOĞRU DÜZEN -->
-<div class="icon-panel">
-    <!-- Ana Sayfa -->
-    <div class="icon-item" onclick="showHome()" title="Ana Sayfa">
-        <i class="fas fa-home"></i>
-    </div>
+<!-- CETCETY - TÜM İKONLAR DOĞRU DÜZENDE -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>CETCETY</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Abonelikler -->
-    <div class="icon-item" onclick="showSubscriptions()" title="Abonelikler">
-        <i class="fas fa-bell"></i>
-        <span class="icon-badge" id="subscriptionBadge">0</span>
-    </div>
+    <!-- YouTube API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     
-    <!-- Kanallar -->
-    <div class="icon-item" onclick="showChannels()" title="Kanallar">
-        <i class="fas fa-list-ul"></i>
-        <span class="icon-badge" id="channelCountBadge">0</span>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background: #0f0f0f; color: #fff; height: 100vh; display: flex; }
+        
+        /* Giriş */
+        #login {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.9); backdrop-filter: blur(10px);
+            display: flex; align-items: center; justify-content: center; z-index: 1000;
+        }
+        .login-box {
+            width: 320px; background: #1a1a1a; padding: 30px; border-radius: 16px;
+            border: 1px solid #333; text-align: center;
+        }
+        .login-box h2 { margin-bottom: 20px; color: #f00; }
+        .login-box input {
+            width: 100%; padding: 12px; margin: 8px 0; background: #2a2a2a;
+            border: 1px solid #333; border-radius: 8px; color: #fff;
+        }
+        .login-box button {
+            width: 100%; padding: 12px; margin-top: 16px; background: #f00;
+            border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer;
+        }
+
+        /* Ana uygulama */
+        .app { display: flex; width: 100%; height: 100vh; }
+
+        /* ========== SOL İKON PANELİ - DOĞRU DÜZEN ========== */
+        .icon-panel {
+            width: 72px; background: #0a0a0a; border-right: 1px solid #2a2a2a;
+            display: flex; flex-direction: column; align-items: center; padding: 24px 0; gap: 20px;
+            flex-shrink: 0; z-index: 20;
+        }
+        .icon-item {
+            width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; color: #aaa; cursor: pointer; transition: 0.2s; font-size: 20px;
+            position: relative;
+        }
+        .icon-item:hover { background: #2a2a2a; color: #fff; }
+        .icon-item.active { color: #fff; background: #f00; }
+        .icon-badge {
+            position: absolute; top: -4px; right: -4px; width: 18px; height: 18px;
+            background: #ff4444; border-radius: 50%; color: white; font-size: 10px;
+            display: flex; align-items: center; justify-content: center;
+            border: 2px solid #0a0a0a;
+        }
+        .profile-avatar {
+            margin-top: auto; width: 48px; height: 48px; border-radius: 50%;
+            background: #f00; cursor: pointer; display: flex; align-items: center;
+            justify-content: center; font-weight: 600; color: #fff;
+            overflow: hidden;
+        }
+        .profile-avatar img {
+            width: 100%; height: 100%; object-fit: cover;
+        }
+
+        /* Sol panel */
+        .left-panel {
+            width: 280px; background: #0a0a0a; border-right: 1px solid #2a2a2a;
+            display: flex; flex-direction: column;
+        }
+        .panel-header {
+            padding: 16px; border-bottom: 1px solid #2a2a2a; display: flex;
+            align-items: center; justify-content: space-between;
+        }
+        .panel-tabs {
+            display: flex; border-bottom: 1px solid #2a2a2a;
+        }
+        .panel-tab {
+            flex: 1; padding: 12px; text-align: center; cursor: pointer; color: #aaa;
+            transition: 0.2s;
+        }
+        .panel-tab:hover { background: #1a1a1a; color: #fff; }
+        .panel-tab.active { color: #fff; border-bottom: 2px solid #f00; }
+        .panel-content { 
+            flex: 1; overflow-y: auto; padding: 16px; 
+            max-height: calc(100vh - 110px);
+        }
+
+        /* Liste öğeleri */
+        .channel-item, .online-item, .chat-item {
+            display: flex; align-items: center; gap: 12px; padding: 10px;
+            border-radius: 8px; margin-bottom: 4px; cursor: pointer;
+        }
+        .channel-item:hover, .online-item:hover, .chat-item:hover { background: #1a1a1a; }
+        .channel-avatar, .online-avatar, .chat-avatar {
+            width: 40px; height: 40px; border-radius: 50%; background: #2a2a2a;
+            display: flex; align-items: center; justify-content: center; color: #f00;
+            font-size: 18px;
+        }
+        .online-avatar { background: #0a5c36; color: #fff; }
+        .chat-info, .online-info { flex: 1; min-width: 0; }
+        .chat-name, .online-name {
+            font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px;
+        }
+        .chat-meta, .online-meta {
+            font-size: 11px; color: #aaa; margin-top: 2px;
+        }
+        .online-status {
+            width: 8px; height: 8px; background: #2ecc71; border-radius: 50%; display: inline-block; margin-right: 8px;
+        }
+        .chat-unread {
+            background: #f00; color: #fff; border-radius: 50%; width: 20px; height: 20px;
+            display: flex; align-items: center; justify-content: center; font-size: 11px;
+        }
+        .chat-close {
+            width: 28px; height: 28px; border-radius: 50%; background: #2a2a2a;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            opacity: 0; transition: 0.2s;
+        }
+        .chat-item:hover .chat-close { opacity: 1; }
+        .chat-close:hover { background: #f00; }
+
+        /* Chat */
+        .chat-container {
+            flex: 1; display: flex; flex-direction: column; background: #0f0f0f;
+        }
+        .chat-header {
+            padding: 16px 24px; border-bottom: 1px solid #2a2a2a;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .chat-title i { color: #f00; margin-right: 8px; }
+        .messages {
+            flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 12px;
+        }
+        .message {
+            max-width: 70%; padding: 10px 14px; border-radius: 18px; background: #2a2a2a;
+            align-self: flex-start;
+        }
+        .message.right {
+            align-self: flex-end; background: #f00;
+        }
+        .message small { display: block; font-size: 11px; opacity: 0.7; margin-bottom: 4px; }
+        
+        .message-input {
+            padding: 20px 24px; border-top: 1px solid #2a2a2a; display: flex; gap: 12px;
+        }
+        .message-input input {
+            flex: 1; padding: 12px 16px; background: #1a1a1a; border: 1px solid #2a2a2a;
+            border-radius: 24px; color: #fff; outline: none;
+        }
+        .message-input button {
+            width: 48px; height: 48px; border-radius: 50%; background: #f00;
+            border: none; color: #fff; cursor: pointer;
+        }
+
+        /* Medya paneli */
+        .media-panel {
+            width: 320px; background: #0a0a0a; border-left: 1px solid #2a2a2a;
+            display: flex; flex-direction: column;
+        }
+        .media-header {
+            padding: 16px; border-bottom: 1px solid #2a2a2a; display: flex;
+            align-items: center; justify-content: space-between;
+        }
+        .media-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+        .media-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+        .media-btn {
+            width: 36px; height: 36px; border-radius: 50%; background: #1a1a1a;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            border: 1px solid transparent;
+            transition: 0.2s;
+        }
+        .media-btn:hover { background: #f00; color: #fff; }
+        
+        .youtube-player {
+            width: 100%; aspect-ratio: 16/9; background: #000; border-bottom: 1px solid #2a2a2a;
+        }
+        #youtubeContainer { width: 100%; height: 100%; }
+        
+        .spotify-player {
+            width: 100%; aspect-ratio: 16/9; background: #121212; border-bottom: 1px solid #2a2a2a;
+            display: none;
+        }
+        .spotify-iframe { width: 100%; height: 100%; border: none; }
+        
+        .now-playing {
+            padding: 12px 16px; background: #0f0f0f; border-bottom: 1px solid #2a2a2a;
+            display: flex; align-items: center; gap: 8px; font-size: 13px;
+        }
+        
+        .playlist {
+            flex: 1; overflow-y: auto; padding: 16px;
+        }
+        .playlist-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #2a2a2a;
+        }
+        .playlist-item {
+            display: flex; align-items: center; gap: 12px; padding: 8px;
+            border-radius: 8px; cursor: pointer; margin-bottom: 4px;
+        }
+        .playlist-item:hover { background: #1a1a1a; }
+        .playlist-thumb {
+            width: 40px; height: 40px; border-radius: 4px; background: #1a1a1a;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* Badge'ler */
+        .badge {
+            display: inline-block; padding: 2px 6px; border-radius: 12px; font-size: 10px;
+            margin-left: 6px; background: rgba(0,0,0,0.3); border: 1px solid;
+        }
+        .badge-owner { color: #ffd700; border-color: #ffd700; }
+        .badge-admin { color: #ff6b6b; border-color: #ff6b6b; }
+        .badge-coadmin { color: #6495ed; border-color: #6495ed; }
+        .badge-operator { color: #ffa500; border-color: #ffa500; }
+        .badge-ow { color: #9370db; border-color: #9370db; }
+
+        /* Modal */
+        .modal {
+            display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 20px;
+            z-index: 2000; width: 350px;
+        }
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1999;
+        }
+        .modal input, .modal button {
+            width: 100%; padding: 8px; margin: 5px 0; border-radius: 4px; border: none;
+        }
+        .modal input { background: #2a2a2a; color: #fff; }
+        .modal button { background: #f00; color: #fff; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <!-- Giriş -->
+    <div id="login">
+        <div class="login-box">
+            <h2><i class="fas fa-headphones"></i> CETCETY</h2>
+            <input type="text" id="nick" placeholder="Kullanıcı adı">
+            <input type="password" id="pass" placeholder="Şifre">
+            <button onclick="login()">Giriş Yap</button>
+        </div>
     </div>
-    
-    <!-- Sohbetlerim -->
-    <div class="icon-item" onclick="showChats()" title="Sohbetlerim">
-        <i class="fas fa-comment"></i>
-        <span class="icon-badge" id="chatBadge">0</span>
+
+    <!-- Ana uygulama -->
+    <div id="app" class="app" style="display:none;">
+        <!-- ========== SOL İKON PANELİ - DOĞRU DÜZEN ========== -->
+        <div class="icon-panel">
+            <!-- Ana Sayfa -->
+            <div class="icon-item" onclick="showHome()" title="Ana Sayfa">
+                <i class="fas fa-home"></i>
+            </div>
+            
+            <!-- Abonelikler -->
+            <div class="icon-item" onclick="showSubscriptions()" title="Abonelikler">
+                <i class="fas fa-bell"></i>
+                <span class="icon-badge" id="subscriptionBadge">0</span>
+            </div>
+            
+            <!-- Kanallar -->
+            <div class="icon-item" onclick="showChannels()" title="Kanallar">
+                <i class="fas fa-list-ul"></i>
+                <span class="icon-badge" id="channelCountBadge">0</span>
+            </div>
+            
+            <!-- Sohbetlerim -->
+            <div class="icon-item" onclick="showChats()" title="Sohbetlerim">
+                <i class="fas fa-comment"></i>
+                <span class="icon-badge" id="chatBadge">0</span>
+            </div>
+            
+            <!-- Çevrimiçi -->
+            <div class="icon-item" onclick="showOnline()" title="Çevrimiçi">
+                <i class="fas fa-users"></i>
+                <span class="icon-badge" id="onlineBadge">0</span>
+            </div>
+            
+            <!-- Medya -->
+            <div class="icon-item" onclick="toggleMedia()" title="Medya">
+                <i class="fas fa-music"></i>
+            </div>
+            
+            <!-- Bildirimler -->
+            <div class="icon-item" onclick="showNotifications()" title="Bildirimler">
+                <i class="fas fa-bell"></i>
+                <span class="icon-badge" id="notificationBadge">0</span>
+            </div>
+            
+            <!-- Destek -->
+            <div class="icon-item" onclick="showSupport()" title="Destek">
+                <i class="fas fa-headset"></i>
+            </div>
+            
+            <!-- Tema -->
+            <div class="icon-item" onclick="toggleTheme()" id="themeIcon" title="Tema">
+                <i class="fas fa-moon"></i>
+            </div>
+            
+            <!-- Profil (en altta) -->
+            <div class="profile-avatar" id="profileAvatar" onclick="showProfile()">
+                <span id="avatarText">?</span>
+            </div>
+        </div>
+
+        <!-- Sol panel -->
+        <div class="left-panel" id="leftPanel">
+            <div class="panel-header">
+                <span id="panelTitle"><i class="fas fa-list-ul"></i> Kanallar</span>
+                <i class="fas fa-times" onclick="showChannels()" style="cursor:pointer;"></i>
+            </div>
+            <div class="panel-tabs" id="panelTabs">
+                <div class="panel-tab active" onclick="switchTab('chats')" id="tabChats">Sohbetler</div>
+                <div class="panel-tab" onclick="switchTab('online')" id="tabOnline">Çevrimiçi</div>
+            </div>
+            <div class="panel-content" id="leftPanelContent"></div>
+        </div>
+
+        <!-- Chat -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <div class="chat-title">
+                    <i class="fas fa-hashtag"></i>
+                    <span id="currentChannel">genel</span>
+                </div>
+                <span id="onlineCount">0 çevrimiçi</span>
+            </div>
+            <div class="messages" id="messages">
+                <div class="system-message" style="text-align:center; color:#aaa; padding:20px;">CETCETY'ye hoş geldin!</div>
+            </div>
+            <div class="message-input">
+                <input type="text" id="messageInput" placeholder="Mesaj yaz..." onkeypress="if(event.key==='Enter') sendMessage()">
+                <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+
+        <!-- Medya paneli -->
+        <div class="media-panel">
+            <div class="media-header">
+                <div class="media-title">
+                    <i class="fab fa-youtube" style="color:#f00;" id="mediaIcon"></i>
+                    <span id="mediaTitle">YouTube</span>
+                </div>
+                <div class="media-controls">
+                    <div class="media-btn" onclick="openAddYoutubeModal()" title="Video Ekle"><i class="fab fa-youtube"></i></div>
+                    <div class="media-btn" onclick="openAddSpotifyModal()" title="Spotify Ekle"><i class="fab fa-spotify"></i></div>
+                    <div class="media-btn" onclick="toggleMedia()" title="Geçiş"><i class="fas fa-exchange-alt"></i></div>
+                </div>
+            </div>
+            
+            <div id="youtubePlayer" class="youtube-player">
+                <div id="youtubeContainer"></div>
+            </div>
+            
+            <div id="spotifyPlayer" class="spotify-player">
+                <iframe id="spotifyIframe" class="spotify-iframe"></iframe>
+            </div>
+            
+            <div class="now-playing">
+                <i class="fas fa-circle" style="color:#f00;"></i>
+                <span id="nowPlaying">CETCETY Radio</span>
+            </div>
+            
+            <div class="playlist" id="playlistContainer">
+                <div class="playlist-header">
+                    <span><i class="fas fa-list"></i> <span id="playlistTitle">YouTube Playlist</span></span>
+                    <span id="playlistCount">0</span>
+                </div>
+                <div id="playlistItems"></div>
+            </div>
+        </div>
     </div>
-    
-    <!-- Çevrimiçi -->
-    <div class="icon-item" onclick="showOnline()" title="Çevrimiçi">
-        <i class="fas fa-users"></i>
-        <span class="icon-badge" id="onlineBadge">0</span>
+
+    <!-- YouTube Video Ekle Modal -->
+    <div id="addYoutubeModal" class="modal">
+        <h3>YouTube Video Ekle</h3>
+        <input type="text" id="youtubeUrl" placeholder="YouTube URL">
+        <input type="text" id="youtubeTitle" placeholder="Başlık">
+        <button onclick="addYoutubeVideo()">Ekle</button>
     </div>
-    
-    <!-- Medya -->
-    <div class="icon-item" onclick="toggleMedia()" title="Medya">
-        <i class="fas fa-music"></i>
+
+    <!-- Spotify Ekle Modal -->
+    <div id="addSpotifyModal" class="modal">
+        <h3>Spotify Playlist Ekle</h3>
+        <input type="text" id="spotifyUrl" placeholder="Spotify URL">
+        <input type="text" id="spotifyTitle" placeholder="Başlık">
+        <button onclick="addSpotifyPlaylist()">Ekle</button>
     </div>
-    
-    <!-- Bildirimler -->
-    <div class="icon-item" onclick="showNotifications()" title="Bildirimler">
-        <i class="fas fa-bell"></i>
-        <span class="icon-badge" id="notificationBadge">0</span>
+
+    <!-- Profil Modal -->
+    <div id="profileModal" class="modal">
+        <h3>Profil</h3>
+        <input type="text" id="newNick" placeholder="Yeni nick">
+        <input type="password" id="newPass" placeholder="Yeni şifre">
+        <input type="file" id="avatarUpload" accept="image/*" onchange="previewAvatar(this)">
+        <button onclick="updateProfile()">Güncelle</button>
+        <button onclick="logout()">Çıkış</button>
     </div>
-    
-    <!-- Destek -->
-    <div class="icon-item" onclick="showSupport()" title="Destek">
-        <i class="fas fa-headset"></i>
-    </div>
-    
-    <!-- Tema -->
-    <div class="icon-item" onclick="toggleTheme()" id="themeIcon" title="Tema">
-        <i class="fas fa-moon"></i>
-    </div>
-    
-    <!-- Profil (en altta) -->
-    <div class="profile-avatar" id="profileAvatar" onclick="showProfile()">
-        <span id="avatarText">?</span>
-    </div>
-</div>
+
+    <!-- Modal Arkaplan -->
+    <div id="modalOverlay" class="modal-overlay" onclick="closeModal()"></div>
+
+    <script>
+        // Firebase
+        firebase.initializeApp({
+            apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
+            authDomain: "popboxmusicchat.firebaseapp.com",
+            databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
+            projectId: "popboxmusicchat",
+            storageBucket: "popboxmusicchat.appspot.com",
+            messagingSenderId: "206625719024",
+            appId: "1:206625719024:web:d28f478a2c96d10412f835"
+        });
+        const db = firebase.database();
+
+        let user = null;
+        let channel = 'genel';
+        let currentMedia = 'youtube';
+        let ytPlayer = null;
+        let currentTab = 'chats';
+        
+        // Sohbetlerim verileri
+        let myChats = JSON.parse(localStorage.getItem('myChats') || '[]');
+        let removedChats = JSON.parse(localStorage.getItem('removedChats') || '[]');
+        let unreadCounts = {};
+
+        // Giriş
+        function login() {
+            const nick = document.getElementById('nick').value.trim();
+            const pass = document.getElementById('pass').value.trim();
+            if (!nick) return alert('Nick girin');
+
+            let role = 'user';
+            if (nick === 'MateKy') {
+                if (pass !== 'Sahi17407@SCM') return alert('Şifre hatalı');
+                role = 'owner';
+            }
+
+            user = {
+                id: Date.now().toString(),
+                name: nick,
+                role: role,
+                password: pass,
+                avatar: null
+            };
+            
+            localStorage.setItem('user', JSON.stringify(user));
+            
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
+            updateAvatar();
+            
+            db.ref(`online/${channel}/${user.id}`).set({ name: user.name, role: user.role });
+            
+            listenMessages();
+            listenOnline();
+            initYouTube();
+            loadPlaylists();
+            loadChats();
+            showChats();
+        }
+
+        // Avatar
+        function updateAvatar() {
+            if (user.avatar) {
+                document.getElementById('profileAvatar').innerHTML = `<img src="${user.avatar}">`;
+            } else {
+                document.getElementById('profileAvatar').innerText = user.name[0];
+            }
+        }
+
+        function previewAvatar(input) {
+            if (!input.files || !input.files[0]) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('avatarPreview').src = e.target.result;
+                document.getElementById('avatarPreview').style.display = 'block';
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+
+        // Tab değiştir
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('tabChats').classList.toggle('active', tab === 'chats');
+            document.getElementById('tabOnline').classList.toggle('active', tab === 'online');
+            
+            if (tab === 'chats') {
+                showChats();
+            } else {
+                showOnline();
+            }
+        }
+
+        // Sohbetlerim listesini yükle
+        function loadChats() {
+            myChats = JSON.parse(localStorage.getItem('myChats') || '[]');
+            removedChats = JSON.parse(localStorage.getItem('removedChats') || '[]');
+            
+            db.ref(`online`).once('value', (data) => {
+                const allOnline = data.val() || {};
+                let onlineUsers = [];
+                
+                for (let ch in allOnline) {
+                    for (let id in allOnline[ch]) {
+                        const name = allOnline[ch][id].name;
+                        if (name !== user.name && !onlineUsers.includes(name)) {
+                            onlineUsers.push(name);
+                        }
+                    }
+                }
+                
+                onlineUsers.forEach(name => {
+                    if (!myChats.includes(name) && !removedChats.includes(name)) {
+                        myChats.push(name);
+                    }
+                });
+                
+                saveChats();
+                updateChatBadge();
+                
+                if (currentTab === 'chats') {
+                    showChats();
+                }
+            });
+        }
+
+        function saveChats() {
+            localStorage.setItem('myChats', JSON.stringify(myChats));
+            localStorage.setItem('removedChats', JSON.stringify(removedChats));
+        }
+
+        function removeFromChats(name) {
+            myChats = myChats.filter(n => n !== name);
+            if (!removedChats.includes(name)) {
+                removedChats.push(name);
+            }
+            saveChats();
+            showChats();
+            addSystemMessage(`🚫 ${name} sohbet listesinden çıkarıldı`);
+        }
+
+        function updateChatBadge() {
+            const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
+            document.getElementById('chatBadge').innerText = totalUnread;
+        }
+
+        // İkon fonksiyonları
+        function showHome() { addSystemMessage('🏠 Ana sayfa'); }
+        function showSubscriptions() { addSystemMessage('📋 Abonelikler'); }
+        function showChannels() { 
+            document.getElementById('leftPanelContent').innerHTML = `
+                <div class="channel-item" onclick="joinChannel('genel')">
+                    <div class="channel-avatar"><i class="fas fa-hashtag"></i></div>
+                    <div>genel</div>
+                </div>
+                <div class="channel-item" onclick="joinChannel('ow')">
+                    <div class="channel-avatar"><i class="fas fa-crown"></i></div>
+                    <div>ow <span class="badge badge-ow">🔒</span></div>
+                </div>
+            `;
+        }
+        
+        function showChats() {
+            let html = '';
+            if (myChats.length === 0) {
+                html = '<div style="color:#aaa; text-align:center; padding:20px;">Henüz sohbet yok</div>';
+            } else {
+                myChats.forEach(name => {
+                    const unread = unreadCounts[name] || 0;
+                    html += `
+                        <div class="chat-item" onclick="openPrivateChat('${name}')">
+                            <div class="chat-avatar">${name[0]}</div>
+                            <div class="chat-info">
+                                <div class="chat-name">
+                                    ${name}
+                                    ${unread > 0 ? `<span class="chat-unread">${unread}</span>` : ''}
+                                </div>
+                                <div class="chat-meta">Çevrimiçi • az önce</div>
+                            </div>
+                            <div class="chat-close" onclick="event.stopPropagation(); removeFromChats('${name}')">
+                                <i class="fas fa-times"></i>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            document.getElementById('leftPanelContent').innerHTML = html;
+        }
+
+        function showOnline() {
+            db.ref(`online`).once('value', (data) => {
+                const allOnline = data.val() || {};
+                let onlineUsers = [];
+                
+                for (let ch in allOnline) {
+                    for (let id in allOnline[ch]) {
+                        const userData = allOnline[ch][id];
+                        if (userData.name !== user.name) {
+                            onlineUsers.push({
+                                name: userData.name,
+                                role: userData.role,
+                                channel: ch
+                            });
+                        }
+                    }
+                }
+                
+                let html = '';
+                if (onlineUsers.length === 0) {
+                    html = '<div style="color:#aaa; text-align:center; padding:20px;">Çevrimiçi kullanıcı yok</div>';
+                } else {
+                    onlineUsers.forEach(u => {
+                        let roleIcon = '';
+                        if (u.role === 'owner') roleIcon = '👑 ';
+                        else if (u.role === 'admin') roleIcon = '⚡ ';
+                        else if (u.role === 'coadmin') roleIcon = '🔧 ';
+                        else if (u.role === 'operator') roleIcon = '🛠️ ';
+                        
+                        html += `
+                            <div class="online-item" onclick="openPrivateChat('${u.name}')">
+                                <div class="online-avatar">${u.name[0]}</div>
+                                <div class="online-info">
+                                    <div class="online-name">
+                                        <span class="online-status"></span> ${roleIcon}${u.name}
+                                    </div>
+                                    <div class="online-meta">#${u.channel}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                document.getElementById('leftPanelContent').innerHTML = html;
+            });
+        }
+
+        function showNotifications() { addSystemMessage('🔔 Bildirimler'); }
+        function showSupport() { addSystemMessage('🆘 Destek'); }
+        function showProfile() { openProfileModal(); }
+
+        function openPrivateChat(name) {
+            if (unreadCounts[name]) {
+                delete unreadCounts[name];
+                updateChatBadge();
+                showChats();
+            }
+            
+            const msg = prompt(`${name} ile özel mesaj:`, '');
+            if (msg) {
+                addSystemMessage(`📨 ${user.name} → ${name}: ${msg}`);
+            }
+        }
+
+        // YouTube
+        function initYouTube() {
+            if (!window.YT) { setTimeout(initYouTube, 500); return; }
+            ytPlayer = new YT.Player('youtubeContainer', {
+                height: '100%', width: '100%',
+                videoId: 'jfKfPfyJRdk',
+                playerVars: { autoplay: 1, controls: 0 }
+            });
+        }
+
+        function toggleMedia() {
+            const youtube = document.getElementById('youtubePlayer');
+            const spotify = document.getElementById('spotifyPlayer');
+            const icon = document.getElementById('mediaIcon');
+            const title = document.getElementById('mediaTitle');
+            const playlistTitle = document.getElementById('playlistTitle');
+
+            if (currentMedia === 'youtube') {
+                youtube.style.display = 'none';
+                spotify.style.display = 'block';
+                icon.className = 'fab fa-spotify';
+                icon.style.color = '#1DB954';
+                title.innerText = 'Spotify';
+                playlistTitle.innerText = 'Spotify Playlist';
+                currentMedia = 'spotify';
+            } else {
+                youtube.style.display = 'block';
+                spotify.style.display = 'none';
+                icon.className = 'fab fa-youtube';
+                icon.style.color = '#f00';
+                title.innerText = 'YouTube';
+                playlistTitle.innerText = 'YouTube Playlist';
+                currentMedia = 'youtube';
+            }
+            loadPlaylists();
+        }
+
+        function getPlaylist(type) {
+            const saved = localStorage.getItem(type + '_playlist');
+            return saved ? JSON.parse(saved) : [];
+        }
+
+        function savePlaylist(type, list) {
+            localStorage.setItem(type + '_playlist', JSON.stringify(list));
+            loadPlaylists();
+        }
+
+        function loadPlaylists() {
+            const youtube = getPlaylist('youtube');
+            const spotify = getPlaylist('spotify');
+            const container = document.getElementById('playlistItems');
+            let html = '';
+
+            if (currentMedia === 'youtube') {
+                youtube.forEach(item => {
+                    html += `<div class="playlist-item" onclick="playYoutube('${item.id}')">
+                        <div class="playlist-thumb"><i class="fab fa-youtube"></i></div>
+                        <div>${item.title}</div>
+                    </div>`;
+                });
+                document.getElementById('playlistCount').innerText = youtube.length;
+            } else {
+                spotify.forEach(item => {
+                    html += `<div class="playlist-item" onclick="playSpotify('${item.url}')">
+                        <div class="playlist-thumb" style="background:#1DB954;"><i class="fab fa-spotify"></i></div>
+                        <div>${item.title}</div>
+                    </div>`;
+                });
+                document.getElementById('playlistCount').innerText = spotify.length;
+            }
+            container.innerHTML = html || '<div style="color:#aaa; padding:20px; text-align:center;">Boş</div>';
+        }
+
+        function playYoutube(id) {
+            if (ytPlayer) ytPlayer.loadVideoById(id);
+            document.getElementById('nowPlaying').innerText = 'YouTube Video';
+        }
+
+        function playSpotify(url) {
+            document.getElementById('spotifyIframe').src = url;
+            document.getElementById('nowPlaying').innerText = 'Spotify Playlist';
+        }
+
+        function openAddYoutubeModal() {
+            document.getElementById('addYoutubeModal').style.display = 'block';
+            document.getElementById('modalOverlay').style.display = 'block';
+        }
+
+        function addYoutubeVideo() {
+            const url = document.getElementById('youtubeUrl').value.trim();
+            let title = document.getElementById('youtubeTitle').value.trim();
+            if (!url) return alert('URL girin');
+            
+            let videoId = '';
+            if (url.includes('youtube.com/watch?v=')) videoId = url.split('v=')[1]?.split('&')[0];
+            else if (url.includes('youtu.be/')) videoId = url.split('youtu.be/')[1]?.split('?')[0];
+            else videoId = url;
+            
+            if (!videoId || videoId.length < 5) return alert('Geçersiz URL');
+            if (!title) title = 'Video ' + (getPlaylist('youtube').length + 1);
+            
+            const list = getPlaylist('youtube');
+            list.push({ id: videoId, title: title, addedBy: user.name });
+            savePlaylist('youtube', list);
+            closeModal();
+        }
+
+        function openAddSpotifyModal() {
+            document.getElementById('addSpotifyModal').style.display = 'block';
+            document.getElementById('modalOverlay').style.display = 'block';
+        }
+
+        function addSpotifyPlaylist() {
+            const url = document.getElementById('spotifyUrl').value.trim();
+            let title = document.getElementById('spotifyTitle').value.trim();
+            if (!url) return alert('URL girin');
+            
+            let embedUrl = url;
+            if (url.includes('open.spotify.com/playlist/')) {
+                const id = url.split('playlist/')[1]?.split('?')[0];
+                embedUrl = `https://open.spotify.com/embed/playlist/${id}`;
+            }
+            if (!title) title = 'Spotify ' + (getPlaylist('spotify').length + 1);
+            
+            const list = getPlaylist('spotify');
+            list.push({ url: embedUrl, title: title, addedBy: user.name });
+            savePlaylist('spotify', list);
+            closeModal();
+        }
+
+        // Mesajlar
+        function listenMessages() {
+            db.ref('messages').orderByChild('timestamp').on('child_added', (data) => {
+                const msg = data.val();
+                if (msg.channel === channel) addMessage(msg);
+            });
+        }
+
+        function addMessage(msg) {
+            let roleIcon = '';
+            if (msg.role === 'owner') roleIcon = '👑 ';
+            else if (msg.role === 'admin') roleIcon = '⚡ ';
+            else if (msg.role === 'coadmin') roleIcon = '🔧 ';
+            else if (msg.role === 'operator') roleIcon = '🛠️ ';
+
+            const div = document.createElement('div');
+            div.className = `message${msg.sender === user.name ? ' right' : ''}`;
+            div.innerHTML = `<small>${roleIcon}${msg.sender}</small><br>${msg.text}`;
+            document.getElementById('messages').appendChild(div);
+            div.scrollIntoView();
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            db.ref('messages').push({
+                sender: user.name,
+                role: user.role,
+                text: text,
+                channel: channel,
+                timestamp: Date.now()
+            });
+
+            input.value = '';
+        }
+
+        // Online
+        function listenOnline() {
+            db.ref(`online/${channel}`).on('value', (data) => {
+                const users = data.val() || {};
+                const count = Object.keys(users).length;
+                document.getElementById('onlineCount').innerText = count + ' çevrimiçi';
+                document.getElementById('onlineBadge').innerText = count;
+            });
+        }
+
+        function joinChannel(ch) {
+            if (ch === 'ow' && user?.name !== 'MateKy') return alert('Erişemezsin');
+            
+            db.ref(`online/${channel}/${user.id}`).remove();
+            channel = ch;
+            document.getElementById('currentChannel').innerText = ch;
+            document.getElementById('messages').innerHTML = '';
+            db.ref(`online/${ch}/${user.id}`).set({ name: user.name, role: user.role });
+        }
+
+        function addSystemMessage(t) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.style.background = '#333';
+            div.style.textAlign = 'center';
+            div.style.maxWidth = '90%';
+            div.style.alignSelf = 'center';
+            div.innerText = t;
+            document.getElementById('messages').appendChild(div);
+            div.scrollIntoView();
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle('light-theme');
+            const icon = document.getElementById('themeIcon').querySelector('i');
+            icon.className = document.body.classList.contains('light-theme') ? 'fas fa-sun' : 'fas fa-moon';
+        }
+
+        function openProfileModal() {
+            document.getElementById('profileModal').style.display = 'block';
+            document.getElementById('modalOverlay').style.display = 'block';
+        }
+
+        function updateProfile() {
+            const newNick = document.getElementById('newNick').value.trim();
+            const newPass = document.getElementById('newPass').value.trim();
+            
+            if (newNick) user.name = newNick;
+            if (newPass) user.password = newPass;
+            
+            localStorage.setItem('user', JSON.stringify(user));
+            updateAvatar();
+            closeModal();
+            alert('Profil güncellendi');
+        }
+
+        function closeModal() {
+            document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
+            document.getElementById('modalOverlay').style.display = 'none';
+        }
+
+        function logout() {
+            db.ref(`online/${channel}/${user.id}`).remove();
+            localStorage.removeItem('user');
+            location.reload();
+        }
+
+        // Otomatik giriş
+        const saved = localStorage.getItem('user');
+        if (saved) {
+            user = JSON.parse(saved);
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
+            updateAvatar();
+            db.ref(`online/${channel}/${user.id}`).set({ name: user.name, role: user.role });
+            listenMessages();
+            listenOnline();
+            initYouTube();
+            loadPlaylists();
+            loadChats();
+            showChannels();
+        }
+    </script>
+</body>
+</html>
