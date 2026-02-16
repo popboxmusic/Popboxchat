@@ -1,4 +1,4 @@
-<!-- CETCETY - VİDEO + SPOTIFY EŞZAMANLI -->
+<!-- CETCETY - TÜM ÖZELLİKLER -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -53,6 +53,10 @@
             width: 46px; height: 46px; border-radius: 50%; background: #f00;
             display: flex; align-items: center; justify-content: center; font-weight: bold;
             margin-top: auto; cursor: pointer;
+            overflow: hidden;
+        }
+        .profile-avatar img {
+            width: 100%; height: 100%; object-fit: cover;
         }
 
         /* Sol panel */
@@ -65,12 +69,12 @@
             align-items: center; justify-content: space-between;
         }
         .panel-content { flex: 1; overflow-y: auto; padding: 16px; }
-        .channel-item, .online-item {
+        .channel-item, .online-item, .user-item {
             display: flex; align-items: center; gap: 12px; padding: 10px;
             border-radius: 8px; cursor: pointer; margin-bottom: 4px;
         }
-        .channel-item:hover, .online-item:hover { background: #1a1a1a; }
-        .channel-avatar, .online-avatar {
+        .channel-item:hover, .online-item:hover, .user-item:hover { background: #1a1a1a; }
+        .channel-avatar, .online-avatar, .user-avatar {
             width: 36px; height: 36px; border-radius: 50%; background: #2a2a2a;
             display: flex; align-items: center; justify-content: center; color: #f00;
         }
@@ -112,7 +116,7 @@
             border: none; color: #fff; cursor: pointer;
         }
 
-        /* Sağ panel - Medya */
+        /* Medya paneli */
         .media-panel {
             width: 320px; background: #0a0a0a; border-left: 1px solid #2a2a2a;
             display: flex; flex-direction: column;
@@ -128,6 +132,7 @@
             display: flex; align-items: center; justify-content: center; cursor: pointer;
         }
         .media-btn:hover { background: #f00; }
+        .media-btn.disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
         
         .youtube-player {
             width: 100%; aspect-ratio: 16/9; background: #000; border-bottom: 1px solid #2a2a2a;
@@ -158,11 +163,33 @@
             display: flex; align-items: center; justify-content: center;
         }
 
+        /* Badge'ler */
         .badge {
-            display: inline-block; padding: 2px 6px; background: rgba(255,215,0,0.2);
-            border: 1px solid #ffd700; border-radius: 12px; font-size: 10px; margin-left: 6px;
+            display: inline-block; padding: 2px 6px; border-radius: 12px; font-size: 10px;
+            margin-left: 6px; background: rgba(0,0,0,0.3); border: 1px solid;
         }
-        .badge-ow { border-color: #9370db; color: #9370db; }
+        .badge-owner { color: #ffd700; border-color: #ffd700; }
+        .badge-admin { color: #ff6b6b; border-color: #ff6b6b; }
+        .badge-coadmin { color: #6495ed; border-color: #6495ed; }
+        .badge-operator { color: #ffa500; border-color: #ffa500; }
+        .badge-ow { color: #9370db; border-color: #9370db; }
+
+        /* Modal */
+        .modal {
+            display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 20px;
+            z-index: 2000; width: 300px;
+        }
+        .modal.active { display: block; }
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1999;
+        }
+        .modal-overlay.active { display: block; }
+        .modal input, .modal select, .modal button {
+            width: 100%; padding: 8px; margin: 5px 0; border-radius: 4px; border: none;
+        }
+        .modal input, .modal select { background: #2a2a2a; color: #fff; }
+        .modal button { background: #f00; color: #fff; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -227,7 +254,7 @@
                     <span id="mediaTitle">YouTube</span>
                 </div>
                 <div class="media-controls">
-                    <div class="media-btn" onclick="openAddModal()" title="Ekle"><i class="fas fa-plus"></i></div>
+                    <div class="media-btn" onclick="openAddModal()" title="Ekle" id="addMediaBtn"><i class="fas fa-plus"></i></div>
                     <div class="media-btn" onclick="toggleMedia()" title="Geçiş"><i class="fas fa-exchange-alt"></i></div>
                 </div>
             </div>
@@ -249,18 +276,27 @@
         </div>
     </div>
 
-    <!-- Modal -->
-    <div id="addModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#1a1a1a; padding:20px; border-radius:12px; z-index:2000; width:300px;">
-        <h3 style="margin-bottom:15px;">Medya Ekle</h3>
-        <select id="mediaType" style="width:100%; padding:8px; margin-bottom:10px; background:#2a2a2a; color:#fff; border:none;">
-            <option value="youtube">YouTube Video</option>
-            <option value="spotify">Spotify Playlist</option>
-        </select>
-        <input type="text" id="mediaUrl" placeholder="URL" style="width:100%; padding:8px; margin-bottom:10px; background:#2a2a2a; border:none; color:#fff;">
-        <input type="text" id="mediaTitle" placeholder="Başlık" style="width:100%; padding:8px; margin-bottom:10px; background:#2a2a2a; border:none; color:#fff;">
-        <button onclick="addMedia()" style="width:100%; padding:8px; background:#f00; border:none; color:#fff; cursor:pointer;">Ekle</button>
+    <!-- Profil modal -->
+    <div id="profileModal" class="modal">
+        <h3 style="margin-bottom:15px;"><i class="fas fa-user"></i> Profil</h3>
+        <input type="text" id="newNick" placeholder="Yeni nick">
+        <input type="password" id="newPass" placeholder="Yeni şifre">
+        <input type="file" id="avatarUpload" accept="image/*" onchange="previewAvatar(this)">
+        <div style="text-align:center; margin:10px 0;">
+            <img id="avatarPreview" src="" style="width:80px; height:80px; border-radius:50%; display:none;">
+        </div>
+        <button onclick="updateProfile()">Güncelle</button>
+        <button onclick="logout()" style="background:#f00;">Çıkış</button>
     </div>
-    <div id="modalOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1999;" onclick="closeModal()"></div>
+
+    <!-- Engelle modal -->
+    <div id="blockModal" class="modal">
+        <h3 style="margin-bottom:15px;"><i class="fas fa-ban"></i> Kullanıcı Engelle</h3>
+        <input type="text" id="blockUser" placeholder="Kullanıcı adı">
+        <button onclick="blockUser()">Engelle</button>
+    </div>
+
+    <div id="modalOverlay" class="modal-overlay" onclick="closeModal()"></div>
 
     <script>
         // Firebase
@@ -275,31 +311,85 @@
         });
         const db = firebase.database();
 
+        // Yetki seviyeleri
+        const ROLES = { 'owner': 5, 'admin': 4, 'coadmin': 3, 'operator': 2, 'user': 1 };
+
         let user = null;
         let channel = 'genel';
         let currentMedia = 'youtube';
         let ytPlayer = null;
+        let blockedUsers = JSON.parse(localStorage.getItem('blocked') || '[]');
 
         // Giriş
         function login() {
             const nick = document.getElementById('nick').value.trim();
             const pass = document.getElementById('pass').value.trim();
             if (!nick) return alert('Nick girin');
-            if (nick === 'MateKy' && pass !== 'Sahi17407@SCM') return alert('Şifre hatalı');
 
-            user = { name: nick, role: nick === 'MateKy' ? 'owner' : 'user' };
+            let role = 'user';
+            if (nick === 'MateKy') {
+                if (pass !== 'Sahi17407@SCM') return alert('Şifre hatalı');
+                role = 'owner';
+            }
+
+            user = {
+                name: nick,
+                role: role,
+                roleLevel: ROLES[role],
+                password: pass,
+                avatar: null
+            };
             localStorage.setItem('user', JSON.stringify(user));
             
             document.getElementById('login').style.display = 'none';
             document.getElementById('app').style.display = 'flex';
-            document.getElementById('profileAvatar').innerText = nick[0];
+            updateAvatar();
             
-            db.ref(`online/${channel}/${user.name}`).set({ name: user.name });
+            db.ref(`online/${channel}/${user.name}`).set({ name: user.name, role: user.role });
             listenMessages();
             listenOnline();
             initYouTube();
             loadPlaylists();
+            updateMediaButtons();
             showChannels();
+        }
+
+        // Avatar
+        function updateAvatar() {
+            if (user.avatar) {
+                document.getElementById('profileAvatar').innerHTML = `<img src="${user.avatar}">`;
+            } else {
+                document.getElementById('profileAvatar').innerText = user.name[0];
+            }
+        }
+
+        function previewAvatar(input) {
+            if (!input.files || !input.files[0]) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('avatarPreview').src = e.target.result;
+                document.getElementById('avatarPreview').style.display = 'block';
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+
+        // Yetki kontrolü
+        function hasPermission(requiredRole) {
+            if (!user) return false;
+            if (user.role === 'owner') return true;
+            if (user.role === 'admin') return requiredRole !== 'owner';
+            if (user.role === 'coadmin') return requiredRole === 'coadmin' || requiredRole === 'operator' || requiredRole === 'user';
+            if (user.role === 'operator') return requiredRole === 'operator' || requiredRole === 'user';
+            return false;
+        }
+
+        function updateMediaButtons() {
+            const addBtn = document.getElementById('addMediaBtn');
+            if (hasPermission('coadmin')) {
+                addBtn.classList.remove('disabled');
+            } else {
+                addBtn.classList.add('disabled');
+            }
         }
 
         // YouTube
@@ -384,12 +474,13 @@
 
         // Modal
         function openAddModal() {
+            if (!hasPermission('coadmin')) return alert('Yetkiniz yok!');
             document.getElementById('addModal').style.display = 'block';
             document.getElementById('modalOverlay').style.display = 'block';
         }
 
         function closeModal() {
-            document.getElementById('addModal').style.display = 'none';
+            document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
             document.getElementById('modalOverlay').style.display = 'none';
         }
 
@@ -439,9 +530,15 @@
         }
 
         function addMessage(msg) {
+            let roleIcon = '';
+            if (msg.role === 'owner') roleIcon = '👑 ';
+            else if (msg.role === 'admin') roleIcon = '⚡ ';
+            else if (msg.role === 'coadmin') roleIcon = '🔧 ';
+            else if (msg.role === 'operator') roleIcon = '🛠️ ';
+
             const div = document.createElement('div');
             div.className = `message${msg.sender === user.name ? ' right' : ''}`;
-            div.innerHTML = `<small>${msg.sender}</small><br>${msg.text}`;
+            div.innerHTML = `<small>${roleIcon}${msg.sender}</small><br>${msg.text}`;
             document.getElementById('messages').appendChild(div);
             div.scrollIntoView();
         }
@@ -453,6 +550,7 @@
 
             db.ref('messages').push({
                 sender: user.name,
+                role: user.role,
                 text: text,
                 channel: channel,
                 timestamp: Date.now()
@@ -477,7 +575,7 @@
             channel = ch;
             document.getElementById('currentChannel').innerText = ch;
             document.getElementById('messages').innerHTML = '';
-            db.ref(`online/${ch}/${user.name}`).set({ name: user.name });
+            db.ref(`online/${ch}/${user.name}`).set({ name: user.name, role: user.role });
             showChannels();
         }
 
@@ -500,9 +598,13 @@
                 const users = data.val() || {};
                 let html = '';
                 for (let name in users) {
+                    let roleIcon = '';
+                    if (users[name].role === 'owner') roleIcon = '👑 ';
+                    else if (users[name].role === 'admin') roleIcon = '⚡ ';
+                    
                     html += `<div class="online-item" onclick="openPrivate('${name}')">
                         <div class="online-avatar">${name[0]}</div>
-                        <div><span class="online-status"></span> ${name}</div>
+                        <div><span class="online-status"></span> ${roleIcon}${name}</div>
                     </div>`;
                 }
                 document.getElementById('leftPanelContent').innerHTML = html || '<div style="padding:20px;">Kimse yok</div>';
@@ -516,7 +618,12 @@
                         ${user.name[0]}
                     </div>
                     <h3>${user.name}</h3>
-                    <p>${user.role === 'owner' ? '👑 Owner' : '👤 User'}</p>
+                    <p>${user.role === 'owner' ? '👑 Owner' : 
+                         user.role === 'admin' ? '⚡ Admin' : 
+                         user.role === 'coadmin' ? '🔧 Co-Admin' : 
+                         user.role === 'operator' ? '🛠️ Operator' : '👤 User'}</p>
+                    <button onclick="openProfileModal()" style="margin:5px; padding:8px; background:#00f; border:none; color:#fff; border-radius:5px;">Profili Düzenle</button>
+                    <button onclick="openBlockModal()" style="margin:5px; padding:8px; background:#ff0; border:none; color:#000; border-radius:5px;">Engelle</button>
                     <button onclick="logout()" style="margin-top:20px; padding:8px 20px; background:#f00; border:none; color:#fff; border-radius:5px; cursor:pointer;">Çıkış</button>
                 </div>
             `;
@@ -524,6 +631,8 @@
 
         function openPrivate(name) {
             if (name === user.name) return;
+            if (blockedUsers.includes(name)) return alert('Bu kullanıcıyı engellediniz');
+            
             const msg = prompt(`${name} ile özel mesaj:`, '');
             if (msg) addSystemMessage(`📨 ${user.name} → ${name}: ${msg}`);
         }
@@ -537,6 +646,41 @@
             document.getElementById('messages').appendChild(div);
         }
 
+        // Profil işlemleri
+        function openProfileModal() {
+            document.getElementById('profileModal').style.display = 'block';
+            document.getElementById('modalOverlay').style.display = 'block';
+        }
+
+        function updateProfile() {
+            const newNick = document.getElementById('newNick').value.trim();
+            const newPass = document.getElementById('newPass').value.trim();
+            const avatar = document.getElementById('avatarPreview').src;
+
+            if (newNick) user.name = newNick;
+            if (newPass) user.password = newPass;
+            if (avatar && avatar !== '') user.avatar = avatar;
+
+            localStorage.setItem('user', JSON.stringify(user));
+            updateAvatar();
+            closeModal();
+            alert('Profil güncellendi');
+        }
+
+        function openBlockModal() {
+            document.getElementById('blockModal').style.display = 'block';
+            document.getElementById('modalOverlay').style.display = 'block';
+        }
+
+        function blockUser() {
+            const name = document.getElementById('blockUser').value.trim();
+            if (!name) return alert('İsim girin');
+            if (!blockedUsers.includes(name)) blockedUsers.push(name);
+            localStorage.setItem('blocked', JSON.stringify(blockedUsers));
+            closeModal();
+            alert(name + ' engellendi');
+        }
+
         function logout() {
             db.ref(`online/${channel}/${user.name}`).remove();
             localStorage.removeItem('user');
@@ -547,14 +691,16 @@
         const saved = localStorage.getItem('user');
         if (saved) {
             user = JSON.parse(saved);
+            blockedUsers = JSON.parse(localStorage.getItem('blocked') || '[]');
             document.getElementById('login').style.display = 'none';
             document.getElementById('app').style.display = 'flex';
-            document.getElementById('profileAvatar').innerText = user.name[0];
-            db.ref(`online/${channel}/${user.name}`).set({ name: user.name });
+            updateAvatar();
+            db.ref(`online/${channel}/${user.name}`).set({ name: user.name, role: user.role });
             listenMessages();
             listenOnline();
             initYouTube();
             loadPlaylists();
+            updateMediaButtons();
             showChannels();
         }
     </script>
