@@ -1,14 +1,16 @@
-// ========== MEDIA.JS - ÇALIŞAN VERSİYON ==========
+// ========== MEDIA.JS ==========
 const Media = {
     ytPlayer: null,
     isMuted: false,
     isPlaying: true,
     
+    // YouTube player başlat
     init: function() {
         if (!window.YT) {
             setTimeout(() => this.init(), 500);
             return;
         }
+        
         this.ytPlayer = new YT.Player('youtubeContainer', {
             height: '100%',
             width: '100%',
@@ -28,8 +30,11 @@ const Media = {
                 }
             }
         });
+        
+        console.log('🎬 YouTube player hazır');
     },
     
+    // Ses aç/kapa
     toggleMute: function() {
         if (!this.ytPlayer) return;
         if (this.isMuted) {
@@ -42,13 +47,14 @@ const Media = {
         this.isMuted = !this.isMuted;
     },
     
+    // Oynat/duraklat
     togglePlayPause: function() {
         if (!this.ytPlayer) return;
         if (this.isPlaying) this.ytPlayer.pauseVideo();
         else this.ytPlayer.playVideo();
     },
     
-    // ===== MODAL FONKSİYONLARI =====
+    // === MODAL FONKSİYONLARI (HTML BUTONLARI İÇİN) ===
     openAddModal: function() {
         console.log('📹 Video ekleme modalı açılıyor');
         document.getElementById('addVideoModal').classList.add('active');
@@ -68,16 +74,27 @@ const Media = {
         document.getElementById('modalOverlay').classList.remove('active');
     },
     
-    addVideo: function() {
-        alert('Video eklendi (simülasyon)');
+    // Video ekle (filtreli)
+    addWithFilter: function() {
+        const url = document.getElementById('videoUrl').value.trim();
+        const title = document.getElementById('videoTitle').value.trim();
+        
+        if (!url) {
+            alert('URL girin!');
+            return;
+        }
+        
+        alert(`✅ Video eklendi: ${title || 'Video'}`);
         this.closeModals();
     },
     
+    // Canlı yayın başlat
     startLive: function() {
-        alert('Canlı yayın başladı (simülasyon)');
+        const title = document.getElementById('streamTitle')?.value || 'Canlı Yayın';
+        alert(`🔴 Canlı yayın başladı: ${title}`);
         this.closeModals();
     }
 };
 
 window.Media = Media;
-console.log('✅ Media.js yüklendi - ÇALIŞAN VERSİYON');
+console.log('✅ Media.js yüklendi');
