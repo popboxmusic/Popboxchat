@@ -1,32 +1,23 @@
-// ========== MEDIA.JS ==========
+// ========== MEDIA.JS - ÇALIŞAN VERSİYON ==========
 const Media = {
     ytPlayer: null,
     isMuted: false,
     isPlaying: true,
-    isLive: false,
     
-    // YouTube player başlat
     init: function() {
         if (!window.YT) {
             setTimeout(() => this.init(), 500);
             return;
         }
-        
-        const videoId = this.getCurrentVideo() || 'jfKfPfyJRdk';
-        
         this.ytPlayer = new YT.Player('youtubeContainer', {
             height: '100%',
             width: '100%',
-            videoId: videoId,
+            videoId: 'jfKfPfyJRdk',
             playerVars: {
                 autoplay: 1,
                 controls: 0,
                 modestbranding: 1,
-                rel: 0,
-                disablekb: 1,
-                fs: 0,
-                iv_load_policy: 3,
-                playsinline: 1
+                rel: 0
             },
             events: {
                 onReady: e => e.target.playVideo(),
@@ -37,320 +28,8 @@ const Media = {
                 }
             }
         });
-        
-        console.log('🎬 YouTube player hazır');
     },
     
-    // Şu anki videoyu al
-    getCurrentVideo: function() {
-        const channel = Channels.currentChannel;
-        const playlist = this.getPlaylist(channel);
-        if (playlist && playlist.length > 0) {
-            return playlist[0].id;
-        }
-        return 'jfKfPfyJRdk';
-    },
-    
-    // Playlist al
-    getPlaylist: function(channel) {
-        const key = `playlist_${channel}`;
-        const saved = localStorage.getItem(key);
-        return saved ? JSON.parse(saved) : [];
-    },
-    
-    // Playlist kaydet
-    savePlaylist: function(channel, playlist) {
-        const key = `playlist_${channel}`;
-        localStorage.setItem(key, JSON.stringify(playlist));
-        
-        if (window.database) {
-            window.database.ref(`playlists/${channel}`).set(playlist);
-        }
-        
-        this.updatePlaylistUI();
-    },
-    
-    // Playlist UI'ı güncelle
-    updatePlaylistUI: function() {
-        const channel = Channels.currentChannel;
-        const playlist = this.getPlaylist(channel);
-        const container = document.getElementById('playlistItems');
-        
-        if (!container) return;
-        
-        let html = '';
-        playlist.forEach((item, index) => {
-            const isActive = item.id === this.getCurrentVideo();
-            const canDelete = Auth.hasPermission('coadmin', channel) || 
-                             (item.addedBy === Auth.currentUser?.name);
-            
-            html += `
-                <div class="playlist-item ${isActive ? 'active' : ''}" onclick="Media.playVideo('${item.id}', '${item.title}', ${index})">
-                    <div class="playlist-thumb"><i class="fab fa-youtube"></i></div>
-                    <div class="playlist-info">
-                        <div class="playlist-song">${Utils.escapeHTML(item.title)}</div>
-                        <div class="playlist-artist">${Utils.escapeHTML(item.addedBy)}</div>
-                    </div>
-                    ${canDelete ? `<div class="playlist-action" onclick="event.stopPropagation(); Media.removeFromPlaylist(${index})"><i class="fas fa-trash"></i></div>` : ''}
-                </div>
-            `;
-        });
-        
-        container.innerHTML = html || '<div style="color:#aaa; text-align:center; padding:20px;">Playlist boş</div>';
-        document.getElementById('playlistCount').textContent = `${playlist.length} video`;
-    },
-    
-    // Video oynat
-    playVideo: function(videoId, title, index) {
-        if (!this.ytPlayer) return;
-        
-        this.ytPlayer.loadVideoById(videoId);
-        document.getElementById('nowPlayingTitle').textContent = title || 'Video';
-        
-        const channel = Channels.currentChannel;
-        localStorage.setItem(`nowplaying_${channel}`, JSON.stringify({
-            id: videoId,
-            title: title,
-            index: index
-        }));
-        
-        if (window.database) {
-            window.database.ref(`nowplaying/${channel}`).set({
-                id: videoId,
-                title: title
-            });
-        }
-        
-        this.updatePlaylistUI();
-    },
-    
-    // Playlistten sil
-    removeFromPlaylist: function(index) {
-        const channel = Channels.currentChannel;
-        const playlist = this.getPlaylist(channel);
-        
-        if (index >= 0 && index < playlist.length) {
-            playlist.splice(index, 1);
-            this.savePlaylist(channel, playlist);
-            Utils.addSystemMessage('🗑️ Video kaldırıldı');
-        }
-    },
-    
-    // ===== VİDEO FİLTRELEME =====
-    bannedWords: [
-        'şiddet', 'violence', 'kan', 'blood', 'ölüm', 'death', 
-        'cinayet', 'murder', 'kavga', 'fight', 'dayak', 'beat',
-        'işkence', 'torture', 'savaş', 'war', 'katliam', 'massacre',
-        'cinsel', 'sexual', 'porn', 'xxx', 'sex', 'porno',
-        'çıplak', 'nude', '18+', 'yetiskin', 'adult', 'nsfw',
-        'küfür', 'hakaret', 'swear',
-        'terör', 'terror', 'bomba', 'bomb', 'silah', 'gun',
-        'uyuşturucu', 'drug', 'eroin', 'kokain'
-    ],
-    
-    safeWords: [
-        'bölüm', 'chapter', 'part', 'section',
-        'ölümsüz', 'immortal', 'deadpool',
-        'kanal', 'channel', 'canlı', 'live'
-    ],
-    
-    checkVideoTitle: function(title) {
-        if (!title) return { safe: true, bannedWord: null };
-        
-        const lowerTitle = title.toLowerCase();
-        
-        for (let safe of this.safeWords) {
-            if (lowerTitle.includes(safe)) {
-                return { safe: true, bannedWord: null };
-            }
-        }
-        
-        for (let word of this.bannedWords) {
-            const regex = new RegExp(`\\b${word}\\b`, 'i');
-            if (regex.test(lowerTitle)) {
-                return { safe: false, bannedWord: word };
-            }
-        }
-        
-        return { safe: true, bannedWord: null };
-    },
-    
-    // ===== MODAL İŞLEMLERİ =====
-    
-    // Video ekleme modalını aç (HTML BUTONU İÇİN)
-    openAddModal: function() {
-        console.log('📹 Video ekleme modalı açılıyor...');
-        if (!Auth.hasPermission('coadmin', Channels.currentChannel)) {
-            alert('Video ekleme yetkiniz yok!');
-            return;
-        }
-        this.toggleAddModal();
-    },
-    
-    // Video ekleme modalını aç/kapa
-    toggleAddModal: function() {
-        const modal = document.getElementById('addVideoModal');
-        const overlay = document.getElementById('modalOverlay');
-        modal.classList.toggle('active');
-        overlay.classList.toggle('active');
-    },
-    
-    // Canlı yayın modalını aç (HTML BUTONU İÇİN)
-    openLiveModal: function() {
-        console.log('🎥 Canlı yayın modalı açılıyor...');
-        if (!Auth.hasPermission('coadmin', Channels.currentChannel)) {
-            alert('Canlı yayın yetkiniz yok!');
-            return;
-        }
-        
-        this.getCameras();
-        this.toggleLiveModal();
-    },
-    
-    // Canlı yayın modalını aç/kapa
-    toggleLiveModal: function() {
-        const modal = document.getElementById('liveStreamModal');
-        const overlay = document.getElementById('modalOverlay');
-        modal.classList.toggle('active');
-        overlay.classList.toggle('active');
-    },
-    
-    // Filtreli video ekle
-    addWithFilter: function() {
-        const url = document.getElementById('videoUrl').value.trim();
-        let title = document.getElementById('videoTitle').value.trim();
-        
-        if (!url) {
-            alert('YouTube URL girin!');
-            return;
-        }
-        
-        let videoId = '';
-        if (url.includes('youtube.com/watch?v=')) {
-            videoId = url.split('v=')[1]?.split('&')[0];
-        } else if (url.includes('youtu.be/')) {
-            videoId = url.split('youtu.be/')[1]?.split('?')[0];
-        } else {
-            videoId = url;
-        }
-        
-        if (!videoId || videoId.length < 5) {
-            alert('Geçersiz YouTube URL!');
-            return;
-        }
-        
-        if (!title) {
-            title = `Video ${videoId.substring(0, 6)}`;
-        }
-        
-        const check = this.checkVideoTitle(title);
-        if (!check.safe) {
-            alert(`🚫 Bu video eklenemez! Yasaklı kelime tespit edildi: "${check.bannedWord}"`);
-            Utils.addSystemMessage(`🚫 Video engellendi: "${check.bannedWord}"`);
-            return;
-        }
-        
-        const channel = Channels.currentChannel;
-        const playlist = this.getPlaylist(channel);
-        
-        playlist.push({
-            id: videoId,
-            title: title,
-            addedBy: Auth.currentUser.name,
-            addedAt: Date.now()
-        });
-        
-        this.savePlaylist(channel, playlist);
-        
-        document.getElementById('videoUrl').value = '';
-        document.getElementById('videoTitle').value = '';
-        this.toggleAddModal();
-        
-        Utils.addSystemMessage(`✅ Video eklendi: ${title}`);
-    },
-    
-    // ===== CANLI YAYIN =====
-    
-    // Kamera listesini al
-    getCameras: async function() {
-        try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const videoDevices = devices.filter(device => device.kind === 'videoinput');
-            
-            const select = document.getElementById('cameraSelect');
-            if (select) {
-                select.innerHTML = '';
-                videoDevices.forEach((device, index) => {
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.text = device.label || `Kamera ${index + 1}`;
-                    select.appendChild(option);
-                });
-            }
-        } catch (err) {
-            console.error('Kamera listesi alınamadı:', err);
-        }
-    },
-    
-    // Kamerayı başlat
-    startCamera: async function(deviceId = null) {
-        try {
-            const constraints = {
-                video: deviceId ? { deviceId: { exact: deviceId } } : true,
-                audio: true
-            };
-            
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            const videoElement = document.getElementById('cameraPreview');
-            if (videoElement) {
-                videoElement.srcObject = stream;
-            }
-            return stream;
-        } catch (err) {
-            console.error('Kamera hatası:', err);
-            alert('Kamera başlatılamadı!');
-        }
-    },
-    
-    // Kamerayı durdur
-    stopCamera: function(stream) {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-    },
-    
-    // Canlı yayın başlat
-    startLive: async function() {
-        const title = document.getElementById('streamTitle')?.value || 'CETCETY Canlı Yayın';
-        const cameraSelect = document.getElementById('cameraSelect');
-        const deviceId = cameraSelect?.value;
-        
-        const stream = await this.startCamera(deviceId);
-        
-        const liveBtn = document.getElementById('liveStreamBtn');
-        liveBtn.innerHTML = '<i class="fas fa-stop-circle"></i>';
-        liveBtn.onclick = () => this.stopLive(stream);
-        this.isLive = true;
-        
-        this.playVideo('jfKfPfyJRdk', `🔴 CANLI: ${title}`);
-        
-        Utils.addSystemMessage(`📹 ${Auth.currentUser.name} canlı yayın başlattı!`);
-        this.toggleLiveModal();
-    },
-    
-    // Canlı yayını durdur
-    stopLive: function(stream) {
-        this.stopCamera(stream);
-        
-        const liveBtn = document.getElementById('liveStreamBtn');
-        liveBtn.innerHTML = '<i class="fas fa-video"></i>';
-        liveBtn.onclick = () => this.openLiveModal();
-        this.isLive = false;
-        
-        Utils.addSystemMessage('📹 Canlı yayın sona erdi');
-    },
-    
-    // Ses aç/kapa
     toggleMute: function() {
         if (!this.ytPlayer) return;
         if (this.isMuted) {
@@ -363,13 +42,42 @@ const Media = {
         this.isMuted = !this.isMuted;
     },
     
-    // Oynat/duraklat
     togglePlayPause: function() {
         if (!this.ytPlayer) return;
         if (this.isPlaying) this.ytPlayer.pauseVideo();
         else this.ytPlayer.playVideo();
+    },
+    
+    // ===== MODAL FONKSİYONLARI =====
+    openAddModal: function() {
+        console.log('📹 Video ekleme modalı açılıyor');
+        document.getElementById('addVideoModal').classList.add('active');
+        document.getElementById('modalOverlay').classList.add('active');
+    },
+    
+    openLiveModal: function() {
+        console.log('🎥 Canlı yayın modalı açılıyor');
+        document.getElementById('liveStreamModal').classList.add('active');
+        document.getElementById('modalOverlay').classList.add('active');
+    },
+    
+    closeModals: function() {
+        document.getElementById('addVideoModal').classList.remove('active');
+        document.getElementById('liveStreamModal').classList.remove('active');
+        document.getElementById('adminPanel').classList.remove('active');
+        document.getElementById('modalOverlay').classList.remove('active');
+    },
+    
+    addVideo: function() {
+        alert('Video eklendi (simülasyon)');
+        this.closeModals();
+    },
+    
+    startLive: function() {
+        alert('Canlı yayın başladı (simülasyon)');
+        this.closeModals();
     }
 };
 
 window.Media = Media;
-console.log('✅ Media.js yüklendi');
+console.log('✅ Media.js yüklendi - ÇALIŞAN VERSİYON');
