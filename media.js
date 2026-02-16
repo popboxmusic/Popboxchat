@@ -53,7 +53,23 @@ const Media = {
         if (this.isPlaying) this.ytPlayer.pauseVideo();
         else this.ytPlayer.playVideo();
     },
+        // === MODAL FONKSİYONLARI ===
+    openAddModal: function() {
+        document.getElementById('addVideoModal').classList.add('active');
+        document.getElementById('modalOverlay').classList.add('active');
+    },
     
+    openLiveModal: function() {
+        document.getElementById('liveStreamModal').classList.add('active');
+        document.getElementById('modalOverlay').classList.add('active');
+    },
+    
+    closeModals: function() {
+        document.getElementById('addVideoModal').classList.remove('active');
+        document.getElementById('liveStreamModal').classList.remove('active');
+        document.getElementById('adminPanel').classList.remove('active');
+        document.getElementById('modalOverlay').classList.remove('active');
+    },
     // === MODAL FONKSİYONLARI (HTML BUTONLARI İÇİN) ===
     openAddModal: function() {
         console.log('📹 Video ekleme modalı açılıyor');
