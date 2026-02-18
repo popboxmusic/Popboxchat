@@ -1150,7 +1150,7 @@
     </div>
 
     <script>
-        // ========== MODAL FONKSİYONLARI (KVKK ve Terms) ==========
+        // ========== MODAL FONKSİYONLARI ==========
         function openKvkkModal() {
             document.getElementById('kvkkModal').classList.add('active');
         }
@@ -1161,70 +1161,8 @@
             document.getElementById(modalId).classList.remove('active');
         }
 
-        // ========== MOBİL PANEL KONTROLÜ ==========
-        let currentActivePanel = null;
-
-        function togglePanel(panelName) {
-            // YouTube panelini özel olarak yönet
-            if (panelName === 'youtube') {
-                const youtubePanel = document.getElementById('youtubePanel');
-                youtubePanel.classList.toggle('active');
-                if (youtubePanel.classList.contains('active')) {
-                    // YouTube paneli açıldığında diğer panelleri kapat
-                    closeLeftPanel();
-                    initYouTubePlayerIfNeeded();
-                }
-                return;
-            }
-
-            // Diğer paneller için left paneli kullan
-            const leftPanel = document.getElementById('leftPanel');
-            if (currentActivePanel === panelName) {
-                leftPanel.classList.remove('active');
-                currentActivePanel = null;
-            } else {
-                loadLeftPanel(panelName);
-                leftPanel.classList.add('active');
-                currentActivePanel = panelName;
-            }
-
-            // YouTube panelini kapat
-            document.getElementById('youtubePanel').classList.remove('active');
-        }
-
-        function closeLeftPanel() {
-            document.getElementById('leftPanel').classList.remove('active');
-            currentActivePanel = null;
-        }
-
-        // ========== GLOBAL ==========
-        let ytPlayer = null;
-        let ytPlayerReady = false;
-        let isMuted = false;
-        let isPlaying = true;
-        let USERS_DB = JSON.parse(localStorage.getItem('cetcety_users')) || [];
-        let ACTIVE_USER = null;
-        let BLOCKED_USERS = JSON.parse(localStorage.getItem('cetcety_blocks')) || {};
-        let PRIVATE_CHATS = JSON.parse(localStorage.getItem('cetcety_private_chats')) || {};
-        let BANNED_WORDS = JSON.parse(localStorage.getItem('cetcety_banned_words')) || ['spam', 'reklam', 'şiddet', 'hakaret'];
-        let CUSTOM_COMMANDS = JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
-        let CHANNEL_MESSAGES = JSON.parse(localStorage.getItem('cetcety_channel_messages')) || {};
-
-        // Owner özel mesaj takip
-        let PRIVATE_SPY_CHANNELS = JSON.parse(localStorage.getItem('cetcety_private_spy')) || {};
-        let PRIVATE_SPY_ACTIVE = false;
-        let PRIVATE_SPY_CURRENT_CHANNEL = null;
-
-        // Süper gizli kanallar
-        let SUPER_HIDDEN_CHANNELS = JSON.parse(localStorage.getItem('cetcety_super_hidden')) || [];
-
-        let currentPrivateChat = null;
-        let currentChannel = 'genel';
-
-        const OWNER_PASSWORD = 'Sahi17407@SCM';
-
-        // KANALLAR
-        let channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {
+        // ========== GLOBAL DEĞİŞKENLER ==========
+        let channels = {
             'genel': { 
                 name:'genel', 
                 owner:'MateKy', 
@@ -1240,7 +1178,7 @@
                     currentArtist:'MateKy', 
                     playlist:[{id:'jfKfPfyJRdk', title:'CETCETY Radio', addedBy:'MateKy', role:'owner'}]
                 },
-                onlineUsers:[]
+                onlineUsers:['MateKy']
             },
             'admin': { 
                 name:'admin', 
@@ -1260,59 +1198,662 @@
                 onlineUsers:[]
             }
         };
+        
+        let ACTIVE_USER = null;
+        let currentChannel = 'genel';
+        let currentPrivateChat = null;
+        let ytPlayer = null;
+        let isMuted = false;
+        let isPlaying = true;
+        const OWNER_PASSWORD = 'Sahi17407@SCM';
 
-        // ... (diğer tüm JavaScript kodları aynen kalacak) ...
-
-        // NOT: Yukarıdaki JavaScript kodlarının tamamı (tüm fonksiyonlar) aynen kalacak.
-        // Sadece CSS ve HTML yapısı mobil için optimize edildi.
-        // JavaScript kodları buraya eklenecek (mevcut JS kodlarının tamamı)
-
-        // ========== BAŞLANGIÇ ==========
-        document.addEventListener('DOMContentLoaded', function() {
-            ACTIVE_USER = JSON.parse(localStorage.getItem('cetcety_active_user'));
-            if (ACTIVE_USER) {
-                if (!channels.genel.onlineUsers.includes(ACTIVE_USER.name)) {
-                    channels.genel.onlineUsers.push(ACTIVE_USER.name);
-                    saveChannels();
-                }
-                document.getElementById('loginOverlay').classList.add('hidden');
-                document.getElementById('app').style.display = 'flex';
-                updateUIForUser();
-                loadLeftPanel('subscriptions');
-                updateAllBadges();
-                updateMediaDisplay();
-                addSystemMessage(`👋 Tekrar hoş geldin, ${ACTIVE_USER.name}!`);
-                
-                if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
-                    if (!ACTIVE_USER.subscribedChannels.includes('admin')) ACTIVE_USER.subscribedChannels.push('admin');
-                    if (!channels.admin.onlineUsers.includes(ACTIVE_USER.name)) channels.admin.onlineUsers.push(ACTIVE_USER.name);
-                    saveChannels();
-                }
-                
-                if (ACTIVE_USER.role === 'owner') {
-                    checkPrivateSpyStatus();
-                }
-                
-                if (typeof YT === 'undefined' || !YT.Player) {
-                    let tag = document.createElement('script');
-                    tag.src = 'https://www.youtube.com/iframe_api';
-                    let firstScriptTag = document.getElementsByTagName('script')[0];
-                    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-                } else {
-                    initYouTubePlayer();
-                }
-            } else {
-                document.getElementById('loginOverlay').classList.remove('hidden');
-                document.getElementById('app').style.display = 'none';
+        // ========== GİRİŞ FONKSİYONU ==========
+        function handleLogin() {
+            const nick = document.getElementById('loginNick').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            
+            if (!nick) {
+                alert('Kullanıcı adı giriniz!');
+                return;
             }
-        });
 
-        // YouTube player'ı başlat (gerektiğinde)
+            // Owner kontrolü
+            let role = 'user';
+            if (nick === 'MateKy' && password === OWNER_PASSWORD) {
+                role = 'owner';
+            } else if (nick === 'Admin' && password === 'admin123') {
+                role = 'admin';
+            }
+
+            // Kullanıcıyı oluştur
+            ACTIVE_USER = {
+                name: nick,
+                role: role,
+                subscribedChannels: ['genel'],
+                avatar: null,
+                password: password || null
+            };
+
+            // Kullanıcıyı kanala ekle
+            if (!channels.genel.onlineUsers.includes(nick)) {
+                channels.genel.onlineUsers.push(nick);
+                channels.genel.online = channels.genel.onlineUsers.length;
+            }
+
+            // LocalStorage'a kaydet
+            localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+            localStorage.setItem('cetcety_channels', JSON.stringify(channels));
+
+            // Giriş ekranını gizle, uygulamayı göster
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.getElementById('app').style.display = 'flex';
+
+            // UI'ı güncelle
+            updateUIForUser();
+            addSystemMessage(`👋 Hoş geldin, ${nick}!`);
+        }
+
+        // ========== YARDIMCI FONKSİYONLAR ==========
+        function updateUIForUser() {
+            document.getElementById('currentChannelName').textContent = currentChannel;
+            document.getElementById('channelUserCount').textContent = channels[currentChannel]?.online || 1;
+            
+            // Mobil avatar güncelle
+            if (ACTIVE_USER?.avatar) {
+                document.getElementById('mobileAvatarImage').src = ACTIVE_USER.avatar;
+                document.getElementById('mobileAvatarImage').style.display = 'block';
+                document.getElementById('mobileAvatarText').style.display = 'none';
+            } else {
+                document.getElementById('mobileAvatarText').textContent = ACTIVE_USER?.name?.charAt(0).toUpperCase() || '?';
+            }
+        }
+
+        function addSystemMessage(text) {
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'system-message';
+            msgDiv.innerHTML = `<i class="fas fa-info-circle"></i> ${text}`;
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = (textarea.scrollHeight) + 'px';
+        }
+
+        // ========== MOBİL PANEL FONKSİYONLARI ==========
+        let currentActivePanel = null;
+
+        function togglePanel(panelName) {
+            if (panelName === 'youtube') {
+                const youtubePanel = document.getElementById('youtubePanel');
+                youtubePanel.classList.toggle('active');
+                if (youtubePanel.classList.contains('active')) {
+                    closeLeftPanel();
+                    initYouTubePlayerIfNeeded();
+                }
+                return;
+            }
+
+            const leftPanel = document.getElementById('leftPanel');
+            if (currentActivePanel === panelName) {
+                leftPanel.classList.remove('active');
+                currentActivePanel = null;
+            } else {
+                loadLeftPanel(panelName);
+                leftPanel.classList.add('active');
+                currentActivePanel = panelName;
+            }
+
+            document.getElementById('youtubePanel').classList.remove('active');
+        }
+
+        function closeLeftPanel() {
+            document.getElementById('leftPanel').classList.remove('active');
+            currentActivePanel = null;
+        }
+
+        function loadLeftPanel(panelName) {
+            const leftPanel = document.getElementById('leftPanel');
+            let content = '';
+            
+            if (panelName === 'profile') {
+                content = `
+                    <div class="panel-header">
+                        <span><i class="fas fa-user"></i> Profil</span>
+                        <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="panel-content">
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <div class="profile-avatar-panel" style="margin: 0 auto;">
+                                ${ACTIVE_USER?.avatar ? `<img src="${ACTIVE_USER.avatar}">` : ACTIVE_USER?.name?.charAt(0).toUpperCase() || '?'}
+                            </div>
+                            <h3 style="margin-top: 10px;">${ACTIVE_USER?.name}</h3>
+                            <span class="badge badge-${ACTIVE_USER?.role}">${ACTIVE_USER?.role}</span>
+                        </div>
+                        
+                        <div class="form-group">
+                            <button class="form-button" onclick="openAvatarModal()"><i class="fas fa-camera"></i> Profil Resmi Yükle</button>
+                        </div>
+                        
+                        ${ACTIVE_USER?.role === 'owner' ? `
+                            <div style="margin-top: 20px;">
+                                <h4>Owner Kontrolleri</h4>
+                                <button class="form-button secondary" onclick="togglePrivateSpy()"><i class="fas fa-eye"></i> Özel Sohbet Takip</button>
+                                <button class="form-button secondary" onclick="showBannedWords()"><i class="fas fa-ban"></i> Yasaklı Kelimeler</button>
+                            </div>
+                        ` : ''}
+                        
+                        <button class="form-button danger" onclick="logout()" style="margin-top: 20px;"><i class="fas fa-sign-out-alt"></i> Çıkış Yap</button>
+                    </div>
+                `;
+            } else if (panelName === 'channels') {
+                content = `
+                    <div class="panel-header">
+                        <span><i class="fas fa-list-ul"></i> Kanallar</span>
+                        <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="panel-tabs">
+                        <div class="panel-tab active" onclick="switchChannelTab('all')">Tüm Kanallar</div>
+                        <div class="panel-tab" onclick="switchChannelTab('hidden')">Gizli</div>
+                    </div>
+                    <div class="panel-content" id="channelsList">
+                        ${Object.keys(channels).map(channelName => {
+                            const channel = channels[channelName];
+                            if (channel.isSuperHidden && ACTIVE_USER?.role !== 'owner') return '';
+                            return `
+                                <div class="channel-item" onclick="joinChannel('${channelName}')">
+                                    <div class="channel-avatar">#</div>
+                                    <div class="channel-info">
+                                        <div class="channel-name">
+                                            ${channelName}
+                                            ${channel.isSuperHidden ? '<span class="badge badge-super-hidden">SÜPER GİZLİ</span>' : ''}
+                                            ${channel.isHidden ? '<span class="badge badge-hidden">GİZLİ</span>' : ''}
+                                        </div>
+                                        <div class="channel-meta">
+                                            <span><i class="fas fa-user"></i> ${channel.online || 0}</span>
+                                            <span><i class="fas fa-star"></i> ${channel.owner}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            } else if (panelName === 'chatlist') {
+                content = `
+                    <div class="panel-header">
+                        <span><i class="fas fa-comment"></i> Sohbetler</span>
+                        <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="panel-content">
+                        <div class="search-container">
+                            <i class="fas fa-search"></i>
+                            <input type="text" class="search-input" placeholder="Kullanıcı ara...">
+                        </div>
+                        <div id="onlineUsersList">
+                            ${channels[currentChannel]?.onlineUsers?.map(user => `
+                                <div class="online-item" onclick="startPrivateChat('${user}')">
+                                    <div class="online-avatar">${user.charAt(0).toUpperCase()}</div>
+                                    <div class="online-info">
+                                        <div class="online-name">
+                                            ${user}
+                                            <span class="online-status"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('') || ''}
+                        </div>
+                    </div>
+                `;
+            } else if (panelName === 'subscriptions') {
+                content = `
+                    <div class="panel-header">
+                        <span><i class="fas fa-bell"></i> Bildirimler</span>
+                        <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
+                    </div>
+                    <div class="panel-content">
+                        <div class="info-box">
+                            <p><i class="fas fa-info-circle"></i> Bildirim bulunmuyor.</p>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            leftPanel.innerHTML = content;
+        }
+
+        // ========== CHAT FONKSİYONLARI ==========
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // Mesajı göster
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message right';
+            
+            const time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+            
+            msgDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-sender">${ACTIVE_USER?.name}</span>
+                    <span class="message-time">${time}</span>
+                </div>
+                <div class="message-text">${message}</div>
+            `;
+            
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            // Input'u temizle
+            input.value = '';
+            input.style.height = 'auto';
+        }
+
+        function toggleChannelSubscribe() {
+            const btn = document.getElementById('subscribeChannelBtn');
+            btn.classList.toggle('subscribed');
+            if (btn.classList.contains('subscribed')) {
+                btn.innerHTML = '<i class="fas fa-check"></i>';
+            } else {
+                btn.innerHTML = '<i class="fas fa-plus"></i>';
+            }
+        }
+
+        function joinChannel(channelName) {
+            currentChannel = channelName;
+            document.getElementById('currentChannelName').textContent = channelName;
+            closeLeftPanel();
+            
+            // Kanal mesajlarını temizle ve hoşgeldin mesajı ekle
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = `
+                <div class="system-message"><i class="fas fa-info-circle"></i> #${channelName} kanalına hoş geldin!</div>
+            `;
+        }
+
+        // ========== ÖZEL SOHBET FONKSİYONLARI ==========
+        function startPrivateChat(username) {
+            if (username === ACTIVE_USER?.name) {
+                alert('Kendinizle özel sohbet başlatamazsınız!');
+                return;
+            }
+            
+            currentPrivateChat = username;
+            document.getElementById('privateChatName').textContent = username;
+            document.getElementById('privateChatAvatar').innerHTML = username.charAt(0).toUpperCase();
+            document.getElementById('privateChatPanel').classList.add('active');
+            
+            // Özel sohbet mesajlarını temizle
+            document.getElementById('privateChatMessages').innerHTML = '';
+        }
+
+        function closePrivateChat() {
+            document.getElementById('privateChatPanel').classList.remove('active');
+            currentPrivateChat = null;
+        }
+
+        function sendPrivateMessage() {
+            const input = document.getElementById('privateMessageInput');
+            const message = input.value.trim();
+            
+            if (!message || !currentPrivateChat) return;
+            
+            const messagesDiv = document.getElementById('privateChatMessages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'private-message right';
+            
+            const time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+            
+            msgDiv.innerHTML = `
+                <div class="private-message-header">
+                    <span class="private-message-sender">${ACTIVE_USER?.name}</span>
+                    <span class="private-message-time">${time}</span>
+                </div>
+                <div class="private-message-text">${message}</div>
+            `;
+            
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            input.value = '';
+            input.style.height = 'auto';
+        }
+
+        function blockUser() {
+            if (currentPrivateChat) {
+                alert(`${currentPrivateChat} engellendi.`);
+                closePrivateChat();
+            }
+        }
+
+        function reportUser() {
+            if (currentPrivateChat) {
+                alert(`${currentPrivateChat} şikayet edildi.`);
+            }
+        }
+
+        function switchPrivateTab(tab) {
+            const tabs = document.querySelectorAll('.private-tab');
+            tabs.forEach(t => t.classList.remove('active'));
+            
+            if (tab === 'chat') {
+                tabs[0].classList.add('active');
+            } else {
+                tabs[1].classList.add('active');
+            }
+        }
+
+        // ========== YOUTUBE FONKSİYONLARI ==========
         function initYouTubePlayerIfNeeded() {
             if (!ytPlayer && typeof YT !== 'undefined' && YT.Player) {
                 initYouTubePlayer();
             }
         }
+
+        function initYouTubePlayer() {
+            if (!document.getElementById('youtubeContainer')) return;
+            
+            ytPlayer = new YT.Player('youtubeContainer', {
+                height: '100%',
+                width: '100%',
+                videoId: channels[currentChannel]?.youtube?.currentVideo || 'jfKfPfyJRdk',
+                playerVars: {
+                    'autoplay': 1,
+                    'controls': 0,
+                    'disablekb': 1,
+                    'fs': 0,
+                    'modestbranding': 1,
+                    'rel': 0
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+        }
+
+        function onPlayerReady(event) {
+            ytPlayerReady = true;
+            if (!isMuted) ytPlayer.unMute();
+            else ytPlayer.mute();
+        }
+
+        function onPlayerStateChange(event) {
+            // Video bittiğinde sonraki videoya geç
+            if (event.data === YT.PlayerState.ENDED) {
+                // Playlist varsa sonraki videoyu oynat
+            }
+        }
+
+        function toggleMute() {
+            if (!ytPlayer) return;
+            isMuted = !isMuted;
+            if (isMuted) {
+                ytPlayer.mute();
+                document.getElementById('muteIcon').className = 'fas fa-volume-mute';
+            } else {
+                ytPlayer.unMute();
+                document.getElementById('muteIcon').className = 'fas fa-volume-up';
+            }
+        }
+
+        function togglePlayPause() {
+            if (!ytPlayer) return;
+            if (isPlaying) {
+                ytPlayer.pauseVideo();
+                document.getElementById('playPauseIcon').className = 'fas fa-play';
+            } else {
+                ytPlayer.playVideo();
+                document.getElementById('playPauseIcon').className = 'fas fa-pause';
+            }
+            isPlaying = !isPlaying;
+        }
+
+        function openAddYoutubeModal() {
+            document.getElementById('youtubeModal').classList.add('active');
+        }
+
+        function addYoutubeVideo() {
+            const url = document.getElementById('youtubeUrlInput').value.trim();
+            const title = document.getElementById('youtubeTitleInput').value.trim() || 'Yeni Video';
+            
+            if (!url) {
+                alert('Video URL veya ID giriniz!');
+                return;
+            }
+            
+            // YouTube ID'sini çıkar
+            let videoId = url;
+            if (url.includes('youtube.com/watch?v=')) {
+                videoId = url.split('v=')[1].substring(0, 11);
+            } else if (url.includes('youtu.be/')) {
+                videoId = url.split('youtu.be/')[1].substring(0, 11);
+            }
+            
+            // Kanalın playlist'ine ekle
+            if (channels[currentChannel]) {
+                if (!channels[currentChannel].youtube) {
+                    channels[currentChannel].youtube = { playlist: [] };
+                }
+                
+                channels[currentChannel].youtube.playlist.push({
+                    id: videoId,
+                    title: title,
+                    addedBy: ACTIVE_USER?.name,
+                    role: ACTIVE_USER?.role
+                });
+                
+                // İlk video ise oynat
+                if (channels[currentChannel].youtube.playlist.length === 1) {
+                    channels[currentChannel].youtube.currentVideo = videoId;
+                    channels[currentChannel].youtube.currentTitle = title;
+                    channels[currentChannel].youtube.currentArtist = ACTIVE_USER?.name;
+                    
+                    if (ytPlayer) {
+                        ytPlayer.loadVideoById(videoId);
+                    }
+                }
+                
+                updateMediaDisplay();
+            }
+            
+            closeModal('youtubeModal');
+            document.getElementById('youtubeUrlInput').value = '';
+            document.getElementById('youtubeTitleInput').value = '';
+        }
+
+        function updateMediaDisplay() {
+            const channel = channels[currentChannel];
+            if (!channel || !channel.youtube) return;
+            
+            document.getElementById('youtubeNowPlayingTitle').textContent = channel.youtube.currentTitle || 'CETCETY Radio';
+            document.getElementById('youtubeNowPlayingOwner').textContent = channel.youtube.currentArtist || 'MateKy';
+            
+            // Playlist'i güncelle
+            const playlistDiv = document.getElementById('youtubePlaylistItems');
+            if (channel.youtube.playlist && channel.youtube.playlist.length > 0) {
+                playlistDiv.innerHTML = channel.youtube.playlist.map(video => `
+                    <div class="media-playlist-item ${video.id === channel.youtube.currentVideo ? 'active' : ''}" onclick="playYoutubeVideo('${video.id}')">
+                        <div class="media-playlist-thumb">
+                            <i class="fab fa-youtube"></i>
+                        </div>
+                        <div class="media-playlist-info">
+                            <div class="media-playlist-song">${video.title}</div>
+                            <div class="media-playlist-artist">
+                                <span class="role-icon ${video.role}">${video.role === 'owner' ? '👑' : ''}</span>
+                                ${video.addedBy}
+                            </div>
+                        </div>
+                        ${ACTIVE_USER?.role === 'owner' || ACTIVE_USER?.name === video.addedBy ? `
+                            <div class="media-playlist-actions">
+                                <div class="media-playlist-action" onclick="event.stopPropagation(); removeYoutubeVideo('${video.id}')">
+                                    <i class="fas fa-trash"></i>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+            } else {
+                playlistDiv.innerHTML = '<div class="system-message">Playlist boş</div>';
+            }
+            
+            document.getElementById('youtubePlaylistCount').textContent = 
+                channel.youtube.playlist ? `${channel.youtube.playlist.length} video` : '0 video';
+        }
+
+        function playYoutubeVideo(videoId) {
+            if (!ytPlayer) return;
+            
+            const channel = channels[currentChannel];
+            const video = channel.youtube.playlist.find(v => v.id === videoId);
+            
+            if (video) {
+                channel.youtube.currentVideo = videoId;
+                channel.youtube.currentTitle = video.title;
+                channel.youtube.currentArtist = video.addedBy;
+                
+                ytPlayer.loadVideoById(videoId);
+                updateMediaDisplay();
+            }
+        }
+
+        function removeYoutubeVideo(videoId) {
+            const channel = channels[currentChannel];
+            if (!channel || !channel.youtube) return;
+            
+            channel.youtube.playlist = channel.youtube.playlist.filter(v => v.id !== videoId);
+            
+            // Eğer silinen video şu an oynuyorsa, ilk videoyu oynat
+            if (channel.youtube.currentVideo === videoId && channel.youtube.playlist.length > 0) {
+                const firstVideo = channel.youtube.playlist[0];
+                channel.youtube.currentVideo = firstVideo.id;
+                channel.youtube.currentTitle = firstVideo.title;
+                channel.youtube.currentArtist = firstVideo.addedBy;
+                
+                if (ytPlayer) {
+                    ytPlayer.loadVideoById(firstVideo.id);
+                }
+            } else if (channel.youtube.playlist.length === 0) {
+                channel.youtube.currentVideo = null;
+                channel.youtube.currentTitle = 'CETCETY Radio';
+                channel.youtube.currentArtist = 'MateKy';
+            }
+            
+            updateMediaDisplay();
+        }
+
+        function reportMedia() {
+            alert('Medya şikayet edildi.');
+        }
+
+        function toggleChannelHidden() {
+            const icon = document.getElementById('hideYoutubeIcon');
+            if (icon.classList.contains('fa-eye')) {
+                icon.className = 'fas fa-eye-slash';
+            } else {
+                icon.className = 'fas fa-eye';
+            }
+        }
+
+        // ========== PROFİL FONKSİYONLARI ==========
+        function openAvatarModal() {
+            document.getElementById('avatarModal').classList.add('active');
+        }
+
+        function previewAvatar(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('avatarPreviewText').style.display = 'none';
+                    document.getElementById('avatarPreviewImage').src = e.target.result;
+                    document.getElementById('avatarPreviewImage').style.display = 'block';
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function uploadAvatar() {
+            const preview = document.getElementById('avatarPreviewImage');
+            if (preview.src && preview.style.display !== 'none') {
+                if (ACTIVE_USER) {
+                    ACTIVE_USER.avatar = preview.src;
+                    localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+                    
+                    // Mobil avatarı güncelle
+                    document.getElementById('mobileAvatarImage').src = preview.src;
+                    document.getElementById('mobileAvatarImage').style.display = 'block';
+                    document.getElementById('mobileAvatarText').style.display = 'none';
+                    
+                    alert('Profil resmi güncellendi!');
+                    closeModal('avatarModal');
+                }
+            } else {
+                alert('Lütfen bir resim seçin!');
+            }
+        }
+
+        // ========== OWNER FONKSİYONLARI ==========
+        function togglePrivateSpy() {
+            alert('Özel sohbet takip özelliği aktif edildi.');
+        }
+
+        function showBannedWords() {
+            alert('Yasaklı kelimeler: spam, reklam, şiddet, hakaret');
+        }
+
+        // ========== ÇIKIŞ ==========
+        function logout() {
+            if (ACTIVE_USER && channels[currentChannel]) {
+                channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
+                channels[currentChannel].online = channels[currentChannel].onlineUsers.length;
+                localStorage.setItem('cetcety_channels', JSON.stringify(channels));
+            }
+            
+            ACTIVE_USER = null;
+            localStorage.removeItem('cetcety_active_user');
+            
+            document.getElementById('app').style.display = 'none';
+            document.getElementById('loginOverlay').classList.remove('hidden');
+            document.getElementById('loginNick').value = '';
+            document.getElementById('loginPassword').value = '';
+        }
+
+        // ========== BAŞLANGIÇ ==========
+        document.addEventListener('DOMContentLoaded', function() {
+            // LocalStorage'dan yükle
+            const savedChannels = localStorage.getItem('cetcety_channels');
+            if (savedChannels) {
+                channels = JSON.parse(savedChannels);
+            }
+            
+            const savedUser = localStorage.getItem('cetcety_active_user');
+            if (savedUser) {
+                ACTIVE_USER = JSON.parse(savedUser);
+                
+                // Kullanıcıyı kanala ekle
+                if (!channels.genel.onlineUsers.includes(ACTIVE_USER.name)) {
+                    channels.genel.onlineUsers.push(ACTIVE_USER.name);
+                    channels.genel.online = channels.genel.onlineUsers.length;
+                }
+                
+                document.getElementById('loginOverlay').classList.add('hidden');
+                document.getElementById('app').style.display = 'flex';
+                updateUIForUser();
+                addSystemMessage(`👋 Tekrar hoş geldin, ${ACTIVE_USER.name}!`);
+                
+                // YouTube API'yi yükle
+                if (typeof YT === 'undefined' || !YT.Player) {
+                    const tag = document.createElement('script');
+                    tag.src = 'https://www.youtube.com/iframe_api';
+                    document.getElementsByTagName('script')[0].parentNode.insertBefore(tag, document.getElementsByTagName('script')[0]);
+                }
+            }
+        });
     </script>
 </body>
 </html>
