@@ -1,67 +1,128 @@
-// ========== UTILS.JS ==========
-const Utils = {
-    // Şifre göster/gizle
-    togglePassword: function() {
-        const input = document.getElementById('loginPassword');
-        const icon = document.getElementById('togglePassword');
-        if (input.type === 'password') {
-            input.type = 'text';
-            icon.className = 'fas fa-eye-slash password-toggle';
-        } else {
-            input.type = 'password';
-            icon.className = 'fas fa-eye password-toggle';
-        }
-    },
-    
-    // HTML escape
-    escapeHTML: function(t) {
-        if (!t) return '';
-        let d = document.createElement('div');
-        d.textContent = t;
-        return d.innerHTML;
-    },
-    
-    // Textarea otomatik boyutlandır
-    autoResize: function(t) {
-        t.style.height = 'auto';
-        t.style.height = Math.min(t.scrollHeight, 80) + 'px';
-    },
-    
-    // Sistem mesajı ekle
-    addSystemMessage: function(t) {
-        let d = document.createElement('div');
-        d.className = 'system-message';
-        d.innerHTML = `<i class="fas fa-info-circle"></i> ${this.escapeHTML(t)}`;
-        document.getElementById('messages').appendChild(d);
-        document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-    },
-    
-    // Sayı formatla
-    formatNumber: function(num) {
-        if (num >= 1000000) return (num/1000000).toFixed(1) + 'M';
-        if (num >= 1000) return (num/1000).toFixed(1) + 'K';
-        return num;
-    },
-    
-    // Tema değiştir
-    toggleTheme: function() {
-        document.body.classList.toggle('light-theme');
-        const i = document.getElementById('themeIcon').querySelector('i');
-        i.className = document.body.classList.contains('light-theme') ? 'fas fa-sun' : 'fas fa-moon';
-        localStorage.setItem('theme', document.body.classList.contains('light-theme') ? 'light' : 'dark');
-    },
-    
-    // Yasaklı kelime kontrolü
-    checkBannedWords: function(text) {
-        if (!text) return false;
-        const lower = text.toLowerCase();
-        const words = ['spam', 'reklam', 'şiddet', 'hakaret', 'küfür'];
-        for (let word of words) {
-            if (lower.includes(word)) return word;
-        }
-        return false;
-    }
-};
+// ========== YARDIMCI FONKSİYONLAR ==========
 
-window.Utils = Utils;
-console.log('✅ Utils.js yüklendi');
+// Bağlantı durumunu güncelle
+function updateConnectionStatus(status, text) {
+    const statusEl = document.getElementById('connectionStatus');
+    const statusText = document.getElementById('statusText');
+    if (statusEl && statusText) {
+        statusEl.className = `connection-status ${status}`;
+        statusText.textContent = text;
+    }
+}
+
+// Textarea otomatik boyutlandırma
+function autoResize(t) {
+    t.style.height = 'auto';
+    t.style.height = Math.min(t.scrollHeight, 80) + 'px';
+}
+
+// HTML escape
+function escapeHTML(t) {
+    if (!t) return '';
+    let d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+}
+
+// Modal aç
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.add('active');
+}
+
+// Modal kapat
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.remove('active');
+}
+
+// KVKK ve Terms modal açma
+function openKvkkModal() {
+    openModal('kvkkModal');
+}
+
+function openTermsModal() {
+    openModal('termsModal');
+}
+
+// FAQ toggle
+function toggleFaq(element) {
+    let answer = element.parentElement.querySelector('.faq-answer');
+    let icon = element.querySelector('i');
+    if (answer.style.display === 'none' || !answer.style.display) {
+        answer.style.display = 'block';
+        icon.className = 'fas fa-chevron-up';
+    } else {
+        answer.style.display = 'none';
+        icon.className = 'fas fa-chevron-down';
+    }
+}
+
+// Debounce fonksiyonu
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// 20 dakika sonra eski mesajları temizle
+function cleanupOldMessages() {
+    const TWENTY_MINUTES = 20 * 60 * 1000;
+    const now = Date.now();
+    let changed = false;
+
+    for (let channel in CHANNEL_MESSAGES) {
+        if (CHANNEL_MESSAGES[channel] && Array.isArray(CHANNEL_MESSAGES[channel])) {
+            const originalLength = CHANNEL_MESSAGES[channel].length;
+            CHANNEL_MESSAGES[channel] = CHANNEL_MESSAGES[channel].filter(msg => {
+                return (now - (msg.timestamp || 0)) < TWENTY_MINUTES;
+            });
+            if (originalLength !== CHANNEL_MESSAGES[channel].length) {
+                changed = true;
+                console.log(`${channel} kanalında ${originalLength - CHANNEL_MESSAGES[channel].length} eski mesaj temizlendi`);
+            }
+        }
+    }
+
+    if (changed) {
+        localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
+        if (typeof refreshCurrentChannelMessages === 'function') {
+            refreshCurrentChannelMessages();
+        }
+    }
+}
+
+// Özel mesajları temizle (çıkışta)
+function cleanupPrivateMessages() {
+    console.log('Özel mesajlar temizleniyor...');
+    if (typeof ACTIVE_USER !== 'undefined' && ACTIVE_USER) {
+        for (let chatId in PRIVATE_CHATS) {
+            if (chatId.includes(ACTIVE_USER.id)) {
+                delete PRIVATE_CHATS[chatId];
+            }
+        }
+        localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
+    }
+}
+
+// Nick kontrolü
+function isNickTaken(nick) {
+    let normalized = nick.toLowerCase();
+    return USERS_DB.some(u => u.name.toLowerCase() === normalized);
+}
+
+// Yasaklı kelime kontrolü
+function checkBannedWords(text) {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    for (let word of BANNED_WORDS) {
+        if (lower.includes(word.toLowerCase())) return word;
+    }
+    return false;
+}
