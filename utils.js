@@ -1,4 +1,4 @@
-// ========== YARDIMCI FONKSİYONLAR ==========
+ // ========== YARDIMCI FONKSİYONLAR ==========
 
 // Bağlantı durumunu güncelle
 function updateConnectionStatus(status, text) {
