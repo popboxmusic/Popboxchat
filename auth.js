@@ -7,6 +7,7 @@ function handleLogin() {
     const pass = document.getElementById('loginPassword').value.trim();
     if (!nick) { alert('Kullanıcı adı boş olamaz!'); return; }
 
+    // USERS_DB zaten globalde tanımlandı
     let existingUser = USERS_DB.find(u => u.name.toLowerCase() === nick.toLowerCase());
     
     if (existingUser) {
@@ -31,7 +32,7 @@ function handleLogin() {
         }
         
         ACTIVE_USER = {
-            id: Date.now().toString(),
+            id: Date.now().toString() + '_' + nick,
             name: nick,
             role: (nick.toLowerCase() === 'mateky') ? 'owner' : 'user',
             roleLevel: (nick.toLowerCase() === 'mateky') ? 5 : 1,
@@ -51,7 +52,7 @@ function handleLogin() {
     localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
 
     // Firebase online durumunu güncelle
-    if (typeof updateUserOnlineStatus === 'function' && database) {
+    if (typeof database !== 'undefined' && database) {
         updateUserOnlineStatus(ACTIVE_USER, 'genel', 'online');
         listenChannelMessages('genel');
         listenChannelInfo('genel');
@@ -73,19 +74,16 @@ function handleLogin() {
     updateMediaDisplay();
     addSystemMessage(`👋 Hoş geldin, ${ACTIVE_USER.name}!`);
 
-    // Admin kanalı kontrolü
     if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
         if (!ACTIVE_USER.subscribedChannels.includes('admin')) ACTIVE_USER.subscribedChannels.push('admin');
         if (!channels.admin.onlineUsers.includes(ACTIVE_USER.name)) channels.admin.onlineUsers.push(ACTIVE_USER.name);
         saveChannels();
     }
     
-    // Owner özel takip
     if (ACTIVE_USER.role === 'owner' && typeof checkPrivateSpyStatus === 'function') {
         checkPrivateSpyStatus();
     }
     
-    // YouTube API
     if (typeof YT === 'undefined' || !YT.Player) {
         let tag = document.createElement('script');
         tag.src = 'https://www.youtube.com/iframe_api';
@@ -107,7 +105,7 @@ document.addEventListener('keydown', function(e) {
 // Güvenli çıkış
 function logout() { 
     if (ACTIVE_USER) {
-        if (typeof updateUserOnlineStatus === 'function' && database) {
+        if (typeof updateUserOnlineStatus === 'function' && typeof database !== 'undefined' && database) {
             updateUserOnlineStatus(ACTIVE_USER, currentChannel, 'offline');
         }
         
