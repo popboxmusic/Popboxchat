@@ -1,9 +1,5 @@
 // ========== YOUTUBE MEDYA İŞLEMLERİ ==========
-
-let ytPlayer = null;
-let ytPlayerReady = false;
-let isMuted = false;
-let isPlaying = true;
+// NOT: ytPlayer, ytPlayerReady, isMuted, isPlaying global.js'den geliyor
 
 // YouTube player başlat
 function initYouTubePlayer() {
@@ -197,7 +193,7 @@ function playYoutubeVideo(vid, title, by, role) {
     c.youtube.currentTitle = title;
     c.youtube.currentArtist = by;
     
-    if (database) {
+    if (typeof database !== 'undefined' && database) {
         database.ref(`nowplaying/${currentChannel}`).set({
             id: vid,
             title: title,
@@ -257,7 +253,7 @@ function removeYoutubeFromPlaylist(i) {
     let rem = c.youtube.playlist[i];
     c.youtube.playlist.splice(i, 1);
     
-    if (database) {
+    if (typeof database !== 'undefined' && database) {
         database.ref(`playlist/${currentChannel}`).set(c.youtube.playlist);
     }
     
@@ -320,7 +316,7 @@ function addYoutubeVideo() {
         role: ACTIVE_USER.role === 'owner' ? 'owner' : ACTIVE_USER.role === 'admin' ? 'admin' : 'coadmin'
     });
     
-    if (database) {
+    if (typeof database !== 'undefined' && database) {
         database.ref(`playlist/${currentChannel}`).set(c.youtube.playlist);
     }
     
