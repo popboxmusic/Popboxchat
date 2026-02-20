@@ -16,68 +16,12 @@
 </head>
 <body>
     <!-- Tüm HTML içeriği aynen kalacak -->
-    <!-- ... -->
+    <!-- ... (HTML kodları burada) ... -->
 
-    <!-- JAVASCRIPT DOSYALARI - SIRALAMA ÖNEMLİ! -->
-    <!-- 1. Önce global değişkenler ve firebase -->
-    <script>
-        // ========== GLOBAL DEĞİŞKENLER (EN ÜSTTE) ==========
-        let ytPlayer = null;
-        let ytPlayerReady = false;
-        let isMuted = false;
-        let isPlaying = true;
-        let USERS_DB = JSON.parse(localStorage.getItem('cetcety_users')) || [];
-        let ACTIVE_USER = null;
-        let BLOCKED_USERS = JSON.parse(localStorage.getItem('cetcety_blocks')) || {};
-        let PRIVATE_CHATS = JSON.parse(localStorage.getItem('cetcety_private_chats')) || {};
-        let BANNED_WORDS = JSON.parse(localStorage.getItem('cetcety_banned_words')) || ['spam', 'reklam', 'şiddet', 'hakaret'];
-        let CUSTOM_COMMANDS = JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
-        let CHANNEL_MESSAGES = JSON.parse(localStorage.getItem('cetcety_channel_messages')) || {};
-        let currentPrivateChat = null;
-        let currentChannel = 'genel';
-        let PRIVATE_SPY_CHANNELS = JSON.parse(localStorage.getItem('cetcety_private_spy')) || {};
-        let PRIVATE_SPY_ACTIVE = false;
-        let PRIVATE_SPY_CURRENT_CHANNEL = null;
-        let SUPER_HIDDEN_CHANNELS = JSON.parse(localStorage.getItem('cetcety_super_hidden')) || [];
-        
-        // Kanallar
-        let channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {
-            'genel': { 
-                name:'genel', 
-                owner:'MateKy', 
-                ownerRole:'owner', 
-                coAdmins:[], 
-                subscribers:1, 
-                online:1, 
-                isHidden:false,
-                isSuperHidden: false,
-                youtube: { 
-                    currentVideo:'jfKfPfyJRdk', 
-                    currentTitle:'CETCETY Radio', 
-                    currentArtist:'MateKy', 
-                    playlist:[{id:'jfKfPfyJRdk', title:'CETCETY Radio', addedBy:'MateKy', role:'owner'}]
-                },
-                onlineUsers:[]
-            },
-            'admin': { 
-                name:'admin', 
-                owner:'MateKy', 
-                ownerRole:'owner', 
-                coAdmins:[], 
-                subscribers:1, 
-                online:1, 
-                isHidden:false,
-                isSuperHidden: false,
-                youtube: { 
-                    currentVideo:'jfKfPfyJRdk', 
-                    currentTitle:'Admin Kanalı', 
-                    currentArtist:'MateKy', 
-                    playlist:[{id:'jfKfPfyJRdk', title:'Admin Kanalı', addedBy:'MateKy', role:'owner'}]
-                },
-                onlineUsers:[]
-            }
-        };
-    </script>
+    <!-- ========== JAVASCRIPT DOSYALARI - SIRALAMA ÖNEMLİ ========== -->
+    
+    <!-- 1. Önce GLOBAL DEĞİŞKENLER (SADECE BURADA TANIMLI) -->
+    <script src="globals.js"></script>
     
     <!-- 2. Firebase config -->
     <script src="firebase-config.js"></script>
@@ -86,189 +30,7 @@
     <script src="utils.js"></script>
     
     <!-- 4. Firebase fonksiyonları -->
-    <script>
-        // ========== FIREBASE FONKSİYONLARI (utils.js'den sonra) ==========
-        function updateUserOnlineStatus(user, channel, status) {
-            if (!database || !user) return;
-            
-            const onlineRef = database.ref(`online/${channel}/${user.id}`);
-            
-            if (status === 'online') {
-                onlineRef.set({
-                    name: user.name,
-                    role: user.role,
-                    lastSeen: Date.now(),
-                    avatar: user.avatarData || null
-                });
-                onlineRef.onDisconnect().remove();
-            } else {
-                onlineRef.remove();
-            }
-        }
-
-        function listenChannelUsers(channel) {
-            if (!database) return;
-            
-            if (firebaseListeners[`online_${channel}`]) {
-                database.ref(`online/${channel}`).off('value', firebaseListeners[`online_${channel}`]);
-            }
-            
-            const callback = (snapshot) => {
-                const users = snapshot.val() || {};
-                const userList = Object.values(users).map(u => u.name);
-                
-                if (channels[channel]) {
-                    channels[channel].onlineUsers = userList;
-                    document.getElementById('channelUserCount').textContent = userList.length;
-                }
-                
-                if (document.getElementById('tabOnline')?.classList.contains('active')) {
-                    showOnlineTab();
-                }
-            };
-            
-            firebaseListeners[`online_${channel}`] = callback;
-            database.ref(`online/${channel}`).on('value', callback);
-        }
-
-        function listenChannelMessages(channel) {
-            if (!database) return;
-            
-            if (firebaseListeners[`chats_${channel}`]) {
-                database.ref(`chats/${channel}`).off('child_added', firebaseListeners[`chats_${channel}`]);
-            }
-            
-            const callback = (snapshot) => {
-                const msg = snapshot.val();
-                if (!msg) return;
-                
-                if (!CHANNEL_MESSAGES[channel]) {
-                    CHANNEL_MESSAGES[channel] = [];
-                }
-                
-                CHANNEL_MESSAGES[channel].push(msg);
-                localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
-                
-                if (channel === currentChannel) {
-                    const isMe = msg.sender === ACTIVE_USER?.name;
-                    appendMessageToChat(msg, isMe);
-                }
-            };
-            
-            firebaseListeners[`chats_${channel}`] = callback;
-            database.ref(`chats/${channel}`).limitToLast(50).on('child_added', callback);
-        }
-
-        function listenChannelInfo(channel) {
-            if (!database) return;
-            
-            if (firebaseListeners[`playlist_${channel}`]) {
-                database.ref(`playlist/${channel}`).off('value', firebaseListeners[`playlist_${channel}`]);
-            }
-            
-            const playlistCallback = (snapshot) => {
-                const playlist = snapshot.val() || [];
-                if (channels[channel]) {
-                    channels[channel].youtube.playlist = playlist;
-                    if (channel === currentChannel) {
-                        updateYoutubePlaylist();
-                    }
-                }
-            };
-            
-            firebaseListeners[`playlist_${channel}`] = playlistCallback;
-            database.ref(`playlist/${channel}`).on('value', playlistCallback);
-            
-            if (firebaseListeners[`nowplaying_${channel}`]) {
-                database.ref(`nowplaying/${channel}`).off('value', firebaseListeners[`nowplaying_${channel}`]);
-            }
-            
-            const nowplayingCallback = (snapshot) => {
-                const now = snapshot.val();
-                if (now && channels[channel]) {
-                    channels[channel].youtube.currentVideo = now.id;
-                    channels[channel].youtube.currentTitle = now.title;
-                    channels[channel].youtube.currentArtist = now.artist;
-                    
-                    if (channel === currentChannel) {
-                        document.getElementById('youtubeNowPlayingTitle').textContent = now.title;
-                        document.getElementById('youtubeNowPlayingOwner').textContent = now.artist;
-                        
-                        if (ytPlayer && ytPlayerReady && typeof ytPlayer.loadVideoById === 'function') {
-                            try {
-                                ytPlayer.loadVideoById(now.id);
-                            } catch (e) {
-                                console.log('YouTube güncelleme hatası:', e);
-                            }
-                        }
-                        
-                        updateYoutubePlaylist();
-                    }
-                }
-            };
-            
-            firebaseListeners[`nowplaying_${channel}`] = nowplayingCallback;
-            database.ref(`nowplaying/${channel}`).on('value', nowplayingCallback);
-        }
-
-        function listenPrivateMessages() {
-            if (!database || !ACTIVE_USER) return;
-            
-            if (firebaseListeners['private']) {
-                database.ref('private').off('child_added', firebaseListeners['private']);
-            }
-            
-            const callback = (snapshot) => {
-                const msg = snapshot.val();
-                if (!msg) return;
-                
-                if (msg.to === ACTIVE_USER.id || msg.from === ACTIVE_USER.id) {
-                    const chatId = [msg.from, msg.to].sort().join('_');
-                    
-                    if (!PRIVATE_CHATS[chatId]) {
-                        PRIVATE_CHATS[chatId] = [];
-                    }
-                    
-                    PRIVATE_CHATS[chatId].push({
-                        id: snapshot.key,
-                        senderId: msg.from,
-                        senderName: msg.fromName,
-                        type: msg.type || 'text',
-                        content: msg.text || msg.content,
-                        timestamp: msg.timestamp,
-                        read: msg.from === ACTIVE_USER.id ? true : false
-                    });
-                    
-                    localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
-                    
-                    if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE) {
-                        const sender = USERS_DB.find(u => u.id === msg.from);
-                        const receiver = USERS_DB.find(u => u.id === msg.to);
-                        
-                        if (sender && receiver) {
-                            logPrivateMessageForOwner(
-                                sender.name, 
-                                receiver.name, 
-                                msg.text || 'Medya gönderdi', 
-                                msg.type || 'text', 
-                                msg.content || msg.text
-                            );
-                        }
-                    }
-                    
-                    if (currentPrivateChat && 
-                        (currentPrivateChat.id === msg.from || currentPrivateChat.id === msg.to)) {
-                        loadPrivateMessages();
-                    }
-                    
-                    updateUnreadBadge();
-                }
-            };
-            
-            firebaseListeners['private'] = callback;
-            database.ref('private').orderByChild('timestamp').startAt(Date.now() - 86400000).on('child_added', callback);
-        }
-    </script>
+    <script src="firebase-functions.js"></script>
     
     <!-- 5. Auth işlemleri -->
     <script src="auth.js"></script>
@@ -291,7 +53,7 @@
     <!-- 11. UI işlemleri -->
     <script src="ui.js"></script>
     
-    <!-- 12. Ana uygulama (EN SON) -->
+    <!-- 12. Ana uygulama -->
     <script src="app.js"></script>
 </body>
 </html>
