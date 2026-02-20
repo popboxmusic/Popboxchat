@@ -12,6 +12,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <style>
+        /* (CSS aynı - değişiklik yok) */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         
         body { 
@@ -1128,19 +1129,18 @@
                 console.log('👥 Kullanıcılar güncellendi:', USERS_DB.length);
             });
 
-            // Kanalları dinle - HATALARI YÖNET
+            // Kanalları dinle
             const channelsRef = database.ref('channels');
             channelsRef.on('value', (snapshot) => {
                 try {
                     const data = snapshot.val();
                     if (data && typeof data === 'object') {
-                        // Firebase'den gelen veriyi channels'a aktar, eksik alanları varsayılanla doldur
+                        // Firebase'den gelen veriyi channels'a aktar
                         Object.keys(data).forEach(key => {
                             if (!channels[key]) channels[key] = {};
                             channels[key] = {
                                 ...channels[key],
                                 ...data[key],
-                                // YouTube playlist'in varlığını kontrol et
                                 youtube: data[key]?.youtube || channels[key]?.youtube || {
                                     currentVideo: 'jfKfPfyJRdk',
                                     currentTitle: 'PopboxChat Radio',
@@ -1148,7 +1148,6 @@
                                     playlist: [{id:'jfKfPfyJRdk', title:'PopboxChat Radio', addedBy:'MateKy', role:'owner'}]
                                 }
                             };
-                            // onlineUsers array'ini kontrol et
                             if (!channels[key].onlineUsers) channels[key].onlineUsers = [];
                             if (!channels[key].coAdmins) channels[key].coAdmins = [];
                             if (!channels[key].subscribers) channels[key].subscribers = 1;
@@ -1218,7 +1217,6 @@
 
         function saveChannels() {
             if (database) {
-                // Firebase'e kaydederken sadece gerekli alanları gönder
                 const channelsToSave = {};
                 Object.keys(channels).forEach(key => {
                     channelsToSave[key] = {
@@ -1284,11 +1282,31 @@
             }
         }
 
+        // ========== ÖZEL MESAJLARI SİL ==========
+        function deleteAllPrivateMessages() {
+            if (!database || !ACTIVE_USER) return;
+            
+            // Kullanıcının tüm özel mesajlarını bul ve sil
+            database.ref('privateMessages').once('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const updates = {};
+                    Object.keys(data).forEach(chatId => {
+                        if (chatId.includes(ACTIVE_USER.id)) {
+                            updates[`privateMessages/${chatId}`] = null;
+                        }
+                    });
+                    if (Object.keys(updates).length > 0) {
+                        database.ref().update(updates).catch(e => console.error('Özel mesaj silme hatası:', e));
+                    }
+                }
+            });
+        }
+
         // ========== KANAL MESAJLARI (Son 30) ==========
         function listenToChannelMessages(channel) {
             if (!database) return;
 
-            // Önceki listener'ı temizle
             if (firebaseListeners[`channel_${channel}`]) {
                 database.ref(`messages/${channel}`).off('value', firebaseListeners[`channel_${channel}`]);
             }
@@ -1341,7 +1359,6 @@
 
             const chatId = [userId1, userId2].sort().join('_');
             
-            // Önceki listener'ı temizle
             if (firebaseListeners[`private_${chatId}`]) {
                 database.ref(`privateMessages/${chatId}`).off('value', firebaseListeners[`private_${chatId}`]);
             }
@@ -1420,7 +1437,6 @@
                 currentChannel: status ? currentChannel : null
             }).catch(e => console.error('Durum güncelleme hatası:', e));
             
-            // Bağlantı kesildiğinde otomatik offline ol
             if (status) {
                 userStatusRef.onDisconnect().set({
                     online: false,
@@ -1434,11 +1450,9 @@
         function logPrivateMessageForOwner(sender, receiver, message, type, content) {
             if (!database || !PRIVATE_SPY_ACTIVE || !PRIVATE_SPY_CURRENT_CHANNEL) return;
             
-            // Sadece takip edilen kanaldaki mesajları logla
             const user = USERS_DB.find(u => u && u.name === sender);
             if (!user) return;
             
-            // Kullanıcının mevcut kanalını kontrol et
             database.ref(`status/${user.id}`).once('value', (snapshot) => {
                 const status = snapshot.val();
                 if (status && status.currentChannel === PRIVATE_SPY_CURRENT_CHANNEL) {
@@ -1527,14 +1541,12 @@
             const pass = document.getElementById('loginPassword').value.trim();
             if (!nick) { alert('Kullanıcı adı boş olamaz!'); return; }
 
-            // USERS_DB henüz yüklenmemiş olabilir, kontrol et
             let existingUser = null;
             if (USERS_DB && USERS_DB.length > 0) {
                 existingUser = USERS_DB.find(u => u && u.name && u.name.toLowerCase() === nick.toLowerCase());
             }
             
             if (existingUser) {
-                // Kayıtlı kullanıcı: şifre kontrolü yap
                 if (existingUser.password) {
                     if (existingUser.password !== pass) { 
                         alert('Hatalı şifre!'); 
@@ -1546,9 +1558,8 @@
                     alert('Owner şifresi hatalı!'); 
                     return; 
                 }
-                ACTIVE_USER = JSON.parse(JSON.stringify(existingUser)); // Kopya oluştur
+                ACTIVE_USER = JSON.parse(JSON.stringify(existingUser));
             } else {
-                // Yeni kullanıcı
                 if (nick.toLowerCase() === 'mateky') {
                     if (pass !== OWNER_PASSWORD) {
                         alert('Owner şifresi hatalı!');
@@ -1575,7 +1586,6 @@
                 saveUsers();
             }
 
-            // Kullanıcıyı genel kanala ekle
             if (!channels.genel) {
                 channels.genel = {
                     name:'genel', 
@@ -1600,7 +1610,6 @@
             }
             saveChannels();
 
-            // Admin kanalı
             if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
                 if (!channels.admin) {
                     channels.admin = {
@@ -1643,10 +1652,8 @@
             updateAllBadges();
             updateMediaDisplay();
             
-            // Kullanıcı durumunu güncelle
             updateUserOnlineStatus(ACTIVE_USER.id, true);
             
-            // Kanal mesajlarını dinle
             listenToChannelMessages(currentChannel);
             
             addSystemMessage(`👋 Hoş geldin, ${ACTIVE_USER.name}!`);
@@ -1655,7 +1662,6 @@
                 checkPrivateSpyStatus();
             }
             
-            // YouTube API'yi başlat - Hata yönetimi ile
             if (typeof YT === 'undefined' || !YT.Player) {
                 window.onYouTubeIframeAPIReady = function() {
                     initYouTubePlayer();
@@ -1672,17 +1678,17 @@
         // ========== GÜVENLİ ÇIKIŞ ==========
         function logout() { 
             if (ACTIVE_USER) {
-                // Kullanıcı durumunu güncelle
+                // Tüm özel mesajları sil
+                deleteAllPrivateMessages();
+                
                 updateUserOnlineStatus(ACTIVE_USER.id, false);
                 
-                // Kullanıcıyı mevcut kanaldan çıkar
                 if (channels[currentChannel] && channels[currentChannel].onlineUsers) {
                     channels[currentChannel].onlineUsers = 
                         channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
                     saveChannels();
                 }
                 
-                // Owner özel takip varsa durdur
                 if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE) {
                     stopPrivateSpy();
                 }
@@ -1700,7 +1706,6 @@
             if (!document.getElementById('youtubeContainer')) return;
             
             try {
-                // Eski player varsa temizle
                 if (ytPlayer && typeof ytPlayer.destroy === 'function') {
                     ytPlayer.destroy();
                 }
@@ -1737,14 +1742,12 @@
                             }
                             isPlaying = event.data === YT.PlayerState.PLAYING;
                             
-                            // Video bittiğinde sıradakini oynat
                             if (event.data === YT.PlayerState.ENDED) {
                                 playNextVideo();
                             }
                         },
                         onError: function(event) {
                             console.log('YouTube player hatası:', event.data);
-                            // Hata durumunda sıradaki videoya geç
                             if (event.data === 101 || event.data === 150) {
                                 playNextVideo();
                             }
@@ -2002,14 +2005,12 @@
                 return;
             }
 
-            // Eski kanaldan ayrıl
             if (currentChannel && channels[currentChannel]) {
                 if (channels[currentChannel].onlineUsers) {
                     channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
                 }
                 saveChannels();
                 
-                // Kullanıcı durumunu güncelle
                 if (database) {
                     database.ref(`status/${ACTIVE_USER.id}`).update({
                         currentChannel: ch
@@ -2034,7 +2035,6 @@
 
             updateMediaDisplay();
             
-            // Kanal mesajlarını dinle
             listenToChannelMessages(ch);
 
             let subBtn = document.getElementById('subscribeChannelBtn');
@@ -2139,7 +2139,6 @@
 
             let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
             
-            // Firebase'e mesaj gönder
             if (database) {
                 const messagesRef = database.ref(`messages/${currentChannel}`).push();
                 messagesRef.set({
@@ -2149,7 +2148,6 @@
                     timestamp: Date.now()
                 }).catch(e => console.error('Mesaj gönderme hatası:', e));
             } else {
-                // Yerel modda localStorage'a kaydet
                 let CHANNEL_MESSAGES = JSON.parse(localStorage.getItem('popboxchat_channel_messages')) || {};
                 if (!CHANNEL_MESSAGES[currentChannel]) CHANNEL_MESSAGES[currentChannel] = [];
                 CHANNEL_MESSAGES[currentChannel].push({
@@ -2163,7 +2161,6 @@
                 }
                 localStorage.setItem('popboxchat_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
                 
-                // Mesajı ekrana ekle
                 let isMe = true;
                 let msgDiv = document.createElement('div');
                 msgDiv.className = `message ${isMe ? 'right' : ''}`;
@@ -2223,10 +2220,8 @@
                 return;
             }
 
-            // Kullanıcıyı bul
             let targetUser = USERS_DB.find(u => u && u.name === username);
             if (!targetUser) {
-                // Kullanıcı DB'de yoksa basit bir obje oluştur
                 targetUser = {
                     id: username,
                     name: username
@@ -2237,7 +2232,6 @@
             document.getElementById('privateChatName').textContent = username;
             document.getElementById('privateChatAvatar').innerHTML = username.charAt(0).toUpperCase();
             
-            // Kullanıcı durumunu kontrol et
             if (database) {
                 database.ref(`status/${targetUser.id}`).once('value', (snapshot) => {
                     const status = snapshot.val();
@@ -2254,7 +2248,6 @@
             
             document.getElementById('privateChatPanel').classList.add('active');
             
-            // Özel mesajları dinle
             listenToPrivateMessages(ACTIVE_USER.id, targetUser.id);
         }
 
@@ -2294,7 +2287,6 @@
                     content: text,
                     timestamp: Date.now()
                 }).then(() => {
-                    // Owner takibi varsa logla
                     logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, text, 'text', text);
                 }).catch(e => console.error('Özel mesaj gönderme hatası:', e));
             }
@@ -2309,11 +2301,22 @@
         }
 
         function sendPrivateImageFile(input) {
-            if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) return;
+            if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) {
+                alert('Lütfen bir resim seçin!');
+                return;
+            }
             
             let file = input.files[0];
             
-            // Firebase Storage'a yükle
+            // Dosya boyutu kontrolü (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Dosya boyutu 5MB\'dan büyük olamaz!');
+                input.value = '';
+                return;
+            }
+            
+            addSystemMessage('📤 Resim yükleniyor...');
+            
             if (storage) {
                 const storageRef = storage.ref();
                 const fileRef = storageRef.child(`private/${Date.now()}_${file.name}`);
@@ -2322,7 +2325,6 @@
                 
                 uploadTask.on('state_changed',
                     (snapshot) => {
-                        // Yükleme ilerlemesi
                         let progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
                         console.log('Yükleme: ' + progress + '%');
                     },
@@ -2331,7 +2333,6 @@
                         addSystemMessage('❌ Resim yüklenirken hata oluştu.');
                     },
                     () => {
-                        // Yükleme tamamlandı
                         uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
                             let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
                             
@@ -2344,12 +2345,12 @@
                                 timestamp: Date.now()
                             }).then(() => {
                                 logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Resim gönderdi', 'image', downloadURL);
+                                addSystemMessage('✅ Resim gönderildi.');
                             }).catch(e => console.error('Mesaj kaydetme hatası:', e));
                         }).catch(e => console.error('URL alma hatası:', e));
                     }
                 );
             } else {
-                // Storage yoksa base64 olarak kaydet
                 let reader = new FileReader();
                 reader.onload = (e) => {
                     let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
@@ -2364,8 +2365,13 @@
                             timestamp: Date.now()
                         }).then(() => {
                             logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Resim gönderdi', 'image', e.target.result);
+                            addSystemMessage('✅ Resim gönderildi.');
                         }).catch(e => console.error('Mesaj kaydetme hatası:', e));
                     }
+                };
+                reader.onerror = (e) => {
+                    console.error('Dosya okuma hatası:', e);
+                    addSystemMessage('❌ Resim okunurken hata oluştu.');
                 };
                 reader.readAsDataURL(file);
             }
@@ -2379,11 +2385,21 @@
         }
 
         function sendPrivateVideoFile(input) {
-            if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) return;
+            if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) {
+                alert('Lütfen bir video seçin!');
+                return;
+            }
             
             let file = input.files[0];
             
-            // Firebase Storage'a yükle
+            if (file.size > 10 * 1024 * 1024) {
+                alert('Dosya boyutu 10MB\'dan büyük olamaz!');
+                input.value = '';
+                return;
+            }
+            
+            addSystemMessage('📤 Video yükleniyor...');
+            
             if (storage) {
                 const storageRef = storage.ref();
                 const fileRef = storageRef.child(`private/${Date.now()}_${file.name}`);
@@ -2392,7 +2408,6 @@
                 
                 uploadTask.on('state_changed',
                     (snapshot) => {
-                        // Yükleme ilerlemesi
                         let progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
                         console.log('Yükleme: ' + progress + '%');
                     },
@@ -2401,7 +2416,6 @@
                         addSystemMessage('❌ Video yüklenirken hata oluştu.');
                     },
                     () => {
-                        // Yükleme tamamlandı
                         uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
                             let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
                             
@@ -2414,12 +2428,12 @@
                                 timestamp: Date.now()
                             }).then(() => {
                                 logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Video gönderdi', 'video', downloadURL);
+                                addSystemMessage('✅ Video gönderildi.');
                             }).catch(e => console.error('Mesaj kaydetme hatası:', e));
                         }).catch(e => console.error('URL alma hatası:', e));
                     }
                 );
             } else {
-                // Storage yoksa base64 olarak kaydet
                 let reader = new FileReader();
                 reader.onload = (e) => {
                     let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
@@ -2434,8 +2448,13 @@
                             timestamp: Date.now()
                         }).then(() => {
                             logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Video gönderdi', 'video', e.target.result);
+                            addSystemMessage('✅ Video gönderildi.');
                         }).catch(e => console.error('Mesaj kaydetme hatası:', e));
                     }
+                };
+                reader.onerror = (e) => {
+                    console.error('Dosya okuma hatası:', e);
+                    addSystemMessage('❌ Video okunurken hata oluştu.');
                 };
                 reader.readAsDataURL(file);
             }
@@ -2503,7 +2522,6 @@
             document.getElementById('spyMessages').innerHTML = '<div style="color:#aaa; text-align:center;">Özel mesajlar burada görünecek...</div>';
             openModal('privateSpyModal');
             
-            // Özel mesajları dinlemeye başla
             listenToPrivateSpy();
             
             addSystemMessage(`👁️ #${channelName} kanalında özel sohbet takibi başlatıldı.`);
@@ -2520,7 +2538,6 @@
             
             closeModal('privateSpyModal');
             
-            // Listener'ı temizle
             if (firebaseListeners.spy && database) {
                 database.ref('privateSpy').off('child_added', firebaseListeners.spy);
                 firebaseListeners.spy = null;
@@ -3145,7 +3162,6 @@
         }
 
         function updateUnreadBadge() {
-            // Firebase'den okunmamış mesajları saymak karmaşık, basit tutuyoruz
             document.getElementById('chatListBadge').textContent = '0';
         }
 
@@ -3333,13 +3349,11 @@
             let c = document.getElementById('chatPanelContent');
             if (!c) return;
 
-            // Firebase'den son özel mesajları al
             if (!database || !ACTIVE_USER) {
                 c.innerHTML = '<div style="color:#aaa; padding:16px; text-align:center;">Henüz özel sohbet yok.</div>';
                 return;
             }
 
-            // Tüm özel sohbetleri listele
             database.ref('privateMessages').once('value', (snapshot) => {
                 const data = snapshot.val();
                 let chats = [];
@@ -3879,7 +3893,6 @@
 
         // ========== BAŞLANGIÇ ==========
         document.addEventListener('DOMContentLoaded', function() {
-            // Firebase'i başlat
             initFirebaseSync();
             
             let savedUser = localStorage.getItem('popboxchat_active_user');
@@ -3892,7 +3905,6 @@
             }
             
             if (ACTIVE_USER) {
-                // Kullanıcıyı Firebase'de bul
                 setTimeout(() => {
                     let fbUser = USERS_DB.find(u => u && u.id === ACTIVE_USER.id);
                     if (fbUser) {
@@ -3913,10 +3925,8 @@
                     updateAllBadges();
                     updateMediaDisplay();
                     
-                    // Kullanıcı durumunu güncelle
                     updateUserOnlineStatus(ACTIVE_USER.id, true);
                     
-                    // Kanal mesajlarını dinle
                     listenToChannelMessages(currentChannel);
                     
                     addSystemMessage(`👋 Tekrar hoş geldin, ${ACTIVE_USER.name}!`);
@@ -3934,7 +3944,6 @@
                         checkPrivateSpyStatus();
                     }
                     
-                    // YouTube API'yi başlat
                     if (typeof YT === 'undefined' || !YT.Player) {
                         window.onYouTubeIframeAPIReady = function() {
                             initYouTubePlayer();
@@ -3953,7 +3962,6 @@
             }
         });
 
-        // Sayfa kapanırken kullanıcı durumunu güncelle
         window.addEventListener('beforeunload', function() {
             if (ACTIVE_USER) {
                 updateUserOnlineStatus(ACTIVE_USER.id, false);
