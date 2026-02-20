@@ -1,349 +1,286 @@
-// ========== YOUTUBE MEDYA İŞLEMLERİ ==========
-// NOT: ytPlayer, ytPlayerReady, isMuted, isPlaying global.js'den geliyor
+// ========== ÖZEL SOHBET İŞLEMLERİ ==========
+// NOT: currentPrivateChat, PRIVATE_CHATS global.js'den geliyor
 
-// YouTube player başlat
-function initYouTubePlayer() {
-    let c = channels[currentChannel];
-    if (!c) return;
+// Özel sohbet aç
+function openPrivateChat(username) {
+    if (!username || !ACTIVE_USER) return;
     
-    if (!document.getElementById('youtubeContainer')) return;
-    
-    try {
-        ytPlayer = new YT.Player('youtubeContainer', {
-            height: '100%', 
-            width: '100%',
-            videoId: c.youtube.currentVideo,
-            playerVars: { 
-                autoplay: 1, 
-                controls: 0, 
-                modestbranding: 1, 
-                rel: 0, 
-                disablekb: 1, 
-                fs: 0, 
-                iv_load_policy: 3, 
-                playsinline: 1,
-                loop: 0
-            },
-            events: {
-                onReady: function(event) {
-                    console.log('YouTube player hazır');
-                    ytPlayerReady = true;
-                    try {
-                        event.target.playVideo();
-                    } catch (e) {
-                        console.log('YouTube play hatası:', e);
-                    }
-                },
-                onStateChange: function(event) {
-                    let icon = document.getElementById('playPauseIcon');
-                    if (icon) {
-                        icon.className = event.data === YT.PlayerState.PLAYING ? 'fas fa-pause' : 'fas fa-play';
-                    }
-                    isPlaying = event.data === YT.PlayerState.PLAYING;
-                    
-                    if (event.data === YT.PlayerState.ENDED) {
-                        playNextVideo();
-                    }
-                },
-                onError: function(event) {
-                    console.log('YouTube player hatası:', event.data);
-                    if (event.data === 101 || event.data === 150) {
-                        playNextVideo();
-                    }
-                    ytPlayerReady = false;
-                }
-            }
-        });
-    } catch (e) {
-        console.log('YouTube player oluşturulamadı:', e);
+    if (ACTIVE_USER.role !== 'owner') {
+        if (ACTIVE_USER.privateMode === 'none') {
+            addSystemMessage('❌ Özel sohbetlere kapalısınız.');
+            return;
+        }
+        if (ACTIVE_USER.blockedNicks && ACTIVE_USER.blockedNicks.includes(username)) {
+            addSystemMessage(`🚫 ${username} engellenmiş.`);
+            return;
+        }
     }
-}
-
-// YouTube API hazır
-function onYouTubeIframeAPIReady() {
-    initYouTubePlayer();
-}
-
-// Sessize al
-function toggleMute() {
-    if (!ytPlayer || !ytPlayerReady || typeof ytPlayer.isMuted !== 'function') {
-        addSystemMessage('YouTube player henüz hazır değil.');
+    
+    let user = USERS_DB.find(u => u.name === username);
+    if (!user) {
+        addSystemMessage(`❌ ${username} bulunamadı.`);
         return;
     }
-    try {
-        if (isMuted) {
-            ytPlayer.unMute();
-            document.getElementById('muteIcon').className = 'fas fa-volume-up';
-        } else {
-            ytPlayer.mute();
-            document.getElementById('muteIcon').className = 'fas fa-volume-mute';
-        }
-        isMuted = !isMuted;
-    } catch (e) {
-        console.log('Mute hatası:', e);
-    }
-}
-
-// Oynat/Durdur
-function togglePlayPause() {
-    if (!ytPlayer || !ytPlayerReady || typeof ytPlayer.getPlayerState !== 'function') {
-        addSystemMessage('YouTube player henüz hazır değil.');
+    
+    let blockKey = `${ACTIVE_USER.id}_${user.id}`;
+    if (BLOCKED_USERS[blockKey] && BLOCKED_USERS[blockKey].expiry > Date.now() && ACTIVE_USER.role !== 'owner') {
+        addSystemMessage(`🚫 ${username} 24 saat engellendi.`);
         return;
     }
-    try {
-        let state = ytPlayer.getPlayerState();
-        if (state === YT.PlayerState.PLAYING) {
-            ytPlayer.pauseVideo();
-        } else {
-            ytPlayer.playVideo();
-        }
-    } catch (e) {
-        console.log('Play/Pause hatası:', e);
+    let reverseKey = `${user.id}_${ACTIVE_USER.id}`;
+    if (BLOCKED_USERS[reverseKey] && BLOCKED_USERS[reverseKey].expiry > Date.now() && ACTIVE_USER.role !== 'owner') {
+        addSystemMessage(`🚫 ${username} tarafından engellendiniz.`);
+        return;
     }
+
+    currentPrivateChat = { name: username, id: user.id };
+    document.getElementById('privateChatName').textContent = username;
+    document.getElementById('privateChatAvatar').innerHTML = username.charAt(0).toUpperCase();
+    document.getElementById('privateChatPanel').classList.add('active');
+    loadPrivateMessages();
 }
 
-// Medya görüntüsünü güncelle
-function updateMediaDisplay() {
-    let c = channels[currentChannel];
-    if (!c) return;
-    
-    document.getElementById('youtubeNowPlayingTitle').textContent = c.youtube.currentTitle;
-    document.getElementById('youtubeNowPlayingOwner').textContent = c.youtube.currentArtist;
-    
-    let youtubeRoleIcon = document.querySelector('#youtubeNowPlayingArtist .role-icon');
-    if (c.ownerRole === 'owner') youtubeRoleIcon.className = 'role-icon owner';
-    else if (c.ownerRole === 'admin') youtubeRoleIcon.className = 'role-icon admin';
-    else if (c.ownerRole === 'coadmin') youtubeRoleIcon.className = 'role-icon coadmin';
-    youtubeRoleIcon.innerHTML = c.ownerRole === 'owner' ? '👑' : c.ownerRole === 'admin' ? '⚡' : '🔧';
-    
-    updateYoutubePlaylist();
-    
-    if (ytPlayer && ytPlayerReady && c.youtube.currentVideo) {
-        try {
-            if (typeof ytPlayer.loadVideoById === 'function') {
-                ytPlayer.loadVideoById(c.youtube.currentVideo);
-            }
-        } catch (e) {
-            console.log('YouTube player hatası:', e);
-        }
-    }
-    
-    updateRoleControls();
+// Özel sohbet kapat
+function closePrivateChat() {
+    document.getElementById('privateChatPanel').classList.remove('active');
+    currentPrivateChat = null;
 }
 
-// Yetki kontrollerini güncelle
-function updateRoleControls() {
-    let c = channels[currentChannel];
-    if (!c || !ACTIVE_USER) return;
-    
-    let canEdit = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name);
-    
-    let addYoutubeBtn = document.getElementById('addYoutubeBtn');
-    if (addYoutubeBtn) addYoutubeBtn.classList.toggle('disabled', !canEdit);
-    
-    let hideYoutube = document.getElementById('hideYoutubeBtn');
-    if (hideYoutube) {
-        if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name)) {
-            hideYoutube.classList.remove('disabled');
-        } else {
-            hideYoutube.classList.add('disabled');
-        }
-    }
-}
-
-// YouTube playlist güncelle
-function updateYoutubePlaylist() {
-    let c = channels[currentChannel];
-    if (!c) return;
-    let cont = document.getElementById('youtubePlaylistItems');
-    if (!cont) return;
-    
+// Özel mesajları yükle
+function loadPrivateMessages() {
+    if (!currentPrivateChat || !ACTIVE_USER) return;
+    let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
+    let msgs = PRIVATE_CHATS[chatId] || [];
+    let container = document.getElementById('privateChatMessages');
     let html = '';
-    c.youtube.playlist.forEach((item, i) => {
-        let active = item.id === c.youtube.currentVideo ? 'active' : '';
-        let canDel = ACTIVE_USER && (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (c.coAdmins?.includes(ACTIVE_USER.name) && item.addedBy === ACTIVE_USER.name));
-        
-        let roleIcon = item.role === 'owner' ? '👑' : item.role === 'admin' ? '⚡' : '🔧';
-        let roleClass = item.role === 'owner' ? 'badge-owner' : item.role === 'admin' ? 'badge-admin' : 'badge-coadmin';
-        
-        html += `<div class="media-playlist-item youtube ${active}" onclick="playYoutubeVideo('${item.id}','${escapeHTML(item.title)}','${escapeHTML(item.addedBy)}','${item.role}')">
-            <div class="media-playlist-thumb youtube"><i class="fab fa-youtube"></i></div>
-            <div class="media-playlist-info">
-                <div class="media-playlist-song">${escapeHTML(item.title)}</div>
-                <div class="media-playlist-artist">
-                    <span>${roleIcon} ${escapeHTML(item.addedBy)}</span>
-                    <span class="badge ${roleClass}">${item.role}</span>
-                </div>
-            </div>
-            <div class="media-playlist-actions">
-                ${canDel ? `<div class="media-playlist-action" onclick="event.stopPropagation(); removeYoutubeFromPlaylist(${i})"><i class="fas fa-trash"></i></div>` : ''}
-                <div class="media-playlist-action media-report-btn" onclick="event.stopPropagation(); reportVideo('${item.id}')"><i class="fas fa-flag"></i></div>
-            </div>
-        </div>`;
+    msgs.forEach((msg, index) => {
+        let isMe = msg.senderId === ACTIVE_USER.id;
+        let time = new Date(msg.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        let deleteBtn = isMe ? `<div class="delete-msg" onclick="deletePrivateMessage(${index}, '${chatId}')"><i class="fas fa-trash"></i></div>` : '';
+        if (msg.type === 'text') {
+            html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender">${msg.senderName}</span></div><div class="private-message-text">${escapeHTML(msg.content)}</div></div>`;
+        } else if (msg.type === 'image') {
+            html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender">${msg.senderName}</span></div><div class="private-message-media"><img src="${escapeHTML(msg.content)}" onclick="window.open(this.src)"></div></div>`;
+        } else if (msg.type === 'video') {
+            html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender">${msg.senderName}</span></div><div class="private-message-media"><video controls src="${escapeHTML(msg.content)}"></video></div></div>`;
+        }
     });
-    cont.innerHTML = html;
-    let countEl = document.getElementById('youtubePlaylistCount');
-    if (countEl) countEl.textContent = `${c.youtube.playlist.length} video`;
-}
-
-// Video oynat
-function playYoutubeVideo(vid, title, by, role) {
-    let c = channels[currentChannel];
-    c.youtube.currentVideo = vid;
-    c.youtube.currentTitle = title;
-    c.youtube.currentArtist = by;
+    container.innerHTML = html;
+    container.scrollTop = container.scrollHeight;
     
-    if (typeof database !== 'undefined' && database) {
-        database.ref(`nowplaying/${currentChannel}`).set({
-            id: vid,
-            title: title,
-            artist: by,
-            role: role
+    if (msgs.length > 0) {
+        let updated = false;
+        msgs.forEach(msg => {
+            if (msg.senderId !== ACTIVE_USER.id && !msg.read) {
+                msg.read = true;
+                updated = true;
+            }
         });
-    }
-    
-    saveChannels();
-    
-    if (ytPlayer && ytPlayerReady && typeof ytPlayer.loadVideoById === 'function') {
-        try {
-            ytPlayer.loadVideoById(vid);
-        } catch (e) {
-            console.log('YouTube player hatası:', e);
+        if (updated) {
+            localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
+            if (typeof updateUnreadBadge === 'function') updateUnreadBadge();
         }
     }
-    
-    document.getElementById('youtubeNowPlayingTitle').textContent = title;
-    document.getElementById('youtubeNowPlayingOwner').textContent = by;
-    
-    let roleIcon = document.querySelector('#youtubeNowPlayingArtist .role-icon');
-    if (role === 'owner') {
-        roleIcon.className = 'role-icon owner';
-        roleIcon.innerHTML = '👑';
-    } else if (role === 'admin') {
-        roleIcon.className = 'role-icon admin';
-        roleIcon.innerHTML = '⚡';
-    } else {
-        roleIcon.className = 'role-icon coadmin';
-        roleIcon.innerHTML = '🔧';
+}
+
+// Özel mesaj gönder
+function sendPrivateMessage() {
+    let input = document.getElementById('privateMessageInput');
+    if (!input) return;
+    let text = input.value.trim();
+    if (!text || !currentPrivateChat || !ACTIVE_USER) return;
+    let banned = checkBannedWords(text);
+    if (banned) {
+        addSystemMessage(`🚫 Yasaklı kelime tespit edildi: "${banned}". Mesajınız gönderilmedi.`);
+        input.value = '';
+        return;
     }
-    
-    updateYoutubePlaylist();
-    
-    addSystemMessage(`🎬 ${ACTIVE_USER.name} yeni video oynatıyor: ${title}`);
-    sendToAdminChannel(`🎬 ${ACTIVE_USER.name}, #${currentChannel} kanalında yeni video oynatıyor: ${title}`);
-}
 
-// Sıradaki videoyu oynat
-function playNextVideo() {
-    let c = channels[currentChannel];
-    if (!c || !c.youtube.playlist || c.youtube.playlist.length === 0) return;
-    
-    let currentIndex = c.youtube.playlist.findIndex(item => item.id === c.youtube.currentVideo);
-    let nextIndex = (currentIndex + 1) % c.youtube.playlist.length;
-    let nextVideo = c.youtube.playlist[nextIndex];
-    
-    playYoutubeVideo(nextVideo.id, nextVideo.title, nextVideo.addedBy, nextVideo.role);
-    
-    addSystemMessage(`⏭️ Sıradaki video: ${nextVideo.title}`);
-}
+    const message = {
+        from: ACTIVE_USER.id,
+        fromName: ACTIVE_USER.name,
+        to: currentPrivateChat.id,
+        text: text,
+        type: 'text',
+        timestamp: Date.now()
+    };
 
-// Videoyu playlistten kaldır
-function removeYoutubeFromPlaylist(i) {
-    let c = channels[currentChannel];
-    let rem = c.youtube.playlist[i];
-    c.youtube.playlist.splice(i, 1);
-    
     if (typeof database !== 'undefined' && database) {
-        database.ref(`playlist/${currentChannel}`).set(c.youtube.playlist);
-    }
-    
-    if (rem.id === c.youtube.currentVideo && c.youtube.playlist.length > 0) {
-        let n = c.youtube.playlist[0];
-        playYoutubeVideo(n.id, n.title, n.addedBy, n.role);
-    }
-    saveChannels();
-    updateYoutubePlaylist();
-    
-    addSystemMessage(`🗑️ "${rem.title}" kaldırıldı.`);
-    sendToAdminChannel(`🗑️ ${ACTIVE_USER.name}, #${currentChannel} kanalından "${rem.title}" videosunu kaldırdı.`);
-}
-
-// Video ekleme modalını aç
-function openAddYoutubeModal() {
-    let c = channels[currentChannel];
-    if (!ACTIVE_USER || !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name))) {
-        addSystemMessage('❌ Video ekleme yetkiniz yok!');
-        return;
-    }
-    document.getElementById('youtubeUrlInput').value = '';
-    document.getElementById('youtubeTitleInput').value = '';
-    openModal('youtubeModal');
-}
-
-// Video ekle
-function addYoutubeVideo() {
-    let url = document.getElementById('youtubeUrlInput').value.trim();
-    let title = document.getElementById('youtubeTitleInput').value.trim();
-    if (!url) {
-        addSystemMessage('❌ Video URL/ID girin!');
-        return;
-    }
-    
-    let vid = '';
-    if (url.includes('youtube.com/watch?v=')) {
-        vid = url.split('v=')[1]?.split('&')[0];
-    } else if (url.includes('youtu.be/')) {
-        vid = url.split('youtu.be/')[1]?.split('?')[0];
-    } else if (url.match(/^[a-zA-Z0-9_-]{11}$/)) {
-        vid = url;
+        database.ref('private').push(message)
+            .then(() => {
+                console.log('Özel mesaj gönderildi');
+            })
+            .catch(err => {
+                console.error('Özel mesaj gönderilemedi:', err);
+                savePrivateMessageToLocal(message);
+            });
     } else {
-        addSystemMessage('❌ Geçersiz YouTube URL/ID!');
-        return;
+        savePrivateMessageToLocal(message);
+    }
+
+    if (typeof logPrivateMessageForOwner === 'function') {
+        logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, text, 'text', text);
+    }
+
+    input.value = '';
+}
+
+// Özel mesajı local'e kaydet
+function savePrivateMessageToLocal(message) {
+    const chatId = [message.from, message.to].sort().join('_');
+    if (!PRIVATE_CHATS[chatId]) {
+        PRIVATE_CHATS[chatId] = [];
     }
     
-    if (!vid) {
-        addSystemMessage('❌ Video ID çıkarılamadı!');
-        return;
-    }
-    
-    let c = channels[currentChannel];
-    if (!title) title = `Video ${c.youtube.playlist.length + 1}`;
-    
-    c.youtube.playlist.push({
-        id: vid,
-        title: title,
-        addedBy: ACTIVE_USER.name,
-        role: ACTIVE_USER.role === 'owner' ? 'owner' : ACTIVE_USER.role === 'admin' ? 'admin' : 'coadmin'
+    PRIVATE_CHATS[chatId].push({
+        id: Date.now(),
+        senderId: message.from,
+        senderName: message.fromName,
+        type: 'text',
+        content: message.text,
+        timestamp: message.timestamp,
+        read: true
     });
     
-    if (typeof database !== 'undefined' && database) {
-        database.ref(`playlist/${currentChannel}`).set(c.youtube.playlist);
-    }
-    
-    updateYoutubePlaylist();
-    saveChannels();
-    closeModal('youtubeModal');
-    
-    addSystemMessage(`✅ "${title}" eklendi!`);
-    sendToAdminChannel(`✅ ${ACTIVE_USER.name}, #${currentChannel} kanalına "${title}" videosunu ekledi.`);
+    localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
+    loadPrivateMessages();
+    if (typeof updateUnreadBadge === 'function') updateUnreadBadge();
 }
 
-// Video şikayet et
-function reportVideo(videoId) {
-    let reason = prompt('Bu videoyu neden şikayet ediyorsunuz?', '');
-    if (reason) {
-        let msg = `🚩 ${ACTIVE_USER.name}, bir videoyu şikayet etti. Video ID: ${videoId}, Sebep: ${reason}`;
+// Özel mesaj sil
+function deletePrivateMessage(index, chatId) {
+    if (PRIVATE_CHATS[chatId]) {
+        PRIVATE_CHATS[chatId].splice(index, 1);
+        localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
+        loadPrivateMessages();
+        if (typeof updateUnreadBadge === 'function') updateUnreadBadge();
+    }
+}
+
+// Resim gönderme
+function triggerPrivateImageUpload() { 
+    let input = document.getElementById('privateImageUpload');
+    if (input) input.click(); 
+}
+
+function sendPrivateImageFile(input) {
+    if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) return;
+    let file = input.files[0];
+    let reader = new FileReader();
+    reader.onload = (e) => {
+        const message = {
+            from: ACTIVE_USER.id,
+            fromName: ACTIVE_USER.name,
+            to: currentPrivateChat.id,
+            content: e.target.result,
+            type: 'image',
+            timestamp: Date.now()
+        };
+
+        if (typeof database !== 'undefined' && database) {
+            database.ref('private').push(message)
+                .then(() => {
+                    console.log('Resim gönderildi');
+                })
+                .catch(err => {
+                    console.error('Resim gönderilemedi:', err);
+                    savePrivateMediaToLocal(message);
+                });
+        } else {
+            savePrivateMediaToLocal(message);
+        }
+
+        if (typeof logPrivateMessageForOwner === 'function') {
+            logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Resim gönderdi', 'image', e.target.result);
+        }
+    };
+    reader.readAsDataURL(file);
+    input.value = '';
+}
+
+// Video gönderme
+function triggerPrivateVideoUpload() { 
+    let input = document.getElementById('privateVideoUpload');
+    if (input) input.click(); 
+}
+
+function sendPrivateVideoFile(input) {
+    if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) return;
+    let file = input.files[0];
+    let reader = new FileReader();
+    reader.onload = (e) => {
+        const message = {
+            from: ACTIVE_USER.id,
+            fromName: ACTIVE_USER.name,
+            to: currentPrivateChat.id,
+            content: e.target.result,
+            type: 'video',
+            timestamp: Date.now()
+        };
+
+        if (typeof database !== 'undefined' && database) {
+            database.ref('private').push(message)
+                .then(() => {
+                    console.log('Video gönderildi');
+                })
+                .catch(err => {
+                    console.error('Video gönderilemedi:', err);
+                    savePrivateMediaToLocal(message);
+                });
+        } else {
+            savePrivateMediaToLocal(message);
+        }
+
+        if (typeof logPrivateMessageForOwner === 'function') {
+            logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Video gönderdi', 'video', e.target.result);
+        }
+    };
+    reader.readAsDataURL(file);
+    input.value = '';
+}
+
+// Medyayı local'e kaydet
+function savePrivateMediaToLocal(message) {
+    const chatId = [message.from, message.to].sort().join('_');
+    if (!PRIVATE_CHATS[chatId]) {
+        PRIVATE_CHATS[chatId] = [];
+    }
+    
+    PRIVATE_CHATS[chatId].push({
+        id: Date.now(),
+        senderId: message.from,
+        senderName: message.fromName,
+        type: message.type,
+        content: message.content,
+        timestamp: message.timestamp,
+        read: true
+    });
+    
+    localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
+    loadPrivateMessages();
+}
+
+// Kullanıcı engelle
+function blockUser() {
+    if (!currentPrivateChat || !ACTIVE_USER) return;
+    let blockKey = `${ACTIVE_USER.id}_${currentPrivateChat.id}`;
+    BLOCKED_USERS[blockKey] = { userId: currentPrivateChat.id, userName: currentPrivateChat.name, expiry: Date.now() + 24 * 60 * 60 * 1000, blockedBy: ACTIVE_USER.id };
+    localStorage.setItem('cetcety_blocks', JSON.stringify(BLOCKED_USERS));
+    addSystemMessage(`🚫 ${currentPrivateChat.name} 24 saatliğine engellendi.`);
+    sendToAdminChannel(`🚫 ${ACTIVE_USER.name}, ${currentPrivateChat.name} kullanıcısını engelledi.`);
+    closePrivateChat();
+}
+
+// Kullanıcı şikayet et
+function reportUser() {
+    if (currentPrivateChat) {
+        let msg = `⚠️ ${currentPrivateChat.name} kullanıcısı şikayet edildi. Şikayet eden: ${ACTIVE_USER.name}`;
         addSystemMessage(msg);
         sendToAdminChannel(msg);
     }
 }
 
-// Medya şikayet et
-function reportMedia() {
-    let reason = prompt('Bu medyayı neden şikayet ediyorsunuz?', '');
-    if (reason) {
-        let msg = `🚩 ${ACTIVE_USER.name}, #${currentChannel} kanalındaki medyayı şikayet etti. Sebep: ${reason}`;
-        addSystemMessage(msg);
-        sendToAdminChannel(msg);
-    }
+// Private tab değiştir
+function switchPrivateTab(tab) {
+    if (tab !== 'chat') addSystemMessage('🔜 Bu özellik yakında aktif olacak.');
 }
