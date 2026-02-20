@@ -1,9 +1,5 @@
 // ========== ADMIN/OWNER ÖZEL İŞLEMLERİ ==========
-
-let PRIVATE_SPY_CHANNELS = JSON.parse(localStorage.getItem('cetcety_private_spy')) || {};
-let PRIVATE_SPY_ACTIVE = false;
-let PRIVATE_SPY_CURRENT_CHANNEL = null;
-let SUPER_HIDDEN_CHANNELS = JSON.parse(localStorage.getItem('cetcety_super_hidden')) || [];
+// NOT: PRIVATE_SPY_CHANNELS, PRIVATE_SPY_ACTIVE, PRIVATE_SPY_CURRENT_CHANNEL, SUPER_HIDDEN_CHANNELS global.js'den geliyor
 
 // Private spy kanallarını kaydet
 function savePrivateSpyChannels() {
