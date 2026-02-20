@@ -126,3 +126,103 @@ function checkBannedWords(text) {
     }
     return false;
 }
+
+// Sistem mesajı ekle
+function addSystemMessage(t) {
+    let d = document.createElement('div');
+    d.className = 'system-message';
+    d.innerHTML = `<i class="fas fa-info-circle"></i> ${escapeHTML(t)}`;
+    document.getElementById('messages').appendChild(d);
+    document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+}
+
+// Kanal mesajlarını yükle
+function loadChannelMessages(channel) {
+    let container = document.getElementById('messages');
+    if (!container) return;
+
+    container.innerHTML = '';
+    addSystemMessage(`📢 #${channel} kanalına katıldın!`);
+
+    if (typeof initChannelMessages === 'function') {
+        initChannelMessages(channel);
+    }
+    
+    if (CHANNEL_MESSAGES[channel]) {
+        CHANNEL_MESSAGES[channel].forEach(msg => {
+            if (msg.isHtml) {
+                let msgDiv = document.createElement('div');
+                msgDiv.className = msg.sender === '🔔 SİSTEM' ? 'admin-system-message' : 'system-message';
+                msgDiv.innerHTML = `<i class="fas fa-copy"></i> ${msg.text}`;
+                container.appendChild(msgDiv);
+            } else {
+                let isMe = msg.sender === ACTIVE_USER?.name;
+                if (typeof appendMessageToChat === 'function') {
+                    appendMessageToChat(msg, isMe);
+                }
+            }
+        });
+    }
+    container.scrollTop = container.scrollHeight;
+}
+
+// Kanal mesajlarını yenile
+function refreshCurrentChannelMessages() {
+    loadChannelMessages(currentChannel);
+}
+
+// Mesaj göster
+function appendMessageToChat(msg, isMe) {
+    let container = document.getElementById('messages');
+    if (!container) return;
+
+    let msgDiv = document.createElement('div');
+    msgDiv.className = `message ${isMe ? 'right' : ''}`;
+    msgDiv.setAttribute('data-timestamp', msg.timestamp);
+    
+    let deleteBtn = '';
+    if (isMe) {
+        deleteBtn = `<div class="delete-message-btn" onclick="deleteChannelMessage('${currentChannel}', ${msg.timestamp})"><i class="fas fa-trash"></i></div>`;
+    }
+    
+    msgDiv.innerHTML = deleteBtn + `
+        <div class="message-header" style="${isMe ? 'justify-content: flex-end;' : ''}">
+            <span class="message-time">${msg.time || ''}</span>
+            <span class="message-sender">${escapeHTML(msg.sender) || ''}</span>
+        </div>
+        <div class="message-text">${escapeHTML(msg.text) || ''}</div>`;
+    
+    container.appendChild(msgDiv);
+    container.scrollTop = container.scrollHeight;
+}
+
+// Kanal mesajı sil
+function deleteChannelMessage(channel, timestamp) {
+    if (!CHANNEL_MESSAGES[channel]) return false;
+    
+    const messageIndex = CHANNEL_MESSAGES[channel].findIndex(msg => msg.timestamp === timestamp);
+    
+    if (messageIndex !== -1) {
+        const message = CHANNEL_MESSAGES[channel][messageIndex];
+        
+        if (message.sender === ACTIVE_USER?.name) {
+            CHANNEL_MESSAGES[channel].splice(messageIndex, 1);
+            localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
+            
+            if (typeof database !== 'undefined' && database) {
+                database.ref(`chats/${channel}`).orderByChild('timestamp').equalTo(timestamp).once('value', (snapshot) => {
+                    snapshot.forEach(childSnapshot => {
+                        childSnapshot.ref.remove();
+                    });
+                });
+            }
+            
+            if (channel === currentChannel) {
+                refreshCurrentChannelMessages();
+            }
+            
+            return true;
+        }
+    }
+    return false;
+}
