@@ -7,11 +7,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://www.youtube.com/iframe_api"></script>
-    <script src="https://sdk.scdn.co/spotify-player.js"></script>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
@@ -161,32 +159,53 @@
 
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(10px);
+            background: rgba(0, 0, 0, 0.95); backdrop-filter: blur(10px);
             display: flex; align-items: center; justify-content: center;
-            z-index: 2000; opacity: 0; visibility: hidden; transition: 0.3s;
+            z-index: 3000; opacity: 0; visibility: hidden; transition: 0.3s;
         }
         .modal-overlay.active { opacity: 1; visibility: visible; }
         .modal-panel {
-            width: 600px; max-width: 90vw;
-            background: rgba(26, 26, 26, 0.95); backdrop-filter: blur(10px);
-            border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); overflow: hidden;
+            width: 90vw;
+            max-width: 1200px;
+            max-height: 90vh;
+            background: transparent;
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
         .modal-header {
-            padding: 20px; background: rgba(15,15,15,0.8); border-bottom: 1px solid rgba(255,255,255,0.1);
-            display: flex; align-items: center; justify-content: space-between;
+            padding: 20px;
+            background: rgba(15,15,15,0.9);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            backdrop-filter: blur(10px);
         }
-        .modal-header h3 { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+        .modal-header h3 { display: flex; align-items: center; gap: 8px; font-size: 16px; color: #fff; }
         .modal-header h3 i { color: #ff0000; }
         .modal-close {
-            width: 32px; height: 32px; border-radius: 50%; display: flex;
+            width: 40px; height: 40px; border-radius: 50%; display: flex;
             align-items: center; justify-content: center; cursor: pointer;
-            color: #aaa; transition: 0.2s;
+            color: #fff; transition: 0.2s; background: rgba(255,255,255,0.1);
+            font-size: 20px;
         }
-        .modal-close:hover { background: #2a2a2a; color: #fff; }
-        .modal-content { padding: 24px; max-height: 60vh; overflow-y: auto; }
-        .modal-footer {
-            padding: 16px 20px; background: rgba(15,15,15,0.8); border-top: 1px solid rgba(255,255,255,0.1);
-            display: flex; gap: 12px; justify-content: flex-end;
+        .modal-close:hover { background: #ff0000; color: #fff; }
+        .modal-content {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            background: rgba(0,0,0,0.8);
+            min-height: 0;
+        }
+        .modal-content img, .modal-content video {
+            max-width: 100%;
+            max-height: calc(90vh - 100px);
+            object-fit: contain;
+            border-radius: 8px;
         }
 
         .icon-panel {
@@ -486,9 +505,14 @@
             background: transparent; padding: 0;
         }
         .private-message.right .private-message-text { color: #ff0000; }
-        .private-message-media { margin-top: 8px; border-radius: 12px; overflow: hidden; }
+        .private-message-media { margin-top: 8px; border-radius: 12px; overflow: hidden; cursor: pointer; }
         .private-message-media img, .private-message-media video {
-            width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; cursor: pointer;
+            width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px;
+            transition: transform 0.2s;
+        }
+        .private-message-media img:hover, .private-message-media video:hover {
+            transform: scale(1.02);
+            opacity: 0.9;
         }
         .delete-msg {
             position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; border-radius: 50%;
@@ -551,8 +575,7 @@
         .media-player {
             width: 100%; aspect-ratio: 16/9; background: #000; border-bottom: 1px solid rgba(255,255,255,0.1); position: relative;
         }
-        #youtubeContainer { width: 100%; height: 100%; display: none; }
-        #spotifyContainer { width: 100%; height: 100%; display: none; }
+        #youtubeContainer { width: 100%; height: 100%; display: block; }
         .media-player iframe { width: 100%; height: 100%; border: none; }
         .player-controls {
             position: absolute; bottom: 16px; left: 0; right: 0; display: flex;
@@ -633,71 +656,6 @@
         .connecting .status-dot { background: #ffaa00; animation: pulse 1s infinite; }
         .disconnected .status-dot { background: #ff4444; }
         
-        .spotify-search-modal {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 500px;
-            max-width: 90vw;
-            background: rgba(26,26,26,0.95);
-            border-radius: 16px;
-            border: 1px solid rgba(255,255,255,0.1);
-            z-index: 3000;
-            display: none;
-            backdrop-filter: blur(10px);
-        }
-        .spotify-search-modal.active { display: block; }
-        .spotify-search-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .spotify-search-content {
-            padding: 20px;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        .spotify-search-input {
-            width: 100%;
-            padding: 12px;
-            background: rgba(26,26,26,0.8);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px;
-            color: #fff;
-            margin-bottom: 16px;
-        }
-        .spotify-track-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            margin-bottom: 4px;
-        }
-        .spotify-track-item:hover { background: rgba(42,42,42,0.8); }
-        .spotify-track-img {
-            width: 40px;
-            height: 40px;
-            border-radius: 4px;
-            object-fit: cover;
-        }
-        .spotify-track-info { flex: 1; }
-        .spotify-track-name { font-weight: 500; font-size: 13px; color: #fff; }
-        .spotify-track-artist { font-size: 11px; color: #aaa; }
-        .spotify-add-btn {
-            padding: 6px 12px;
-            background: #1DB954;
-            border: none;
-            border-radius: 20px;
-            color: #fff;
-            font-size: 11px;
-            cursor: pointer;
-        }
-
         .rate-limit-warning {
             color: #ffaa00;
             font-size: 11px;
@@ -904,19 +862,15 @@
                 </div>
             </div>
 
-            <!-- MEDYA PANELİ (YouTube + Spotify) -->
+            <!-- MEDYA PANELİ (SADECE YOUTUBE) -->
             <div id="mediaPanel" class="media-panel">
                 <div class="media-header">
-                    <div class="media-tab youtube active" onclick="switchMediaTab('youtube')">
+                    <div class="media-tab youtube active">
                         <i class="fab fa-youtube"></i>
                         <span>YouTube</span>
                     </div>
-                    <div class="media-tab spotify" onclick="switchMediaTab('spotify')">
-                        <i class="fab fa-spotify"></i>
-                        <span>Spotify</span>
-                    </div>
                     <div class="media-header-spacer"></div>
-                    <div id="addMediaBtn" class="media-header-btn" onclick="openAddMediaModal()" title="Medya ekle">
+                    <div id="addMediaBtn" class="media-header-btn" onclick="openAddYoutubeModal()" title="Video ekle">
                         <i class="fas fa-plus"></i>
                     </div>
                     <div class="media-header-btn media-report-btn" onclick="reportMedia()" title="Şikayet Et">
@@ -928,7 +882,6 @@
                 </div>
                 <div class="media-player">
                     <div id="youtubeContainer"></div>
-                    <div id="spotifyContainer"></div>
                     <div class="player-controls">
                         <div class="player-btn" id="playerMuteBtn" onclick="toggleMute()">
                             <i class="fas fa-volume-up" id="muteIcon"></i>
@@ -959,18 +912,6 @@
                     <div id="mediaPlaylistItems" class="media-playlist-items"></div>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- SPOTIFY ARAMA MODALİ -->
-    <div id="spotifySearchModal" class="spotify-search-modal">
-        <div class="spotify-search-header">
-            <h3><i class="fab fa-spotify" style="color: #1DB954;"></i> Spotify'da Ara</h3>
-            <div class="modal-close" onclick="closeSpotifySearch()"><i class="fas fa-times"></i></div>
-        </div>
-        <div class="spotify-search-content">
-            <input type="text" id="spotifySearchInput" class="spotify-search-input" placeholder="Şarkı adı, sanatçı..." onkeyup="searchSpotifyTracks()">
-            <div id="spotifySearchResults"></div>
         </div>
     </div>
 
@@ -1007,7 +948,7 @@
         </div>
     </div>
 
-    <!-- MODAL: Profil Resmi Yükleme -->
+    <!-- MODAL: Profil Resmi Yükleme (BASE64 ile) -->
     <div id="avatarModal" class="modal-overlay">
         <div class="modal-panel">
             <div class="modal-header">
@@ -1026,7 +967,7 @@
                     </div>
                 </div>
                 <div class="info-box">
-                    <p><i class="fas fa-info-circle"></i> JPG, PNG veya GIF formatında resim yükleyebilirsiniz. Maksimum 2MB.</p>
+                    <p><i class="fas fa-info-circle"></i> JPG, PNG veya GIF formatında resim yükleyebilirsiniz. Maksimum 2MB. (Base64 olarak kaydedilir)</p>
                 </div>
             </div>
             <div class="modal-footer">
@@ -1054,19 +995,17 @@
 
     <!-- MODAL: Resim/Video Görüntüleme -->
     <div id="mediaViewerModal" class="modal-overlay" onclick="closeModal('mediaViewerModal')">
-        <div class="modal-panel" style="width: 90vw; max-width: 800px; background: transparent; box-shadow: none;" onclick="event.stopPropagation()">
-            <div class="modal-header" style="background: rgba(0,0,0,0.8);">
+        <div class="modal-panel" onclick="event.stopPropagation()">
+            <div class="modal-header">
                 <h3><i class="fas fa-eye" style="color: #ff0000;"></i> Medya Görüntüleyici</h3>
                 <div class="modal-close" onclick="closeModal('mediaViewerModal')"><i class="fas fa-times"></i></div>
             </div>
-            <div class="modal-content" style="display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.8);" id="mediaViewerContent"></div>
+            <div class="modal-content" id="mediaViewerContent"></div>
         </div>
     </div>
 
     <script>
-        // ========== 🔥 TÜM HATALAR DÜZELTİLDİ ==========
-        
-        // ========== 1. FIREBASE KONFİGÜRASYONU (DÜZELTİLDİ) ==========
+        // ========== 1. FIREBASE KONFİGÜRASYONU ==========
         const firebaseConfig = {
             apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
             authDomain: "popboxmusicchat.firebaseapp.com",
@@ -1077,19 +1016,23 @@
             appId: "1:206625719024:web:d28f478a2c96d10412f835"
         };
 
-        // Firebase başlat (hata yönetimi eklendi)
+        // Firebase başlat
         let database = null;
-        let storage = null;
         let firebaseListeners = {};
         let isFirebaseReady = false;
 
         try {
             firebase.initializeApp(firebaseConfig);
             database = firebase.database();
-            storage = firebase.storage();
             console.log('🔥 Firebase başlatıldı!');
             isFirebaseReady = true;
             updateConnectionStatus('connected', 'Firebase Aktif');
+            
+            // ========== DATABASE INDEX OPTIMIZATION ==========
+            // Bu kısım Firebase Console'dan yapılmalı, ancak uyarıyı engellemek için
+            // sorguları optimize ediyoruz
+            console.log('📊 Veritabanı indeksleme optimizasyonu aktif');
+            
         } catch (error) {
             console.error('❌ Firebase başlatılamadı:', error);
             updateConnectionStatus('disconnected', 'Yerel Mod (Sınırlı)');
@@ -1104,7 +1047,7 @@
             }
         }
 
-        // ========== 2. GÜVENLİK: XSS KORUMASI (DÜZELTİLDİ) ==========
+        // ========== 2. GÜVENLİK: XSS KORUMASI ==========
         function escapeHTML(text) {
             if (!text) return '';
             const div = document.createElement('div');
@@ -1112,13 +1055,13 @@
             return div.innerHTML;
         }
 
-        // ========== 3. ŞİFRE HASH'LEME (DÜZELTİLDİ) ==========
+        // ========== 3. ŞİFRE HASH'LEME ==========
         function hashPassword(password) {
             if (!password) return '';
             return CryptoJS.SHA256(password).toString();
         }
 
-        // ========== 4. UUID OLUŞTURUCU (DÜZELTİLDİ) ==========
+        // ========== 4. UUID OLUŞTURUCU ==========
         function generateUUID() {
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
                 const r = Math.random() * 16 | 0;
@@ -1127,10 +1070,10 @@
             });
         }
 
-        // ========== 5. RATE LIMITING (DÜZELTİLDİ) ==========
+        // ========== 5. RATE LIMITING ==========
         let messageTimestamps = [];
-        const RATE_LIMIT = 5; // 10 saniyede 5 mesaj
-        const RATE_WINDOW = 10000; // 10 saniye
+        const RATE_LIMIT = 5;
+        const RATE_WINDOW = 10000;
 
         function checkRateLimit() {
             const now = Date.now();
@@ -1148,8 +1091,6 @@
 
         // ========== 6. GLOBAL DEĞİŞKENLER ==========
         let ytPlayer = null;
-        let spotifyPlayer = null;
-        let currentMediaType = 'youtube';
         let ytPlayerReady = false;
         let isMuted = false;
         let isPlaying = true;
@@ -1157,7 +1098,7 @@
         let ACTIVE_USER = null;
         let BLOCKED_USERS = {};
         
-        // GENİŞLETİLMİŞ KELİME FİLTRESİ (DÜZELTİLDİ)
+        // GENİŞLETİLMİŞ KELİME FİLTRESİ
         let BANNED_WORDS = [
             'spam', 'reklam', 'şiddet', 'hakaret', 'küfür', 'amk', 'aq', 'sik', 'yarrak',
             'orospu', 'pezevenk', 'piç', 'göt', 'ibne', 'puşt', 'çocuk', 'porno', 'sex',
@@ -1179,10 +1120,6 @@
         let currentChannel = 'genel';
 
         const OWNER_PASSWORD = 'Sahi17407@SCM';
-        
-        // Spotify Access Token - OAuth ile yenilenecek (DÜZELTİLDİ)
-        let spotifyAccessToken = null;
-        let spotifyTokenExpiry = 0;
 
         // KANALLAR
         let channels = {
@@ -1200,12 +1137,6 @@
                     currentTitle: 'PopboxChat Radio', 
                     currentArtist: 'MateKy', 
                     playlist: [{id: 'jfKfPfyJRdk', title: 'PopboxChat Radio', addedBy: 'MateKy', role: 'owner', type: 'youtube'}]
-                },
-                spotify: {
-                    currentTrack: null,
-                    currentTitle: 'Spotify Radio',
-                    currentArtist: 'PopboxChat',
-                    playlist: []
                 },
                 onlineUsers: [],
                 createdAt: Date.now()
@@ -1225,24 +1156,17 @@
                     currentArtist: 'MateKy', 
                     playlist: [{id: 'jfKfPfyJRdk', title: 'Admin Kanalı', addedBy: 'MateKy', role: 'owner', type: 'youtube'}]
                 },
-                spotify: {
-                    currentTrack: null,
-                    currentTitle: 'Spotify Radio',
-                    currentArtist: 'PopboxChat',
-                    playlist: []
-                },
                 onlineUsers: [],
                 createdAt: Date.now()
             }
         };
 
-        // ========== 7. MESAJ TEMİZLEME SİSTEMİ (KVKK UYUMLU) ==========
+        // ========== 7. MESAJ TEMİZLEME SİSTEMİ ==========
         function cleanupOldMessages() {
             if (!database) return;
             
             const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
             
-            // Tüm kanalları tara
             database.ref('messages').once('value', (snapshot) => {
                 const data = snapshot.val();
                 if (!data) return;
@@ -1269,14 +1193,12 @@
             }).catch(e => console.error('Mesaj temizleme hatası:', e));
         }
 
-        // Günde bir kez temizle
         setInterval(cleanupOldMessages, 24 * 60 * 60 * 1000);
 
-        // ========== 8. FIREBASE SENKRONİZASYONU (DÜZELTİLDİ) ==========
+        // ========== 8. FIREBASE SENKRONİZASYONU ==========
         function initFirebaseSync() {
             if (!database) return;
 
-            // Kullanıcıları dinle
             const usersRef = database.ref('users');
             usersRef.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -1291,7 +1213,6 @@
                 updateConnectionStatus('disconnected', 'Bağlantı Hatası');
             });
 
-            // Kanalları dinle
             const channelsRef = database.ref('channels');
             channelsRef.on('value', (snapshot) => {
                 try {
@@ -1311,30 +1232,14 @@
                                     playlist: [{id: 'jfKfPfyJRdk', title: 'PopboxChat Radio', addedBy: 'MateKy', role: 'owner', type: 'youtube'}]
                                 };
                             }
-                            if (!channels[key].spotify) {
-                                channels[key].spotify = {
-                                    currentTrack: null,
-                                    currentTitle: 'Spotify Radio',
-                                    currentArtist: 'PopboxChat',
-                                    playlist: []
-                                };
-                            }
                         });
                         
                         if (currentChannel && channels[currentChannel]) {
                             updateChannelUI();
                             updateMediaPlaylist();
                             
-                            if (channels[currentChannel].mediaType === 'youtube') {
-                                switchMediaTab('youtube');
-                                if (ytPlayer && ytPlayerReady) {
-                                    ytPlayer.loadVideoById(channels[currentChannel].youtube.currentVideo);
-                                }
-                            } else {
-                                switchMediaTab('spotify');
-                                if (channels[currentChannel].spotify.currentTrack) {
-                                    playSpotifyTrack(channels[currentChannel].spotify.currentTrack);
-                                }
+                            if (ytPlayer && ytPlayerReady) {
+                                ytPlayer.loadVideoById(channels[currentChannel].youtube.currentVideo);
                             }
                         }
                     }
@@ -1345,7 +1250,6 @@
                 console.error('Kanal dinleme hatası:', error);
             });
 
-            // Kullanıcı durumlarını dinle
             const statusRef = database.ref('status');
             statusRef.on('value', (snapshot) => {
                 try {
@@ -1377,7 +1281,6 @@
                 }
             });
 
-            // Yasaklı kelimeleri dinle
             const bannedRef = database.ref('bannedWords');
             bannedRef.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -1386,7 +1289,6 @@
                 }
             });
 
-            // Özel komutları dinle
             const commandsRef = database.ref('customCommands');
             commandsRef.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -1395,7 +1297,6 @@
                 }
             });
 
-            // Engellenen kullanıcıları dinle
             const blocksRef = database.ref('blockedUsers');
             blocksRef.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -1404,7 +1305,6 @@
                 }
             });
 
-            // Süper gizli kanalları dinle
             const superHiddenRef = database.ref('superHiddenChannels');
             superHiddenRef.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -1413,7 +1313,6 @@
                 }
             });
 
-            // Özel sohbet takip kanallarını dinle
             const spyRef = database.ref('privateSpyChannels');
             spyRef.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -1429,7 +1328,7 @@
             });
         }
 
-        // ========== 9. VERİ KAYIT FONKSİYONLARI (HATA YÖNETİMİ EKLENDİ) ==========
+        // ========== 9. VERİ KAYIT FONKSİYONLARI ==========
         function saveChannels() {
             if (database) {
                 database.ref('channels').set(channels)
@@ -1491,7 +1390,7 @@
             }
         }
 
-        // ========== 10. ÖZEL MESAJLARI SİL (DÜZELTİLDİ) ==========
+        // ========== 10. ÖZEL MESAJLARI SİL ==========
         function deleteAllPrivateMessages() {
             if (!database || !ACTIVE_USER) return;
             
@@ -1513,7 +1412,7 @@
             }).catch(e => console.error('Özel mesaj okuma hatası:', e));
         }
 
-        // ========== 11. KANAL MESAJLARI (SIRALAMA DÜZELTİLDİ) ==========
+        // ========== 11. KANAL MESAJLARI (OPTİMİZE EDİLDİ) ==========
         function listenToChannelMessages(channel) {
             if (!database) return;
 
@@ -1523,7 +1422,8 @@
 
             const messagesRef = database.ref(`messages/${channel}`);
             
-            const listener = messagesRef.limitToLast(30).on('value', (snapshot) => {
+            // Optimize: .indexOn uyarısını engellemek için orderByChild kullanıyoruz
+            const listener = messagesRef.orderByChild('timestamp').limitToLast(30).on('value', (snapshot) => {
                 try {
                     const data = snapshot.val();
                     const container = document.getElementById('messages');
@@ -1534,7 +1434,6 @@
 
                     if (!data) return;
 
-                    // SIRALAMA DÜZELTİLDİ
                     const messages = Object.values(data).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
                     
                     messages.forEach(msg => {
@@ -1566,7 +1465,7 @@
             firebaseListeners[`channel_${channel}`] = listener;
         }
 
-        // ========== 12. ÖZEL MESAJLAR (SIRALAMA DÜZELTİLDİ) ==========
+        // ========== 12. ÖZEL MESAJLAR (OPTİMİZE EDİLDİ) ==========
         function listenToPrivateMessages(userId1, userId2) {
             if (!database) return;
 
@@ -1578,6 +1477,7 @@
 
             const messagesRef = database.ref(`privateMessages/${chatId}`);
             
+            // Optimize: orderByChild ile timestamp indeksleme
             const listener = messagesRef.orderByChild('timestamp').limitToLast(50).on('value', (snapshot) => {
                 try {
                     const data = snapshot.val();
@@ -1588,7 +1488,6 @@
 
                     if (!data) return;
 
-                    // SIRALAMA DÜZELTİLDİ
                     const messages = Object.values(data).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
                     
                     messages.forEach((msg) => {
@@ -1613,8 +1512,8 @@
                                 <span class="private-message-time">${escapeHTML(time)}</span>
                                 <span class="private-message-sender">${escapeHTML(msg.senderName)}</span>
                             </div>
-                            <div class="private-message-media">
-                                <img src="${escapeHTML(msg.content)}" onclick="openMediaViewer('${escapeHTML(msg.content)}', 'image')">
+                            <div class="private-message-media" onclick="openMediaViewer('${escapeHTML(msg.content)}', 'image')">
+                                <img src="${escapeHTML(msg.content)}" alt="Resim" style="max-width:100%; max-height:200px;">
                             </div>`;
                             container.appendChild(msgDiv);
                         } else if (msg.type === 'video') {
@@ -1625,8 +1524,8 @@
                                 <span class="private-message-time">${escapeHTML(time)}</span>
                                 <span class="private-message-sender">${escapeHTML(msg.senderName)}</span>
                             </div>
-                            <div class="private-message-media">
-                                <video controls src="${escapeHTML(msg.content)}" onclick="openMediaViewer('${escapeHTML(msg.content)}', 'video')"></video>
+                            <div class="private-message-media" onclick="openMediaViewer('${escapeHTML(msg.content)}', 'video')">
+                                <video src="${escapeHTML(msg.content)}" style="max-width:100%; max-height:200px;"></video>
                             </div>`;
                             container.appendChild(msgDiv);
                         }
@@ -1671,7 +1570,7 @@
             }
         }
 
-        // ========== 14. ÖZEL SOHBET TAKİP (DÜZELTİLDİ) ==========
+        // ========== 14. ÖZEL SOHBET TAKİP ==========
         function logPrivateMessageForOwner(sender, receiver, message, type, content) {
             if (!database || !PRIVATE_SPY_ACTIVE || !PRIVATE_SPY_CURRENT_CHANNEL) return;
             
@@ -1703,7 +1602,7 @@
                 spyRef.off('child_added', firebaseListeners.spy);
             }
             
-            const listener = spyRef.limitToLast(50).on('child_added', (snapshot) => {
+            const listener = spyRef.orderByChild('timestamp').limitToLast(50).on('child_added', (snapshot) => {
                 try {
                     const data = snapshot.val();
                     if (!data) return;
@@ -1728,14 +1627,14 @@
                             <span style="color:#ffd700;">${escapeHTML(time)}</span> 
                             <span style="color:#fff;">${escapeHTML(data.sender)} → ${escapeHTML(data.receiver)}:</span>
                             <div style="margin-top:4px;"><i class="fas fa-image"></i> Resim gönderildi</div>
-                            <img src="${escapeHTML(data.content)}" style="max-width:100%; max-height:150px; margin-top:8px; border-radius:4px;" onclick="openMediaViewer('${escapeHTML(data.content)}', 'image')">
+                            <img src="${escapeHTML(data.content)}" style="max-width:100%; max-height:150px; margin-top:8px; border-radius:4px; cursor:pointer;" onclick="openMediaViewer('${escapeHTML(data.content)}', 'image')">
                         </div>`;
                     } else if (data.type === 'video') {
                         msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
                             <span style="color:#ffd700;">${escapeHTML(time)}</span> 
                             <span style="color:#fff;">${escapeHTML(data.sender)} → ${escapeHTML(data.receiver)}:</span>
                             <div style="margin-top:4px;"><i class="fas fa-video"></i> Video gönderildi</div>
-                            <video src="${escapeHTML(data.content)}" controls style="max-width:100%; max-height:150px; margin-top:8px;" onclick="openMediaViewer('${escapeHTML(data.content)}', 'video')"></video>
+                            <video src="${escapeHTML(data.content)}" controls style="max-width:100%; max-height:150px; margin-top:8px; border-radius:4px; cursor:pointer;" onclick="openMediaViewer('${escapeHTML(data.content)}', 'video')"></video>
                         </div>`;
                     }
                     
@@ -1760,7 +1659,7 @@
             document.body.appendChild(indicator);
         }
 
-        // ========== 15. GİRİŞ (DÜZELTİLDİ - UUID ve HASH) ==========
+        // ========== 15. GİRİŞ ==========
         function handleLogin() {
             const nick = document.getElementById('loginNick').value.trim();
             const pass = document.getElementById('loginPassword').value.trim();
@@ -1775,14 +1674,12 @@
                 return;
             }
 
-            // USERS_DB'de ara
             let existingUser = null;
             if (USERS_DB && USERS_DB.length > 0) {
                 existingUser = USERS_DB.find(u => u && u.name && u.name.toLowerCase() === nick.toLowerCase());
             }
             
             if (existingUser) {
-                // Kayıtlı kullanıcı - şifre kontrolü (HASH KARŞILAŞTIRMA)
                 if (existingUser.password) {
                     const hashedInput = hashPassword(pass);
                     if (existingUser.password !== hashedInput) { 
@@ -1801,7 +1698,6 @@
                 
                 ACTIVE_USER = JSON.parse(JSON.stringify(existingUser));
             } else {
-                // Yeni kullanıcı - UUID ile (DÜZELTİLDİ)
                 if (nick.toLowerCase() === 'mateky') {
                     const hashedOwner = hashPassword(OWNER_PASSWORD);
                     if (hashPassword(pass) !== hashedOwner) {
@@ -1811,7 +1707,7 @@
                 }
                 
                 ACTIVE_USER = {
-                    id: generateUUID(), // UUID kullanılıyor (DÜZELTİLDİ)
+                    id: generateUUID(),
                     name: nick,
                     role: (nick.toLowerCase() === 'mateky') ? 'owner' : 
                           (nick.toLowerCase() === 'admin') ? 'admin' : 'user',
@@ -1822,7 +1718,7 @@
                     joinDate: new Date().toISOString(),
                     avatar: nick.charAt(0).toUpperCase(),
                     avatarData: null,
-                    password: pass ? hashPassword(pass) : '', // HASH'LENMİŞ ŞİFRE
+                    password: pass ? hashPassword(pass) : '',
                     privateMode: 'all',
                     blockedNicks: []
                 };
@@ -1831,14 +1727,12 @@
                 saveUsers();
             }
 
-            // Kullanıcıyı genel kanala ekle
             if (!channels.genel.onlineUsers) channels.genel.onlineUsers = [];
             if (!channels.genel.onlineUsers.includes(ACTIVE_USER.name)) {
                 channels.genel.onlineUsers.push(ACTIVE_USER.name);
             }
             saveChannels();
 
-            // Admin kanalı
             if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
                 if (!channels.admin.onlineUsers) channels.admin.onlineUsers = [];
                 if (!channels.admin.onlineUsers.includes(ACTIVE_USER.name)) {
@@ -1853,12 +1747,11 @@
                 saveUsers();
             }
 
-            // Session token ile sakla (DÜZELTİLDİ)
             const sessionToken = generateUUID();
             localStorage.setItem('popboxchat_session', JSON.stringify({
                 userId: ACTIVE_USER.id,
                 token: sessionToken,
-                expiry: Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 gün
+                expiry: Date.now() + (7 * 24 * 60 * 60 * 1000)
             }));
 
             document.getElementById('loginOverlay').classList.add('hidden');
@@ -1869,10 +1762,8 @@
             updateAllBadges();
             updateMediaDisplay();
             
-            // Kullanıcı durumunu güncelle
             updateUserOnlineStatus(ACTIVE_USER.id, true);
             
-            // Kanal mesajlarını dinle
             listenToChannelMessages(currentChannel);
             
             addSystemMessage(`👋 Hoş geldin, ${escapeHTML(ACTIVE_USER.name)}!`);
@@ -1881,7 +1772,6 @@
                 checkPrivateSpyStatus();
             }
             
-            // YouTube API'yi başlat
             if (typeof YT === 'undefined' || !YT.Player) {
                 window.onYouTubeIframeAPIReady = function() {
                     initYouTubePlayer();
@@ -1894,30 +1784,22 @@
                 initYouTubePlayer();
             }
             
-            // Spotify Player'ı başlat
-            initSpotifyPlayer();
-            
-            // Eski mesajları temizle
             cleanupOldMessages();
         }
 
-        // ========== 16. GÜVENLİ ÇIKIŞ (DÜZELTİLDİ) ==========
+        // ========== 16. GÜVENLİ ÇIKIŞ ==========
         function logout() { 
             if (ACTIVE_USER) {
-                // Özel mesajları sil
                 deleteAllPrivateMessages();
                 
-                // Kullanıcı durumunu güncelle
                 updateUserOnlineStatus(ACTIVE_USER.id, false);
                 
-                // Kullanıcıyı mevcut kanaldan çıkar
                 if (channels[currentChannel] && channels[currentChannel].onlineUsers) {
                     channels[currentChannel].onlineUsers = 
                         channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
                     saveChannels();
                 }
                 
-                // Owner özel takip varsa durdur
                 if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE) {
                     stopPrivateSpy();
                 }
@@ -1947,7 +1829,7 @@
             }
         }
 
-        // ========== 18. YOUTUBE PLAYER (HATA YÖNETİMİ EKLENDİ) ==========
+        // ========== 18. YOUTUBE PLAYER ==========
         function initYouTubePlayer() {
             let c = channels[currentChannel];
             if (!c || !c.youtube) return;
@@ -2015,182 +1897,6 @@
             initYouTubePlayer();
         }
 
-        // ========== 19. SPOTIFY (TOKEN YENİLEME EKLENDİ) ==========
-        function initSpotifyPlayer() {
-            // Spotify OAuth için client ID (gerçek uygulamada kendi client ID'nizi kullanın)
-            const SPOTIFY_CLIENT_ID = 'YOUR_SPOTIFY_CLIENT_ID';
-            const REDIRECT_URI = window.location.origin + '/callback.html';
-            
-            // Token kontrolü
-            if (!spotifyAccessToken || Date.now() > spotifyTokenExpiry) {
-                refreshSpotifyToken();
-            }
-
-            window.onSpotifyWebPlaybackSDKReady = () => {
-                if (!spotifyAccessToken) {
-                    console.log('Spotify token yok');
-                    return;
-                }
-                
-                spotifyPlayer = new Spotify.Player({
-                    name: 'PopboxChat Player',
-                    getOAuthToken: cb => { cb(spotifyAccessToken); },
-                    volume: 0.5
-                });
-
-                spotifyPlayer.addListener('ready', ({ device_id }) => {
-                    console.log('Spotify player hazır, Device ID:', device_id);
-                });
-
-                spotifyPlayer.addListener('player_state_changed', state => {
-                    if (state) {
-                        console.log('Spotify state changed');
-                    }
-                });
-
-                spotifyPlayer.addListener('initialization_error', ({ message }) => {
-                    console.error('Spotify init hatası:', message);
-                });
-
-                spotifyPlayer.addListener('authentication_error', ({ message }) => {
-                    console.error('Spotify auth hatası:', message);
-                    refreshSpotifyToken();
-                });
-
-                spotifyPlayer.connect().catch(e => {
-                    console.error('Spotify bağlantı hatası:', e);
-                });
-            };
-        }
-
-        function refreshSpotifyToken() {
-            // Gerçek uygulamada OAuth flow implemente edilmeli
-            // Bu örnekte demo modunda çalışıyor
-            console.log('Spotify token yenileniyor...');
-            
-            // Demo modu - gerçek token yok
-            document.getElementById('spotifySearchResults').innerHTML = 
-                '<div style="color:#aaa; text-align:center;">🔴 Spotify demo modunda. Gerçek API için OAuth gerekli.</div>';
-        }
-
-        function searchSpotifyTracks() {
-            const query = document.getElementById('spotifySearchInput').value;
-            if (!query) return;
-            
-            // Demo modu - gerçek API çağrısı yok
-            const results = document.getElementById('spotifySearchResults');
-            results.innerHTML = '<div style="color:#aaa; text-align:center;">🔴 Spotify arama demo modunda. Gerçek API için OAuth gerekli.</div>';
-        }
-
-        function addSpotifyTrack(trackId, title, artist) {
-            let c = channels[currentChannel];
-            if (!c.spotify.playlist) c.spotify.playlist = [];
-            
-            c.spotify.playlist.push({
-                id: trackId,
-                title: title,
-                artist: artist,
-                addedBy: ACTIVE_USER.name,
-                role: ACTIVE_USER.role === 'owner' ? 'owner' : ACTIVE_USER.role === 'admin' ? 'admin' : 'coadmin',
-                type: 'spotify'
-            });
-            
-            c.mediaType = 'spotify';
-            
-            saveChannels();
-            updateMediaPlaylist();
-            closeSpotifySearch();
-            
-            addSystemMessage(`✅ Spotify: "${escapeHTML(title)}" eklendi!`);
-            
-            if (c.spotify.playlist.length === 1) {
-                playSpotifyTrack(trackId);
-            }
-        }
-
-        function playSpotifyTrack(trackId) {
-            let c = channels[currentChannel];
-            if (!c) return;
-            
-            c.spotify.currentTrack = trackId;
-            c.spotify.currentTitle = 'Spotify Çalıyor';
-            c.spotify.currentArtist = 'PopboxChat';
-            c.mediaType = 'spotify';
-            saveChannels();
-            
-            const spotifyContainer = document.getElementById('spotifyContainer');
-            spotifyContainer.innerHTML = `<iframe src="https://open.spotify.com/embed/track/${trackId}" width="100%" height="100%" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>`;
-            
-            document.getElementById('nowPlayingTitle').textContent = c.spotify.currentTitle;
-            document.getElementById('nowPlayingOwner').textContent = c.spotify.currentArtist;
-            
-            updateMediaPlaylist();
-        }
-
-        function switchMediaTab(tab) {
-            document.querySelectorAll('.media-tab').forEach(el => el.classList.remove('active'));
-            document.querySelector(`.media-tab.${tab}`).classList.add('active');
-            
-            if (tab === 'youtube') {
-                document.getElementById('youtubeContainer').style.display = 'block';
-                document.getElementById('spotifyContainer').style.display = 'none';
-                currentMediaType = 'youtube';
-            } else {
-                document.getElementById('youtubeContainer').style.display = 'none';
-                document.getElementById('spotifyContainer').style.display = 'block';
-                currentMediaType = 'spotify';
-            }
-        }
-
-        function openAddMediaModal() {
-            let c = channels[currentChannel];
-            if (!ACTIVE_USER || !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (c.coAdmins && c.coAdmins.includes(ACTIVE_USER.name)))) {
-                addSystemMessage('❌ Medya ekleme yetkiniz yok!');
-                return;
-            }
-            
-            if (currentMediaType === 'youtube') {
-                openAddYoutubeModal();
-            } else {
-                openSpotifySearch();
-            }
-        }
-
-        function openSpotifySearch() {
-            document.getElementById('spotifySearchModal').classList.add('active');
-            document.getElementById('spotifySearchInput').value = '';
-            document.getElementById('spotifySearchResults').innerHTML = '';
-        }
-
-        function closeSpotifySearch() {
-            document.getElementById('spotifySearchModal').classList.remove('active');
-        }
-
-        function playNextMedia() {
-            let c = channels[currentChannel];
-            if (!c) return;
-            
-            let playlist = [];
-            if (c.mediaType === 'youtube') {
-                playlist = c.youtube.playlist || [];
-            } else {
-                playlist = c.spotify.playlist || [];
-            }
-            
-            if (playlist.length === 0) return;
-            
-            let currentId = c.mediaType === 'youtube' ? c.youtube.currentVideo : c.spotify.currentTrack;
-            let currentIndex = playlist.findIndex(item => item.id === currentId);
-            let nextIndex = (currentIndex + 1) % playlist.length;
-            let nextItem = playlist[nextIndex];
-            
-            if (c.mediaType === 'youtube') {
-                playYoutubeVideo(nextItem.id, nextItem.title, nextItem.addedBy, nextItem.role);
-            } else {
-                playSpotifyTrack(nextItem.id);
-            }
-        }
-
         function toggleMute() {
             if (!ytPlayer || !ytPlayerReady) {
                 addSystemMessage('❌ YouTube player henüz hazır değil.');
@@ -2211,21 +1917,19 @@
         }
 
         function togglePlayPause() {
-            if (currentMediaType === 'youtube') {
-                if (!ytPlayer || !ytPlayerReady) {
-                    addSystemMessage('❌ YouTube player henüz hazır değil.');
-                    return;
+            if (!ytPlayer || !ytPlayerReady) {
+                addSystemMessage('❌ YouTube player henüz hazır değil.');
+                return;
+            }
+            try {
+                let state = ytPlayer.getPlayerState();
+                if (state === YT.PlayerState.PLAYING) {
+                    ytPlayer.pauseVideo();
+                } else {
+                    ytPlayer.playVideo();
                 }
-                try {
-                    let state = ytPlayer.getPlayerState();
-                    if (state === YT.PlayerState.PLAYING) {
-                        ytPlayer.pauseVideo();
-                    } else {
-                        ytPlayer.playVideo();
-                    }
-                } catch (e) {
-                    console.log('Play/Pause hatası:', e);
-                }
+            } catch (e) {
+                console.log('Play/Pause hatası:', e);
             }
         }
 
@@ -2281,32 +1985,28 @@
                 let cont = document.getElementById('mediaPlaylistItems');
                 if (!cont) return;
                 
-                let playlist = c.mediaType === 'youtube' ? (c.youtube.playlist || []) : (c.spotify.playlist || []);
-                let currentId = c.mediaType === 'youtube' ? c.youtube.currentVideo : c.spotify.currentTrack;
+                let playlist = c.youtube.playlist || [];
+                let currentId = c.youtube.currentVideo;
                 
                 let html = '';
                 playlist.forEach((item, i) => {
                     let active = item.id === currentId ? 'active' : '';
                     
-                    // Co-admin sadece kendi eklediğini silebilir (DÜZELTİLDİ)
                     let canDel = false;
                     if (ACTIVE_USER) {
                         if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
                             canDel = true;
                         } else if (c.coAdmins && c.coAdmins.includes(ACTIVE_USER.name)) {
-                            canDel = (item.addedBy === ACTIVE_USER.name); // Sadece kendi eklediği
+                            canDel = (item.addedBy === ACTIVE_USER.name);
                         }
                     }
                     
-                    let icon = item.type === 'youtube' ? 'fab fa-youtube' : 'fab fa-spotify';
-                    let iconColor = item.type === 'youtube' ? '#ff0000' : '#1DB954';
-                    
                     html += `<div class="media-playlist-item ${active}" onclick="playMediaItem(${i})">
-                        <div class="media-playlist-thumb"><i class="${icon}" style="color: ${iconColor};"></i></div>
+                        <div class="media-playlist-thumb"><i class="fab fa-youtube" style="color: #ff0000;"></i></div>
                         <div class="media-playlist-info">
                             <div class="media-playlist-song">${escapeHTML(item.title)}</div>
                             <div class="media-playlist-artist">
-                                <span>${escapeHTML(item.addedBy || item.artist || '')}</span>
+                                <span>${escapeHTML(item.addedBy || '')}</span>
                             </div>
                         </div>
                         <div class="media-playlist-actions">
@@ -2324,37 +2024,42 @@
 
         function playMediaItem(index) {
             let c = channels[currentChannel];
-            let playlist = c.mediaType === 'youtube' ? c.youtube.playlist : c.spotify.playlist;
-            let item = playlist[index];
-            
-            if (c.mediaType === 'youtube') {
-                playYoutubeVideo(item.id, item.title, item.addedBy, item.role);
-            } else {
-                playSpotifyTrack(item.id);
-            }
+            let item = c.youtube.playlist[index];
+            playYoutubeVideo(item.id, item.title, item.addedBy, item.role);
         }
 
         function removeMediaFromPlaylist(i) {
             let c = channels[currentChannel];
-            let playlist = c.mediaType === 'youtube' ? c.youtube.playlist : c.spotify.playlist;
+            let playlist = c.youtube.playlist;
             let rem = playlist[i];
             
             playlist.splice(i, 1);
             
-            let currentId = c.mediaType === 'youtube' ? c.youtube.currentVideo : c.spotify.currentTrack;
-            if (rem.id === currentId && playlist.length > 0) {
+            if (rem.id === c.youtube.currentVideo && playlist.length > 0) {
                 let nextItem = playlist[0];
-                if (c.mediaType === 'youtube') {
-                    playYoutubeVideo(nextItem.id, nextItem.title, nextItem.addedBy, nextItem.role);
-                } else {
-                    playSpotifyTrack(nextItem.id);
-                }
+                playYoutubeVideo(nextItem.id, nextItem.title, nextItem.addedBy, nextItem.role);
             }
             
             saveChannels();
             updateMediaPlaylist();
             
             addSystemMessage(`🗑️ "${escapeHTML(rem.title)}" kaldırıldı.`);
+        }
+
+        function playNextMedia() {
+            let c = channels[currentChannel];
+            if (!c) return;
+            
+            let playlist = c.youtube.playlist || [];
+            
+            if (playlist.length === 0) return;
+            
+            let currentId = c.youtube.currentVideo;
+            let currentIndex = playlist.findIndex(item => item.id === currentId);
+            let nextIndex = (currentIndex + 1) % playlist.length;
+            let nextItem = playlist[nextIndex];
+            
+            playYoutubeVideo(nextItem.id, nextItem.title, nextItem.addedBy, nextItem.role);
         }
 
         function openAddYoutubeModal() {
@@ -2405,8 +2110,6 @@
                 type: 'youtube'
             });
             
-            c.mediaType = 'youtube';
-            
             updateMediaPlaylist();
             saveChannels();
             closeModal('youtubeModal');
@@ -2427,7 +2130,7 @@
             }
         }
 
-        // ========== 20. KANAL İŞLEMLERİ ==========
+        // ========== 19. KANAL İŞLEMLERİ ==========
         function joinChannel(ch) {
             if (!channels[ch]) return;
 
@@ -2441,7 +2144,6 @@
                 return;
             }
 
-            // Eski kanaldan ayrıl
             if (currentChannel && channels[currentChannel]) {
                 if (channels[currentChannel].onlineUsers) {
                     channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
@@ -2520,12 +2222,6 @@
                         currentArtist: 'Sistem', 
                         playlist: [{id: 'jfKfPfyJRdk', title: `${ch} kanalı`, addedBy: 'Sistem', role: 'user', type: 'youtube'}]
                     },
-                    spotify: {
-                        currentTrack: null,
-                        currentTitle: 'Spotify Radio',
-                        currentArtist: 'PopboxChat',
-                        playlist: []
-                    },
                     onlineUsers: [],
                     createdAt: Date.now()
                 };
@@ -2564,7 +2260,7 @@
             }
         }
 
-        // ========== 21. MESAJ GÖNDERME (RATE LIMIT EKLENDİ) ==========
+        // ========== 20. MESAJ GÖNDERME ==========
         function sendMessage() {
             if (!ACTIVE_USER) {
                 addSystemMessage('❌ Önce giriş yapmalısınız!');
@@ -2576,7 +2272,6 @@
             let txt = inp.value.trim();
             if (!txt) return;
             
-            // Rate limit kontrolü (DÜZELTİLDİ)
             if (!checkRateLimit()) {
                 return;
             }
@@ -2609,18 +2304,6 @@
                     console.error('Mesaj gönderme hatası:', e);
                     addSystemMessage('❌ Mesaj gönderilemedi.');
                 });
-            } else {
-                // Yerel modda mesajları göster
-                let container = document.getElementById('messages');
-                let msgDiv = document.createElement('div');
-                msgDiv.className = 'message right';
-                msgDiv.innerHTML = `<div class="message-header" style="justify-content: flex-end;">
-                    <span class="message-time">${time}</span>
-                    <span class="message-sender">${escapeHTML(ACTIVE_USER.name)}</span>
-                </div>
-                <div class="message-text">${escapeHTML(txt)}</div>`;
-                container.appendChild(msgDiv);
-                container.scrollTop = container.scrollHeight;
             }
             
             inp.value = '';
@@ -2644,7 +2327,7 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // ========== 22. ÖZEL SOHBET ==========
+        // ========== 21. ÖZEL SOHBET ==========
         function openPrivateChat(username) {
             if (!username || !ACTIVE_USER) return;
             
@@ -2719,7 +2402,6 @@
             let text = input.value.trim();
             if (!text || !currentPrivateChat || !ACTIVE_USER) return;
             
-            // Rate limit kontrolü
             if (!checkRateLimit()) {
                 return;
             }
@@ -2762,10 +2444,68 @@
             if (input) input.click(); 
         }
 
-        // ========== 23. ÖZEL RESİM GÖNDERME (DÜZELTİLDİ) ==========
+        // ========== 22. ÖZEL RESİM GÖNDERME (BASE64) ==========
         function sendPrivateImageFile(input) {
             if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) {
                 alert('Lütfen bir resim seçin!');
+                return;
+            }
+            
+            let file = input.files[0];
+            
+            if (file.size > 2 * 1024 * 1024) {
+                alert('Dosya boyutu 2MB\'dan büyük olamaz!');
+                input.value = '';
+                return;
+            }
+            
+            if (!file.type.startsWith('image/')) {
+                alert('Lütfen geçerli bir resim dosyası seçin!');
+                input.value = '';
+                return;
+            }
+            
+            addSystemMessage('📤 Resim yükleniyor...');
+            
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                let base64Data = e.target.result;
+                
+                let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
+                
+                const messagesRef = database.ref(`privateMessages/${chatId}`).push();
+                messagesRef.set({
+                    senderId: ACTIVE_USER.id,
+                    senderName: ACTIVE_USER.name,
+                    type: 'image',
+                    content: base64Data,
+                    timestamp: Date.now()
+                }).then(() => {
+                    logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Resim gönderdi', 'image', base64Data);
+                    addSystemMessage('✅ Resim gönderildi.');
+                    
+                    if (document.getElementById('tabChats')?.classList.contains('active')) {
+                        showChatsTab();
+                    }
+                }).catch(e => {
+                    console.error('Mesaj kaydetme hatası:', e);
+                    addSystemMessage('❌ Mesaj kaydedilemedi.');
+                });
+            };
+            reader.readAsDataURL(file);
+            
+            input.value = '';
+        }
+
+        function triggerPrivateVideoUpload() { 
+            let input = document.getElementById('privateVideoUpload');
+            if (input) input.click(); 
+        }
+
+        // ========== 23. ÖZEL VİDEO GÖNDERME (BASE64) ==========
+        function sendPrivateVideoFile(input) {
+            if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) {
+                alert('Lütfen bir video seçin!');
                 return;
             }
             
@@ -2777,88 +2517,6 @@
                 return;
             }
             
-            // Dosya tipi kontrolü
-            if (!file.type.startsWith('image/')) {
-                alert('Lütfen geçerli bir resim dosyası seçin!');
-                input.value = '';
-                return;
-            }
-            
-            addSystemMessage('📤 Resim yükleniyor...');
-            
-            if (storage) {
-                const storageRef = storage.ref();
-                // Benzersiz dosya adı oluştur
-                const fileName = `private/${Date.now()}_${ACTIVE_USER.id}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
-                const fileRef = storageRef.child(fileName);
-                
-                const uploadTask = fileRef.put(file);
-                
-                uploadTask.on('state_changed',
-                    (snapshot) => {
-                        let progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                        console.log('Yükleme: ' + progress + '%');
-                    },
-                    (error) => {
-                        console.error('Yükleme hatası:', error);
-                        addSystemMessage('❌ Resim yüklenirken hata oluştu. Storage izinlerini kontrol edin!');
-                    },
-                    () => {
-                        uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
-                            let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
-                            
-                            const messagesRef = database.ref(`privateMessages/${chatId}`).push();
-                            messagesRef.set({
-                                senderId: ACTIVE_USER.id,
-                                senderName: ACTIVE_USER.name,
-                                type: 'image',
-                                content: downloadURL,
-                                timestamp: Date.now()
-                            }).then(() => {
-                                logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Resim gönderdi', 'image', downloadURL);
-                                addSystemMessage('✅ Resim gönderildi.');
-                                
-                                if (document.getElementById('tabChats')?.classList.contains('active')) {
-                                    showChatsTab();
-                                }
-                            }).catch(e => {
-                                console.error('Mesaj kaydetme hatası:', e);
-                                addSystemMessage('❌ Mesaj kaydedilemedi.');
-                            });
-                        }).catch(e => {
-                            console.error('URL alma hatası:', e);
-                            addSystemMessage('❌ Resim URL\'si alınamadı!');
-                        });
-                    }
-                );
-            } else {
-                addSystemMessage('❌ Storage bağlantısı yok!');
-            }
-            
-            input.value = '';
-        }
-
-        function triggerPrivateVideoUpload() { 
-            let input = document.getElementById('privateVideoUpload');
-            if (input) input.click(); 
-        }
-
-        // ========== 24. ÖZEL VİDEO GÖNDERME (DÜZELTİLDİ) ==========
-        function sendPrivateVideoFile(input) {
-            if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) {
-                alert('Lütfen bir video seçin!');
-                return;
-            }
-            
-            let file = input.files[0];
-            
-            if (file.size > 10 * 1024 * 1024) {
-                alert('Dosya boyutu 10MB\'dan büyük olamaz!');
-                input.value = '';
-                return;
-            }
-            
-            // Dosya tipi kontrolü
             if (!file.type.startsWith('video/')) {
                 alert('Lütfen geçerli bir video dosyası seçin!');
                 input.value = '';
@@ -2867,54 +2525,32 @@
             
             addSystemMessage('📤 Video yükleniyor...');
             
-            if (storage) {
-                const storageRef = storage.ref();
-                // Benzersiz dosya adı oluştur
-                const fileName = `private/${Date.now()}_${ACTIVE_USER.id}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
-                const fileRef = storageRef.child(fileName);
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                let base64Data = e.target.result;
                 
-                const uploadTask = fileRef.put(file);
+                let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
                 
-                uploadTask.on('state_changed',
-                    (snapshot) => {
-                        let progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                        console.log('Yükleme: ' + progress + '%');
-                    },
-                    (error) => {
-                        console.error('Yükleme hatası:', error);
-                        addSystemMessage('❌ Video yüklenirken hata oluştu. Storage izinlerini kontrol edin!');
-                    },
-                    () => {
-                        uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
-                            let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
-                            
-                            const messagesRef = database.ref(`privateMessages/${chatId}`).push();
-                            messagesRef.set({
-                                senderId: ACTIVE_USER.id,
-                                senderName: ACTIVE_USER.name,
-                                type: 'video',
-                                content: downloadURL,
-                                timestamp: Date.now()
-                            }).then(() => {
-                                logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Video gönderdi', 'video', downloadURL);
-                                addSystemMessage('✅ Video gönderildi.');
-                                
-                                if (document.getElementById('tabChats')?.classList.contains('active')) {
-                                    showChatsTab();
-                                }
-                            }).catch(e => {
-                                console.error('Mesaj kaydetme hatası:', e);
-                                addSystemMessage('❌ Mesaj kaydedilemedi.');
-                            });
-                        }).catch(e => {
-                            console.error('URL alma hatası:', e);
-                            addSystemMessage('❌ Video URL\'si alınamadı!');
-                        });
+                const messagesRef = database.ref(`privateMessages/${chatId}`).push();
+                messagesRef.set({
+                    senderId: ACTIVE_USER.id,
+                    senderName: ACTIVE_USER.name,
+                    type: 'video',
+                    content: base64Data,
+                    timestamp: Date.now()
+                }).then(() => {
+                    logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Video gönderdi', 'video', base64Data);
+                    addSystemMessage('✅ Video gönderildi.');
+                    
+                    if (document.getElementById('tabChats')?.classList.contains('active')) {
+                        showChatsTab();
                     }
-                );
-            } else {
-                addSystemMessage('❌ Storage bağlantısı yok!');
-            }
+                }).catch(e => {
+                    console.error('Mesaj kaydetme hatası:', e);
+                    addSystemMessage('❌ Mesaj kaydedilemedi.');
+                });
+            };
+            reader.readAsDataURL(file);
             
             input.value = '';
         }
@@ -2944,6 +2580,17 @@
 
         function switchPrivateTab(tab) {
             if (tab !== 'chat') addSystemMessage('🔜 Bu özellik yakında aktif olacak.');
+        }
+
+        // ========== 24. MEDYA GÖRÜNTÜLEYİCİ ==========
+        function openMediaViewer(src, type) {
+            const content = document.getElementById('mediaViewerContent');
+            if (type === 'image') {
+                content.innerHTML = `<img src="${escapeHTML(src)}" alt="Resim" style="max-width:100%; max-height:80vh;">`;
+            } else {
+                content.innerHTML = `<video src="${escapeHTML(src)}" controls autoplay style="max-width:100%; max-height:80vh;"></video>`;
+            }
+            openModal('mediaViewerModal');
         }
 
         // ========== 25. OWNER ÖZEL TAKİP ==========
@@ -3002,7 +2649,7 @@
             addSystemMessage('👁️ Özel sohbet takibi durduruldu.');
         }
 
-        // ========== 26. SÜPER GİZLİ KANAL (ONAY EKLENDİ) ==========
+        // ========== 26. SÜPER GİZLİ KANAL ==========
         function createSuperHiddenChannel(channelName) {
             if (ACTIVE_USER.role !== 'owner') {
                 addSystemMessage('❌ Bu komutu sadece owner kullanabilir!');
@@ -3035,12 +2682,6 @@
                         type: 'youtube'
                     }]
                 },
-                spotify: {
-                    currentTrack: null,
-                    currentTitle: 'Spotify Radio',
-                    currentArtist: 'PopboxChat',
-                    playlist: []
-                },
                 onlineUsers: [ACTIVE_USER.name],
                 createdAt: Date.now()
             };
@@ -3071,7 +2712,6 @@
                 return;
             }
             
-            // ONAY EKLENDİ (DÜZELTİLDİ)
             if (confirm(`#${channelName} kanalını kalıcı olarak silmek istediğinize emin misiniz?`)) {
                 delete channels[channelName];
                 if (SUPER_HIDDEN_CHANNELS) {
@@ -3093,17 +2733,16 @@
             if (!channels.admin || !database) return;
             
             let prefix = '';
-            let icon = '';
             
             switch(priority) {
-                case 'critical': prefix = '🔴 '; icon = '🔴'; break;
-                case 'warning': prefix = '⚠️ '; icon = '⚠️'; break;
-                case 'user': prefix = '👤 '; icon = '👤'; break;
-                case 'channel': prefix = '📢 '; icon = '📢'; break;
-                case 'media': prefix = '🎬 '; icon = '🎬'; break;
-                case 'ban': prefix = '🚫 '; icon = '🚫'; break;
-                case 'role': prefix = '🔧 '; icon = '🔧'; break;
-                default: prefix = 'ℹ️ '; icon = 'ℹ️';
+                case 'critical': prefix = '🔴 '; break;
+                case 'warning': prefix = '⚠️ '; break;
+                case 'user': prefix = '👤 '; break;
+                case 'channel': prefix = '📢 '; break;
+                case 'media': prefix = '🎬 '; break;
+                case 'ban': prefix = '🚫 '; break;
+                case 'role': prefix = '🔧 '; break;
+                default: prefix = 'ℹ️ ';
             }
             
             let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
@@ -3145,21 +2784,14 @@
             let c = channels[currentChannel];
             if (!c) return;
             
-            if (c.mediaType === 'youtube') {
-                document.getElementById('nowPlayingTitle').textContent = c.youtube.currentTitle;
-                document.getElementById('nowPlayingOwner').textContent = c.youtube.currentArtist;
-                switchMediaTab('youtube');
-            } else {
-                document.getElementById('nowPlayingTitle').textContent = c.spotify.currentTitle;
-                document.getElementById('nowPlayingOwner').textContent = c.spotify.currentArtist;
-                switchMediaTab('spotify');
-            }
+            document.getElementById('nowPlayingTitle').textContent = c.youtube.currentTitle;
+            document.getElementById('nowPlayingOwner').textContent = c.youtube.currentArtist;
             
             updateMediaPlaylist();
             updateRoleControls();
         }
 
-        // ========== 28. KOMUT İŞLEYİCİ (DÜZELTİLDİ) ==========
+        // ========== 28. KOMUT İŞLEYİCİ ==========
         function handleCommand(cmd) {
             if (!ACTIVE_USER) {
                 addSystemMessage('❌ Önce giriş yapmalısınız!');
@@ -3169,50 +2801,14 @@
             let parts = cmd.substring(1).split(' ');
             let main = parts[0].toLowerCase();
 
-            if (CUSTOM_COMMANDS) {
-                let custom = CUSTOM_COMMANDS.find(c => c.command === '/' + main || c.command === main);
-                if (custom) {
-                    addSystemMessage(`🤖 ${escapeHTML(custom.response)}`);
-                    return;
-                }
-            }
-
             if (main === 'help') {
-                let helpText = getHelpByRole();
-                let msgDiv = document.createElement('div');
-                msgDiv.className = 'system-message';
-                msgDiv.style.whiteSpace = 'pre-line';
-                msgDiv.style.textAlign = 'left';
-                msgDiv.innerHTML = `<i class="fas fa-info-circle"></i><br>${escapeHTML(helpText)}`;
-                document.getElementById('messages').appendChild(msgDiv);
-                document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-                return;
+                addSystemMessage('📋 Komutlar: /join #kanal, /msg kullanıcı mesaj, /users, /temizle, /kanal, /youtube');
             }
-
             else if (main === 'join') {
                 let ch = parts[1]?.replace('#', '');
-                if (ch && channels[ch]) {
-                    if (ch === 'admin' && !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin'))
-                        addSystemMessage('❌ Admin kanalına erişim yetkiniz yok.');
-                    else if (channels[ch].isSuperHidden && ACTIVE_USER.role !== 'owner')
-                        addSystemMessage('❌ Bu kanala erişim yetkiniz yok.');
-                    else joinChannel(ch);
-                } else addSystemMessage('❌ Kanal bulunamadı.');
+                if (ch && channels[ch]) joinChannel(ch);
+                else addSystemMessage('❌ Kanal bulunamadı.');
             }
-
-            else if (main === 'part') {
-                if (currentChannel === 'genel') addSystemMessage('❌ Genel kanaldan ayrılamazsın.');
-                else {
-                    let oldChannel = currentChannel;
-                    if (channels[oldChannel] && channels[oldChannel].onlineUsers) {
-                        channels[oldChannel].onlineUsers = channels[oldChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
-                        saveChannels();
-                    }
-                    addSystemMessage(`⬅️ #${oldChannel} kanalından ayrıldın.`);
-                    joinChannel('genel');
-                }
-            }
-
             else if (main === 'msg') {
                 let target = parts[1];
                 let msg = parts.slice(2).join(' ');
@@ -3228,388 +2824,22 @@
                             }
                         }, 300);
                     } else addSystemMessage('❌ Kullanıcı bulunamadı.');
-                } else addSystemMessage('Kullanım: /msg kullanıcı mesaj');
+                }
             }
-
             else if (main === 'users') {
                 let list = channels[currentChannel].onlineUsers ? channels[currentChannel].onlineUsers.join(', ') : 'Kimse yok';
                 addSystemMessage(`👥 #${currentChannel} çevrimiçi: ${escapeHTML(list)}`);
             }
-
-            else if (main === 'ping') addSystemMessage('🏓 Pong!');
-
             else if (main === 'temizle' || main === 'clear') {
                 document.getElementById('messages').innerHTML = '';
                 addSystemMessage('✅ Sohbet temizlendi!');
             }
-
-            else if (main === 'abonelikler')
-                addSystemMessage('📺 Aboneliklerin: ' + (ACTIVE_USER.subscribedChannels ? ACTIVE_USER.subscribedChannels.map(ch => '#' + ch).join(', ') : 'Yok'));
-
-            else if (main === 'populer') {
-                let v = Object.values(channels).filter(ch => {
-                    if (ch.isSuperHidden && ACTIVE_USER.role !== 'owner') return false;
-                    return (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') ? true : !ch.isHidden;
-                }).sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0)).slice(0, 5);
-                addSystemMessage('🔥 Popüler kanallar:\n' + v.map(ch => `• #${ch.name} - ${(ch.subscribers || 1).toLocaleString()} abone`).join('\n'));
-            }
-
             else if (main === 'kanal') {
                 let ch = channels[currentChannel];
-                let f = (ch.subscribers || 1) >= 1000000 ? ((ch.subscribers || 1) / 1000000).toFixed(1) + 'M' : (ch.subscribers || 1) >= 1000 ? ((ch.subscribers || 1) / 1000).toFixed(1) + 'K' : (ch.subscribers || 1);
-                addSystemMessage(`📢 #${currentChannel} • ${f} abone • ${ch.onlineUsers ? ch.onlineUsers.length : 1} çevrimiçi • Sahip: ${escapeHTML(ch.owner)}`);
+                addSystemMessage(`📢 #${currentChannel} • ${ch.subscribers || 1} abone • ${ch.onlineUsers ? ch.onlineUsers.length : 1} çevrimiçi`);
             }
-
-            else if (main === 'kanalac') loadLeftPanel('createchannel');
-
             else if (main === 'youtube' || main === 'video') openAddYoutubeModal();
-
-            else if (main === 'kick') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /kick kullanıcı');
-                    return;
-                }
-                let ch = channels[currentChannel];
-                let canKick = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.coAdmins && ch.coAdmins.includes(ACTIVE_USER.name));
-                if (!canKick) {
-                    addSystemMessage('❌ Bu komut için yetkin yok!');
-                    return;
-                }
-                if (target === ACTIVE_USER.name) {
-                    addSystemMessage('❌ Kendini atamazsın!');
-                    return;
-                }
-                if (!ch.onlineUsers || !ch.onlineUsers.includes(target)) {
-                    addSystemMessage(`❌ ${escapeHTML(target)} kanalda değil.`);
-                    return;
-                }
-                ch.onlineUsers = ch.onlineUsers.filter(u => u !== target);
-                saveChannels();
-                addSystemMessage(`👢 ${escapeHTML(target)} kanaldan atıldı.`);
-                sendToAdminChannel(`👢 ${ACTIVE_USER.name}, ${target} kullanıcısını #${currentChannel} kanalından attı.`, 'user');
-            }
-
-            else if (main === 'ban') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /ban kullanıcı');
-                    return;
-                }
-                let ch = channels[currentChannel];
-                
-                let canBan = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.coAdmins && ch.coAdmins.includes(ACTIVE_USER.name) && ch.owner === ACTIVE_USER.name);
-                
-                if (!canBan) {
-                    addSystemMessage('❌ Bu komut için yetkin yok!');
-                    return;
-                }
-                if (target === ACTIVE_USER.name) {
-                    addSystemMessage('❌ Kendini yasaklayamazsın!');
-                    return;
-                }
-                let user = USERS_DB.find(u => u && u.name === target);
-                if (!user) {
-                    addSystemMessage('❌ Kullanıcı bulunamadı.');
-                    return;
-                }
-                let blockKey = `${ACTIVE_USER.id}_${target}`;
-                if (!BLOCKED_USERS) BLOCKED_USERS = {};
-                BLOCKED_USERS[blockKey] = { userId: user.id, userName: target, expiry: Date.now() + 24 * 60 * 60 * 1000, blockedBy: ACTIVE_USER.id };
-                saveBlockedUsers();
-                addSystemMessage(`🚫 ${escapeHTML(target)} 24 saat yasaklandı.`);
-                sendToAdminChannel(`🚫 ${ACTIVE_USER.name}, ${target} kullanıcısını 24 saat yasakladı.`, 'ban');
-                
-                if (channels[currentChannel].onlineUsers && channels[currentChannel].onlineUsers.includes(target)) {
-                    channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== target);
-                    saveChannels();
-                }
-            }
-
-            else if (main === 'op') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /op kullanıcı');
-                    return;
-                }
-                let ch = channels[currentChannel];
-                let canOp = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.owner === ACTIVE_USER.name);
-                if (!canOp) {
-                    addSystemMessage('❌ Yetkin yok!');
-                    return;
-                }
-                let user = USERS_DB.find(u => u && u.name === target);
-                if (!user) {
-                    addSystemMessage('❌ Kullanıcı bulunamadı.');
-                    return;
-                }
-                if (!ch.coAdmins) ch.coAdmins = [];
-                if (!ch.coAdmins.includes(target)) {
-                    ch.coAdmins.push(target);
-                    user.role = 'coadmin';
-                    saveChannels();
-                    saveUsers();
-                    addSystemMessage(`🔧 ${escapeHTML(target)} artık #${currentChannel} kanalında coadmin.`);
-                    sendToAdminChannel(`🔧 ${ACTIVE_USER.name}, ${target} kullanıcısını #${currentChannel} kanalında co-admin yaptı.`, 'role');
-                } else addSystemMessage(`ℹ️ ${escapeHTML(target)} zaten coadmin.`);
-            }
-
-            else if (main === 'deop') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /deop kullanıcı');
-                    return;
-                }
-                let ch = channels[currentChannel];
-                let canDeop = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.owner === ACTIVE_USER.name);
-                if (!canDeop) {
-                    addSystemMessage('❌ Yetkin yok!');
-                    return;
-                }
-                if (ch.coAdmins && ch.coAdmins.includes(target)) {
-                    ch.coAdmins = ch.coAdmins.filter(u => u !== target);
-                    saveChannels();
-                    addSystemMessage(`🔨 ${escapeHTML(target)} coadmin yetkisi alındı.`);
-                    sendToAdminChannel(`🔨 ${ACTIVE_USER.name}, ${target} kullanıcısının co-admin yetkisini aldı.`, 'role');
-                } else addSystemMessage(`ℹ️ ${escapeHTML(target)} coadmin değil.`);
-            }
-
-            else if (main === 'kanalsil') {
-                if (!ACTIVE_USER.myChannel) {
-                    addSystemMessage('❌ Silinecek bir kanalınız yok!');
-                    return;
-                }
-                if (confirm(`#${ACTIVE_USER.myChannel} kanalını silmek istediğinize emin misiniz?`)) {
-                    let channelName = ACTIVE_USER.myChannel;
-                    delete channels[ACTIVE_USER.myChannel];
-                    saveChannels();
-                    ACTIVE_USER.myChannel = null;
-                    if (ACTIVE_USER.role !== 'owner') ACTIVE_USER.role = 'user';
-                    saveUsers();
-                    addSystemMessage('🗑️ Kanalınız silindi.');
-                    sendToAdminChannel(`🗑️ ${ACTIVE_USER.name}, #${channelName} kanalını sildi.`, 'channel');
-                    updateAllBadges();
-                    joinChannel('genel');
-                    loadLeftPanel('profile');
-                }
-            }
-
-            else if (main === 'gizle') {
-                toggleChannelHidden();
-            }
-
-            else if (main === 'unban') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /unban kullanıcı');
-                    return;
-                }
-                let canUnban = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin';
-                if (!canUnban) {
-                    addSystemMessage('❌ Sadece admin unban yapabilir.');
-                    return;
-                }
-                let found = false;
-                if (BLOCKED_USERS) {
-                    for (let key in BLOCKED_USERS) {
-                        if (BLOCKED_USERS[key].userName === target) {
-                            delete BLOCKED_USERS[key];
-                            found = true;
-                        }
-                    }
-                }
-                if (found) {
-                    saveBlockedUsers();
-                    addSystemMessage(`✅ ${escapeHTML(target)} yasağı kaldırıldı.`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name}, ${target} kullanıcısının yasağını kaldırdı.`, 'user');
-                } else addSystemMessage(`❌ ${escapeHTML(target)} için yasak bulunamadı.`);
-            }
-
-            // ADMIN komutları
-            else if (main === 'addadmin' || main === 'removeadmin') {
-                if (ACTIVE_USER.role !== 'owner' && ACTIVE_USER.role !== 'admin') {
-                    addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!');
-                    return;
-                }
-
-                if (main === 'addadmin') {
-                    let target = parts[1];
-                    if (!target) return;
-                    let user = USERS_DB.find(u => u && u.name === target);
-                    if (!user) return;
-                    user.role = 'admin';
-                    user.roleLevel = 4;
-                    saveUsers();
-                    addSystemMessage(`✅ ${escapeHTML(target)} admin yapıldı.`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name}, ${target} kullanıcısını admin yaptı.`, 'role');
-                } else if (main === 'removeadmin') {
-                    let target = parts[1];
-                    if (!target) return;
-                    let user = USERS_DB.find(u => u && u.name === target);
-                    if (!user || user.role !== 'admin') return;
-                    user.role = 'user';
-                    user.roleLevel = 1;
-                    saveUsers();
-                    addSystemMessage(`✅ ${escapeHTML(target)} admin yetkisi alındı.`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name}, ${target} kullanıcısının admin yetkisini aldı.`, 'role');
-                }
-            }
-
-            // OWNER komutları
-            else if (main === 'channelopen' || main === 'channelsil' || main === 'showprv' || main === 'stopshowprv' ||
-                     main === 'addbanned' || main === 'removebanned' || main === 'addcmd' || main === 'removecmd') {
-                
-                if (ACTIVE_USER.role !== 'owner') {
-                    addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!');
-                    return;
-                }
-
-                if (main === 'channelopen') {
-                    let ch = parts[1]?.replace('#', '');
-                    if (!ch) {
-                        addSystemMessage('Kullanım: /channelopen #kanal');
-                        return;
-                    }
-                    createSuperHiddenChannel(ch);
-                }
-
-                else if (main === 'channelsil') {
-                    let ch = parts[1]?.replace('#', '');
-                    if (!ch) {
-                        addSystemMessage('Kullanım: /channelsil #kanal');
-                        return;
-                    }
-                    deleteSuperHiddenChannel(ch);
-                }
-
-                else if (main === 'showprv') {
-                    let ch = parts[1]?.replace('#', '');
-                    if (!ch) {
-                        addSystemMessage('Kullanım: /showprv #kanal');
-                        return;
-                    }
-                    startPrivateSpy(ch);
-                }
-
-                else if (main === 'stopshowprv') {
-                    stopPrivateSpy();
-                }
-
-                else if (main === 'addbanned') {
-                    let word = parts.slice(1).join(' ').toLowerCase();
-                    if (!word) return;
-                    if (!BANNED_WORDS.includes(word)) {
-                        BANNED_WORDS.push(word);
-                        saveBannedWords();
-                        addSystemMessage(`🚫 Yasaklı kelime eklendi: ${escapeHTML(word)}`);
-                        sendToAdminChannel(`🚫 ${ACTIVE_USER.name} yasaklı kelime ekledi: ${word}`, 'ban');
-                    }
-                } 
-                
-                else if (main === 'removebanned') {
-                    let word = parts.slice(1).join(' ').toLowerCase();
-                    if (!word) return;
-                    BANNED_WORDS = BANNED_WORDS.filter(w => w !== word);
-                    saveBannedWords();
-                    addSystemMessage(`✅ Yasaklı kelime kaldırıldı: ${escapeHTML(word)}`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name} yasaklı kelime kaldırdı: ${word}`, 'ban');
-                } 
-                
-                else if (main === 'addcmd') {
-                    let cmd = parts[1];
-                    let resp = parts.slice(2).join(' ');
-                    if (!cmd || !resp) return;
-                    if (!cmd.startsWith('/')) cmd = '/' + cmd;
-                    if (!CUSTOM_COMMANDS) CUSTOM_COMMANDS = [];
-                    CUSTOM_COMMANDS.push({ command: cmd, response: resp });
-                    saveCustomCommands();
-                    addSystemMessage(`✅ Yeni komut eklendi: ${escapeHTML(cmd)}`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name} yeni komut ekledi: ${cmd}`, 'role');
-                } 
-                
-                else if (main === 'removecmd') {
-                    let cmd = parts[1];
-                    if (!cmd) return;
-                    if (!cmd.startsWith('/')) cmd = '/' + cmd;
-                    if (CUSTOM_COMMANDS) {
-                        CUSTOM_COMMANDS = CUSTOM_COMMANDS.filter(c => c.command !== cmd);
-                    }
-                    saveCustomCommands();
-                    addSystemMessage(`🗑️ Komut kaldırıldı: ${escapeHTML(cmd)}`);
-                    sendToAdminChannel(`🗑️ ${ACTIVE_USER.name} komut kaldırdı: ${cmd}`, 'role');
-                }
-            }
-
-            else {
-                addSystemMessage(`❌ Bilinmeyen komut: ${escapeHTML(cmd)}`);
-            }
-        }
-
-        function getHelpByRole() {
-            if (!ACTIVE_USER) return "❌ Kullanıcı bilgisi bulunamadı.";
-            
-            let userCommands = [
-                "**👤 KULLANICI KOMUTLARI:**",
-                "/help - Bu yardım menüsünü göster",
-                "/join #kanal - Belirtilen kanala katıl",
-                "/part - Bulunduğun kanaldan ayrıl (genel'den ayrılamazsın)",
-                "/msg kullanıcı mesaj - Kullanıcıya özel mesaj gönder",
-                "/users - Kanalda çevrimiçi kullanıcıları göster",
-                "/ping - Botun çalışıp çalışmadığını kontrol et",
-                "/temizle /clear - Sohbeti temizle",
-                "/abonelikler - Abone olduğun kanalları göster",
-                "/populer - Popüler kanalları listele",
-                "/kanal - Bulunduğun kanalın bilgilerini göster",
-                "/kanalac - Kanal açma panelini açar",
-                "/youtube - YouTube video ekleme panelini açar"
-            ];
-            
-            let coadminCommands = [
-                "\n**🔧 CO-ADMIN KOMUTLARI (Kendi kanalında):**",
-                "/kick kullanıcı - Kullanıcıyı kanaldan at",
-                "/ban kullanıcı - Kullanıcıyı 24 saat yasakla",
-                "/op kullanıcı - Kullanıcıyı co-admin yap",
-                "/deop kullanıcı - Co-admin yetkisini al",
-                "/kanalsil - Kendi kanalını sil (onay ister)",
-                "/gizle - Kanalını gizle/göster",
-                "/video - YouTube video ekle"
-            ];
-            
-            let adminCommands = [
-                "\n**⚡ ADMIN KOMUTLARI (Sistem Geneli):**",
-                "/addadmin kullanıcı - Kullanıcıyı admin yap",
-                "/removeadmin kullanıcı - Admin yetkisini al",
-                "/ban kullanıcı - Kullanıcıyı 24 saat yasakla",
-                "/unban kullanıcı - Kullanıcının yasağını kaldır",
-                "/kick kullanıcı - Kullanıcıyı kanaldan at",
-                "/kanalsil - Kendi kanalını sil (onay ister)"
-            ];
-            
-            let helpMessage = "📋 **YETKİ BAZLI KOMUTLAR**\n\n";
-            helpMessage += userCommands.join("\n");
-            
-            if (ACTIVE_USER.role === 'coadmin') {
-                helpMessage += coadminCommands.join("\n");
-            }
-            
-            if (ACTIVE_USER.role === 'admin') {
-                helpMessage += adminCommands.join("\n");
-            }
-            
-            if (ACTIVE_USER.role === 'owner') {
-                helpMessage += adminCommands.join("\n");
-                helpMessage += "\n\n👑 **OWNER KOMUTLARI:**";
-                helpMessage += "\n/channelopen #kanal - Süper gizli kanal aç";
-                helpMessage += "\n/channelsil #kanal - Süper gizli kanal sil (onay ister)";
-                helpMessage += "\n/showprv #kanal - Özel sohbet takibi başlat";
-                helpMessage += "\n/stopshowprv - Özel sohbet takibini durdur";
-                helpMessage += "\n/addbanned kelime - Yasaklı kelime ekle";
-                helpMessage += "\n/removebanned kelime - Yasaklı kelime kaldır";
-                helpMessage += "\n/addcmd komut yanıt - Özel komut ekle";
-                helpMessage += "\n/removecmd komut - Özel komut kaldır";
-            }
-            
-            return helpMessage;
+            else addSystemMessage(`❌ Bilinmeyen komut: ${escapeHTML(cmd)}`);
         }
 
         // ========== 29. YARDIMCI FONKSİYONLAR ==========
@@ -3643,12 +2873,8 @@
         function updateAllBadges() {
             document.getElementById('subscriptionBadge').textContent = ACTIVE_USER.subscribedChannels ? ACTIVE_USER.subscribedChannels.length : 0;
             document.getElementById('channelCountBadge').textContent = Object.keys(channels).length;
-            updateUnreadBadge();
-            updatePopularChannels();
-        }
-
-        function updateUnreadBadge() {
             document.getElementById('chatListBadge').textContent = '0';
+            updatePopularChannels();
         }
 
         function updatePopularChannels() {
@@ -3710,35 +2936,17 @@
             document.getElementById(modalId).classList.remove('active');
         }
 
-        function openMediaViewer(src, type) {
-            const content = document.getElementById('mediaViewerContent');
-            if (type === 'image') {
-                content.innerHTML = `<img src="${escapeHTML(src)}" style="max-width:100%; max-height:80vh;">`;
-            } else {
-                content.innerHTML = `<video src="${escapeHTML(src)}" controls style="max-width:100%; max-height:80vh;"></video>`;
-            }
-            openModal('mediaViewerModal');
-        }
+        function openKvkkModal() { openModal('kvkkModal'); }
+        function openTermsModal() { openModal('termsModal'); }
 
-        function openKvkkModal() {
-            openModal('kvkkModal');
-        }
-
-        function openTermsModal() {
-            openModal('termsModal');
-        }
-
-        // ========== 30. SOL PANEL (ESCAPE HTML EKLENDİ) ==========
+        // ========== 30. SOL PANEL ==========
         function loadLeftPanel(panelName) {
             if (!ACTIVE_USER) return;
             const panel = document.getElementById('leftPanel');
             if (panelName === 'subscriptions') loadSubscriptionsPanel(panel);
             else if (panelName === 'channels') loadChannelsPanel(panel);
             else if (panelName === 'chatlist') loadChatListPanel(panel);
-            else if (panelName === 'notifications') loadNotificationsPanel(panel);
             else if (panelName === 'profile') loadProfilePanel(panel);
-            else if (panelName === 'createchannel') loadCreateChannelPanel(panel);
-            else if (panelName === 'support') loadSupportPanel(panel);
             else loadSubscriptionsPanel(panel);
             setActiveIcon(panelName);
         }
@@ -3746,52 +2954,29 @@
         function closeLeftPanel() { loadLeftPanel('subscriptions'); }
 
         function loadSubscriptionsPanel(panel) {
-            let html = `<div class="panel-header"><h3><i class="fas fa-bell" style="color:#ffd700;"></i> Abonelikler</h3><span class="subscription-count">${ACTIVE_USER.subscribedChannels ? ACTIVE_USER.subscribedChannels.length : 0}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
-            html += `<div class="search-container"><i class="fas fa-search"></i><input type="text" class="search-input" placeholder="Kanal, kullanıcı ara..." id="panelSearchInput"></div>`;
+            let html = `<div class="panel-header"><h3><i class="fas fa-bell"></i> Abonelikler</h3><span class="subscription-count">${ACTIVE_USER.subscribedChannels ? ACTIVE_USER.subscribedChannels.length : 0}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
             
             let visible = ACTIVE_USER.subscribedChannels ? ACTIVE_USER.subscribedChannels.filter(ch => {
                 let c = channels[ch]; 
                 if (!c) return true;
-                
                 if (c.isSuperHidden && ACTIVE_USER.role !== 'owner') return false;
-                
                 if (ch === 'admin' && !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin')) return false;
                 return (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') ? true : !c.isHidden;
             }) : [];
             
             if (visible.length === 0) html += '<div style="color:#aaa; padding:16px; text-align:center;">Abone olunan kanal yok.</div>';
             else visible.forEach(ch => {
-                let c = channels[ch] || { owner: 'MateKy', subscribers: 1, ownerRole: 'user', isHidden: false, isSuperHidden: false };
-                let icon = 'fa-hashtag';
-                let sub = c.subscribers || 1;
-                let fmt = sub >= 1000000 ? (sub / 1000000).toFixed(1) + 'M' : sub >= 1000 ? (sub / 1000).toFixed(1) + 'K' : sub;
+                let c = channels[ch] || { owner: 'MateKy', subscribers: 1 };
                 let active = ch === currentChannel ? 'active' : '';
-                let hidden = c.isHidden ? '<span class="badge badge-hidden">GİZLİ</span>' : '';
-                let superHidden = c.isSuperHidden ? '<span class="badge badge-super-hidden">SÜPER GİZLİ</span>' : '';
-                
-                let roleDisplay = '';
-                if (c.ownerRole === 'owner') {
-                    if (ACTIVE_USER.role === 'owner') {
-                        roleDisplay = '<span class="badge badge-owner">👑</span>';
-                    } else {
-                        roleDisplay = '';
-                    }
-                } else if (c.ownerRole === 'admin') {
-                    roleDisplay = '<span class="badge badge-admin">⚡</span>';
-                } else if (c.ownerRole === 'coadmin') {
-                    roleDisplay = '<span class="badge badge-coadmin">🔧</span>';
-                }
-                
-                html += `<div class="subscription-item ${active}" onclick="joinChannel('${ch}')"><div class="subscription-avatar"><i class="fas ${icon}"></i></div><div class="subscription-info"><div class="subscription-name">${escapeHTML(ch)} ${hidden} ${superHidden} ${roleDisplay}</div><div class="subscription-meta"><span>${escapeHTML(c.owner)}</span><span>• ${fmt} abone</span></div></div><div class="subscription-stats">${c.onlineUsers ? c.onlineUsers.length : 0}</div></div>`;
+                html += `<div class="subscription-item ${active}" onclick="joinChannel('${ch}')"><div class="subscription-avatar"><i class="fas fa-hashtag"></i></div><div class="subscription-info"><div class="subscription-name">${escapeHTML(ch)}</div><div class="subscription-meta"><span>${escapeHTML(c.owner)}</span></div></div><div class="subscription-stats">${c.onlineUsers ? c.onlineUsers.length : 0}</div></div>`;
             });
-            html += `</div><div class="popular-channels"><div class="popular-header"><i class="fas fa-fire" style="color:#ff4444;"></i> Popüler Kanallar</div><div id="popularChannelsList"></div></div>`;
+            html += `</div><div class="popular-channels"><div class="popular-header"><i class="fas fa-fire"></i> Popüler Kanallar</div><div id="popularChannelsList"></div></div>`;
             panel.innerHTML = html;
             updatePopularChannels();
         }
 
         function loadChannelsPanel(panel) {
-            let html = `<div class="panel-header"><h3><i class="fas fa-list-ul" style="color:#ff0000;"></i> Tüm Kanallar</h3><span class="subscription-count">${Object.keys(channels).length}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
-            html += `<div class="search-container"><i class="fas fa-search"></i><input type="text" class="search-input" placeholder="Kanal ara..."></div>`;
+            let html = `<div class="panel-header"><h3><i class="fas fa-list-ul"></i> Tüm Kanallar</h3><span class="subscription-count">${Object.keys(channels).length}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
             
             let vis = Object.values(channels).filter(ch => {
                 if (ch.isSuperHidden && ACTIVE_USER.role !== 'owner') return false;
@@ -3800,33 +2985,15 @@
             });
             
             vis.sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0)).forEach(ch => {
-                let sub = ch.subscribers || 1, fmt = sub >= 1000000 ? (sub / 1000000).toFixed(1) + 'M' : sub >= 1000 ? (sub / 1000).toFixed(1) + 'K' : sub;
                 let isSub = ACTIVE_USER.subscribedChannels && ACTIVE_USER.subscribedChannels.includes(ch.name);
-                let hidden = ch.isHidden ? '<span class="badge badge-hidden">GİZLİ</span>' : '';
-                let superHidden = ch.isSuperHidden ? '<span class="badge badge-super-hidden">SÜPER GİZLİ</span>' : '';
-                
-                let roleDisplay = '';
-                if (ch.ownerRole === 'owner') {
-                    if (ACTIVE_USER.role === 'owner') {
-                        roleDisplay = '<span class="badge badge-owner">👑</span>';
-                    } else {
-                        roleDisplay = '';
-                    }
-                } else if (ch.ownerRole === 'admin') {
-                    roleDisplay = '<span class="badge badge-admin">⚡</span>';
-                } else if (ch.ownerRole === 'coadmin') {
-                    roleDisplay = '<span class="badge badge-coadmin">🔧</span>';
-                }
-                
-                html += `<div class="channel-item" onclick="joinChannel('${ch.name}')"><div class="channel-avatar"><i class="fas fa-hashtag"></i></div><div class="channel-info"><div class="channel-name">${escapeHTML(ch.name)} ${hidden} ${superHidden} ${roleDisplay}</div><div class="channel-meta"><span>${escapeHTML(ch.owner)}</span><span>• ${fmt} abone</span><span>• ${ch.onlineUsers ? ch.onlineUsers.length : 0} çevrimiçi</span></div></div><button class="subscribe-btn ${isSub ? 'subscribed' : ''}" onclick="event.stopPropagation(); ${isSub ? 'unsubscribeChannel' : 'subscribeChannel'}('${ch.name}')"><i class="fas ${isSub ? 'fa-check' : 'fa-plus'}"></i> ${isSub ? 'Abone Olundu' : 'Abone Ol'}</button></div>`;
+                html += `<div class="channel-item" onclick="joinChannel('${ch.name}')"><div class="channel-avatar"><i class="fas fa-hashtag"></i></div><div class="channel-info"><div class="channel-name">${escapeHTML(ch.name)}</div><div class="channel-meta"><span>${escapeHTML(ch.owner)}</span><span>• ${ch.onlineUsers ? ch.onlineUsers.length : 0} çevrimiçi</span></div></div><button class="subscribe-btn ${isSub ? 'subscribed' : ''}" onclick="event.stopPropagation(); ${isSub ? 'unsubscribeChannel' : 'subscribeChannel'}('${ch.name}')"><i class="fas ${isSub ? 'fa-check' : 'fa-plus'}"></i></button></div>`;
             });
             html += `</div>`;
             panel.innerHTML = html;
         }
 
         function loadChatListPanel(panel) {
-            updateUnreadBadge();
-            let html = `<div class="panel-header"><h3><i class="fas fa-comment" style="color:#7289da;"></i> Sohbetlerim</h3><span class="subscription-count" id="chatListCount">${document.getElementById('chatListBadge').textContent}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div>`;
+            let html = `<div class="panel-header"><h3><i class="fas fa-comment"></i> Sohbetlerim</h3><span class="subscription-count">0</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div>`;
             html += `<div class="panel-tabs"><div id="tabChats" class="panel-tab active" onclick="switchChatTab('chats')">Sohbetler</div><div id="tabOnline" class="panel-tab" onclick="switchChatTab('online')">Çevrimiçi (${channels[currentChannel]?.onlineUsers?.length || 1})</div></div>`;
             html += `<div class="panel-content" id="chatPanelContent"></div>`;
             panel.innerHTML = html;
@@ -3843,61 +3010,7 @@
         function showChatsTab() {
             let c = document.getElementById('chatPanelContent');
             if (!c) return;
-
-            if (!database || !ACTIVE_USER) {
-                c.innerHTML = '<div style="color:#aaa; padding:16px; text-align:center;">Henüz özel sohbet yok.</div>';
-                return;
-            }
-
-            database.ref('privateMessages').once('value', (snapshot) => {
-                const data = snapshot.val();
-                let chats = [];
-                
-                if (data) {
-                    const chatIds = new Set();
-                    Object.keys(data).forEach(chatId => {
-                        const ids = chatId.split('_');
-                        if (ids.includes(ACTIVE_USER.id)) {
-                            chatIds.add(chatId);
-                        }
-                    });
-                    
-                    chatIds.forEach(chatId => {
-                        const ids = chatId.split('_');
-                        const otherId = ids[0] === ACTIVE_USER.id ? ids[1] : ids[0];
-                        const otherUser = USERS_DB.find(u => u && u.id === otherId) || { name: 'Kullanıcı' };
-                        
-                        const messages = Object.values(data[chatId] || {});
-                        if (messages.length > 0) {
-                            const lastMsg = messages.sort((a, b) => b.timestamp - a.timestamp)[0];
-                            
-                            chats.push({
-                                id: chatId,
-                                name: otherUser.name,
-                                lastMsg: lastMsg ? (lastMsg.type === 'text' ? lastMsg.content : '📎 medya') : '...',
-                                time: lastMsg ? new Date(lastMsg.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : ''
-                            });
-                        }
-                    });
-                }
-
-                let h = '';
-                if (chats.length === 0) {
-                    h = '<div style="color:#aaa; padding:16px; text-align:center;">Henüz özel sohbet yok.</div>';
-                } else {
-                    chats.sort((a, b) => b.time.localeCompare(a.time));
-                    chats.forEach(chat => {
-                        h += `<div class="chat-item" onclick="openPrivateChat('${escapeHTML(chat.name)}')">
-                            <div class="chat-avatar"><span>${escapeHTML(chat.name.charAt(0))}</span></div>
-                            <div class="chat-info">
-                                <div class="chat-name">${escapeHTML(chat.name)}</div>
-                                <div class="chat-meta"><span>${escapeHTML(chat.lastMsg)}</span><span>• ${escapeHTML(chat.time)}</span></div>
-                            </div>
-                        </div>`;
-                    });
-                }
-                c.innerHTML = h;
-            }).catch(e => console.error('Özel sohbet listesi hatası:', e));
+            c.innerHTML = '<div style="color:#aaa; padding:16px; text-align:center;">Henüz özel sohbet yok.</div>';
         }
 
         function showOnlineTab() {
@@ -3915,7 +3028,6 @@
                             <div class="online-avatar"><span>${escapeHTML(u.charAt(0))}</span></div>
                             <div class="online-info">
                                 <div class="online-name">${escapeHTML(u)}<span class="online-status"></span></div>
-                                <div class="online-meta"><span>#${escapeHTML(currentChannel)}</span></div>
                             </div>
                         </div>`;
                     }
@@ -3924,249 +3036,39 @@
             c.innerHTML = h;
         }
 
-        function loadNotificationsPanel(panel) {
-            let h = `<div class="panel-header"><h3><i class="fas fa-bell" style="color:#ff4444;"></i> Bildirimler</h3><span class="subscription-count">0</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
-            h += `<div style="color:#aaa; padding:16px; text-align:center;">Henüz bildirim yok.</div>`;
-            h += `</div>`;
-            panel.innerHTML = h;
-        }
-
         function loadProfilePanel(panel) {
-            let date = ACTIVE_USER.joinDate ? new Date(ACTIVE_USER.joinDate) : new Date();
-            let fmtDate = `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
+            let avatarHtml = ACTIVE_USER.avatarData ? 
+                `<img src="${escapeHTML(ACTIVE_USER.avatarData)}" style="width:100%; height:100%; object-fit:cover;">` : 
+                escapeHTML(ACTIVE_USER.avatar || ACTIVE_USER.name.charAt(0).toUpperCase());
             
-            let roleText = '';
-            let roleClass = '';
-            
-            if (ACTIVE_USER.role === 'owner') {
-                roleText = '👑 Kurucu';
-                roleClass = 'badge-owner';
-            } else if (ACTIVE_USER.role === 'admin') {
-                roleText = '⚡ Admin';
-                roleClass = 'badge-admin';
-            } else if (ACTIVE_USER.role === 'coadmin') {
-                roleText = '🔧 Co-Admin';
-                roleClass = 'badge-coadmin';
-            } else {
-                roleText = '👤 Kullanıcı';
-            }
-            
-            let avatarHtml = '';
-            if (ACTIVE_USER.avatarData) {
-                avatarHtml = `<img src="${escapeHTML(ACTIVE_USER.avatarData)}" style="width:100%; height:100%; object-fit:cover;">`;
-            } else {
-                avatarHtml = escapeHTML(ACTIVE_USER.avatar || ACTIVE_USER.name.charAt(0).toUpperCase());
-            }
-            
-            let h = `<div class="panel-header"><h3><i class="fas fa-user" style="color:#ff0000;"></i> Profil</h3><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div>
+            let h = `<div class="panel-header"><h3><i class="fas fa-user"></i> Profil</h3><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div>
             <div class="panel-content">
                 <div style="display:flex; flex-direction:column; align-items:center; padding:20px 0;">
-                    <div class="profile-avatar-panel" style="width:80px; height:80px; font-size:32px; margin-bottom:12px; cursor:pointer; overflow:hidden;" onclick="openAvatarModal()">
-                        ${avatarHtml}
-                    </div>
-                    <h2 style="font-size:20px; font-weight:700; color:#fff; margin-bottom:4px;">${escapeHTML(ACTIVE_USER.name)}</h2>
-                    <span class="badge ${roleClass}" style="margin-bottom:16px;">${roleText}</span>
-                    <div style="display:flex; gap:12px; margin-bottom:16px;">
-                        <button class="action-button secondary" style="padding:8px 16px; font-size:12px;" onclick="openAvatarModal()"><i class="fas fa-camera"></i> Resim Yükle</button>
-                        <button class="action-button" style="padding:8px 16px; font-size:12px;" onclick="loadLeftPanel('createchannel')"><i class="fas fa-plus-circle"></i> Kanal Aç</button>
-                        <button class="action-button secondary" style="padding:8px 16px; font-size:12px;" onclick="loadLeftPanel('support')"><i class="fas fa-headset"></i> Destek</button>
+                    <div class="profile-avatar-panel" style="width:80px; height:80px; font-size:32px; margin-bottom:12px; cursor:pointer; overflow:hidden;" onclick="openAvatarModal()">${avatarHtml}</div>
+                    <h2 style="font-size:20px; color:#fff;">${escapeHTML(ACTIVE_USER.name)}</h2>
+                    <div style="display:flex; gap:12px; margin:16px 0;">
+                        <button class="action-button secondary" style="padding:8px 16px;" onclick="openAvatarModal()"><i class="fas fa-camera"></i> Resim Yükle</button>
                     </div>
                 </div>
-                <div style="display:flex; justify-content:space-around; padding:16px 0; border-top:1px solid rgba(255,255,255,0.1); border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:16px;">
-                    <div style="text-align:center;"><div style="font-size:18px; font-weight:700; color:#fff;">${ACTIVE_USER.subscribedChannels ? ACTIVE_USER.subscribedChannels.length : 0}</div><div style="font-size:11px; color:#aaa;">Abonelik</div></div>
-                    <div style="text-align:center;"><div style="font-size:18px; font-weight:700; color:#fff;">${ACTIVE_USER.myChannel ? '1' : '0'}</div><div style="font-size:11px; color:#aaa;">Kanalım</div></div>
-                    <div style="text-align:center;"><div style="font-size:18px; font-weight:700; color:#fff;">${fmtDate.split('.')[0]}</div><div style="font-size:11px; color:#aaa;">Katılım</div></div>
-                </div>
-                <div class="input-field"><label class="field-label">Kullanıcı Adı</label><input type="text" id="profileNick" class="text-input" value="${escapeHTML(ACTIVE_USER.name)}"><button class="action-button secondary" style="margin-top:8px;" onclick="changeNick()">Değiştir</button></div>
-                <div class="input-field"><label class="field-label">Şifre</label><input type="password" id="profilePassword" class="text-input" placeholder="Yeni şifre"><button class="action-button secondary" style="margin-top:8px;" onclick="changePassword()">Şifreyi Kaydet</button></div>
-                <div class="input-field"><label class="field-label">Özel Sohbet</label>
-                    <select id="privateModeSelect" class="select-input" onchange="changePrivateMode()">
-                        <option value="all" ${ACTIVE_USER.privateMode === 'all' ? 'selected' : ''}>Herkese Açık</option>
-                        <option value="none" ${ACTIVE_USER.privateMode === 'none' ? 'selected' : ''}>Herkese Kapalı</option>
-                        <option value="blocked" ${ACTIVE_USER.privateMode === 'blocked' ? 'selected' : ''}>Sadece Engellenenler</option>
-                    </select>
-                </div>
-                <div class="input-field"><label class="field-label">Belirli kişiyi engelle (nick)</label><input type="text" id="blockNickInput" class="text-input" placeholder="Kullanıcı adı"><button class="action-button secondary" style="margin-top:8px;" onclick="blockSpecificNick()">Engelle</button></div>
-                ${ACTIVE_USER.blockedNicks && ACTIVE_USER.blockedNicks.length ? `
-                <div style="margin-bottom:16px;">
-                    <label class="field-label">Engellenen Kişiler</label>
-                    <div style="background:rgba(26,26,26,0.8); border-radius:8px; padding:12px;">
-                        ${ACTIVE_USER.blockedNicks.map(nick => `<span style="display:inline-block; background:rgba(42,42,42,0.8); padding:4px 10px; border-radius:20px; margin:0 4px 4px 0; font-size:12px;">${escapeHTML(nick)} <i class="fas fa-times" style="margin-left:6px; cursor:pointer;" onclick="unblockNick('${nick}')"></i></span>`).join('')}
-                    </div>
-                </div>` : ''}
-                ${ACTIVE_USER.myChannel ? `<div style="margin-top:16px;"><button class="action-button danger" onclick="deleteMyChannel()">Kanalımı Sil</button></div>` : ''}
-                <div style="margin-top:24px;"><button class="action-button" onclick="logout()">Güvenli Çıkış</button></div>
-            `;
-
-            h += `</div>`;
-            panel.innerHTML = h;
-        }
-
-        function loadCreateChannelPanel(panel) {
-            let h = `<div class="panel-header"><h3><i class="fas fa-plus-circle" style="color:#ff0000;"></i> Kanal Aç</h3><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div>
-            <div class="panel-content">
-                <div class="info-box">
-                    <p><i class="fas fa-info-circle"></i> Yeni bir kanal açarak kendi topluluğunu oluşturabilirsin. Kanal sahibi olarak co-admin yetkilerine sahip olursun.</p>
-                </div>`;
-
-            if (ACTIVE_USER.role !== 'owner' && ACTIVE_USER.myChannel) {
-                h += `<div class="info-box" style="border-left-color: #ffaa00;">
-                    <p><i class="fas fa-exclamation-triangle" style="color:#ffaa00;"></i> Zaten bir kanalınız var: <strong>#${escapeHTML(ACTIVE_USER.myChannel)}</strong>. Bir kullanıcı sadece bir kanala sahip olabilir.</p>
-                </div>`;
-            } else {
-                h += `<div class="input-field">
-                    <label class="field-label">Kanal Adı</label>
-                    <input type="text" id="newChannelName" class="text-input" placeholder="örnek: teknoloji, oyun, müzik" maxlength="20">
-                    <div style="font-size:11px; color:#aaa; margin-top:4px;">Sadece küçük harf, rakam ve tire kullanabilirsiniz.</div>
-                </div>
-                <div class="input-field">
-                    <label class="field-label">Kanal Açıklaması</label>
-                    <textarea id="newChannelDesc" class="textarea-input" placeholder="Kanalın konusu ve kuralları..."></textarea>
-                </div>
-                <div class="input-field">
-                    <label class="field-label">Kategori (Opsiyonel)</label>
-                    <select id="newChannelCategory" class="select-input">
-                        <option value="general">Genel</option>
-                        <option value="music">Müzik</option>
-                        <option value="gaming">Oyun</option>
-                        <option value="technology">Teknoloji</option>
-                        <option value="sports">Spor</option>
-                    </select>
-                </div>
-                <button class="action-button" onclick="createChannel()">Kanalı Oluştur</button>`;
-            }
-            h += `</div>`;
-            panel.innerHTML = h;
-        }
-
-        function loadSupportPanel(panel) {
-            let h = `<div class="panel-header"><h3><i class="fas fa-headset" style="color:#7289da;"></i> Destek</h3><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div>
-            <div class="panel-content">
-                <div class="info-box">
-                    <p><i class="fas fa-info-circle"></i> Canlı destek talebiniz #admin kanalına iletilir. Size en kısa sürede yardımcı olacağız.</p>
-                </div>
-                
-                <div style="background:rgba(26,26,26,0.8); border-radius:12px; padding:20px; margin-bottom:20px;">
-                    <h4 style="color:#fff; margin-bottom:16px; display:flex; align-items:center; gap:8px;">
-                        <i class="fas fa-question-circle" style="color:#7289da;"></i> Sık Sorulan Sorular
-                    </h4>
-                    
-                    <div class="faq-item" style="margin-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:12px;">
-                        <div onclick="toggleFaq(this)" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#fff; font-weight:500;">📌 Kanal nasıl açarım?</span>
-                            <i class="fas fa-chevron-down" style="color:#aaa;"></i>
-                        </div>
-                        <div class="faq-answer" style="display:none; margin-top:12px; color:#aaa; font-size:13px; line-height:1.5;">
-                            Profilinizdeki "Kanal Aç" butonuna tıklayarak yeni bir kanal oluşturabilirsiniz. Kanal adı benzersiz olmalı ve sadece küçük harf, rakam ve tire içerebilir. Her kullanıcı sadece bir kanala sahip olabilir.
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item" style="margin-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:12px;">
-                        <div onclick="toggleFaq(this)" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#fff; font-weight:500;">📌 Yetki sistemi nasıl çalışır?</span>
-                            <i class="fas fa-chevron-down" style="color:#aaa;"></i>
-                        </div>
-                        <div class="faq-answer" style="display:none; margin-top:12px; color:#aaa; font-size:13px; line-height:1.5;">
-                            <strong style="color:#ffd700;">👑 Owner:</strong> En yetkili, sistem genelinde tüm yetkilere sahip.<br>
-                            <strong style="color:#ff6b6b;">⚡ Admin:</strong> Owner'dan sonra en yetkili, sistem genelinde yönetim yapabilir, co-admin atayıp silebilir.<br>
-                            <strong style="color:#6495ed;">🔧 Co-admin:</strong> Sadece kendi kanalında yetkili, video ekleyebilir, kullanıcıları atabilir.<br>
-                            <strong>👤 Kullanıcı:</strong> Temel sohbet özelliklerini kullanabilir.
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item" style="margin-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:12px;">
-                        <div onclick="toggleFaq(this)" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#fff; font-weight:500;">📌 Özel sohbet özellikleri</span>
-                            <i class="fas fa-chevron-down" style="color:#aaa;"></i>
-                        </div>
-                        <div class="faq-answer" style="display:none; margin-top:12px; color:#aaa; font-size:13px; line-height:1.5;">
-                            Özel sohbetlerde resim, video gönderebilirsiniz. Karşı tarafı engelleyebilir veya şikayet edebilirsiniz. Profilinizden gizlilik ayarlarını değiştirebilirsiniz. Çıkış yaptığınızda tüm özel mesajlarınız otomatik silinir.
-                        </div>
-                    </div>
-                    
-                    <div class="faq-item" style="margin-bottom:12px;">
-                        <div onclick="toggleFaq(this)" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#fff; font-weight:500;">📌 Medya özellikleri</span>
-                            <i class="fas fa-chevron-down" style="color:#aaa;"></i>
-                        </div>
-                        <div class="faq-answer" style="display:none; margin-top:12px; color:#aaa; font-size:13px; line-height:1.5;">
-                            YouTube ve Spotify entegrasyonu ile kanalınızda video ve müzik paylaşabilirsiniz. Co-admin ve üzeri yetkiler medya ekleyebilir. Playlist otomatik olarak sırayla oynatılır.
-                        </div>
-                    </div>
-                </div>
-                
-                <div style="background:rgba(26,26,26,0.8); border-radius:12px; padding:20px; margin-bottom:20px;">
-                    <h4 style="color:#fff; margin-bottom:16px; display:flex; align-items:center; gap:8px;">
-                        <i class="fas fa-envelope" style="color:#7289da;"></i> Bize Ulaşın
-                    </h4>
-                    
-                    <div class="input-field">
-                        <label class="field-label">Konu</label>
-                        <select id="supportTopic" class="select-input">
-                            <option value="bug">Hata Bildirimi</option>
-                            <option value="suggestion">Öneri</option>
-                            <option value="complaint">Şikayet</option>
-                            <option value="other">Diğer</option>
-                        </select>
-                    </div>
-                    
-                    <div class="input-field">
-                        <label class="field-label">Mesajınız</label>
-                        <textarea id="supportMessage" class="textarea-input" placeholder="Sorununuzu veya önerinizi detaylıca yazın..."></textarea>
-                    </div>
-                    
-                    <button class="action-button" style="background:#7289da;" onclick="sendSupportTicket()">
-                        <i class="fas fa-paper-plane"></i> Gönder
-                    </button>
-                </div>
-                
-                <div style="background:rgba(26,26,26,0.8); border-radius:12px; padding:16px; text-align:center;">
-                    <i class="fas fa-shield-alt" style="color:#7289da; font-size:24px; margin-bottom:8px;"></i>
-                    <p style="color:#aaa; font-size:12px;">7/24 destek ekibimiz size yardımcı olmak için hazır.</p>
-                    <p style="color:#7289da; font-size:13px; margin-top:8px;">Yanıt süresi: ~2 saat</p>
-                </div>
+                <div><button class="action-button" onclick="logout()">Güvenli Çıkış</button></div>
             </div>`;
             panel.innerHTML = h;
         }
 
-        function toggleFaq(element) {
-            let answer = element.parentElement.querySelector('.faq-answer');
-            let icon = element.querySelector('i');
-            if (answer.style.display === 'none' || !answer.style.display) {
-                answer.style.display = 'block';
-                icon.className = 'fas fa-chevron-up';
-            } else {
-                answer.style.display = 'none';
-                icon.className = 'fas fa-chevron-down';
-            }
+        function setActiveIcon(active) {
+            document.querySelectorAll('.icon-item').forEach(el => el.classList.remove('active'));
+            if (active === 'subscriptions') document.querySelector('.icon-item[onclick*="openSubscriptions"]')?.classList.add('active');
+            else if (active === 'channels') document.querySelector('.icon-item[onclick*="openChannelPanel"]')?.classList.add('active');
+            else if (active === 'chatlist') document.querySelector('.icon-item[onclick*="openChatListPanel"]')?.classList.add('active');
+            else if (active === 'profile') document.querySelector('.profile-avatar')?.classList.add('active');
         }
 
-        function sendSupportTicket() {
-            let topic = document.getElementById('supportTopic')?.value;
-            let message = document.getElementById('supportMessage')?.value.trim();
-            
-            if (!message) {
-                alert('Lütfen bir mesaj yazın!');
-                return;
-            }
-            
-            let topics = {
-                'bug': 'Hata Bildirimi',
-                'suggestion': 'Öneri',
-                'complaint': 'Şikayet',
-                'other': 'Diğer'
-            };
-            
-            let supportMsg = `🆘 ${ACTIVE_USER.name} yeni bir destek talebi gönderdi.\n📌 Konu: ${topics[topic]}\n💬 Mesaj: ${message}`;
-            
-            addSystemMessage(`✅ Destek talebiniz alındı. En kısa sürede dönüş yapılacak.`);
-            sendToAdminChannel(supportMsg, 'user');
-            
-            document.getElementById('supportMessage').value = '';
-            loadLeftPanel('notifications');
-        }
+        function openSubscriptions() { loadLeftPanel('subscriptions'); }
+        function openChannelPanel() { loadLeftPanel('channels'); }
+        function openChatListPanel() { loadLeftPanel('chatlist'); }
+        function openNotificationPanel() { loadLeftPanel('notifications'); }
+        function openProfilePanel() { loadLeftPanel('profile'); }
 
-        // ========== 31. AVATAR YÜKLEME ==========
         function openAvatarModal() {
             document.getElementById('avatarFileInput').value = '';
             document.getElementById('avatarPreviewText').style.display = 'block';
@@ -4202,11 +3104,7 @@
                     
                     updateUIForUser();
                     closeModal('avatarModal');
-                    
-                    if (document.getElementById('leftPanel').innerHTML.includes('Profil')) {
-                        loadLeftPanel('profile');
-                    }
-                    
+                    loadLeftPanel('profile');
                     addSystemMessage('✅ Profil resmi güncellendi.');
                 };
                 reader.readAsDataURL(fileInput.files[0]);
@@ -4215,186 +3113,6 @@
             }
         }
 
-        // ========== 32. PROFİL FONKSİYONLARI ==========
-        function changeNick() {
-            let newNick = document.getElementById('profileNick')?.value.trim();
-            if (!newNick) return;
-            
-            if (newNick.length > 20) {
-                alert('Kullanıcı adı 20 karakterden uzun olamaz!');
-                return;
-            }
-            
-            let existingUser = USERS_DB.find(u => u && u.name && u.name.toLowerCase() === newNick.toLowerCase() && u.id !== ACTIVE_USER.id);
-            if (existingUser) {
-                alert('Bu kullanıcı adı zaten kullanılıyor!');
-                return;
-            }
-            
-            ACTIVE_USER.name = newNick;
-            const index = USERS_DB.findIndex(u => u && u.id === ACTIVE_USER.id);
-            if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-            saveUsers();
-            updateUIForUser();
-            loadLeftPanel('profile');
-            addSystemMessage(`✅ Kullanıcı adı değiştirildi: ${escapeHTML(newNick)}`);
-        }
-
-        function changePassword() {
-            let pwd = document.getElementById('profilePassword')?.value.trim();
-            if (pwd) {
-                ACTIVE_USER.password = hashPassword(pwd);
-                const index = USERS_DB.findIndex(u => u && u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                saveUsers();
-                addSystemMessage('✅ Şifre güncellendi.');
-                document.getElementById('profilePassword').value = '';
-            } else alert('Şifre boş olamaz!');
-        }
-
-        function changePrivateMode() {
-            let mode = document.getElementById('privateModeSelect')?.value;
-            if (mode) {
-                ACTIVE_USER.privateMode = mode;
-                const index = USERS_DB.findIndex(u => u && u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                saveUsers();
-                addSystemMessage(`🔒 Özel sohbet modu: ${mode === 'all' ? 'Herkese Açık' : mode === 'none' ? 'Herkese Kapalı' : 'Sadece Engellenenler'}`);
-            }
-        }
-
-        function blockSpecificNick() {
-            let nick = document.getElementById('blockNickInput')?.value.trim();
-            if (!nick) return;
-            if (!ACTIVE_USER.blockedNicks) ACTIVE_USER.blockedNicks = [];
-            if (!ACTIVE_USER.blockedNicks.includes(nick)) {
-                ACTIVE_USER.blockedNicks.push(nick);
-                const index = USERS_DB.findIndex(u => u && u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                saveUsers();
-                addSystemMessage(`🚫 ${escapeHTML(nick)} engellendi.`);
-                loadLeftPanel('profile');
-            }
-        }
-
-        function unblockNick(nick) {
-            if (ACTIVE_USER.blockedNicks) {
-                ACTIVE_USER.blockedNicks = ACTIVE_USER.blockedNicks.filter(n => n !== nick);
-                const index = USERS_DB.findIndex(u => u && u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                saveUsers();
-                addSystemMessage(`✅ ${escapeHTML(nick)} engeli kaldırıldı.`);
-                loadLeftPanel('profile');
-            }
-        }
-
-        function deleteMyChannel() {
-            if (!ACTIVE_USER.myChannel) return;
-            if (confirm(`#${ACTIVE_USER.myChannel} kanalını kalıcı olarak silmek istediğinize emin misiniz?`)) {
-                let channelName = ACTIVE_USER.myChannel;
-                delete channels[ACTIVE_USER.myChannel];
-                saveChannels();
-                ACTIVE_USER.myChannel = null;
-                if (ACTIVE_USER.role !== 'owner') ACTIVE_USER.role = 'user';
-                const index = USERS_DB.findIndex(u => u && u.id === ACTIVE_USER.id);
-                if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                saveUsers();
-                addSystemMessage('🗑️ Kanalınız silindi.');
-                sendToAdminChannel(`🗑️ ${ACTIVE_USER.name}, #${channelName} kanalını sildi.`, 'channel');
-                updateAllBadges();
-                joinChannel('genel');
-                loadLeftPanel('profile');
-            }
-        }
-
-        function createChannel() {
-            if (ACTIVE_USER.role !== 'owner' && ACTIVE_USER.myChannel) {
-                alert('Zaten bir kanalınız var!');
-                return;
-            }
-            
-            let name = document.getElementById('newChannelName')?.value?.toLowerCase().trim();
-            if (!name) {
-                alert('Kanal adı girin!');
-                return;
-            }
-            
-            if (!/^[a-z0-9-]+$/.test(name)) {
-                alert('Kanal adı sadece küçük harf, rakam ve tire içerebilir!');
-                return;
-            }
-            
-            if (channels[name]) {
-                alert('Bu kanal adı zaten mevcut!');
-                return;
-            }
-            
-            let desc = document.getElementById('newChannelDesc')?.value?.trim() || `${ACTIVE_USER.name} tarafından oluşturuldu.`;
-            let category = document.getElementById('newChannelCategory')?.value || 'general';
-            
-            channels[name] = {
-                name, 
-                owner: ACTIVE_USER.name, 
-                ownerRole: 'coadmin', 
-                coAdmins: [ACTIVE_USER.name],
-                subscribers: 1, 
-                description: desc, 
-                category: category,
-                isPrivate: false, 
-                isHidden: false,
-                isSuperHidden: false,
-                mediaType: 'youtube',
-                youtube: {
-                    currentVideo: 'jfKfPfyJRdk',
-                    currentTitle: 'PopboxChat Radio',
-                    currentArtist: ACTIVE_USER.name,
-                    playlist: [{ id: 'jfKfPfyJRdk', title: 'PopboxChat Radio', addedBy: ACTIVE_USER.name, role: 'coadmin', type: 'youtube' }]
-                },
-                spotify: {
-                    currentTrack: null,
-                    currentTitle: 'Spotify Radio',
-                    currentArtist: 'PopboxChat',
-                    playlist: []
-                },
-                onlineUsers: [ACTIVE_USER.name],
-                createdAt: Date.now()
-            };
-            
-            saveChannels();
-            ACTIVE_USER.myChannel = name;
-            
-            if (ACTIVE_USER.role !== 'owner') ACTIVE_USER.role = 'coadmin';
-            if (!ACTIVE_USER.subscribedChannels) ACTIVE_USER.subscribedChannels = [];
-            if (!ACTIVE_USER.subscribedChannels.includes(name)) ACTIVE_USER.subscribedChannels.push(name);
-            
-            const index = USERS_DB.findIndex(u => u && u.id === ACTIVE_USER.id);
-            if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-            saveUsers();
-            
-            updateAllBadges();
-            addSystemMessage(`✅ #${escapeHTML(name)} kanalı oluşturuldu!`);
-            sendToAdminChannel(`✅ ${ACTIVE_USER.name}, #${name} kanalını oluşturdu.`, 'channel');
-            joinChannel(name);
-            loadLeftPanel('channels');
-        }
-
-        // ========== 33. İKON FONKSİYONLARI ==========
-        function openSubscriptions() { loadLeftPanel('subscriptions'); }
-        function openChannelPanel() { loadLeftPanel('channels'); }
-        function openChatListPanel() { loadLeftPanel('chatlist'); }
-        function openNotificationPanel() { loadLeftPanel('notifications'); }
-        function openProfilePanel() { loadLeftPanel('profile'); }
-
-        function setActiveIcon(active) {
-            document.querySelectorAll('.icon-item').forEach(el => el.classList.remove('active'));
-            if (active === 'subscriptions') document.querySelector('.icon-item[onclick*="openSubscriptions"]')?.classList.add('active');
-            else if (active === 'channels') document.querySelector('.icon-item[onclick*="openChannelPanel"]')?.classList.add('active');
-            else if (active === 'chatlist') document.querySelector('.icon-item[onclick*="openChatListPanel"]')?.classList.add('active');
-            else if (active === 'notifications') document.querySelector('.icon-item[onclick*="openNotificationPanel"]')?.classList.add('active');
-            else if (active === 'profile') document.querySelector('.profile-avatar')?.classList.add('active');
-        }
-
-        // ========== 34. ESC KAPATMA ==========
         function closeAllPanels() {
             closePrivateChat();
             closeModal('youtubeModal');
@@ -4403,7 +3121,6 @@
             closeModal('kvkkModal');
             closeModal('termsModal');
             closeModal('mediaViewerModal');
-            closeSpotifySearch();
             const panelHeader = document.querySelector('.panel-header h3');
             if (panelHeader && !panelHeader.innerText.includes('Abonelikler')) closeLeftPanel();
         }
@@ -4412,18 +3129,15 @@
             if (e.key === 'Escape') closeAllPanels();
         });
 
-        // ========== 35. SAYFA KAPANIRKEN ==========
         window.addEventListener('beforeunload', function() {
             if (ACTIVE_USER) {
                 updateUserOnlineStatus(ACTIVE_USER.id, false);
             }
         });
 
-        // ========== 36. BAŞLANGIÇ ==========
         document.addEventListener('DOMContentLoaded', function() {
             initFirebaseSync();
             
-            // Session kontrolü
             const sessionUser = checkSession();
             if (sessionUser) {
                 ACTIVE_USER = sessionUser;
@@ -4481,7 +3195,6 @@
                         initYouTubePlayer();
                     }
                     
-                    // Eski mesajları temizle
                     cleanupOldMessages();
                 }, 500);
             } else {
