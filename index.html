@@ -6,7 +6,6 @@
     <title>CETCETY • Çift Medya</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- YouTube IFrame API - scripti manuel ekleyelim -->
     <script src="https://www.youtube.com/iframe_api"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
@@ -895,9 +894,7 @@
                 </div>
                 <div class="media-player">
                     <div id="youtubeContainer"></div>
-                    <div id="spotifyContainer">
-                        <iframe id="spotifyPlayer" style="width:100%; height:100%; border:0;" allow="encrypted-media; clipboard-write; clipboard-read" allowtransparency="true" frameborder="0"></iframe>
-                    </div>
+                    <div id="spotifyContainer"></div>
                     <div class="player-controls" id="youtubeControls">
                         <div class="player-btn" id="playerMuteBtn" onclick="toggleMute()">
                             <i class="fas fa-volume-up" id="muteIcon"></i>
@@ -1059,6 +1056,11 @@
         let CUSTOM_COMMANDS = JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
         let CHANNEL_MESSAGES = JSON.parse(localStorage.getItem('cetcety_channel_messages')) || {};
 
+        // Spotify Iframe API için değişkenler
+        let spotifyController = null;
+        let spotifyApiReady = false;
+        let pendingSpotifyTrack = null;
+
         // Owner özel mesaj takip
         let PRIVATE_SPY_CHANNELS = JSON.parse(localStorage.getItem('cetcety_private_spy')) || {};
         let PRIVATE_SPY_ACTIVE = false;
@@ -1124,6 +1126,75 @@
             }
         };
 
+        // ========== SPOTIFY IFRAME API ==========
+        function loadSpotifyIframeAPI() {
+            if (document.getElementById('spotify-iframe-api')) return;
+            const script = document.createElement('script');
+            script.id = 'spotify-iframe-api';
+            script.src = 'https://open.spotify.com/embed/iframe-api/v1';
+            script.async = true;
+            document.body.appendChild(script);
+            console.log('Spotify Iframe API yükleniyor...');
+        }
+
+        window.onSpotifyIframeApiReady = (IFrameAPI) => {
+            console.log('Spotify Iframe API hazır');
+            window.IFrameAPI = IFrameAPI;
+            spotifyApiReady = true;
+            
+            // Bekleyen şarkı varsa oynat
+            if (pendingSpotifyTrack) {
+                createSpotifyController(pendingSpotifyTrack);
+                pendingSpotifyTrack = null;
+            }
+        };
+
+        function createSpotifyController(trackData) {
+            if (!spotifyApiReady) {
+                console.log('Spotify API henüz hazır değil, şarkı beklemeye alındı:', trackData);
+                pendingSpotifyTrack = trackData;
+                return;
+            }
+            
+            const element = document.getElementById('spotifyContainer');
+            if (!element) return;
+            
+            // Eski controller varsa temizle
+            if (spotifyController && typeof spotifyController.destroy === 'function') {
+                try {
+                    spotifyController.destroy();
+                } catch (e) {
+                    console.log('Spotify controller temizlenirken hata:', e);
+                }
+                spotifyController = null;
+            }
+            
+            const options = {
+                width: '100%',
+                height: '100%',
+                uri: `spotify:track:${trackData.id}`,
+                theme: 'dark'
+            };
+            
+            const callback = (EmbedController) => {
+                spotifyController = EmbedController;
+                console.log('Spotify controller oluşturuldu');
+                
+                // Oynatıcıyı otomatik başlat
+                setTimeout(() => {
+                    try {
+                        EmbedController.play();
+                    } catch (e) {
+                        console.log('Spotify otomatik oynatma hatası:', e);
+                    }
+                }, 500);
+            };
+            
+            if (window.IFrameAPI) {
+                window.IFrameAPI.createController(element, options, callback);
+            }
+        }
+
         // ========== STORAGE SENKRONİZASYONU ==========
         window.addEventListener('storage', function(e) {
             if (e.key === 'cetcety_channels') {
@@ -1141,7 +1212,6 @@
             }
             
             if (e.key === 'cetcety_private_chats') {
-                // Özel sohbet varsa güncelle
                 if (currentPrivateChat) {
                     loadPrivateMessages();
                 }
@@ -1150,7 +1220,6 @@
             
             if (e.key === 'cetcety_users') {
                 USERS_DB = JSON.parse(e.newValue) || [];
-                // Aktif kullanıcıyı güncelle
                 if (ACTIVE_USER) {
                     let updatedUser = USERS_DB.find(u => u.id === ACTIVE_USER.id);
                     if (updatedUser) {
@@ -1185,7 +1254,6 @@
                 isHtml: true
             };
             
-            // Admin kanalı mesajlarını başlat
             if (!CHANNEL_MESSAGES.admin) {
                 CHANNEL_MESSAGES.admin = [];
             }
@@ -1246,15 +1314,25 @@
                 }
             });
             
-            // Oynatıcıları göster/gizle - DÜZELTİLDİ: Aktif olan gösterilir, diğeri gizlenir
+            // Oynatıcıları göster/gizle
             if (tab === 'youtube') {
                 document.getElementById('youtubeContainer').classList.add('active');
                 document.getElementById('spotifyContainer').classList.remove('active');
                 document.getElementById('youtubeControls').style.display = 'flex';
+                
+                // YouTube player'ı güncelle
+                if (c.youtube.currentVideo) {
+                    playYoutubeVideo(c.youtube.currentVideo, c.youtube.currentTitle, c.youtube.currentArtist, c.ownerRole);
+                }
             } else {
                 document.getElementById('youtubeContainer').classList.remove('active');
                 document.getElementById('spotifyContainer').classList.add('active');
                 document.getElementById('youtubeControls').style.display = 'none';
+                
+                // Spotify oynatıcıyı güncelle
+                if (c.spotify.currentTrack) {
+                    playSpotifyTrack(c.spotify.currentTrack, c.spotify.currentTitle, c.spotify.currentArtist, c.ownerRole);
+                }
             }
             
             // Playlist başlığını güncelle
@@ -1267,9 +1345,6 @@
             // Playlist'i güncelle
             updateMediaPlaylist();
             
-            // Medya oynatıcıyı güncelle
-            updateMediaPlayer();
-            
             addSystemMessage(`🔄 #${currentChannel} kanalında ${tab === 'youtube' ? 'YouTube' : 'Spotify'} moduna geçildi.`);
         }
 
@@ -1278,23 +1353,15 @@
             if (!c) return;
             
             if (currentMediaTab === 'youtube') {
-                // YouTube player'ı güncelle
                 if (c.youtube.currentVideo) {
                     playYoutubeVideo(c.youtube.currentVideo, c.youtube.currentTitle, c.youtube.currentArtist, c.ownerRole);
                 }
             } else {
-                // Spotify player'ı güncelle
                 if (c.spotify.currentTrack) {
                     playSpotifyTrack(c.spotify.currentTrack, c.spotify.currentTitle, c.spotify.currentArtist, c.ownerRole);
-                } else {
-                    // İlk track varsa onu oynat
-                    if (c.spotify.playlist && c.spotify.playlist.length > 0) {
-                        let firstTrack = c.spotify.playlist[0];
-                        playSpotifyTrack(firstTrack.id, firstTrack.title, firstTrack.addedBy, firstTrack.role);
-                    } else {
-                        // Playlist boşsa embed'i temizle
-                        document.getElementById('spotifyPlayer').src = '';
-                    }
+                } else if (c.spotify.playlist && c.spotify.playlist.length > 0) {
+                    let firstTrack = c.spotify.playlist[0];
+                    playSpotifyTrack(firstTrack.id, firstTrack.title, firstTrack.addedBy, firstTrack.role);
                 }
             }
             
@@ -1385,7 +1452,6 @@
             c.mediaType = 'youtube';
             saveChannels();
             
-            // YouTube player'ı güncelle
             if (ytPlayer && ytPlayerReady && typeof ytPlayer.loadVideoById === 'function') {
                 try {
                     ytPlayer.loadVideoById({
@@ -1397,7 +1463,6 @@
                 }
             }
             
-            // YouTube sekmesine geç
             if (currentMediaTab !== 'youtube') {
                 switchMediaTab('youtube');
             } else {
@@ -1416,16 +1481,14 @@
             c.mediaType = 'spotify';
             saveChannels();
             
-            // Spotify player'ı güncelle - DOĞRU FORMAT
-            let embedUrl = `https://open.spotify.com/embed/track/${trackId}`;
-            document.getElementById('spotifyPlayer').src = embedUrl;
-            
-            // Spotify sekmesine geç
             if (currentMediaTab !== 'spotify') {
                 switchMediaTab('spotify');
             } else {
                 updateMediaDisplay();
             }
+            
+            // Spotify controller oluştur
+            createSpotifyController({ id: trackId, title, by, role });
             
             addSystemMessage(`🎵 ${ACTIVE_USER.name} yeni şarkı oynatıyor: ${title}`);
             sendToAdminChannel(`🎵 ${ACTIVE_USER.name}, #${currentChannel} kanalında yeni şarkı oynatıyor: ${title}`);
@@ -1440,13 +1503,8 @@
             
             if (!playlist || playlist.length === 0) return;
             
-            // Şu an oynayanın index'ini bul
             let currentIndex = playlist.findIndex(item => item.id === currentId);
-            
-            // Sıradaki index (sondaysak başa dön)
             let nextIndex = (currentIndex + 1) % playlist.length;
-            
-            // Sıradakini oynat
             let nextItem = playlist[nextIndex];
             
             if (currentMediaTab === 'youtube') {
@@ -1480,7 +1538,10 @@
                 } else {
                     c.spotify.currentTrack = null;
                     c.spotify.currentTitle = 'Playlist boş';
-                    document.getElementById('spotifyPlayer').src = '';
+                    if (spotifyController && typeof spotifyController.destroy === 'function') {
+                        spotifyController.destroy();
+                        spotifyController = null;
+                    }
                 }
             }
             
@@ -1562,7 +1623,6 @@
                 role: ACTIVE_USER.role === 'owner' ? 'owner' : ACTIVE_USER.role === 'admin' ? 'admin' : 'coadmin'
             });
             
-            // İlk video ekleniyorsa otomatik oynat
             if (c.youtube.playlist.length === 1) {
                 playYoutubeVideo(vid, title, ACTIVE_USER.name, ACTIVE_USER.role === 'owner' ? 'owner' : ACTIVE_USER.role === 'admin' ? 'admin' : 'coadmin');
             } else {
@@ -1586,9 +1646,7 @@
             
             let trackId = '';
             
-            // Spotify linkini işle
             if (url.includes('open.spotify.com/track/')) {
-                // URL'den track ID'sini çıkar
                 let match = url.match(/track\/([a-zA-Z0-9]+)/);
                 if (match && match[1]) {
                     trackId = match[1];
@@ -1597,7 +1655,6 @@
                     return;
                 }
             } else if (url.match(/^[a-zA-Z0-9]{22}$/)) {
-                // Direkt track ID
                 trackId = url;
             } else {
                 addSystemMessage('❌ Geçersiz Spotify URL/ID! Lütfen geçerli bir track linki veya ID girin.');
@@ -1611,11 +1668,9 @@
             
             let c = channels[currentChannel];
             if (!title) {
-                // Başlık girilmemişse otomatik oluştur
                 title = `Şarkı ${c.spotify.playlist.length + 1}`;
             }
             
-            // Track'i playlist'e ekle - DÜZELTİLDİ: Tek tek ekleme için direkt push
             c.spotify.playlist.push({
                 id: trackId,
                 title: title,
@@ -1623,7 +1678,6 @@
                 role: ACTIVE_USER.role === 'owner' ? 'owner' : ACTIVE_USER.role === 'admin' ? 'admin' : 'coadmin'
             });
             
-            // İlk şarkı ekleniyorsa otomatik oynat
             if (c.spotify.playlist.length === 1) {
                 playSpotifyTrack(trackId, title, ACTIVE_USER.name, ACTIVE_USER.role === 'owner' ? 'owner' : ACTIVE_USER.role === 'admin' ? 'admin' : 'coadmin');
             } else {
@@ -1636,7 +1690,6 @@
             addSystemMessage(`✅ "${title}" eklendi!`);
             sendToAdminChannel(`✅ ${ACTIVE_USER.name}, #${currentChannel} kanalına "${title}" şarkısını ekledi.`);
             
-            // Input'ları temizle
             document.getElementById('spotifyUrlInput').value = '';
             document.getElementById('spotifyTitleInput').value = '';
         }
@@ -1693,7 +1746,6 @@
             if (!document.getElementById('youtubeContainer')) return;
             
             try {
-                // Eski player varsa yok et
                 if (ytPlayer && typeof ytPlayer.destroy === 'function') {
                     try {
                         ytPlayer.destroy();
@@ -1734,14 +1786,12 @@
                             }
                             isPlaying = event.data === YT.PlayerState.PLAYING;
                             
-                            // Video bittiğinde sıradakini oynat
                             if (event.data === YT.PlayerState.ENDED) {
                                 playNextMedia();
                             }
                         },
                         onError: function(event) {
                             console.log('YouTube player hatası:', event.data);
-                            // Hata durumunda sıradaki videoya geç
                             if (event.data === 101 || event.data === 150) {
                                 playNextMedia();
                             }
@@ -1803,14 +1853,11 @@
             let existingUser = USERS_DB.find(u => u.name.toLowerCase() === nick.toLowerCase());
             
             if (existingUser) {
-                // Kayıtlı kullanıcı: şifre kontrolü yap
                 if (existingUser.password) {
                     if (existingUser.password !== pass) { 
                         alert('Hatalı şifre!'); 
                         return; 
                     }
-                } else {
-                    // Kayıtlı ama şifresiz kullanıcı - şifre boş geçilebilir
                 }
                 
                 if (nick.toLowerCase() === 'mateky' && pass !== OWNER_PASSWORD) { 
@@ -1819,7 +1866,6 @@
                 }
                 ACTIVE_USER = existingUser;
             } else {
-                // Yeni kullanıcı: şifre opsiyonel
                 if (nick.toLowerCase() === 'mateky') {
                     if (pass !== OWNER_PASSWORD) {
                         alert('Owner şifresi hatalı!');
@@ -1871,6 +1917,9 @@
                 checkPrivateSpyStatus();
             }
             
+            // Spotify API'yi yükle
+            loadSpotifyIframeAPI();
+            
             // YouTube API'yi başlat
             if (typeof YT === 'undefined' || !YT.Player) {
                 let tag = document.createElement('script');
@@ -1881,7 +1930,6 @@
                 initYouTubePlayer();
             }
             
-            // Medya sekmesini ayarla
             let c = channels[currentChannel];
             if (c && c.mediaType) {
                 switchMediaTab(c.mediaType);
@@ -1896,17 +1944,15 @@
             }
         });
 
-        // ========== GÜVENLİ ÇIKIŞ - ÖZEL MESAJLARI SİL ==========
+        // ========== GÜVENLİ ÇIKIŞ ==========
         function logout() { 
             if (ACTIVE_USER) {
-                // Kullanıcıyı mevcut kanaldan çıkar
                 if (channels[currentChannel] && channels[currentChannel].onlineUsers) {
                     channels[currentChannel].onlineUsers = 
                         channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
                     saveChannels();
                 }
                 
-                // Kullanıcının tüm özel mesajlarını sil
                 for (let chatId in PRIVATE_CHATS) {
                     if (chatId.includes(ACTIVE_USER.id)) {
                         delete PRIVATE_CHATS[chatId];
@@ -1914,7 +1960,6 @@
                 }
                 localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
                 
-                // Owner özel takip varsa durdur
                 if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE) {
                     stopPrivateSpy();
                 }
@@ -2880,7 +2925,6 @@
                 return;
             }
 
-            // Eski kanaldan ayrıl
             if (currentChannel && channels[currentChannel]) {
                 channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
                 saveChannels();
@@ -2900,7 +2944,6 @@
             document.getElementById('channelSubscribers').textContent = fmt;
             document.getElementById('channelUserCount').textContent = c.onlineUsers.length;
 
-            // Medya tipini ayarla
             if (c.mediaType) {
                 switchMediaTab(c.mediaType);
             } else {
@@ -3691,7 +3734,6 @@
             };
         }
 
-        // Arama için debounce kullan
         document.addEventListener('input', debounce(function(e) {
             if (e.target.classList.contains('search-input')) {
                 const searchTerm = e.target.value.toLowerCase();
@@ -3725,6 +3767,9 @@
                     checkPrivateSpyStatus();
                 }
                 
+                // Spotify API'yi yükle
+                loadSpotifyIframeAPI();
+                
                 // YouTube API'yi başlat
                 if (typeof YT === 'undefined' || !YT.Player) {
                     // API zaten script ile yüklendi, onYouTubeIframeAPIReady çağrılacak
@@ -3732,7 +3777,6 @@
                     initYouTubePlayer();
                 }
                 
-                // Medya sekmesini ayarla
                 let c = channels[currentChannel];
                 if (c && c.mediaType) {
                     switchMediaTab(c.mediaType);
