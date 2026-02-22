@@ -977,7 +977,7 @@
                     <input type="text" id="spotifyTitleInput" class="form-input" placeholder="Şarkı adı - Sanatçı">
                 </div>
                 <div class="info-box">
-                    <p><i class="fas fa-info-circle"></i> Spotify track linki: open.spotify.com/track/... veya track ID girin.</p>
+                    <p><i class="fas fa-info-circle"></i> Spotify track linki: open.spotify.com/track/... veya track ID girin. Örnek: 4cOdK2wGLETKBW3PvgPWqT</p>
                 </div>
             </div>
             <div class="modal-footer">
@@ -1409,8 +1409,8 @@
             c.mediaType = 'spotify';
             saveChannels();
             
-            // Spotify player'ı güncelle
-            let embedUrl = `https://open.spotify.com/embed/track/${trackId}?utm_source=generator&theme=0`;
+            // Spotify player'ı güncelle - DOĞRU FORMAT
+            let embedUrl = `https://open.spotify.com/embed/track/${trackId}`;
             document.getElementById('spotifyPlayer').src = embedUrl;
             
             // Spotify sekmesine geç
@@ -1578,23 +1578,37 @@
             }
             
             let trackId = '';
+            
+            // Spotify linkini işle
             if (url.includes('open.spotify.com/track/')) {
-                trackId = url.split('track/')[1]?.split('?')[0];
+                // URL'den track ID'sini çıkar
+                let match = url.match(/track\/([a-zA-Z0-9]+)/);
+                if (match && match[1]) {
+                    trackId = match[1];
+                } else {
+                    addSystemMessage('❌ Geçersiz Spotify URL! Track ID bulunamadı.');
+                    return;
+                }
             } else if (url.match(/^[a-zA-Z0-9]{22}$/)) {
+                // Direkt track ID
                 trackId = url;
             } else {
-                addSystemMessage('❌ Geçersiz Spotify URL/ID!');
+                addSystemMessage('❌ Geçersiz Spotify URL/ID! Lütfen geçerli bir track linki veya ID girin.');
                 return;
             }
             
-            if (!trackId) {
-                addSystemMessage('❌ Track ID çıkarılamadı!');
+            if (!trackId || trackId.length !== 22) {
+                addSystemMessage('❌ Geçersiz track ID! Spotify track ID\'leri 22 karakterdir.');
                 return;
             }
             
             let c = channels[currentChannel];
-            if (!title) title = `Şarkı ${c.spotify.playlist.length + 1}`;
+            if (!title) {
+                // Başlık girilmemişse otomatik oluştur
+                title = `Şarkı ${c.spotify.playlist.length + 1}`;
+            }
             
+            // Track'i playlist'e ekle
             c.spotify.playlist.push({
                 id: trackId,
                 title: title,
@@ -1614,6 +1628,10 @@
             
             addSystemMessage(`✅ "${title}" eklendi!`);
             sendToAdminChannel(`✅ ${ACTIVE_USER.name}, #${currentChannel} kanalına "${title}" şarkısını ekledi.`);
+            
+            // Input'ları temizle
+            document.getElementById('spotifyUrlInput').value = '';
+            document.getElementById('spotifyTitleInput').value = '';
         }
 
         function toggleChannelHidden() {
