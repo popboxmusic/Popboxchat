@@ -1,1 +1,3860 @@
 
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Popbox Music Chat - Gelişmiş Sohbet Platformu</title>
+    <!-- FIREBASE SDK v8 -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
+    <!-- FIREBASE KONFİGÜRASYON DOSYASI -->
+    <script src="firebase-config.js"></script>
+    
+    <style>
+        /* Tüm stiller aynen kalacak - Story ile ilgili CSS'ler kaldırılmalı */
+        :root {
+            --youtube-red: #ff0000;
+            --youtube-dark: #0f0f0f;
+            --youtube-light-dark: #272727;
+            --youtube-chat-bg: #0f0f0f;
+            --youtube-chat-input: #272727;
+            --youtube-text: #f1f1f1;
+            --youtube-text-secondary: #aaa;
+            
+            --primary: #ff0000;
+            --secondary: #ff5555;
+            --private: #9c27b0;
+            --coadmin: #ff9800;
+            --operator: #3b82f6;
+            --owner: #ff4081;
+            --online: #4caf50;
+            --firebase: #ffa000;
+            --ban-color: #ff3333;
+            
+            --bg-primary: var(--youtube-dark);
+            --bg-secondary: var(--youtube-chat-bg);
+            --text-primary: var(--youtube-text);
+            --text-secondary: var(--youtube-text-secondary);
+            --input-bg: var(--youtube-chat-input);
+            --header-bg: var(--youtube-dark);
+            --border-color: rgba(255,255,255,0.1);
+            
+            --message-user-bg: rgba(255,255,255,0.05);
+            --message-admin-bg: rgba(255,0,0,0.15);
+            --message-coadmin-bg: rgba(255,152,0,0.15);
+            --message-operator-bg: rgba(59,130,246,0.15);
+            --message-owner-bg: rgba(255,64,129,0.15);
+            --message-system-bg: rgba(255,255,255,0.05);
+            --message-private-bg: rgba(156,39,176,0.15);
+            --message-ban-bg: rgba(255,51,51,0.15);
+        }
+        
+        /* Gece teması */
+        body.night-mode {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #2d2d44;
+            --text-primary: #ffffff;
+            --text-secondary: #cccccc;
+            --input-bg: rgba(0,0,0,0.3);
+            --header-bg: rgba(0,0,0,0.4);
+            --border-color: rgba(79, 195, 247, 0.2);
+            --primary: #4fc3f7;
+        }
+        
+        /* Gündüz teması */
+        body.light-mode {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: #ffffff;
+            --text-primary: #333333;
+            --text-secondary: #666666;
+            --input-bg: rgba(0,0,0,0.05);
+            --header-bg: rgba(79, 195, 247, 0.1);
+            --border-color: rgba(0,0,0,0.1);
+            --primary: #2196f3;
+        }
+        
+        /* Tüm stiller aynen devam edecek - Story ile ilgili class'lar kaldırılacak */
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        html, body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            position: fixed;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        /* HEADER */
+        .youtube-header {
+            height: 56px;
+            background: var(--header-bg);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            border-bottom: 1px solid var(--border-color);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            flex-shrink: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .header-left, .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+        
+        .logo-icon {
+            color: var(--primary);
+            font-size: 24px;
+        }
+        
+        .user-badges {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .badge {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: none;
+            color: white;
+        }
+        
+        .badge.admin { background: var(--secondary); }
+        .badge.coadmin { background: var(--coadmin); }
+        .badge.operator { background: var(--operator); }
+        .badge.owner { background: var(--owner); }
+        
+        /* BİLDİRİM SİSTEMİ */
+        .notification-section {
+            position: relative;
+        }
+        
+        .notification-icon {
+            position: relative;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .notification-badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: #ff0000;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            min-width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            display: none;
+        }
+        
+        .notification-panel {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            width: 350px;
+            max-height: 500px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 1001;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .notification-panel.active {
+            display: flex;
+        }
+        
+        .notification-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .notification-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        
+        .notification-item {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            background: var(--message-user-bg);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .notification-item:hover {
+            background: rgba(0,0,0,0.1);
+        }
+        
+        .notification-item.unread {
+            background: rgba(var(--primary-rgb), 0.1);
+            border-left: 3px solid var(--primary);
+        }
+        
+        .notification-footer {
+            padding: 12px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: center;
+        }
+        
+        .clear-notifications-btn {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        /* ANA LAYOUT */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            margin-top: 56px;
+            height: calc(100vh - 56px);
+            transition: all 0.3s ease;
+        }
+        
+        /* VIDEO CONTAINER */
+        .video-container {
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+        
+        #youtube-player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .video-placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(45deg, var(--primary), var(--coadmin));
+            color: white;
+        }
+        
+        /* CHAT CONTAINER */
+        .chat-container {
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            height: 100%;
+            transition: all 0.3s ease;
+        }
+        
+        .chat-header {
+            height: 56px;
+            padding: 0 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+        
+        .chat-title {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .chat-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .online-count {
+            background: rgba(0,0,0,0.1);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+        
+        /* MESAJLAR ALANI */
+        .messages-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 0;
+            background: var(--bg-secondary);
+            transition: all 0.3s ease;
+        }
+        
+        .yt-message {
+            background: var(--message-user-bg);
+            padding: 8px 12px;
+            border-radius: 8px;
+            position: relative;
+            animation: fadeIn 0.3s ease;
+            border-left: 3px solid var(--primary);
+            transition: all 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .yt-message.admin {
+            background: var(--message-admin-bg);
+            border-left-color: var(--secondary);
+        }
+        
+        .yt-message.coadmin {
+            background: var(--message-coadmin-bg);
+            border-left-color: var(--coadmin);
+        }
+        
+        .yt-message.operator {
+            background: var(--message-operator-bg);
+            border-left-color: var(--operator);
+        }
+        
+        .yt-message.owner {
+            background: var(--message-owner-bg);
+            border-left-color: var(--owner);
+        }
+        
+        .yt-message.system {
+            background: var(--message-system-bg);
+            border-left-color: var(--online);
+            text-align: center;
+        }
+        
+        .yt-message.private-msg {
+            background: var(--message-private-bg);
+            border-left-color: var(--private);
+        }
+        
+        .yt-message.ban-message {
+            background: var(--message-ban-bg);
+            border-left-color: var(--ban-color);
+        }
+        
+        .message-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        
+        .message-user {
+            font-weight: 500;
+            font-size: 14px;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        
+        .message-user:hover {
+            background: rgba(0,0,0,0.05);
+        }
+        
+        .message-time {
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+        
+        .message-content {
+            font-size: 14px;
+            line-height: 1.4;
+            word-break: break-word;
+            color: var(--text-primary);
+        }
+        
+        .delete-btn {
+            background: rgba(255,85,85,0.2);
+            color: var(--secondary);
+            border: none;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 11px;
+            cursor: pointer;
+            margin-left: 8px;
+            display: none;
+        }
+        
+        .owner-delete-btn {
+            background: rgba(255,64,129,0.3);
+            color: var(--owner);
+            border: none;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 11px;
+            cursor: pointer;
+            margin-left: 4px;
+        }
+        
+        .yt-message:hover .delete-btn {
+            display: inline-block;
+        }
+        
+        .message-image {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            margin-top: 8px;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+        }
+        
+        /* CHAT INPUT */
+        .chat-input-area {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            flex-shrink: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .input-wrapper {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        #message-input {
+            flex: 1;
+            padding: 12px 16px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            min-height: 40px;
+            max-height: 120px;
+            resize: none;
+            transition: all 0.3s ease;
+        }
+        
+        #message-input::placeholder {
+            color: var(--text-secondary);
+        }
+        
+        .send-button {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--primary);
+            border: none;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: all 0.3s ease;
+        }
+        
+        /* ONLINE USERS SIDEBAR */
+        .users-sidebar {
+            width: 280px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            padding: 16px;
+            overflow-y: auto;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            flex-shrink: 0;
+            transition: all 0.3s ease;
+            position: absolute;
+            right: 0;
+            top: 56px;
+            bottom: 0;
+            z-index: 999;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.2);
+        }
+        
+        .users-sidebar.active {
+            display: flex;
+        }
+        
+        .users-title {
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .close-sidebar {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .user-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 4px solid var(--online);
+            background: rgba(0,0,0,0.05);
+            color: var(--text-primary);
+        }
+        
+        body.light-mode .user-item {
+            background: rgba(0,0,0,0.02);
+        }
+        
+        .user-item:hover {
+            background: rgba(0,0,0,0.1);
+        }
+        
+        body.light-mode .user-item:hover {
+            background: rgba(0,0,0,0.05);
+        }
+        
+        .user-item.idle {
+            border-left-color: var(--coadmin);
+            opacity: 0.8;
+        }
+        
+        .user-item.banned {
+            border-left-color: var(--ban-color);
+            background: rgba(255,51,51,0.1);
+        }
+        
+        .user-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        
+        .status-online { background: var(--online); }
+        .status-idle { background: var(--coadmin); }
+        .status-banned { background: var(--ban-color); }
+        
+        /* WEB İÇİN ONLINE LİSTE BUTONU */
+        .online-list-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0,0,0,0.1);
+            border: none;
+            border-radius: 20px;
+            padding: 6px 12px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .online-list-btn:hover {
+            background: rgba(0,0,0,0.2);
+        }
+        
+        /* GİRİŞ EKRANI */
+        #login-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            transition: all 0.3s ease;
+        }
+        
+        .login-container {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 32px;
+            width: 90%;
+            max-width: 400px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .login-title {
+            text-align: center;
+            margin-bottom: 24px;
+            color: var(--primary);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .login-input {
+            width: 100%;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        
+        .login-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(255,0,0,0.1);
+        }
+        
+        body.night-mode .login-input:focus {
+            box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.3);
+        }
+        
+        body.light-mode .login-input:focus {
+            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.3);
+        }
+        
+        .login-button {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .login-button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        
+        .login-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        .error-message {
+            color: var(--secondary);
+            margin-top: 16px;
+            font-size: 14px;
+            display: none;
+            background: rgba(255,85,85,0.1);
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid var(--secondary);
+        }
+        
+        .success-message {
+            color: var(--online);
+            margin-top: 16px;
+            font-size: 14px;
+            display: none;
+            background: rgba(76,175,80,0.1);
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid var(--online);
+        }
+        
+        /* ÖZEL SOHBET MODALI */
+        .private-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            z-index: 3000;
+            display: none;
+            flex-direction: column;
+            transition: all 0.3s ease;
+        }
+        
+        .private-header {
+            height: 56px;
+            padding: 0 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--header-bg);
+            color: var(--text-primary);
+        }
+        
+        .private-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: var(--bg-secondary);
+        }
+        
+        .private-input-area {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        #private-input {
+            flex: 1;
+            padding: 12px 16px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            min-height: 40px;
+            max-height: 120px;
+            resize: none;
+        }
+        
+        .image-upload-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--private);
+            border: none;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        /* OWNER ÖZEL MODAL */
+        .owner-private-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            z-index: 3000;
+            display: none;
+            flex-direction: column;
+            transition: all 0.3s ease;
+        }
+        
+        .owner-private-header {
+            height: 56px;
+            padding: 0 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--owner);
+            color: white;
+        }
+        
+        .owner-private-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: var(--bg-secondary);
+        }
+        
+        /* ADMIN KAYIT MODALI */
+        .admin-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+            z-index: 3001;
+            display: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        .admin-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-primary);
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .modal-input, .modal-select {
+            width: 100%;
+            padding: 12px 16px;
+            margin: 8px 0;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        
+        .modal-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .modal-btn.primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .modal-btn.danger {
+            background: var(--secondary);
+            color: white;
+        }
+        
+        .modal-btn.secondary {
+            background: var(--text-secondary);
+            color: white;
+        }
+        
+        /* KOMUT OLUŞTURMA MODALI */
+        .admin-modal#commandModal {
+            /* Aynı stiller */
+        }
+        
+        /* TEMA BUTONU */
+        .theme-toggle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1001;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.2);
+            transform: scale(1.1);
+        }
+        
+        /* FIREBASE BADGE */
+        .firebase-badge {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: var(--firebase);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        /* MOBİL LAYOUT */
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+                margin-top: 56px;
+                height: calc(100vh - 56px);
+                position: relative;
+            }
+            
+            .video-container {
+                width: 100%;
+                height: 30vh !important;
+                flex-shrink: 0;
+                position: relative;
+            }
+            
+            .video-wrapper {
+                height: 100% !important;
+                padding-bottom: 0;
+            }
+            
+            .chat-container {
+                width: 100%;
+                height: 70vh !important;
+                flex: 4;
+                min-height: 0;
+                border-left: none;
+                border-top: 1px solid var(--border-color);
+                display: flex;
+                flex-direction: column;
+                position: relative;
+            }
+            
+            .messages-area {
+                flex: 1;
+                min-height: 0;
+                max-height: none;
+                padding-bottom: 80px;
+            }
+            
+            .chat-input-area {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: var(--bg-secondary);
+                border-top: 1px solid var(--border-color);
+                z-index: 100;
+                padding: 12px;
+            }
+            
+            .users-sidebar {
+                display: none;
+                position: fixed;
+                top: 56px;
+                left: 0;
+                width: 100%;
+                height: calc(100vh - 56px);
+                z-index: 200;
+            }
+            
+            .users-sidebar.active {
+                display: flex;
+            }
+            
+            .online-list-btn {
+                display: none;
+            }
+            
+            .notification-panel {
+                position: fixed;
+                top: 56px;
+                left: 0;
+                width: 100%;
+                height: calc(100vh - 56px);
+                max-height: none;
+                border-radius: 0;
+                border: none;
+                border-top: 1px solid var(--border-color);
+            }
+            
+            .mobile-menu-btn {
+                display: block;
+                background: none;
+                border: none;
+                color: var(--text-primary);
+                font-size: 20px;
+                cursor: pointer;
+                padding: 8px;
+            }
+        }
+        
+        @media (min-width: 769px) {
+            .main-container {
+                flex-direction: row;
+            }
+            
+            .video-container {
+                flex: 1;
+                height: 100%;
+                width: 60%;
+            }
+            
+            .chat-container {
+                width: 40%;
+                height: 100%;
+                flex-shrink: 0;
+            }
+            
+            .users-sidebar {
+                position: absolute;
+                right: 0;
+                top: 56px;
+                bottom: 0;
+                width: 300px;
+                height: calc(100vh - 56px);
+                display: none;
+            }
+            
+            .users-sidebar.active {
+                display: flex;
+            }
+            
+            .online-list-btn {
+                display: flex;
+            }
+            
+            .mobile-menu-btn {
+                display: none;
+            }
+        }
+        
+        /* WEB LAYOUT (Büyük ekran) */
+        @media (min-width: 1200px) {
+            .video-container {
+                flex: 3;
+            }
+            
+            .chat-container {
+                flex: 1;
+                width: 500px;
+            }
+        }
+        
+        /* SCROLLBAR */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.3);
+            border-radius: 3px;
+        }
+        
+        body.night-mode ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        /* UTILITY */
+        .hidden {
+            display: none !important;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="youtube-live-mode">
+    <!-- HEADER -->
+    <div class="youtube-header">
+        <div class="header-left">
+            <button class="mobile-menu-btn" onclick="toggleUserList()">👥</button>
+            <div class="logo">
+                <span class="logo-icon">▶️</span>
+                <span>Popbox Live</span>
+                <div class="user-badges">
+                    <span class="badge owner" id="ownerBadge">OWNER 🤴</span>
+                    <span class="badge admin" id="adminBadge">ADMIN ⭐️</span>
+                    <span class="badge coadmin" id="coadminBadge">CO-ADMIN ⚡️</span>
+                    <span class="badge operator" id="operatorBadge">OPERATOR 🛠️</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-right">
+            <!-- BİLDİRİM PANELİ -->
+            <div class="notification-section">
+                <button class="notification-icon" onclick="toggleNotificationPanel(event)" title="Bildirimler">
+                    🔔
+                    <span class="notification-badge" id="notificationBadge">0</span>
+                </button>
+                <div class="notification-panel" id="notificationPanel">
+                    <div class="notification-header">
+                        <span>Bildirimler</span>
+                        <button onclick="closeNotificationPanel()" style="background:none; border:none; color:var(--text-primary); cursor:pointer;">×</button>
+                    </div>
+                    <div class="notification-list" id="notificationList">
+                        <!-- Bildirimler buraya eklenecek -->
+                    </div>
+                    <div class="notification-footer">
+                        <button class="clear-notifications-btn" onclick="clearAllNotifications()">Tümünü Temizle</button>
+                    </div>
+                </div>
+            </div>
+            
+            <button class="online-list-btn" onclick="toggleUserList()">
+                <span>👥</span>
+                <span id="onlineCount">0</span>
+            </button>
+            <button class="theme-toggle" onclick="toggleTheme()" title="Tema değiştir">🎨</button>
+        </div>
+    </div>
+    
+    <!-- ANA CONTAINER -->
+    <div class="main-container">
+        <!-- VIDEO BÖLÜMÜ -->
+        <div class="video-container">
+            <div class="video-wrapper">
+                <div id="youtube-player"></div>
+                <div class="video-placeholder">
+                    <div style="font-size: 48px; margin-bottom: 16px;">🎵</div>
+                    <div style="font-size: 20px; font-weight: 500;">Popbox Music Live</div>
+                    <div style="font-size: 14px; opacity: 0.8; margin-top: 8px;">Canlı yayın yükleniyor...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- CHAT BÖLÜMÜ -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <div class="chat-title">Canlı Sohbet</div>
+                <div class="chat-actions">
+                    <div class="online-count">
+                        <span id="chatOnlineCount">0</span> kişi
+                    </div>
+                </div>
+            </div>
+            
+            <div class="messages-area" id="messages">
+                <div class="yt-message system">
+                    🎉 Popbox Music Live'e hoş geldiniz! Canlı sohbete katılın.
+                </div>
+            </div>
+            
+            <div class="chat-input-area">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="message-input" 
+                        placeholder="Mesajınızı yazın veya / komutları kullanın..."
+                        rows="1"
+                        oninput="autoResize(this)"
+                    ></textarea>
+                    <button class="send-button" onclick="sendMessage()">
+                        ↗
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ONLINE KULLANICILAR SIDEBAR -->
+        <div class="users-sidebar" id="usersSidebar">
+            <div class="users-title">
+                <span>Canlı Katılımcılar</span>
+                <button class="close-sidebar" onclick="toggleUserList()">×</button>
+            </div>
+            <div id="userList">
+                <!-- Kullanıcılar buraya eklenecek -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- GİRİŞ EKRANI -->
+    <div id="login-screen">
+        <div class="login-container">
+            <div class="login-title">
+                <span class="logo-icon">▶️</span>
+                Popbox Live
+            </div>
+            
+            <div class="login-subtitle" style="color: var(--text-secondary); text-align: center; margin-bottom: 20px; font-size: 14px;">
+                🔥 Firebase Realtime Chat<br>
+                👑 Admin şifreli giriş<br>
+                🚫 Aynı nick koruması
+            </div>
+            
+            <input 
+                type="text" 
+                id="login-nick" 
+                class="login-input" 
+                placeholder="Kullanıcı adınız"
+                autocomplete="off"
+            >
+            
+            <input 
+                type="password" 
+                id="login-password" 
+                class="login-input" 
+                placeholder="Şifre (sadece kayıtlı kullanıcılar)"
+                autocomplete="off"
+                style="display: none;"
+            >
+            
+            <div id="password-info" style="color: var(--text-secondary); font-size: 14px; margin-bottom: 12px; display: none;">
+                🔐 Bu kullanıcı kayıtlıdır, lütfen şifrenizi girin
+            </div>
+            
+            <button class="login-button" onclick="login()" id="login-btn">
+                Sohbete Katıl
+            </button>
+            
+            <div id="login-error" class="error-message"></div>
+            <div id="login-success" class="success-message"></div>
+            
+            <div style="margin-top: 20px; text-align: center; font-size: 12px; color: var(--text-secondary);">
+                🎨 Sağ üstten tema değiştirebilirsiniz
+            </div>
+        </div>
+    </div>
+    
+    <!-- ÖZEL SOHBET MODALI -->
+    <div class="private-modal" id="privateModal">
+        <div class="private-header">
+            <div id="privateWith">🔒 Özel Sohbet</div>
+            <button onclick="closePrivateChat()" style="background: none; border: none; color: var(--text-primary); font-size: 24px; cursor: pointer;">
+                ×
+            </button>
+        </div>
+        <div class="private-messages" id="privateMessages"></div>
+        <div class="private-input-area">
+            <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+            <button class="image-upload-btn" onclick="openPrivateImageUpload()" title="Resim gönder">
+                📷
+            </button>
+            <textarea 
+                id="private-input" 
+                placeholder="Özel mesaj yazın..."
+                rows="1"
+                oninput="autoResize(this)"
+            ></textarea>
+            <button class="send-button" style="background: var(--private);" onclick="sendPrivateMessage()">
+                ↗
+            </button>
+        </div>
+    </div>
+    
+    <!-- OWNER ÖZEL MODAL -->
+    <div class="owner-private-modal" id="ownerPrivateModal">
+        <div class="owner-private-header">
+            <div>🤴 Owner - Özel Mesaj İzleme</div>
+            <button onclick="closeOwnerPrivateModal()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">
+                ×
+            </button>
+        </div>
+        <div class="owner-private-messages" id="ownerPrivateMessages"></div>
+    </div>
+    
+    <!-- ADMIN KAYIT MODALI -->
+    <div class="admin-modal" id="adminRegisterModal">
+        <div class="admin-header">
+            <span>👑 Kullanıcı Kayıt Sistemi</span>
+            <button onclick="closeAdminModal()" style="background: none; border: none; color: var(--text-primary); font-size: 24px; cursor: pointer;">
+                ×
+            </button>
+        </div>
+        <div class="modal-body">
+            <input type="text" id="reg-username" class="modal-input" placeholder="Kullanıcı Adı" autocomplete="off">
+            <input type="password" id="reg-password" class="modal-input" placeholder="Şifre" autocomplete="off">
+            <select id="reg-role" class="modal-select">
+                <option value="user">Kullanıcı</option>
+                <option value="operator">Operatör</option>
+                <option value="coadmin">Co-Admin</option>
+                <option value="admin">Admin</option>
+            </select>
+            <div class="modal-buttons">
+                <button class="modal-btn primary" onclick="registerUser()">Kaydet</button>
+                <button class="modal-btn danger" onclick="unregisterUser()">Sil</button>
+                <button class="modal-btn secondary" onclick="closeAdminModal()">İptal</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- KOMUT OLUŞTURMA MODALI -->
+    <div class="admin-modal" id="commandModal">
+        <div class="admin-header">
+            <span>🤴 Owner - Yeni Komut Oluştur</span>
+            <button onclick="closeCommandModal()" style="background: none; border: none; color: var(--text-primary); font-size: 24px; cursor: pointer;">
+                ×
+            </button>
+        </div>
+        <div class="modal-body">
+            <input type="text" id="cmd-name" class="modal-input" placeholder="Komut adı (/ ile başlamadan)" autocomplete="off">
+            <textarea id="cmd-response" class="modal-input" placeholder="Komut yanıtı" rows="3"></textarea>
+            <select id="cmd-role" class="modal-select">
+                <option value="all">Herkes kullanabilir</option>
+                <option value="operator">Sadece Operatör+</option>
+                <option value="coadmin">Sadece Co-Admin+</option>
+                <option value="admin">Sadece Admin+</option>
+                <option value="owner">Sadece Owner</option>
+            </select>
+            <div class="modal-buttons">
+                <button class="modal-btn primary" onclick="saveCustomCommand()">Kaydet</button>
+                <button class="modal-btn danger" onclick="deleteCustomCommand()">Sil</button>
+                <button class="modal-btn secondary" onclick="closeCommandModal()">İptal</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- OVERLAY -->
+    <div id="overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2999;"></div>
+    
+    <!-- FIREBASE BADGE -->
+    <div class="firebase-badge">
+        <span>🔥</span> Firebase Active
+    </div>
+    
+    <!-- SES ELEMANI -->
+    <audio id="notificationSound" style="display: none;">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- ANA UYGULAMA JS -->
+    <script>
+        // ========== GÜVENLİK KONFİGÜRASYONU ==========
+        const SECURE_CONFIG = {
+            DEFAULT_ADMINS: ['popbox', 'popboxmusic'],
+            OWNER_CONFIG: {
+                username: 'MateKy',
+                role: 'owner',
+                isHidden: true
+            },
+            BOT_CONFIG: {
+                name: 'PopboxChatBot',
+                welcomeMessages: [
+                    "🎉 {user} aramıza hoş geldin! Sohbetin keyfini çıkar!",
+                    "👋 Merhaba {user}! Popbox Music Chat'e hoş geldin!"
+                ],
+                autoMessages: [
+                    "💡 İpucu: /yardım yazarak tüm komutları görebilirsin!",
+                    "👥 Online kullanıcıları görmek için /online yazın!"
+                ],
+                messageInterval: 600000,
+                welcomeDelay: 2000,
+                maxMessagesPerHour: 2
+            }
+        };
+
+        // ========== GLOBAL DEĞİŞKENLER ==========
+        let currentUser = null;
+        let isAdmin = false;
+        let isCoAdmin = false;
+        let isOperator = false;
+        let isOwner = false;
+        let player = null;
+        let privateChatWith = null;
+        let currentPrivateChatId = null;
+        let coAdminList = [];
+        let operatorList = [];
+        let adminList = [];
+        let bannedUsers = {};
+        let registeredUsers = {};
+        let customCommands = {};
+        let originalTitle = document.title;
+        let ownerPrivateMessages = {};
+        let allPrivateMessages = [];
+        let activePrivateChatListeners = {};
+        let ownerPasswordHash = null;
+        
+        // ========== BİLDİRİM SİSTEMİ DEĞİŞKENLERİ ==========
+        let notificationCount = 0;
+        let notifications = [];
+        let notificationPanelOpen = false;
+        
+        // ========== SHA-256 ŞİFRELEME ==========
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new UInt8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        
+        // ========== OWNER ŞİFRE SİSTEMİ ==========
+        async function initOwnerPassword() {
+            try {
+                const ownerPassword = "Sahi17407@SCM";
+                const salt = "popbox_secure_salt_2024";
+                const combinedPassword = ownerPassword + salt;
+                const hashedPassword = await sha256(combinedPassword);
+                
+                ownerPasswordHash = {
+                    hash: hashedPassword,
+                    salt: salt
+                };
+                
+                console.log("✅ Owner şifre sistemi başlatıldı");
+                
+            } catch (error) {
+                console.error("Owner şifre sistemi başlatma hatası:", error);
+                ownerPasswordHash = {
+                    hash: "secure_hash_only_in_memory",
+                    salt: "emergency"
+                };
+            }
+        }
+        
+        async function verifyOwnerPassword(inputPassword) {
+            try {
+                if (!ownerPasswordHash || !ownerPasswordHash.salt) {
+                    await initOwnerPassword();
+                }
+                
+                const inputHash = await sha256(inputPassword + ownerPasswordHash.salt);
+                return inputHash === ownerPasswordHash.hash;
+                
+            } catch (error) {
+                console.error("Şifre doğrulama hatası:", error);
+                return false;
+            }
+        }
+        
+        // ========== NICK NORMALİZASYON FONKSİYONU ==========
+        function normalizeNick(nick) {
+            return nick ? nick.toLowerCase().trim() : '';
+        }
+        
+        // ========== POPBOXCHAT BOT SİSTEMİ ==========
+        class PopboxChatBot {
+            constructor() {
+                this.name = SECURE_CONFIG.BOT_CONFIG.name;
+                this.autoMessageInterval = null;
+                this.welcomedUsers = new Set();
+                this.messageCount = 0;
+                this.lastMessageTime = 0;
+            }
+            
+            sendWelcome(user) {
+                if (this.welcomedUsers.has(user)) return;
+                
+                setTimeout(() => {
+                    const messages = SECURE_CONFIG.BOT_CONFIG.welcomeMessages;
+                    const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+                    const formattedMessage = randomMessage.replace('{user}', user);
+                    
+                    this.sendBotMessage(formattedMessage);
+                    this.welcomedUsers.add(user);
+                }, SECURE_CONFIG.BOT_CONFIG.welcomeDelay);
+            }
+            
+            sendAutoMessage() {
+                const now = Date.now();
+                const hourInMs = 60 * 60 * 1000;
+                
+                if (now - this.lastMessageTime < hourInMs && 
+                    this.messageCount >= SECURE_CONFIG.BOT_CONFIG.maxMessagesPerHour) {
+                    return;
+                }
+                
+                if (now - this.lastMessageTime >= hourInMs) {
+                    this.messageCount = 0;
+                }
+                
+                const messages = SECURE_CONFIG.BOT_CONFIG.autoMessages;
+                const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+                this.sendBotMessage(randomMessage);
+                
+                this.messageCount++;
+                this.lastMessageTime = now;
+            }
+            
+            sendBotMessage(text) {
+                FirebaseDB.messages.send({
+                    sender: this.name,
+                    text: text,
+                    type: 'system',
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    }),
+                    isBot: true
+                });
+            }
+            
+            startAutoMessages() {
+                if (this.autoMessageInterval) {
+                    clearInterval(this.autoMessageInterval);
+                }
+                
+                this.autoMessageInterval = setInterval(() => {
+                    this.sendAutoMessage();
+                }, SECURE_CONFIG.BOT_CONFIG.messageInterval);
+            }
+            
+            stopAutoMessages() {
+                if (this.autoMessageInterval) {
+                    clearInterval(this.autoMessageInterval);
+                    this.autoMessageInterval = null;
+                }
+            }
+        }
+        
+        let popboxBot = new PopboxChatBot();
+        
+        // ========== TEMEL FONKSİYONLAR ==========
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        }
+        
+        function toggleUserList() {
+            const sidebar = document.getElementById('usersSidebar');
+            sidebar.classList.toggle('active');
+        }
+        
+        // ========== BİLDİRİM SİSTEMİ ==========
+        function toggleNotificationPanel(e) {
+            if (e) e.stopPropagation();
+            
+            const panel = document.getElementById('notificationPanel');
+            notificationPanelOpen = !notificationPanelOpen;
+            
+            if (notificationPanelOpen) {
+                panel.classList.add('active');
+                updateNotificationPanel();
+            } else {
+                panel.classList.remove('active');
+            }
+        }
+        
+        function closeNotificationPanel() {
+            const panel = document.getElementById('notificationPanel');
+            panel.classList.remove('active');
+            notificationPanelOpen = false;
+        }
+        
+        function updateNotificationBadge() {
+            const badge = document.getElementById('notificationBadge');
+            if (notificationCount > 0) {
+                badge.textContent = notificationCount > 99 ? '99+' : notificationCount;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+        
+        function addNotification(sender, message, type = 'private') {
+            notificationCount++;
+            
+            const notification = {
+                id: 'notif_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                sender: sender,
+                message: message,
+                type: type,
+                time: new Date().toLocaleTimeString('tr-TR', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                }),
+                timestamp: Date.now(),
+                read: false
+            };
+            
+            notifications.unshift(notification);
+            updateNotificationBadge();
+            
+            if (document.hidden || !document.hasFocus()) {
+                document.title = `(${notificationCount}) ${originalTitle}`;
+            }
+            
+            playNotificationSound();
+            
+            if (notificationPanelOpen) {
+                updateNotificationPanel();
+            }
+            
+            if (notifications.length > 100) {
+                notifications.pop();
+            }
+        }
+        
+        function updateNotificationPanel() {
+            const container = document.getElementById('notificationList');
+            
+            if (notifications.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary);">Henüz bildirim yok.</div>';
+                return;
+            }
+            
+            let html = '';
+            notifications.slice(0, 20).forEach(notif => {
+                let icon = '🔔';
+                let bgColor = 'var(--primary)';
+                
+                if (notif.type === 'private') {
+                    icon = '🔒';
+                    bgColor = 'var(--private)';
+                } else if (notif.type === 'owner') {
+                    icon = '🤴';
+                    bgColor = 'var(--owner)';
+                } else if (notif.type === 'admin') {
+                    icon = '⭐️';
+                    bgColor = 'var(--secondary)';
+                } else if (notif.type === 'system') {
+                    icon = 'ℹ️';
+                    bgColor = 'var(--online)';
+                }
+                
+                html += `
+                    <div class="notification-item ${notif.read ? '' : 'unread'}" onclick="handleNotificationClick('${notif.id}')">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                            <div style="width: 24px; height: 24px; border-radius: 50%; background: ${bgColor}; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px;">
+                                ${icon}
+                            </div>
+                            <strong style="flex: 1;">${notif.sender}</strong>
+                            <small style="color: var(--text-secondary);">${notif.time}</small>
+                        </div>
+                        <div style="font-size: 14px;">${notif.message}</div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        function handleNotificationClick(notificationId) {
+            const notification = notifications.find(n => n.id === notificationId);
+            if (!notification) return;
+            
+            notification.read = true;
+            
+            if (notification.type === 'private') {
+                openPrivateChat(notification.sender);
+            }
+            
+            updateNotificationPanel();
+        }
+        
+        function clearAllNotifications() {
+            notifications = [];
+            notificationCount = 0;
+            updateNotificationBadge();
+            updateNotificationPanel();
+            document.title = originalTitle;
+        }
+        
+        function playNotificationSound() {
+            try {
+                const sound = document.getElementById('notificationSound');
+                sound.currentTime = 0;
+                sound.play().catch(e => console.log("Ses çalınamadı:", e));
+            } catch (error) {
+                console.log("Ses çalma hatası:", error);
+            }
+        }
+        
+        // ========== TEMA SİSTEMİ ==========
+        function toggleTheme() {
+            const body = document.body;
+            const themeBtn = document.querySelector('.theme-toggle');
+            
+            if (body.classList.contains('youtube-live-mode')) {
+                body.classList.remove('youtube-live-mode');
+                body.classList.add('night-mode');
+                themeBtn.textContent = '🌙';
+                themeBtn.title = 'Gece modu';
+                localStorage.setItem('theme', 'night');
+            } else if (body.classList.contains('night-mode')) {
+                body.classList.remove('night-mode');
+                body.classList.add('light-mode');
+                themeBtn.textContent = '☀️';
+                themeBtn.title = 'Gündüz modu';
+                localStorage.setItem('theme', 'light');
+            } else {
+                body.classList.remove('light-mode');
+                body.classList.add('youtube-live-mode');
+                themeBtn.textContent = '🎬';
+                themeBtn.title = 'YouTube Live teması';
+                localStorage.setItem('theme', 'youtube');
+            }
+        }
+        
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'youtube';
+            const body = document.body;
+            const themeBtn = document.querySelector('.theme-toggle');
+            
+            body.classList.remove('youtube-live-mode', 'night-mode', 'light-mode');
+            
+            if (savedTheme === 'night') {
+                body.classList.add('night-mode');
+                themeBtn.textContent = '🌙';
+                themeBtn.title = 'Gece modu';
+            } else if (savedTheme === 'light') {
+                body.classList.add('light-mode');
+                themeBtn.textContent = '☀️';
+                themeBtn.title = 'Gündüz modu';
+            } else {
+                body.classList.add('youtube-live-mode');
+                themeBtn.textContent = '🎬';
+                themeBtn.title = 'YouTube Live teması';
+            }
+        }
+        
+        // ========== YOUTUBE PLAYER ==========
+        function initYouTubePlayer() {
+            if (typeof YT !== 'undefined' && YT.Player) {
+                player = new YT.Player('youtube-player', {
+                    height: '100%',
+                    width: '100%',
+                    videoId: 'i75BZYOAPl4',
+                    playerVars: {
+                        'autoplay': 1,
+                        'controls': 1,
+                        'rel': 0,
+                        'modestbranding': 1,
+                        'playsinline': 1
+                    },
+                    events: {
+                        'onReady': function(event) {
+                            document.querySelector('.video-placeholder').style.display = 'none';
+                            try {
+                                event.target.playVideo();
+                                console.log("✅ YouTube video başlatıldı");
+                            } catch (error) {
+                                console.log("⚠️ Video otomatik başlatılamadı, kullanıcı etkileşimi gerekli");
+                            }
+                        },
+                        'onStateChange': function(event) {
+                            if (event.data === YT.PlayerState.PLAYING) {
+                                console.log("▶️ Video çalıyor");
+                            }
+                        }
+                    }
+                });
+            } else {
+                console.log("❌ YouTube API yüklenemedi");
+            }
+        }
+        
+        // ========== ONLINE KULLANICILAR GÜNCELLEME ==========
+        async function updateOnlineUsers() {
+            const users = await FirebaseDB.users.getAll();
+            
+            const now = Date.now();
+            let onlineCount = 0;
+            const activeUsers = [];
+            
+            Object.entries(users).forEach(([username, userData]) => {
+                if (!userData) return;
+                
+                if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
+                    (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
+                    return;
+                }
+                
+                const timeDiff = now - (userData.lastSeen || 0);
+                const secondsAgo = Math.floor(timeDiff / 1000);
+                
+                if (secondsAgo < 30) {
+                    onlineCount++;
+                    activeUsers.push({
+                        username: username,
+                        ...userData,
+                        secondsAgo: secondsAgo
+                    });
+                }
+            });
+            
+            document.getElementById('onlineCount').textContent = onlineCount;
+            document.getElementById('chatOnlineCount').textContent = onlineCount;
+            
+            updateUserList(activeUsers);
+        }
+        
+        function updateUserList(users) {
+            const container = document.getElementById('userList');
+            
+            if (!users || users.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:20px;">Henüz kimse online değil</div>';
+                return;
+            }
+            
+            users.sort((a, b) => a.secondsAgo - b.secondsAgo);
+            
+            let html = '';
+            users.forEach(user => {
+                const isCurrentUser = user.username === (currentUser?.name || '');
+                const statusClass = user.secondsAgo > 10 ? 'idle' : '';
+                const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
+                const normalizedUser = normalizeNick(user.username);
+                const isAdminUser = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                    normalizeNick(admin) === normalizedUser
+                ) || adminList.some(admin => 
+                    normalizeNick(admin) === normalizedUser
+                );
+                const isCoAdminUser = coAdminList.includes(user.username) || (registeredUsers[user.username] && registeredUsers[user.username].role === 'coadmin');
+                const isOperatorUser = operatorList.includes(user.username) || (registeredUsers[user.username] && registeredUsers[user.username].role === 'operator');
+                const isBanned = bannedUsers[user.username] && bannedUsers[user.username].bannedUntil > Date.now();
+                const isRegistered = user.isRegistered || (registeredUsers[user.username] && registeredUsers[user.username].isRegistered);
+                
+                let badge = '';
+                if (isOwnerUser) badge = '🤴';
+                else if (isAdminUser) badge = '⭐️';
+                else if (isCoAdminUser) badge = '⚡️';
+                else if (isOperatorUser) badge = '🛠️';
+                else if (isBanned) badge = '🚫';
+                else if (isRegistered) badge = '✅';
+                
+                html += `
+                    <div class="user-item ${statusClass} ${isBanned ? 'banned' : ''}" onclick="openPrivateChat('${user.username}')">
+                        <div class="user-status">
+                            <span class="status-dot ${isBanned ? 'status-banned' : (user.secondsAgo > 10 ? 'status-idle' : 'status-online')}"></span>
+                            <strong>${isCurrentUser ? '👤 ' : ''}${badge} ${user.username}</strong>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">
+                            ${user.secondsAgo < 5 ? 'Şimdi' : user.secondsAgo + 'sn'}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // ========== MESAJ GÖNDERME ==========
+        async function sendMessage() {
+            if (!FirebaseDB.isConnected()) {
+                addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
+                return;
+            }
+            
+            const canSend = await checkBanBeforeMessage();
+            if (!canSend) return;
+            
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            if (text.startsWith('/')) {
+                handleCommand(text);
+                input.value = '';
+                autoResize(input);
+                return;
+            }
+            
+            const messageData = {
+                sender: currentUser.name,
+                text: text,
+                type: isOwner ? 'owner' : (isAdmin ? 'admin' : (isCoAdmin ? 'coadmin' : (isOperator ? 'operator' : 'user'))),
+                timestamp: Date.now(),
+                time: new Date().toLocaleTimeString('tr-TR', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                })
+            };
+            
+            try {
+                await FirebaseDB.messages.send(messageData);
+                input.value = '';
+                autoResize(input);
+                
+                if (currentUser) {
+                    FirebaseDB.users.update(currentUser.name, {
+                        lastSeen: Date.now()
+                    });
+                }
+            } catch (error) {
+                console.error('Mesaj gönderme hatası:', error);
+                addSystemMessage('❌ Mesaj gönderilemedi!');
+            }
+        }
+        
+        function updateMessages(messages) {
+            const container = document.getElementById('messages');
+            if (!messages) return;
+            
+            container.innerHTML = '';
+            
+            messages.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                let messageClass = `yt-message ${msg.type || 'user'} ${msg.isBot ? 'system' : ''}`;
+                
+                let senderName = msg.sender;
+                if (msg.type === 'owner') {
+                    senderName = '🤴 ' + senderName;
+                } else if (msg.type === 'admin') {
+                    senderName = '⭐️ ' + senderName;
+                } else if (msg.type === 'coadmin') {
+                    senderName = '⚡️ ' + senderName;
+                } else if (msg.type === 'operator') {
+                    senderName = '🛠️ ' + senderName;
+                }
+                
+                messageDiv.className = messageClass;
+                messageDiv.id = `msg_${msg.id}`;
+                
+                let deleteButton = '';
+                if (currentUser && 
+                    (msg.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner)) {
+                    deleteButton = `<button class="delete-btn" onclick="deleteMessage('${msg.id}')">🗑️</button>`;
+                }
+                
+                const userHtml = `<span class="message-user" onclick="openPrivateChat('${msg.sender}')">
+                    ${senderName}
+                </span>`;
+                
+                let content = msg.text;
+                if (msg.image) {
+                    content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
+                }
+                
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        ${userHtml}
+                        <div>
+                            <span class="message-time">${msg.time || '--:--'}</span>
+                            ${deleteButton}
+                        </div>
+                    </div>
+                    <div class="message-content">${content}</div>
+                `;
+                
+                container.appendChild(messageDiv);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        // ========== MESAJ SİLME ==========
+        async function deleteMessage(messageId) {
+            if (!currentUser) return;
+            
+            try {
+                const messages = await FirebaseDB.messages.getLast(1000);
+                const message = messages.find(m => m.id === messageId);
+                
+                if (!message) {
+                    addSystemMessage('❌ Mesaj bulunamadı!');
+                    return;
+                }
+                
+                const canDelete = message.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner;
+                
+                if (!canDelete) {
+                    addSystemMessage('⛔ Sadece kendi mesajlarınızı silebilirsiniz!');
+                    return;
+                }
+                
+                if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
+                    await FirebaseDB.messages.delete(messageId);
+                    
+                    const messageDiv = document.getElementById(`msg_${messageId}`);
+                    if (messageDiv) {
+                        messageDiv.style.opacity = '0.5';
+                        messageDiv.style.textDecoration = 'line-through';
+                        messageDiv.innerHTML = '<em style="color:var(--text-secondary);">(mesaj silindi)</em>';
+                        
+                        setTimeout(() => {
+                            if (messageDiv.parentNode) {
+                                messageDiv.remove();
+                            }
+                        }, 2000);
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Mesaj silme hatası:', error);
+                addSystemMessage('❌ Mesaj silinemedi!');
+            }
+        }
+        
+        // ========== ÖZEL SOHBET ==========
+        function openPrivateChat(username) {
+            if (username === currentUser.name) {
+                addSystemMessage('Kendinle özel sohbet başlatamazsın!');
+                return;
+            }
+            
+            if (isOwner) {
+                addSystemMessage("🤴 Owner olarak özel sohbet edemezsiniz, sadece izleyebilirsiniz!");
+                openOwnerPrivateMessages(currentUser.name, username);
+                return;
+            }
+            
+            privateChatWith = username;
+            currentPrivateChatId = generateChatId(currentUser.name, username);
+            
+            document.getElementById('privateWith').textContent = `🔒 ${username} ile özel sohbet`;
+            document.getElementById('privateModal').style.display = 'flex';
+            document.getElementById('overlay').style.display = 'block';
+            
+            loadPrivateMessages();
+        }
+        
+        function closePrivateChat() {
+            privateChatWith = null;
+            currentPrivateChatId = null;
+            document.getElementById('privateModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('private-input').value = '';
+            autoResize(document.getElementById('private-input'));
+        }
+        
+        function loadPrivateMessages() {
+            if (!currentPrivateChatId) return;
+            
+            const container = document.getElementById('privateMessages');
+            container.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:20px;">Özel mesajlar yükleniyor...</div>';
+            
+            FirebaseDB.privateChats.onMessages(currentPrivateChatId, (messages) => {
+                updatePrivateMessages(messages);
+            });
+            
+            FirebaseDB.privateChats.onNewMessage(currentPrivateChatId, (message) => {
+                if (message && message.sender !== currentUser.name) {
+                    if (!isOwner) {
+                        addNotification(
+                            message.sender,
+                            message.image ? '📸 Resim gönderdi' : message.text,
+                            'private'
+                        );
+                    }
+                }
+            });
+        }
+        
+        function updatePrivateMessages(messages) {
+            const container = document.getElementById('privateMessages');
+            
+            if (!messages || messages.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:20px;">Henüz mesaj yok. İlk mesajı sen gönder!</div>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            messages.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'yt-message private-msg';
+                messageDiv.id = `private_msg_${msg.id}`;
+                
+                let deleteButton = '';
+                if (currentUser && msg.sender === currentUser.name) {
+                    deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${msg.id}', '${currentPrivateChatId}')">🗑️</button>`;
+                }
+                
+                let content = msg.text;
+                if (msg.image) {
+                    content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
+                }
+                
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        <span class="message-user">
+                            ${msg.sender === currentUser.name ? '👤 ' : ''}${msg.sender}
+                        </span>
+                        <div>
+                            <span class="message-time">${msg.time || '--:--'}</span>
+                            ${deleteButton}
+                        </div>
+                    </div>
+                    <div class="message-content">${content}</div>
+                `;
+                
+                container.appendChild(messageDiv);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        async function deletePrivateMessage(messageId, chatId) {
+            if (!currentUser || !chatId) return;
+            
+            try {
+                const messages = await FirebaseDB.privateChats.getMessages(chatId, 1000);
+                const message = messages.find(m => m.id === messageId);
+                
+                if (!message) {
+                    alert('Mesaj bulunamadı!');
+                    return;
+                }
+                
+                if (message.sender !== currentUser.name) {
+                    alert('Sadece kendi mesajlarınızı silebilirsiniz!');
+                    return;
+                }
+                
+                if (confirm('Bu özel mesajı silmek istediğinize emin misiniz?')) {
+                    await FirebaseDB.privateChats.deleteMessage(chatId, messageId);
+                    
+                    const messageDiv = document.getElementById(`private_msg_${messageId}`);
+                    if (messageDiv) {
+                        messageDiv.style.opacity = '0.5';
+                        messageDiv.style.textDecoration = 'line-through';
+                        messageDiv.innerHTML = '<em style="color:var(--text-secondary);">(mesaj silindi)</em>';
+                        
+                        setTimeout(() => {
+                            if (messageDiv.parentNode) {
+                                messageDiv.remove();
+                            }
+                        }, 2000);
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Özel mesaj silme hatası:', error);
+                alert('Özel mesaj silinemedi!');
+            }
+        }
+        
+        function showImageModal(imageData) {
+            const modal = document.createElement('div');
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.width = '100%';
+            modal.style.height = '100%';
+            modal.style.background = 'rgba(0,0,0,0.9)';
+            modal.style.zIndex = '4000';
+            modal.style.display = 'flex';
+            modal.style.justifyContent = 'center';
+            modal.style.alignItems = 'center';
+            modal.style.cursor = 'pointer';
+            
+            const img = document.createElement('img');
+            img.src = imageData;
+            img.style.maxWidth = '90%';
+            img.style.maxHeight = '90%';
+            img.style.borderRadius = '8px';
+            
+            modal.appendChild(img);
+            modal.onclick = function() {
+                document.body.removeChild(modal);
+            };
+            
+            document.body.appendChild(modal);
+        }
+        
+        // ========== ÖZELDEN RESİM GÖNDERME ==========
+        function openPrivateImageUpload() {
+            if (!privateChatWith) {
+                alert('Önce bir kullanıcı ile özel sohbette olmalısınız!');
+                return;
+            }
+            
+            if (isOwner) {
+                alert('Owner olarak resim gönderemezsiniz!');
+                return;
+            }
+            
+            document.getElementById('imageUpload').click();
+        }
+        
+        document.getElementById('imageUpload').addEventListener('change', handleImageUpload);
+        
+        async function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            if (!file.type.startsWith('image/')) {
+                alert('Lütfen sadece resim dosyası seçin!');
+                return;
+            }
+            
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Resim çok büyük! Maksimum 5MB.');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                const imageData = event.target.result;
+                
+                if (privateChatWith && currentPrivateChatId) {
+                    const messageData = {
+                        sender: currentUser.name,
+                        receiver: privateChatWith,
+                        text: '📸 Resim gönderdi',
+                        image: imageData,
+                        timestamp: Date.now(),
+                        time: new Date().toLocaleTimeString('tr-TR', { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                        }),
+                        type: 'private'
+                    };
+                    
+                    try {
+                        await FirebaseDB.privateChats.send(currentPrivateChatId, messageData);
+                    } catch (error) {
+                        console.error('Resim gönderme hatası:', error);
+                        alert('Resim gönderilemedi!');
+                    }
+                }
+            };
+            
+            reader.readAsDataURL(file);
+            e.target.value = '';
+        }
+        
+        async function sendPrivateMessage() {
+            if (!privateChatWith || !currentPrivateChatId) return;
+            
+            if (isOwner) {
+                alert('Owner olarak özel mesaj gönderemezsiniz!');
+                return;
+            }
+            
+            const canSend = await checkBanBeforeMessage();
+            if (!canSend) return;
+            
+            const input = document.getElementById('private-input');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            const messageData = {
+                sender: currentUser.name,
+                receiver: privateChatWith,
+                text: text,
+                timestamp: Date.now(),
+                time: new Date().toLocaleTimeString('tr-TR', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                })
+            };
+            
+            try {
+                await FirebaseDB.privateChats.send(currentPrivateChatId, messageData);
+                input.value = '';
+                autoResize(input);
+                
+                if (currentUser) {
+                    FirebaseDB.users.update(currentUser.name, {
+                        lastSeen: Date.now()
+                    });
+                }
+            } catch (error) {
+                console.error('Özel mesaj hatası:', error);
+            }
+        }
+        
+        function generateChatId(user1, user2) {
+            const users = [user1, user2].sort();
+            return `chat_${users[0]}_${users[1]}`;
+        }
+        
+        // ========== ÖZEL BİLDİRİM GÖNDERME ==========
+        async function sendPrivateNotification(targetUser, message) {
+            if (!isAdmin && !isCoAdmin && !isOwner) {
+                addSystemMessage("⛔ Sadece admin/co-admin/owner özel bildirim gönderebilir!");
+                return;
+            }
+            
+            if (!targetUser || !message) {
+                addSystemMessage("Kullanım: /info [kullanıcı] [mesaj]");
+                return;
+            }
+            
+            try {
+                const chatId = generateChatId(currentUser.name, targetUser);
+                
+                const notificationData = {
+                    sender: currentUser.name,
+                    receiver: targetUser,
+                    text: `📢 Yönetici Bildirimi: ${message}`,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    }),
+                    type: 'admin-notification',
+                    isNotification: true
+                };
+                
+                await FirebaseDB.privateChats.send(chatId, notificationData);
+                addSystemMessage(`✅ ${targetUser} kullanıcısına özel bildirim gönderildi!`);
+                
+            } catch (error) {
+                console.error('Bildirim gönderme hatası:', error);
+                addSystemMessage('❌ Bildirim gönderilemedi!');
+            }
+        }
+        
+        // ========== KAYIT SİSTEMİ ==========
+        function openAdminRegisterModal() {
+            if (!isAdmin && !isOwner) {
+                addSystemMessage("⛔ Sadece adminler kullanıcı kaydedebilir!");
+                return;
+            }
+            
+            document.getElementById('adminRegisterModal').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+        }
+        
+        function closeAdminModal() {
+            document.getElementById('adminRegisterModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+        
+        async function registerUser() {
+            if (!isAdmin && !isOwner) {
+                addSystemMessage("⛔ Sadece adminler kullanıcı kaydedebilir!");
+                return;
+            }
+            
+            const username = document.getElementById('reg-username').value.trim();
+            const password = document.getElementById('reg-password').value.trim();
+            const role = document.getElementById('reg-role').value;
+            
+            if (!username || !password) {
+                addSystemMessage("❌ Kullanıcı adı ve şifre gerekli!");
+                return;
+            }
+            
+            if (role === 'admin' && !isOwner) {
+                addSystemMessage("⛔ Sadece Owner admin atayabilir!");
+                return;
+            }
+            
+            const normalizedUsername = normalizeNick(username);
+            if (normalizedUsername === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
+                addSystemMessage("⛔ Owner kullanıcısı oluşturulamaz!");
+                return;
+            }
+            
+            try {
+                await FirebaseDB.registeredUsers.register(username, {
+                    password: password,
+                    role: role,
+                    registeredBy: currentUser.name,
+                    isRegistered: true
+                });
+                
+                if (role === 'coadmin') {
+                    await FirebaseDB.coAdmins.add(username);
+                } else if (role === 'operator') {
+                    await FirebaseDB.operators.add(username);
+                } else if (role === 'admin') {
+                    if (isOwner) {
+                        await FirebaseDB.adminList.add(username);
+                    }
+                }
+                
+                addSystemMessage(`✅ ${username} kullanıcısı ${role} rolü ile kaydedildi!`);
+                closeAdminModal();
+                
+                await loadRegisteredUsers();
+                
+            } catch (error) {
+                console.error("Kullanıcı kaydetme hatası:", error);
+                addSystemMessage("❌ Kullanıcı kaydedilemedi!");
+            }
+        }
+        
+        async function unregisterUser() {
+            if (!isAdmin && !isOwner) {
+                addSystemMessage("⛔ Sadece adminler kullanıcı silebilir!");
+                return;
+            }
+            
+            const username = document.getElementById('reg-username').value.trim();
+            
+            if (!username) {
+                addSystemMessage("❌ Silinecek kullanıcı adı girin!");
+                return;
+            }
+            
+            const normalizedUsername = normalizeNick(username);
+            const isTargetOwner = normalizedUsername === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+            
+            if (isTargetOwner) {
+                addSystemMessage("⛔ Owner kullanıcısını silemezsiniz!");
+                return;
+            }
+            
+            if (!confirm(`${username} kullanıcısını silmek istediğinize emin misiniz?`)) {
+                return;
+            }
+            
+            try {
+                const users = await FirebaseDB.registeredUsers.getAll();
+                
+                let foundUser = null;
+                let originalName = username;
+                
+                for (const [dbUsername, userData] of Object.entries(users)) {
+                    if (normalizeNick(dbUsername) === normalizedUsername) {
+                        foundUser = userData;
+                        originalName = dbUsername;
+                        break;
+                    }
+                }
+                
+                if (!foundUser) {
+                    addSystemMessage(`❌ ${username} kullanıcısı bulunamadı!`);
+                    return;
+                }
+                
+                if (foundUser.role === 'coadmin') {
+                    await FirebaseDB.coAdmins.remove(originalName);
+                } else if (foundUser.role === 'operator') {
+                    await FirebaseDB.operators.remove(originalName);
+                } else if (foundUser.role === 'admin' && isOwner) {
+                    await FirebaseDB.adminList.remove(originalName);
+                }
+                
+                await FirebaseDB.registeredUsers.unregister(originalName);
+                await FirebaseDB.users.remove(originalName);
+                
+                addSystemMessage(`✅ ${originalName} kullanıcısı silindi!`);
+                closeAdminModal();
+                
+                await loadRegisteredUsers();
+                
+            } catch (error) {
+                console.error("Kullanıcı silme hatası:", error);
+                addSystemMessage("❌ Kullanıcı silinemedi!");
+            }
+        }
+        
+        // ========== KOMUT OLUŞTURMA SİSTEMİ ==========
+        function openCommandModal() {
+            if (!isOwner) {
+                addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!");
+                return;
+            }
+            
+            document.getElementById('commandModal').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+        }
+        
+        function closeCommandModal() {
+            document.getElementById('commandModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+        
+        async function saveCustomCommand() {
+            if (!isOwner) {
+                addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!");
+                return;
+            }
+            
+            const cmdName = document.getElementById('cmd-name').value.trim().toLowerCase();
+            const cmdResponse = document.getElementById('cmd-response').value.trim();
+            const cmdRole = document.getElementById('cmd-role').value;
+            
+            if (!cmdName || !cmdResponse) {
+                addSystemMessage("❌ Komut adı ve yanıtı gerekli!");
+                return;
+            }
+            
+            try {
+                const commandData = {
+                    response: cmdResponse,
+                    role: cmdRole,
+                    createdBy: currentUser.name,
+                    createdAt: Date.now()
+                };
+                
+                await FirebaseDB.customCommands.set(cmdName, commandData);
+                
+                customCommands[cmdName] = commandData;
+                
+                addSystemMessage(`✅ /${cmdName} komutu başarıyla oluşturuldu!`);
+                
+                document.getElementById('cmd-name').value = '';
+                document.getElementById('cmd-response').value = '';
+                closeCommandModal();
+                
+                await loadCustomCommands();
+                
+            } catch (error) {
+                console.error("Komut kaydetme hatası:", error);
+                addSystemMessage("❌ Komut oluşturulamadı! Hata: " + error.message);
+            }
+        }
+        
+        async function deleteCustomCommand() {
+            if (!isOwner) {
+                addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!");
+                return;
+            }
+            
+            const cmdName = document.getElementById('cmd-name').value.trim().toLowerCase();
+            
+            if (!cmdName) {
+                addSystemMessage("❌ Silinecek komut adı girin!");
+                return;
+            }
+            
+            if (!confirm(`/${cmdName} komutunu silmek istediğinize emin misiniz?`)) {
+                return;
+            }
+            
+            try {
+                await FirebaseDB.customCommands.remove(cmdName);
+                delete customCommands[cmdName];
+                
+                addSystemMessage(`✅ /${cmdName} komutu silindi!`);
+                closeCommandModal();
+                
+                await loadCustomCommands();
+                
+            } catch (error) {
+                console.error("Komut silme hatası:", error);
+                addSystemMessage("❌ Komut silinemedi!");
+            }
+        }
+        
+        // ========== VERİ YÜKLEME ==========
+        async function loadRegisteredUsers() {
+            try {
+                registeredUsers = await FirebaseDB.registeredUsers.getAll();
+            } catch (error) {
+                console.error("Kayıtlı kullanıcılar yükleme hatası:", error);
+            }
+        }
+        
+        async function loadAdminList() {
+            try {
+                adminList = await FirebaseDB.adminList.getAll();
+            } catch (error) {
+                console.error("Admin listesi yükleme hatası:", error);
+            }
+        }
+        
+        async function loadCoAdmins() {
+            try {
+                coAdminList = await FirebaseDB.coAdmins.getAll();
+                checkCoAdminStatus();
+            } catch (error) {
+                console.error("Co-admin listesi yükleme hatası:", error);
+            }
+        }
+        
+        async function loadOperators() {
+            try {
+                operatorList = await FirebaseDB.operators.getAll();
+                checkOperatorStatus();
+            } catch (error) {
+                console.error("Operatörler yükleme hatası:", error);
+            }
+        }
+        
+        async function loadCustomCommands() {
+            try {
+                customCommands = await FirebaseDB.customCommands.getAll();
+                console.log("✅ Özel komutlar yüklendi:", Object.keys(customCommands).length);
+            } catch (error) {
+                console.error("Özel komutlar yükleme hatası:", error);
+            }
+        }
+        
+        async function loadBans() {
+            try {
+                bannedUsers = await FirebaseDB.bans.getAll();
+            } catch (error) {
+                console.error("Ban listesi yükleme hatası:", error);
+            }
+        }
+        
+        function checkAdminStatus() {
+            if (!currentUser) return;
+            
+            const normalizedName = normalizeNick(currentUser.name);
+            
+            const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                normalizeNick(admin) === normalizedName
+            );
+            
+            const isInAdminList = adminList.some(admin =>
+                normalizeNick(admin) === normalizedName
+            );
+            
+            if (isDefaultAdmin || isInAdminList) {
+                isAdmin = true;
+                currentUser.role = 'admin';
+                document.getElementById('adminBadge').style.display = 'inline-block';
+            }
+        }
+        
+        function checkCoAdminStatus() {
+            if (currentUser && coAdminList.includes(currentUser.name)) {
+                isCoAdmin = true;
+                document.getElementById('coadminBadge').style.display = 'inline-block';
+            }
+        }
+        
+        function checkOperatorStatus() {
+            if (currentUser && operatorList.includes(currentUser.name)) {
+                isOperator = true;
+                document.getElementById('operatorBadge').style.display = 'inline-block';
+            }
+        }
+        
+        // ========== GİRİŞ SİSTEMİ ==========
+        async function login() {
+            const nickInput = document.getElementById('login-nick');
+            const passwordInput = document.getElementById('login-password');
+            const rawNick = nickInput.value.trim();
+            const password = passwordInput.value;
+            const loginBtn = document.getElementById('login-btn');
+            
+            if (!rawNick) {
+                showLoginError('❌ Lütfen bir kullanıcı adı girin!');
+                return;
+            }
+            
+            if (rawNick.length < 2 || rawNick.length > 20) {
+                showLoginError('❌ Kullanıcı adı 2-20 karakter arasında olmalı!');
+                return;
+            }
+            
+            if (!FirebaseDB.isConnected()) {
+                showLoginError('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
+                return;
+            }
+            
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="loading"></span> Kontrol ediliyor...';
+            showLoginError('');
+            showLoginSuccess('');
+            
+            try {
+                const normalizedNick = normalizeNick(rawNick);
+                
+                const isOwnerUser = normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+                
+                const existingUsers = await FirebaseDB.users.getAll();
+                const similarUsers = [];
+                
+                Object.keys(existingUsers).forEach(username => {
+                    if (normalizeNick(username) === normalizedNick) {
+                        similarUsers.push(username);
+                    }
+                });
+                
+                const hasSimilar = similarUsers.length > 0;
+                
+                if (hasSimilar && !isOwnerUser) {
+                    const userRegistered = await FirebaseDB.registeredUsers.get(rawNick);
+                    if (!userRegistered) {
+                        showLoginError(
+                            `⚠️ BU NICK ZATEN KULLANIMDA!\n\n` +
+                            `Mevcut benzer kullanıcılar: ${similarUsers.join(', ')}`
+                        );
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Sohbete Katıl';
+                        return;
+                    }
+                }
+                
+                const lockCheck = await FirebaseDB.userLocks.get(normalizedNick);
+                if (lockCheck && lockCheck.expiresAt > Date.now()) {
+                    const secondsLeft = Math.ceil((lockCheck.expiresAt - Date.now()) / 1000);
+                    showLoginError(
+                        `🔒 BU KULLANICI ŞU ANDA GİRİŞ YAPMAYA ÇALIŞIYOR!\n\n` +
+                        `Lütfen ${secondsLeft} saniye bekleyin.`
+                    );
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sohbete Katıl';
+                    return;
+                }
+                
+                const userId = generateUserId();
+                await FirebaseDB.userLocks.set(normalizedNick, {
+                    userId: userId,
+                    username: normalizedNick,
+                    lockedAt: Date.now(),
+                    expiresAt: Date.now() + 30000
+                });
+                
+                const banCheck = await FirebaseDB.bans.get(rawNick);
+                if (banCheck && banCheck.bannedUntil > Date.now()) {
+                    await FirebaseDB.userLocks.remove(normalizedNick);
+                    const remaining = Math.ceil((banCheck.bannedUntil - Date.now()) / 60000);
+                    showLoginError(
+                        `🚫 BU KULLANICI BANLI!\n\n` +
+                        `Ban Süresi: ${remaining} dakika kaldı\n` +
+                        `Banlayan: ${banCheck.bannedBy || 'Admin'}\n` +
+                        `Sebep: ${banCheck.reason || 'Belirtilmemiş'}`
+                    );
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sohbete Katıl';
+                    return;
+                }
+                
+                if (isOwnerUser) {
+                    if (!password) {
+                        await FirebaseDB.userLocks.remove(normalizedNick);
+                        showLoginError('🔐 Şifre gerekli!');
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Sohbete Katıl';
+                        return;
+                    }
+                    
+                    const passwordValid = await verifyOwnerPassword(password);
+                    if (!passwordValid) {
+                        await FirebaseDB.userLocks.remove(normalizedNick);
+                        showLoginError('❌ Hatalı şifre!');
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Sohbete Katıl';
+                        return;
+                    }
+                    
+                    const realOwnerNick = SECURE_CONFIG.OWNER_CONFIG.username;
+                    await completeLogin(realOwnerNick, 'owner', true, null);
+                    
+                } else {
+                    const userRegistered = await FirebaseDB.registeredUsers.get(rawNick);
+                    
+                    if (userRegistered) {
+                        if (!password) {
+                            await FirebaseDB.userLocks.remove(normalizedNick);
+                            showLoginError('🔐 Bu kullanıcı kayıtlıdır! Lütfen şifrenizi girin.');
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = 'Sohbete Katıl';
+                            return;
+                        }
+                        
+                        if (password !== userRegistered.password) {
+                            await FirebaseDB.userLocks.remove(normalizedNick);
+                            showLoginError('❌ Hatalı şifre!');
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = 'Sohbete Katıl';
+                            return;
+                        }
+                        
+                        await completeLogin(rawNick, userRegistered.role, true, userRegistered);
+                        
+                    } else {
+                        await completeLogin(rawNick, 'user', false, null);
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Giriş hatası:', error);
+                showLoginError(`❌ Giriş hatası: ${error.message}`);
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sohbete Katıl';
+            }
+        }
+        
+        async function completeLogin(username, role, isRegistered, userData) {
+            const existingUser = await FirebaseDB.users.get(username);
+            
+            const now = Date.now();
+            
+            if (existingUser) {
+                const lastSeen = existingUser.lastSeen || 0;
+                const timeDiff = now - lastSeen;
+                
+                if (timeDiff < 30000) {
+                    const normalizedNick = normalizeNick(username);
+                    await FirebaseDB.userLocks.remove(normalizedNick);
+                    
+                    showLoginError(
+                        `⛔ "${username}" kullanıcısı ŞU ANDA AKTİF!\n\n` +
+                        `Son aktivite: ${Math.floor(timeDiff / 1000)} saniye önce`
+                    );
+                    
+                    const loginBtn = document.getElementById('login-btn');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sohbete Katıl';
+                    return;
+                }
+            }
+            
+            const userInfo = {
+                name: username,
+                lastSeen: now,
+                joinedAt: now,
+                ip: generateFakeIP(),
+                userAgent: navigator.userAgent.substring(0, 80),
+                isOnline: true,
+                timestamp: now,
+                role: role,
+                isRegistered: isRegistered,
+                isHidden: role === 'owner'
+            };
+            
+            await FirebaseDB.users.set(username, userInfo);
+            
+            const normalizedNick = normalizeNick(username);
+            await FirebaseDB.userLocks.remove(normalizedNick);
+            
+            currentUser = {
+                name: username,
+                role: role,
+                isRegistered: isRegistered,
+                data: userInfo
+            };
+            
+            if (role === 'owner') {
+                isOwner = true;
+                document.getElementById('ownerBadge').style.display = 'inline-block';
+            } else if (role === 'admin') {
+                isAdmin = true;
+                document.getElementById('adminBadge').style.display = 'inline-block';
+            } else if (role === 'coadmin') {
+                isCoAdmin = true;
+                document.getElementById('coadminBadge').style.display = 'inline-block';
+            } else if (role === 'operator') {
+                isOperator = true;
+                document.getElementById('operatorBadge').style.display = 'inline-block';
+            }
+            
+            document.getElementById('login-screen').style.display = 'none';
+            
+            initApp();
+            
+            addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}!`);
+            
+            if (currentUser.isRegistered) {
+                addSystemMessage('✅ Kayıtlı kullanıcı olarak giriş yaptınız!');
+            }
+            
+            if (isOwner) {
+                addSystemMessage('🤴 Owner olarak giriş yaptınız!');
+            }
+            
+            setTimeout(() => {
+                if (!isOwner) {
+                    popboxBot.sendWelcome(username);
+                }
+            }, 1000);
+        }
+        
+        function generateUserId() {
+            return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        function generateFakeIP() {
+            return `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+        }
+        
+        function showLoginError(message) {
+            const errorMsg = document.getElementById('login-error');
+            errorMsg.textContent = message;
+            errorMsg.style.display = 'block';
+            
+            const successMsg = document.getElementById('login-success');
+            successMsg.style.display = 'none';
+        }
+        
+        function showLoginSuccess(message) {
+            const successMsg = document.getElementById('login-success');
+            successMsg.textContent = message;
+            successMsg.style.display = 'block';
+            
+            const errorMsg = document.getElementById('login-error');
+            errorMsg.style.display = 'none';
+        }
+        
+        // ========== BAN SİSTEMİ ==========
+        async function checkIfBanned(username) {
+            try {
+                const banData = await FirebaseDB.bans.get(username);
+                if (banData && banData.bannedUntil > Date.now()) {
+                    return {
+                        isBanned: true,
+                        banData: banData
+                    };
+                } else if (banData) {
+                    await FirebaseDB.bans.remove(username);
+                }
+                return { isBanned: false };
+            } catch (error) {
+                console.error("Ban kontrol hatası:", error);
+                return { isBanned: false };
+            }
+        }
+        
+        async function kickUser(username, duration = 5, reason = "Kick komutu") {
+            if (!currentUser || (!isAdmin && !isCoAdmin && !isOperator && !isOwner)) {
+                addSystemMessage("⛔ Yetkiniz yok!");
+                return;
+            }
+            
+            if (!username) {
+                addSystemMessage("❌ Kullanıcı adı belirtin!");
+                return;
+            }
+            
+            if (username === currentUser.name) {
+                addSystemMessage("❌ Kendinizi banlayamazsınız!");
+                return;
+            }
+            
+            const normalizedUsername = normalizeNick(username);
+            const isTargetOwner = normalizedUsername === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+            
+            if (isTargetOwner) {
+                addSystemMessage("⛔ Owner kullanıcısını banlayamazsınız!");
+                return;
+            }
+            
+            if (isOperator && !isAdmin && !isCoAdmin && !isOwner) {
+                const durationNum = parseInt(duration) || 5;
+                if (durationNum > 60) {
+                    addSystemMessage("⛔ Operatörler maksimum 60 dakika ban atabilir!");
+                    return;
+                }
+            }
+            
+            try {
+                const durationNum = parseInt(duration) || 5;
+                const banUntil = Date.now() + (durationNum * 60000);
+                
+                await FirebaseDB.bans.add(username, {
+                    bannedUntil: banUntil,
+                    bannedBy: currentUser.name,
+                    reason: reason,
+                    timestamp: Date.now(),
+                    duration: durationNum,
+                    bannedByRole: currentUser.role
+                });
+                
+                await FirebaseDB.users.remove(username);
+                
+                addBanMessage(
+                    `🚫 ${username} kullanıcısı ${currentUser.name} tarafından ${durationNum} dakika banlandı!\n` +
+                    `Sebep: ${reason}`
+                );
+                
+                await loadBans();
+                
+            } catch (error) {
+                console.error("Ban hatası:", error);
+                addSystemMessage("❌ Ban işlemi başarısız!");
+            }
+        }
+        
+        async function unbanUser(username) {
+            if (!currentUser || (!isAdmin && !isCoAdmin && !isOperator && !isOwner)) {
+                addSystemMessage("⛔ Yetkiniz yok!");
+                return;
+            }
+            
+            try {
+                const bans = await FirebaseDB.bans.getAll();
+                
+                let foundBan = null;
+                let originalName = username;
+                
+                for (const [bannedUser, banData] of Object.entries(bans)) {
+                    if (normalizeNick(bannedUser) === normalizeNick(username)) {
+                        foundBan = banData;
+                        originalName = bannedUser;
+                        break;
+                    }
+                }
+                
+                if (!foundBan) {
+                    addSystemMessage(`❌ ${username} kullanıcısı banlı değil!`);
+                    return;
+                }
+                
+                await FirebaseDB.bans.remove(originalName);
+                addSystemMessage(`✅ ${originalName} kullanıcısının banı kaldırıldı!`);
+                await loadBans();
+                
+            } catch (error) {
+                console.error("Unban hatası:", error);
+                addSystemMessage("❌ Ban kaldırma işlemi başarısız!");
+            }
+        }
+        
+        async function showBanList() {
+            try {
+                const bans = await FirebaseDB.bans.getAll();
+                
+                if (Object.keys(bans).length === 0) {
+                    addBanMessage("✅ Aktif banlı kullanıcı yok!");
+                    return;
+                }
+                
+                let banList = "🚫 <strong>AKTİF BANLAR:</strong><br><br>";
+                const now = Date.now();
+                let activeCount = 0;
+                
+                Object.entries(bans).forEach(([username, banData]) => {
+                    if (banData.bannedUntil > now) {
+                        activeCount++;
+                        const remaining = Math.ceil((banData.bannedUntil - now) / 60000);
+                        const by = banData.bannedBy || 'Admin';
+                        const reason = banData.reason || 'Belirtilmemiş';
+                        const role = banData.bannedByRole || 'admin';
+                        
+                        banList += `
+                            <strong>${username}</strong><br>
+                            • Kalan Süre: ${remaining} dakika<br>
+                            • Banlayan: ${by} (${role})<br>
+                            • Sebep: ${reason}<br><br>
+                        `;
+                    }
+                });
+                
+                if (activeCount === 0) {
+                    addBanMessage("✅ Aktif banlı kullanıcı yok!");
+                } else {
+                    banList += `<em>Toplam ${activeCount} aktif ban</em>`;
+                    addBanMessage(banList);
+                }
+                
+            } catch (error) {
+                console.error("Ban listesi hatası:", error);
+                addBanMessage("❌ Ban listesi getirilemedi!");
+            }
+        }
+        
+        async function checkBanBeforeMessage() {
+            if (!currentUser) return true;
+            
+            try {
+                const banCheck = await checkIfBanned(currentUser.name);
+                if (banCheck.isBanned) {
+                    addSystemMessage("🚫 BANLANDINIZ! Mesaj gönderemezsiniz.");
+                    return false;
+                }
+                return true;
+            } catch (error) {
+                console.error("Ban kontrol hatası:", error);
+                return true;
+            }
+        }
+        
+        // ========== OWNER ÖZEL MESAJ İZLEME ==========
+        function startOwnerPrivateMessageMonitoring() {
+            if (!isOwner) return;
+            
+            console.log("🤴 Owner özel mesaj izleme başlatılıyor...");
+            
+            FirebaseDB.privateChats.onNewMessage('', (message) => {
+                // Owner için özel mesaj izleme
+                // Bu kısım daha detaylı implementasyon gerektirir
+            });
+        }
+        
+        function openOwnerPrivateMessages(user1, user2) {
+            if (!isOwner) return;
+            
+            document.getElementById('ownerPrivateModal').style.display = 'flex';
+            document.getElementById('overlay').style.display = 'block';
+            
+            const container = document.getElementById('ownerPrivateMessages');
+            container.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:20px;">Özel mesajlar yükleniyor...</div>';
+            
+            const chatId = generateChatId(user1, user2);
+            
+            FirebaseDB.privateChats.onMessages(chatId, (messages) => {
+                container.innerHTML = '';
+                
+                if (messages.length === 0) {
+                    container.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:20px;">Henüz mesaj yok.</div>';
+                    return;
+                }
+                
+                messages.forEach(msg => {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'yt-message private-msg';
+                    
+                    let content = msg.text;
+                    if (msg.image) {
+                        content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
+                    }
+                    
+                    let deleteBtn = '';
+                    if (isOwner) {
+                        deleteBtn = `<button class="owner-delete-btn" onclick="deleteOwnerPrivateMessage('${msg.id}', '${chatId}')">🗑️</button>`;
+                    }
+                    
+                    messageDiv.innerHTML = `
+                        <div class="message-header">
+                            <span class="message-user">${msg.sender}</span>
+                            <div>
+                                <span class="message-time">${msg.time}</span>
+                                ${deleteBtn}
+                            </div>
+                        </div>
+                        <div class="message-content">${content}</div>
+                    `;
+                    
+                    container.appendChild(messageDiv);
+                });
+                
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+        
+        async function deleteOwnerPrivateMessage(messageId, chatId) {
+            if (!isOwner) {
+                addSystemMessage("⛔ Bu işlemi sadece Owner yapabilir!");
+                return;
+            }
+            
+            if (!confirm('Bu özel mesajı silmek istediğinize emin misiniz?')) {
+                return;
+            }
+            
+            try {
+                await FirebaseDB.privateChats.deleteMessage(chatId, messageId);
+                
+                const messageDiv = document.querySelector(`[onclick*="deleteOwnerPrivateMessage('${messageId}'"]`).closest('.yt-message');
+                if (messageDiv) {
+                    messageDiv.style.opacity = '0.5';
+                    messageDiv.style.textDecoration = 'line-through';
+                    messageDiv.innerHTML = '<em style="color:var(--text-secondary);">(Owner tarafından silindi)</em>';
+                    
+                    setTimeout(() => {
+                        if (messageDiv.parentNode) {
+                            messageDiv.remove();
+                        }
+                    }, 2000);
+                }
+                
+            } catch (error) {
+                console.error('Owner mesaj silme hatası:', error);
+                addSystemMessage('❌ Mesaj silinemedi!');
+            }
+        }
+        
+        function closeOwnerPrivateModal() {
+            document.getElementById('ownerPrivateModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+        
+        // ========== KOMUT SİSTEMİ ==========
+        async function handleCommand(cmd) {
+            if (!FirebaseDB.isConnected()) {
+                addSystemMessage('❌ Firebase bağlantısı yok! Lütfen bekleyin...');
+                return;
+            }
+            
+            const parts = cmd.substring(1).split(' ');
+            const command = parts[0].toLowerCase();
+            const args = parts.slice(1);
+            
+            console.log("🔍 Komut:", command, "Args:", args);
+            
+            if (customCommands[command]) {
+                const cmdData = customCommands[command];
+                
+                let hasPermission = false;
+                switch(cmdData.role) {
+                    case 'all':
+                        hasPermission = true;
+                        break;
+                    case 'operator':
+                        hasPermission = isOperator || isCoAdmin || isAdmin || isOwner;
+                        break;
+                    case 'coadmin':
+                        hasPermission = isCoAdmin || isAdmin || isOwner;
+                        break;
+                    case 'admin':
+                        hasPermission = isAdmin || isOwner;
+                        break;
+                    case 'owner':
+                        hasPermission = isOwner;
+                        break;
+                }
+                
+                if (hasPermission) {
+                    addSystemMessage(cmdData.response);
+                } else {
+                    addSystemMessage("⛔ Bu komutu kullanma yetkiniz yok!");
+                }
+                return;
+            }
+            
+            if (command === 'temizle') {
+                if (!isAdmin && !isCoAdmin && !isOperator && !isOwner) {
+                    addSystemMessage('⛔ Sadece yetkililer tüm mesajları temizleyebilir!');
+                    return;
+                }
+                
+                try {
+                    if (confirm('TÜM mesajları temizlemek istediğinize emin misiniz?\n\nBu işlem GERİ ALINAMAZ!')) {
+                        await FirebaseDB.messages.clearAll();
+                        
+                        const container = document.getElementById('messages');
+                        container.innerHTML = '<div class="yt-message system">✅ Tüm mesajlar temizlendi!</div>';
+                        
+                        addSystemMessage('✅ Tüm mesajlar temizlendi!');
+                    }
+                } catch (error) {
+                    console.error('Temizleme hatası:', error);
+                    addSystemMessage('❌ Temizleme hatası: ' + error.message);
+                }
+                return;
+            }
+            
+            if (command === 'ozelokuma' || command === 'özelokuma' || command === 'ozelmesajlar' || command === 'özelmesajlar') {
+                if (!isOwner) {
+                    addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!");
+                    return;
+                }
+                
+                addSystemMessage("👁️ Özel mesaj izleme aktif. Kullanıcı adına tıklayarak özel mesajları görebilirsiniz.");
+                return;
+            }
+            
+            if (command === 'komut' || command === 'yenikomut' || command === 'command') {
+                openCommandModal();
+                return;
+            }
+            
+            if (command === 'komutlar' || command === 'commands') {
+                const commandsList = Object.keys(customCommands);
+                if (commandsList.length === 0) {
+                    addSystemMessage("🤖 Henüz özel komut oluşturulmamış.");
+                } else {
+                    addSystemMessage(`🤖 Özel komutlar: ${commandsList.map(c => '/' + c).join(', ')}`);
+                }
+                return;
+            }
+            
+            try {
+                switch(command) {
+                    case 'admin':
+                        if (args.length === 1) {
+                            const normalizedName = normalizeNick(currentUser.name);
+                            
+                            const isOwnerUser = normalizedName === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+                            
+                            if (isOwnerUser) {
+                                const passwordValid = await verifyOwnerPassword(args[0]);
+                                if (passwordValid) {
+                                    isOwner = true;
+                                    currentUser.role = 'owner';
+                                    document.getElementById('ownerBadge').style.display = 'inline-block';
+                                    addSystemMessage('✅ Owner girişi başarılı!');
+                                } else {
+                                    addSystemMessage('❌ Hatalı şifre!');
+                                }
+                                break;
+                            }
+                            
+                            const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                                normalizeNick(admin) === normalizedName
+                            );
+                            
+                            if (isDefaultAdmin) {
+                                const adminPassword = await FirebaseDB.adminPasswords.get(currentUser.name);
+                                if (adminPassword === args[0]) {
+                                    isAdmin = true;
+                                    currentUser.role = 'admin';
+                                    document.getElementById('adminBadge').style.display = 'inline-block';
+                                    addSystemMessage('✅ Admin girişi başarılı!');
+                                } else {
+                                    addSystemMessage('❌ Hatalı şifre!');
+                                }
+                            } else {
+                                addSystemMessage('❌ Bu kullanıcı admin değil!');
+                            }
+                        } else {
+                            addSystemMessage('Kullanım: /admin [şifre]');
+                        }
+                        break;
+                        
+                    case 'bot':
+                        if (args[0] === 'start' && (isAdmin || isCoAdmin || isOwner)) {
+                            popboxBot.startAutoMessages();
+                            addSystemMessage('🤖 PopboxChat Bot mesajları başlatıldı!');
+                        } else if (args[0] === 'stop' && (isAdmin || isCoAdmin || isOwner)) {
+                            popboxBot.stopAutoMessages();
+                            addSystemMessage('🤖 PopboxChat Bot mesajları durduruldu!');
+                        } else {
+                            addSystemMessage('Kullanım: /bot start veya /bot stop');
+                        }
+                        break;
+                        
+                    case 'info':
+                        if (!isAdmin && !isCoAdmin && !isOwner) {
+                            addSystemMessage('⛔ Sadece admin/co-admin/owner özel bildirim gönderebilir!');
+                            return;
+                        }
+                        
+                        if (args.length >= 2) {
+                            await sendPrivateNotification(args[0], args.slice(1).join(' '));
+                        } else {
+                            addSystemMessage('Kullanım: /info [kullanıcı] [mesaj]');
+                        }
+                        break;
+                        
+                    case 'reg':
+                    case 'register':
+                        if (!isAdmin && !isOwner) {
+                            addSystemMessage('⛔ Sadece adminler kullanıcı kaydedebilir!');
+                            return;
+                        }
+                        openAdminRegisterModal();
+                        break;
+                        
+                    case 'coadmin':
+                        if (!isAdmin && !isOwner) {
+                            addSystemMessage('⛔ Sadece adminler co-admin ekleyebilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
+                            await makeCoAdmin(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /coadmin [kullanıcı-adı]');
+                        }
+                        break;
+                        
+                    case 'removecoadmin':
+                        if (!isAdmin && !isOwner) {
+                            addSystemMessage('⛔ Sadece adminler co-admin kaldırabilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
+                            await removeCoAdmin(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /removecoadmin [kullanıcı-adı]');
+                        }
+                        break;
+                        
+                    case 'op':
+                    case 'operator':
+                        if (!isAdmin && !isOwner) {
+                            addSystemMessage('⛔ Sadece adminler operatör ekleyebilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
+                            await makeOperator(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /operator [kullanıcı-adı]');
+                        }
+                        break;
+                        
+                    case 'removeop':
+                    case 'removeoperator':
+                        if (!isAdmin && !isOwner) {
+                            addSystemMessage('⛔ Sadece adminler operatör kaldırabilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
+                            await removeOperator(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /removeoperator [kullanıcı-adı]');
+                        }
+                        break;
+                        
+                    case 'ban':
+                    case 'kick':
+                        if (!isAdmin && !isCoAdmin && !isOperator && !isOwner) {
+                            addSystemMessage('⛔ Sadece yetkililer ban/kick atabilir!');
+                            return;
+                        }
+                        
+                        if (args.length >= 1) {
+                            const username = args[0];
+                            const duration = args[1] || 5;
+                            const reason = args.slice(2).join(' ') || "Belirtilmemiş";
+                            await kickUser(username, duration, reason);
+                        } else {
+                            addSystemMessage('Kullanım: /ban [kullanıcı] [dakika] [sebep]');
+                        }
+                        break;
+                        
+                    case 'unban':
+                        if (!isAdmin && !isCoAdmin && !isOperator && !isOwner) {
+                            addSystemMessage('⛔ Sadece yetkililer ban kaldırabilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
+                            await unbanUser(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /unban [kullanıcı]');
+                        }
+                        break;
+                        
+                    case 'banlist':
+                        await showBanList();
+                        break;
+                        
+                    case 'sil':
+                        if (!isAdmin && !isCoAdmin && !isOperator && !isOwner) {
+                            addSystemMessage('⛔ Sadece yetkililer ID ile mesaj silebilir!');
+                            return;
+                        }
+                        
+                        if (args.length === 1) {
+                            await deleteMessage(args[0]);
+                        } else {
+                            addSystemMessage('Kullanım: /sil [mesaj-id]');
+                        }
+                        break;
+                        
+                    case 'kullanıcılar':
+                    case 'users':
+                    case 'list':
+                    case 'online':
+                        await updateOnlineUsers();
+                        addSystemMessage("✅ Online liste güncellendi!");
+                        break;
+                        
+                    case 'yardım':
+                    case 'help':
+                        showHelp();
+                        break;
+                        
+                    case 'firebase':
+                    case 'fb':
+                        addSystemMessage('🔥 Firebase Realtime Database aktif!');
+                        addSystemMessage(`📊 Proje: ${firebaseConfig.projectId}`);
+                        break;
+                        
+                    case 'tema':
+                    case 'theme':
+                        toggleTheme();
+                        break;
+                        
+                    case 'ping':
+                        addSystemMessage('🏓 Pong! Bağlantı aktif.');
+                        break;
+                        
+                    case 'çıkış':
+                    case 'exit':
+                    case 'logout':
+                    case 'quit':
+                        logout();
+                        break;
+                        
+                    default:
+                        addSystemMessage(`❌ Bilinmeyen komut: ${command}`);
+                }
+            } catch (error) {
+                console.error('Komut işleme hatası:', error);
+                addSystemMessage('❌ Komut işlenirken bir hata oluştu!');
+            }
+        }
+        
+        async function makeCoAdmin(username) {
+            try {
+                await FirebaseDB.coAdmins.add(username);
+                await FirebaseDB.registeredUsers.update(username, {
+                    role: 'coadmin',
+                    isRegistered: true
+                }, { merge: true });
+                
+                addSystemMessage(`✅ ${username} co-admin yapıldı!`);
+                await loadCoAdmins();
+                
+            } catch (error) {
+                console.error('Co-admin ekleme hatası:', error);
+                addSystemMessage('❌ Co-admin eklenemedi!');
+            }
+        }
+        
+        async function removeCoAdmin(username) {
+            try {
+                await FirebaseDB.coAdmins.remove(username);
+                addSystemMessage(`✅ ${username} co-admin'lıktan kaldırıldı!`);
+                await loadCoAdmins();
+                
+            } catch (error) {
+                console.error('Co-admin kaldırma hatası:', error);
+                addSystemMessage('❌ Co-admin kaldırılamadı!');
+            }
+        }
+        
+        async function makeOperator(username) {
+            try {
+                await FirebaseDB.operators.add(username);
+                await FirebaseDB.registeredUsers.update(username, {
+                    role: 'operator',
+                    isRegistered: true
+                }, { merge: true });
+                
+                addSystemMessage(`✅ ${username} operatör yapıldı!`);
+                await loadOperators();
+                
+            } catch (error) {
+                console.error('Operatör ekleme hatası:', error);
+                addSystemMessage('❌ Operatör eklenemedi!');
+            }
+        }
+        
+        async function removeOperator(username) {
+            try {
+                await FirebaseDB.operators.remove(username);
+                addSystemMessage(`✅ ${username} operatörlükten kaldırıldı!`);
+                await loadOperators();
+                
+            } catch (error) {
+                console.error('Operatör kaldırma hatası:', error);
+                addSystemMessage('❌ Operatör kaldırılamadı!');
+            }
+        }
+        
+        function showHelp() {
+            let help = '🔥 <strong>TÜM KOMUTLAR:</strong><br><br>';
+            
+            help += '⭐️ <strong>ADMIN KOMUTLARI:</strong><br>';
+            help += '• /admin [şifre] - Admin girişi<br>';
+            help += '• /info [kullanıcı] [mesaj] - Özel bildirim gönder<br>';
+            help += '• /reg - Kullanıcı kayıt paneli<br>';
+            help += '• /coadmin [kullanıcı] - Co-admin yap<br>';
+            help += '• /removecoadmin [kullanıcı] - Co-admin kaldır<br>';
+            help += '• /operator [kullanıcı] - Operatör yap<br>';
+            help += '• /removeoperator [kullanıcı] - Operatör kaldır<br>';
+            help += '• /temizle - Tüm mesajları temizle<br>';
+            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /unban [kullanıcı] - Ban kaldır<br>';
+            help += '• /banlist - Aktif banları göster<br>';
+            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br>';
+            help += '• /bot start/stop - Bot mesajlarını kontrol et<br><br>';
+            
+            help += '⚡️ <strong>CO-ADMIN KOMUTLARI:</strong><br>';
+            help += '• /info [kullanıcı] [mesaj] - Özel bildirim gönder<br>';
+            help += '• /temizle - Tüm mesajları temizle<br>';
+            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /unban [kullanıcı] - Ban kaldır<br>';
+            help += '• /banlist - Aktif banları göster<br>';
+            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
+            
+            help += '🛠️ <strong>OPERATÖR KOMUTLARI:</strong><br>';
+            help += '• /temizle - Tüm mesajları temizle<br>';
+            help += '• /ban [kullanıcı] [dakika] [sebep] - Süreli ban (max 60dk)<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban (max 60dk)<br>';
+            help += '• /unban [kullanıcı] - Ban kaldır<br>';
+            help += '• /banlist - Aktif banları göster<br>';
+            help += '• /sil [mesaj-id] - Mesajı ID ile sil<br><br>';
+            
+            help += '👤 <strong>HERKES İÇİN:</strong><br>';
+            help += '• /kullanıcılar - Online kullanıcıları göster<br>';
+            help += '• /yardım - Bu mesajı göster<br>';
+            help += '• /tema - Tema değiştir<br>';
+            help += '• /firebase - Firebase bilgileri<br>';
+            help += '• /ping - Bağlantı testi<br>';
+            help += '• /çıkış - Çıkış yap<br><br>';
+            
+            help += '💡 <strong>ÖZELLİKLER:</strong><br>';
+            help += '• Owner: 🤴<br>';
+            help += '• Admin: ⭐️<br>';
+            help += '• Co-Admin: ⚡️<br>';
+            help += '• Operatör: 🛠️<br>';
+            help += '• Kayıtlı kullanıcılar: Şifre ile güvenli giriş<br>';
+            help += '• Aynı nick koruması<br>';
+            help += '• Özel sohbet: Kullanıcı adına tıklayarak<br>';
+            help += '• Özelden resim gönderme: 📷 butonu<br>';
+            help += '• Kendi mesajını silme: 🗑️ butonu<br>';
+            help += '• Online liste: Web\'de açılır/kapanır, Mobil\'de tam ekran<br>';
+            help += '• 3 farklı tema: YouTube Live, Gece, Gündüz<br>';
+            help += '• Firebase Realtime Database aktif';
+            
+            addSystemMessage(help);
+        }
+        
+        function addSystemMessage(text) {
+            const container = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'yt-message system';
+            messageDiv.innerHTML = text;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function addBanMessage(text) {
+            const container = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'yt-message ban-message';
+            messageDiv.innerHTML = text;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        // ========== ÇIKIŞ ==========
+        function logout() {
+            if (currentUser) {
+                FirebaseDB.users.remove(currentUser.name);
+            }
+            
+            popboxBot.stopAutoMessages();
+            FirebaseDB.cleanup();
+            
+            location.reload();
+        }
+        
+        // ========== UYGULAMA BAŞLATMA ==========
+        function initApp() {
+            document.getElementById('message-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            
+            document.getElementById('private-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendPrivateMessage();
+                }
+            });
+            
+            document.getElementById('overlay').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closePrivateChat();
+                    closeAdminModal();
+                    closeCommandModal();
+                    closeOwnerPrivateModal();
+                }
+            });
+            
+            if (typeof YT !== 'undefined') {
+                initYouTubePlayer();
+            }
+            
+            FirebaseDB.users.onValue(() => {
+                updateOnlineUsers();
+            });
+            
+            FirebaseDB.messages.onMessages((messages) => {
+                updateMessages(messages);
+            });
+            
+            FirebaseDB.coAdmins.onValue((coAdmins) => {
+                coAdminList = coAdmins;
+                checkCoAdminStatus();
+            });
+            
+            FirebaseDB.operators.onValue((operators) => {
+                operatorList = operators;
+                checkOperatorStatus();
+            });
+            
+            FirebaseDB.adminList.onValue((admins) => {
+                adminList = admins;
+                checkAdminStatus();
+            });
+            
+            FirebaseDB.bans.onValue((bans) => {
+                bannedUsers = bans;
+            });
+            
+            loadRegisteredUsers();
+            loadCustomCommands();
+            
+            setInterval(async () => {
+                if (currentUser) {
+                    await FirebaseDB.userLocks.cleanup();
+                }
+            }, 60000);
+            
+            setInterval(() => {
+                if (currentUser) {
+                    FirebaseDB.users.update(currentUser.name, {
+                        lastSeen: Date.now(),
+                        isOnline: true
+                    });
+                }
+            }, 5000);
+            
+            const banCheckInterval = setInterval(async () => {
+                if (currentUser) {
+                    const banCheck = await checkIfBanned(currentUser.name);
+                    if (banCheck.isBanned) {
+                        addSystemMessage("🚫 BANLANDINIZ! Sayfadan atılıyorsunuz...");
+                        clearInterval(banCheckInterval);
+                        
+                        setTimeout(() => {
+                            logout();
+                        }, 3000);
+                    }
+                }
+            }, 5000);
+            
+            window.addEventListener('beforeunload', function() {
+                if (currentUser) {
+                    FirebaseDB.users.remove(currentUser.name);
+                }
+                FirebaseDB.cleanup();
+            });
+            
+            if (isOwner) {
+                startOwnerPrivateMessageMonitoring();
+            }
+        }
+        
+        // ========== FIREBASE BAĞLANTISI HAZIR OLDUĞUNDA ==========
+        window.onFirebaseConnected = function() {
+            console.log("✅ Firebase bağlantısı hazır, uygulama başlatılabilir!");
+            initOwnerPassword();
+        };
+        
+        // ========== SAYFA YÜKLENDİĞİNDE ==========
+        window.addEventListener('load', async function() {
+            console.log("📱 Sayfa yüklendi!");
+            
+            originalTitle = document.title;
+            loadTheme();
+            
+            if (typeof YT === 'undefined') {
+                console.log("⏳ YouTube API yükleniyor...");
+                const checkYT = setInterval(() => {
+                    if (typeof YT !== 'undefined') {
+                        clearInterval(checkYT);
+                        console.log("✅ YouTube API yüklendi");
+                    }
+                }, 500);
+            }
+            
+            initializeFirebase();
+            
+            document.getElementById('login-nick').focus();
+            
+            document.getElementById('login-nick').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') login();
+            });
+            
+            document.getElementById('login-password').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') login();
+            });
+            
+            document.addEventListener('click', function(e) {
+                const sidebar = document.getElementById('usersSidebar');
+                const menuBtn = document.querySelector('.mobile-menu-btn');
+                const onlineBtn = document.querySelector('.online-list-btn');
+                
+                if (sidebar.classList.contains('active')) {
+                    if (!sidebar.contains(e.target) && 
+                        (!menuBtn || !menuBtn.contains(e.target)) &&
+                        (!onlineBtn || !onlineBtn.contains(e.target)) &&
+                        !e.target.classList.contains('mobile-menu-btn') &&
+                        !e.target.classList.contains('online-list-btn')) {
+                        sidebar.classList.remove('active');
+                    }
+                }
+                
+                const notificationPanel = document.getElementById('notificationPanel');
+                const notificationBtn = document.querySelector('.notification-icon');
+                if (notificationPanel.classList.contains('active')) {
+                    if (!notificationPanel.contains(e.target) && 
+                        (!notificationBtn || !notificationBtn.contains(e.target))) {
+                        notificationPanel.classList.remove('active');
+                        notificationPanelOpen = false;
+                    }
+                }
+            });
+            
+            function onYouTubeIframeAPIReady() {
+                console.log("🎬 YouTube API hazır!");
+            }
+            window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
+            
+            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                console.log("📱 Mobil cihaz algılandı");
+            }
+        });
+    </script>
+    
+    <!-- YouTube IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>
