@@ -1,42 +1,12 @@
- // ========== YARDIMCI FONKSİYONLAR ==========
-
-// Bağlantı durumunu güncelle
-function updateConnectionStatus(status, text) {
-    const statusEl = document.getElementById('connectionStatus');
-    const statusText = document.getElementById('statusText');
-    if (statusEl && statusText) {
-        statusEl.className = `connection-status ${status}`;
-        statusText.textContent = text;
-    }
-}
-
-// Textarea otomatik boyutlandırma
-function autoResize(t) {
-    t.style.height = 'auto';
-    t.style.height = Math.min(t.scrollHeight, 80) + 'px';
-}
-
-// HTML escape
-function escapeHTML(t) {
-    if (!t) return '';
-    let d = document.createElement('div');
-    d.textContent = t;
-    return d.innerHTML;
-}
-
-// Modal aç
+// ========== MODAL FONKSİYONLARI ==========
 function openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) modal.classList.add('active');
+    document.getElementById(modalId).classList.add('active');
 }
 
-// Modal kapat
 function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) modal.classList.remove('active');
+    document.getElementById(modalId).classList.remove('active');
 }
 
-// KVKK ve Terms modal açma
 function openKvkkModal() {
     openModal('kvkkModal');
 }
@@ -45,20 +15,73 @@ function openTermsModal() {
     openModal('termsModal');
 }
 
-// FAQ toggle
-function toggleFaq(element) {
-    let answer = element.parentElement.querySelector('.faq-answer');
-    let icon = element.querySelector('i');
-    if (answer.style.display === 'none' || !answer.style.display) {
-        answer.style.display = 'block';
-        icon.className = 'fas fa-chevron-up';
-    } else {
-        answer.style.display = 'none';
-        icon.className = 'fas fa-chevron-down';
-    }
+// ========== MESAJ FONKSİYONLARI ==========
+function addSystemMessage(text) {
+    const container = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = 'system-message';
+    div.innerHTML = `<i class="fas fa-info-circle"></i> ${escapeHTML(text)}`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
 }
 
-// Debounce fonksiyonu
+function addAdminMessage(text) {
+    const container = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = 'admin-system-message';
+    div.innerHTML = `<i class="fas fa-shield-alt"></i> ${escapeHTML(text)}`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+// ========== TEXTAREA BOYUTLANDIRMA ==========
+function autoResize(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 80) + 'px';
+}
+
+// ========== ZAMAN FORMATLAMA ==========
+function formatTime(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('tr-TR', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
+}
+
+function formatDate(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleDateString('tr-TR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+}
+
+// ========== SAYI FORMATLAMA ==========
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    }
+    if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+}
+
+// ========== YASAKLI KELİME KONTROLÜ ==========
+function checkBannedWords(text) {
+    if (!text || !BANNED_WORDS.length) return false;
+    const lower = text.toLowerCase();
+    for (let word of BANNED_WORDS) {
+        if (lower.includes(word.toLowerCase())) {
+            return word;
+        }
+    }
+    return false;
+}
+
+// ========== DEBOUNCE ==========
 function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
@@ -71,158 +94,144 @@ function debounce(func, wait) {
     };
 }
 
-// 20 dakika sonra eski mesajları temizle
-function cleanupOldMessages() {
-    const TWENTY_MINUTES = 20 * 60 * 1000;
-    const now = Date.now();
-    let changed = false;
+// ========== KANAL ADI KONTROLÜ ==========
+function isValidChannelName(name) {
+    return /^[a-z0-9-]+$/.test(name);
+}
 
-    for (let channel in CHANNEL_MESSAGES) {
-        if (CHANNEL_MESSAGES[channel] && Array.isArray(CHANNEL_MESSAGES[channel])) {
-            const originalLength = CHANNEL_MESSAGES[channel].length;
-            CHANNEL_MESSAGES[channel] = CHANNEL_MESSAGES[channel].filter(msg => {
-                return (now - (msg.timestamp || 0)) < TWENTY_MINUTES;
-            });
-            if (originalLength !== CHANNEL_MESSAGES[channel].length) {
-                changed = true;
-                console.log(`${channel} kanalında ${originalLength - CHANNEL_MESSAGES[channel].length} eski mesaj temizlendi`);
-            }
+// ========== CHAT ID OLUŞTURMA ==========
+function generateChatId(user1, user2) {
+    const users = [user1, user2].sort();
+    return `chat_${users[0]}_${users[1]}`;
+}
+
+// ========== RASTGELE ID ==========
+function generateUserId() {
+    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+function generateMessageId() {
+    return 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// ========== IP ADRESİ (fake) ==========
+function generateFakeIP() {
+    return `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+}
+
+// ========== YOUTUBE URL'DEN ID ÇIKARMA ==========
+function extractYoutubeId(url) {
+    if (!url) return null;
+    
+    // youtube.com/watch?v=...
+    if (url.includes('youtube.com/watch?v=')) {
+        const match = url.split('v=')[1];
+        return match ? match.split('&')[0] : null;
+    }
+    
+    // youtu.be/...
+    if (url.includes('youtu.be/')) {
+        const match = url.split('youtu.be/')[1];
+        return match ? match.split('?')[0] : null;
+    }
+    
+    // direkt ID (11 karakter)
+    if (url.match(/^[a-zA-Z0-9_-]{11}$/)) {
+        return url;
+    }
+    
+    return null;
+}
+
+// ========== DOSYA BOYUT KONTROLÜ ==========
+function isValidFileSize(file, maxSizeMB = 5) {
+    return file.size <= maxSizeMB * 1024 * 1024;
+}
+
+function isValidImageType(file) {
+    return file.type.startsWith('image/');
+}
+
+function isValidVideoType(file) {
+    return file.type.startsWith('video/');
+}
+
+// ========== BİLDİRİM ==========
+function playNotificationSound() {
+    try {
+        const sound = document.getElementById('notificationSound');
+        if (sound) {
+            sound.currentTime = 0;
+            sound.play().catch(e => console.log('Ses çalınamadı:', e));
+        }
+    } catch (e) {
+        console.log('Ses hatası:', e);
+    }
+}
+
+function updatePageTitle(count) {
+    const originalTitle = document.title.replace(/^\(\d+\)\s*/, '');
+    if (count > 0) {
+        document.title = `(${count}) ${originalTitle}`;
+    } else {
+        document.title = originalTitle;
+    }
+}
+
+// ========== PANEL İŞLEMLERİ ==========
+function closeAllPanels() {
+    // Özel sohbet panelini kapat
+    if (document.getElementById('privateChatPanel').classList.contains('active')) {
+        closePrivateChat();
+    }
+    
+    // Modal'ları kapat
+    closeModal('youtubeModal');
+    closeModal('avatarModal');
+    closeModal('privateSpyModal');
+    closeModal('kvkkModal');
+    closeModal('termsModal');
+    
+    // Sol paneli kapat (mobilde)
+    const leftPanel = document.getElementById('leftPanel');
+    if (leftPanel.classList.contains('active')) {
+        leftPanel.classList.remove('active');
+    }
+}
+
+// ========== ESC İLE KAPATMA ==========
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeAllPanels();
+    }
+    
+    // Enter ile mesaj gönderme
+    if (e.key === 'Enter' && !e.shiftKey) {
+        const activeElement = document.activeElement;
+        if (activeElement && activeElement.id === 'messageInput') {
+            e.preventDefault();
+            sendMessage();
+        } else if (activeElement && activeElement.id === 'privateMessageInput') {
+            e.preventDefault();
+            sendPrivateMessage();
         }
     }
+});
 
-    if (changed) {
-        localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
-        if (typeof refreshCurrentChannelMessages === 'function') {
-            refreshCurrentChannelMessages();
-        }
-    }
-}
-
-// Özel mesajları temizle (çıkışta)
-function cleanupPrivateMessages() {
-    console.log('Özel mesajlar temizleniyor...');
-    if (typeof ACTIVE_USER !== 'undefined' && ACTIVE_USER) {
-        for (let chatId in PRIVATE_CHATS) {
-            if (chatId.includes(ACTIVE_USER.id)) {
-                delete PRIVATE_CHATS[chatId];
-            }
-        }
-        localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
-    }
-}
-
-// Nick kontrolü
-function isNickTaken(nick) {
-    let normalized = nick.toLowerCase();
-    return USERS_DB.some(u => u.name.toLowerCase() === normalized);
-}
-
-// Yasaklı kelime kontrolü
-function checkBannedWords(text) {
-    if (!text) return false;
-    const lower = text.toLowerCase();
-    for (let word of BANNED_WORDS) {
-        if (lower.includes(word.toLowerCase())) return word;
-    }
-    return false;
-}
-
-// Sistem mesajı ekle
-function addSystemMessage(t) {
-    let d = document.createElement('div');
-    d.className = 'system-message';
-    d.innerHTML = `<i class="fas fa-info-circle"></i> ${escapeHTML(t)}`;
-    document.getElementById('messages').appendChild(d);
-    document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-}
-
-// Kanal mesajlarını yükle
-function loadChannelMessages(channel) {
-    let container = document.getElementById('messages');
-    if (!container) return;
-
-    container.innerHTML = '';
-    addSystemMessage(`📢 #${channel} kanalına katıldın!`);
-
-    if (typeof initChannelMessages === 'function') {
-        initChannelMessages(channel);
-    }
+// ========== TIKLAMA DIŞI KAPATMA ==========
+document.addEventListener('click', function(e) {
+    // Sol panel (mobil)
+    const leftPanel = document.getElementById('leftPanel');
+    const menuBtns = document.querySelectorAll('.icon-item');
+    let clickedMenuBtn = false;
     
-    if (CHANNEL_MESSAGES[channel]) {
-        CHANNEL_MESSAGES[channel].forEach(msg => {
-            if (msg.isHtml) {
-                let msgDiv = document.createElement('div');
-                msgDiv.className = msg.sender === '🔔 SİSTEM' ? 'admin-system-message' : 'system-message';
-                msgDiv.innerHTML = `<i class="fas fa-copy"></i> ${msg.text}`;
-                container.appendChild(msgDiv);
-            } else {
-                let isMe = msg.sender === ACTIVE_USER?.name;
-                if (typeof appendMessageToChat === 'function') {
-                    appendMessageToChat(msg, isMe);
-                }
-            }
-        });
+    menuBtns.forEach(btn => {
+        if (btn.contains(e.target)) clickedMenuBtn = true;
+    });
+    
+    if (leftPanel.classList.contains('active') && 
+        !leftPanel.contains(e.target) && 
+        !clickedMenuBtn) {
+        leftPanel.classList.remove('active');
     }
-    container.scrollTop = container.scrollHeight;
-}
-
-// Kanal mesajlarını yenile
-function refreshCurrentChannelMessages() {
-    loadChannelMessages(currentChannel);
-}
-
-// Mesaj göster
-function appendMessageToChat(msg, isMe) {
-    let container = document.getElementById('messages');
-    if (!container) return;
-
-    let msgDiv = document.createElement('div');
-    msgDiv.className = `message ${isMe ? 'right' : ''}`;
-    msgDiv.setAttribute('data-timestamp', msg.timestamp);
-    
-    let deleteBtn = '';
-    if (isMe) {
-        deleteBtn = `<div class="delete-message-btn" onclick="deleteChannelMessage('${currentChannel}', ${msg.timestamp})"><i class="fas fa-trash"></i></div>`;
-    }
-    
-    msgDiv.innerHTML = deleteBtn + `
-        <div class="message-header" style="${isMe ? 'justify-content: flex-end;' : ''}">
-            <span class="message-time">${msg.time || ''}</span>
-            <span class="message-sender">${escapeHTML(msg.sender) || ''}</span>
-        </div>
-        <div class="message-text">${escapeHTML(msg.text) || ''}</div>`;
-    
-    container.appendChild(msgDiv);
-    container.scrollTop = container.scrollHeight;
-}
-
-// Kanal mesajı sil
-function deleteChannelMessage(channel, timestamp) {
-    if (!CHANNEL_MESSAGES[channel]) return false;
-    
-    const messageIndex = CHANNEL_MESSAGES[channel].findIndex(msg => msg.timestamp === timestamp);
-    
-    if (messageIndex !== -1) {
-        const message = CHANNEL_MESSAGES[channel][messageIndex];
-        
-        if (message.sender === ACTIVE_USER?.name) {
-            CHANNEL_MESSAGES[channel].splice(messageIndex, 1);
-            localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
-            
-            if (typeof database !== 'undefined' && database) {
-                database.ref(`chats/${channel}`).orderByChild('timestamp').equalTo(timestamp).once('value', (snapshot) => {
-                    snapshot.forEach(childSnapshot => {
-                        childSnapshot.ref.remove();
-                    });
-                });
-            }
-            
-            if (channel === currentChannel) {
-                refreshCurrentChannelMessages();
-            }
-            
-            return true;
-        }
-    }
-    return false;
-}
+});
