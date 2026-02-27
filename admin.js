@@ -1,214 +1,212 @@
-// ========== ADMIN/OWNER ÖZEL İŞLEMLERİ ==========
-// NOT: PRIVATE_SPY_CHANNELS, PRIVATE_SPY_ACTIVE, PRIVATE_SPY_CURRENT_CHANNEL, SUPER_HIDDEN_CHANNELS global.js'den geliyor
+// ========== ADMIN KOMUTLARI ==========
+async function handleCommand(cmd) {
+    const parts = cmd.substring(1).split(' ');
+    const main = parts[0].toLowerCase();
 
-// Private spy kanallarını kaydet
-function savePrivateSpyChannels() {
-    localStorage.setItem('cetcety_private_spy', JSON.stringify(PRIVATE_SPY_CHANNELS));
-}
-
-// Süper gizli kanalları kaydet
-function saveSuperHiddenChannels() {
-    localStorage.setItem('cetcety_super_hidden', JSON.stringify(SUPER_HIDDEN_CHANNELS));
-}
-
-// Admin kanalına mesaj gönder
-function sendToAdminChannel(message, type = 'system') {
-    if (!channels.admin) return;
-    
-    let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-    let adminMsg = {
-        sender: '🔔 SİSTEM',
-        text: message,
-        time: time,
-        timestamp: Date.now(),
-        isHtml: true
-    };
-    
-    if (!CHANNEL_MESSAGES.admin) {
-        CHANNEL_MESSAGES.admin = [];
-    }
-    CHANNEL_MESSAGES.admin.push(adminMsg);
-    localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
-    
-    if (currentChannel === 'admin') {
-        let container = document.getElementById('messages');
-        if (container) {
-            let msgDiv = document.createElement('div');
-            msgDiv.className = 'admin-system-message';
-            msgDiv.innerHTML = `<i class="fas fa-shield-alt"></i> ${escapeHTML(message)}`;
-            container.appendChild(msgDiv);
-            container.scrollTop = container.scrollHeight;
-        }
-    }
-}
-
-// Owner özel takip durumunu kontrol et
-function checkPrivateSpyStatus() {
-    if (ACTIVE_USER.role === 'owner' && Object.keys(PRIVATE_SPY_CHANNELS).length > 0) {
-        PRIVATE_SPY_ACTIVE = true;
-        PRIVATE_SPY_CURRENT_CHANNEL = Object.keys(PRIVATE_SPY_CHANNELS)[0];
-        let indicator = document.createElement('div');
-        indicator.id = 'privateSpyIndicator';
-        indicator.className = 'owner-spy-indicator';
-        indicator.innerHTML = `<i class="fas fa-eye"></i> Özel Sohbet Takibi Aktif: #${PRIVATE_SPY_CURRENT_CHANNEL} <button onclick="stopPrivateSpy()" style="background:transparent; border:none; color:white; margin-left:10px; cursor:pointer;"><i class="fas fa-times"></i></button>`;
-        document.body.appendChild(indicator);
-    }
-}
-
-// Özel sohbet takibi başlat
-function startPrivateSpy(channelName) {
-    if (ACTIVE_USER.role !== 'owner') {
-        addSystemMessage('❌ Bu komutu sadece owner kullanabilir!');
+    // Özel komut kontrolü
+    const custom = CUSTOM_COMMANDS.find(c => c.cmd === '/' + main || c.cmd === main);
+    if (custom) {
+        addSystemMessage(`🤖 ${custom.resp}`);
         return;
     }
-    
-    if (!channels[channelName]) {
-        addSystemMessage(`❌ #${channelName} kanalı bulunamadı!`);
-        return;
-    }
-    
-    PRIVATE_SPY_ACTIVE = true;
-    PRIVATE_SPY_CURRENT_CHANNEL = channelName;
-    PRIVATE_SPY_CHANNELS = { [channelName]: true };
-    savePrivateSpyChannels();
-    
-    let oldIndicator = document.getElementById('privateSpyIndicator');
-    if (oldIndicator) oldIndicator.remove();
-    
-    let indicator = document.createElement('div');
-    indicator.id = 'privateSpyIndicator';
-    indicator.className = 'owner-spy-indicator';
-    indicator.innerHTML = `<i class="fas fa-eye"></i> Özel Sohbet Takibi Aktif: #${channelName} <button onclick="stopPrivateSpy()" style="background:transparent; border:none; color:white; margin-left:10px; cursor:pointer;"><i class="fas fa-times"></i></button>`;
-    document.body.appendChild(indicator);
-    
-    document.getElementById('spyChannelName').textContent = `#${channelName}`;
-    document.getElementById('spyMessages').innerHTML = '<div style="color:#aaa; text-align:center;">Özel mesajlar burada görünecek...</div>';
-    openModal('privateSpyModal');
-    
-    addSystemMessage(`👁️ #${channelName} kanalında özel sohbet takibi başlatıldı.`);
-}
 
-// Özel sohbet takibini durdur
-function stopPrivateSpy() {
-    PRIVATE_SPY_ACTIVE = false;
-    PRIVATE_SPY_CURRENT_CHANNEL = null;
-    PRIVATE_SPY_CHANNELS = {};
-    savePrivateSpyChannels();
-    
-    let indicator = document.getElementById('privateSpyIndicator');
-    if (indicator) indicator.remove();
-    
-    closeModal('privateSpyModal');
-    addSystemMessage('👁️ Özel sohbet takibi durduruldu.');
-}
-
-// Owner için özel mesaj logla
-function logPrivateMessageForOwner(sender, receiver, message, type, content) {
-    if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE && PRIVATE_SPY_CURRENT_CHANNEL) {
-        let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-        let msgHtml = '';
+    // HELP komutu
+    if (main === 'help') {
+        let help = '📋 **KOMUTLAR**\n';
+        help += '/help - Bu menü\n';
+        help += '/join #kanal - Kanala katıl\n';
+        help += '/part - Kanaldan ayrıl\n';
+        help += '/msg kullanıcı mesaj - Özel mesaj\n';
+        help += '/users - Çevrimiçi kullanıcılar\n';
         
-        if (type === 'text') {
-            msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
-                <span style="color:#ffd700;">${time}</span> 
-                <span style="color:#fff;">${sender} → ${receiver}:</span>
-                <div style="color:#ddd; margin-top:4px;">${escapeHTML(content)}</div>
-            </div>`;
-        } else if (type === 'image') {
-            msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
-                <span style="color:#ffd700;">${time}</span> 
-                <span style="color:#fff;">${sender} → ${receiver}:</span>
-                <div style="margin-top:4px;"><i class="fas fa-image"></i> Resim gönderildi</div>
-                <img src="${escapeHTML(content)}" style="max-width:100%; max-height:150px; margin-top:8px; border-radius:4px;">
-            </div>`;
-        } else if (type === 'video') {
-            msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
-                <span style="color:#ffd700;">${time}</span> 
-                <span style="color:#fff;">${sender} → ${receiver}:</span>
-                <div style="margin-top:4px;"><i class="fas fa-video"></i> Video gönderildi</div>
-                <video src="${escapeHTML(content)}" controls style="max-width:100%; max-height:150px; margin-top:8px;"></video>
-            </div>`;
+        if (currentUser.role === 'coadmin' || currentUser.role === 'admin' || currentUser.role === 'owner') {
+            help += '\n🔧 **CO-ADMIN KOMUTLARI**\n';
+            help += '/kick kullanıcı - Kullanıcıyı at\n';
+            help += '/ban kullanıcı - 24 saat yasakla\n';
+            help += '/op kullanıcı - Co-admin yap\n';
+            help += '/deop kullanıcı - Co-admin yetkisini al\n';
         }
         
-        let spyContainer = document.getElementById('spyMessages');
-        if (spyContainer) {
-            if (spyContainer.innerHTML === '<div style="color:#aaa; text-align:center;">Özel mesajlar burada görünecek...</div>') {
-                spyContainer.innerHTML = '';
+        if (currentUser.role === 'admin' || currentUser.role === 'owner') {
+            help += '\n⚡ **ADMIN KOMUTLARI**\n';
+            help += '/unban kullanıcı - Yasağı kaldır\n';
+        }
+        
+        if (currentUser.role === 'owner') {
+            help += '\n👑 **OWNER KOMUTLARI**\n';
+            help += '/addbanned kelime - Yasaklı kelime ekle\n';
+            help += '/removebanned kelime - Yasaklı kelime kaldır\n';
+            help += '/addcmd komut yanıt - Özel komut ekle\n';
+            help += '/removecmd komut - Özel komut sil\n';
+        }
+        
+        addSystemMessage(help);
+        return;
+    }
+
+    // KICK komutu
+    if (main === 'kick' && (currentUser.role === 'coadmin' || currentUser.role === 'admin' || currentUser.role === 'owner')) {
+        const target = parts[1];
+        if (!target) {
+            addSystemMessage('Kullanım: /kick kullanıcı');
+            return;
+        }
+        
+        const snap = await db.channels.child(currentChannel).once('value');
+        const channel = snap.val();
+        if (!channel) return;
+        
+        let targetId = null;
+        for (let uid in channel.online) {
+            const userSnap = await db.users.child(uid).once('value');
+            if (userSnap.val()?.name === target) {
+                targetId = uid;
+                break;
             }
-            spyContainer.innerHTML += msgHtml;
-            spyContainer.scrollTop = spyContainer.scrollHeight;
+        }
+        
+        if (!targetId) {
+            addSystemMessage(`❌ ${target} kanalda değil`);
+            return;
+        }
+        
+        delete channel.online[targetId];
+        channel.onlineCount = Object.keys(channel.online).length;
+        await db.channels.child(currentChannel).set(channel);
+        
+        addSystemMessage(`👢 ${target} kanaldan atıldı`);
+    }
+
+    // BAN komutu
+    else if (main === 'ban' && (currentUser.role === 'coadmin' || currentUser.role === 'admin' || currentUser.role === 'owner')) {
+        const target = parts[1];
+        if (!target) {
+            addSystemMessage('Kullanım: /ban kullanıcı');
+            return;
+        }
+        
+        const userSnap = await db.users.orderByChild('nameLower').equalTo(target.toLowerCase()).once('value');
+        let targetId = null;
+        userSnap.forEach(c => { targetId = c.key; });
+        
+        if (!targetId) {
+            addSystemMessage('❌ Kullanıcı bulunamadı');
+            return;
+        }
+        
+        await db.blocked.child(targetId).set({
+            by: currentUser.id,
+            byName: currentUser.name,
+            until: Date.now() + 24 * 60 * 60 * 1000,
+            reason: parts.slice(2).join(' ') || 'Belirtilmemiş'
+        });
+        
+        addSystemMessage(`🚫 ${target} 24 saat yasaklandı`);
+    }
+
+    // UNBAN komutu
+    else if (main === 'unban' && (currentUser.role === 'admin' || currentUser.role === 'owner')) {
+        const target = parts[1];
+        if (!target) {
+            addSystemMessage('Kullanım: /unban kullanıcı');
+            return;
+        }
+        
+        const userSnap = await db.users.orderByChild('nameLower').equalTo(target.toLowerCase()).once('value');
+        let targetId = null;
+        userSnap.forEach(c => { targetId = c.key; });
+        
+        if (targetId) {
+            await db.blocked.child(targetId).remove();
+            addSystemMessage(`✅ ${target} yasağı kaldırıldı`);
+        }
+    }
+
+    // OP komutu (co-admin yap)
+    else if (main === 'op' && (currentUser.role === 'coadmin' || currentUser.role === 'admin' || currentUser.role === 'owner')) {
+        const target = parts[1];
+        if (!target) {
+            addSystemMessage('Kullanım: /op kullanıcı');
+            return;
+        }
+        
+        const snap = await db.channels.child(currentChannel).once('value');
+        const channel = snap.val();
+        if (!channel) return;
+        
+        if (!channel.coAdmins) channel.coAdmins = [];
+        if (!channel.coAdmins.includes(target)) {
+            channel.coAdmins.push(target);
+            await db.channels.child(currentChannel).set(channel);
+            addSystemMessage(`🔧 ${target} co-admin yapıldı`);
+        }
+    }
+
+    // DEOP komutu
+    else if (main === 'deop' && (currentUser.role === 'coadmin' || currentUser.role === 'admin' || currentUser.role === 'owner')) {
+        const target = parts[1];
+        if (!target) {
+            addSystemMessage('Kullanım: /deop kullanıcı');
+            return;
+        }
+        
+        const snap = await db.channels.child(currentChannel).once('value');
+        const channel = snap.val();
+        if (!channel?.coAdmins) return;
+        
+        channel.coAdmins = channel.coAdmins.filter(u => u !== target);
+        await db.channels.child(currentChannel).set(channel);
+        addSystemMessage(`🔨 ${target} co-admin yetkisi alındı`);
+    }
+
+    // OWNER komutları
+    else if (currentUser.role === 'owner') {
+        if (main === 'addbanned') {
+            const word = parts.slice(1).join(' ');
+            if (!word) return;
+            BANNED_WORDS.push(word);
+            await db.bannedWords.set(BANNED_WORDS);
+            addSystemMessage(`🚫 Yasaklı kelime eklendi: ${word}`);
+        }
+        
+        else if (main === 'removebanned') {
+            const word = parts.slice(1).join(' ');
+            if (!word) return;
+            BANNED_WORDS = BANNED_WORDS.filter(w => w !== word);
+            await db.bannedWords.set(BANNED_WORDS);
+            addSystemMessage(`✅ Kelime kaldırıldı: ${word}`);
+        }
+        
+        else if (main === 'addcmd') {
+            const cmd = parts[1];
+            const resp = parts.slice(2).join(' ');
+            if (!cmd || !resp) return;
+            CUSTOM_COMMANDS.push({ cmd: '/' + cmd, resp: resp });
+            await db.customCommands.set(CUSTOM_COMMANDS);
+            addSystemMessage(`✅ /${cmd} komutu eklendi`);
+        }
+        
+        else if (main === 'removecmd') {
+            const cmd = parts[1];
+            if (!cmd) return;
+            CUSTOM_COMMANDS = CUSTOM_COMMANDS.filter(c => c.cmd !== '/' + cmd);
+            await db.customCommands.set(CUSTOM_COMMANDS);
+            addSystemMessage(`🗑️ /${cmd} komutu silindi`);
         }
     }
 }
 
-// Süper gizli kanal oluştur
-function createSuperHiddenChannel(channelName) {
-    if (ACTIVE_USER.role !== 'owner') {
-        addSystemMessage('❌ Bu komutu sadece owner kullanabilir!');
-        return;
+// ========== KULLANICI LİSTESİ ==========
+async function showUsers() {
+    const snap = await db.channels.child(currentChannel).once('value');
+    const channel = snap.val();
+    if (!channel?.online) return;
+    
+    let list = '👥 **Çevrimiçi:**\n';
+    for (let uid in channel.online) {
+        const userSnap = await db.users.child(uid).once('value');
+        const user = userSnap.val();
+        if (user) list += `• ${user.name}\n`;
     }
-    
-    if (channels[channelName]) {
-        addSystemMessage(`❌ #${channelName} kanalı zaten mevcut!`);
-        return;
-    }
-    
-    channels[channelName] = {
-        name: channelName,
-        owner: 'MateKy',
-        ownerRole: 'owner',
-        coAdmins: [],
-        subscribers: 1,
-        online: 1,
-        isHidden: true,
-        isSuperHidden: true,
-        youtube: {
-            currentVideo: 'jfKfPfyJRdk',
-            currentTitle: 'Süper Gizli Kanal',
-            currentArtist: 'MateKy',
-            playlist: [{ 
-                id: 'jfKfPfyJRdk', 
-                title: 'Süper Gizli Kanal', 
-                addedBy: 'MateKy', 
-                role: 'owner' 
-            }]
-        },
-        onlineUsers: [ACTIVE_USER.name]
-    };
-    
-    SUPER_HIDDEN_CHANNELS.push(channelName);
-    saveChannels();
-    saveSuperHiddenChannels();
-    
-    if (!ACTIVE_USER.subscribedChannels.includes(channelName)) {
-        ACTIVE_USER.subscribedChannels.push(channelName);
-        localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-    }
-    
-    addSystemMessage(`🔒 Süper gizli #${channelName} kanalı oluşturuldu! Sadece owner görebilir.`);
-    joinChannel(channelName);
-}
-
-// Süper gizli kanal sil
-function deleteSuperHiddenChannel(channelName) {
-    if (ACTIVE_USER.role !== 'owner') {
-        addSystemMessage('❌ Bu komutu sadece owner kullanabilir!');
-        return;
-    }
-    
-    if (!channels[channelName]) {
-        addSystemMessage(`❌ #${channelName} kanalı bulunamadı!`);
-        return;
-    }
-    
-    delete channels[channelName];
-    SUPER_HIDDEN_CHANNELS = SUPER_HIDDEN_CHANNELS.filter(ch => ch !== channelName);
-    saveChannels();
-    saveSuperHiddenChannels();
-    
-    addSystemMessage(`🗑️ #${channelName} kanalı silindi.`);
-    
-    if (currentChannel === channelName) {
-        joinChannel('genel');
-    }
+    addSystemMessage(list);
 }
