@@ -1,287 +1,192 @@
-// ========== ÖZEL SOHBET İŞLEMLERİ ==========
-
-let currentPrivateChat = null;
-
-// Özel sohbet aç
-function openPrivateChat(username) {
-    if (!username || !ACTIVE_USER) return;
+// ========== ÖZEL SOHBET LİSTESİ ==========
+async function loadPrivateList() {
+    const snap = await db.privateChats.once('value');
+    const chats = snap.val() || {};
     
-    if (ACTIVE_USER.role !== 'owner') {
-        if (ACTIVE_USER.privateMode === 'none') {
-            addSystemMessage('❌ Özel sohbetlere kapalısınız.');
-            return;
+    let list = [];
+    let unreadCount = 0;
+    
+    for (let chatId in chats) {
+        if (chatId.includes(currentUser.id)) {
+            const ids = chatId.replace('chat_', '').split('_');
+            const otherId = ids[0] === currentUser.id ? ids[1] : ids[0];
+            
+            const userSnap = await db.users.child(otherId).once('value');
+            const user = userSnap.val();
+            if (user) {
+                const messages = Object.values(chats[chatId] || {});
+                const lastMsg = messages[messages.length - 1];
+                const unread = messages.filter(m => m.senderId !== currentUser.id && !m.read).length;
+                unreadCount += unread;
+                
+                list.push({
+                    id: otherId,
+                    name: user.name,
+                    lastMsg: lastMsg ? (lastMsg.type === 'text' ? lastMsg.content : '📎 medya') : '...',
+                    time: lastMsg ? formatTime(lastMsg.timestamp) : '',
+                    unread: unread
+                });
+            }
         }
-        if (ACTIVE_USER.blockedNicks && ACTIVE_USER.blockedNicks.includes(username)) {
-            addSystemMessage(`🚫 ${username} engellenmiş.`);
-            return;
-        }
     }
     
-    let user = USERS_DB.find(u => u.name === username);
-    if (!user) {
-        addSystemMessage(`❌ ${username} bulunamadı.`);
-        return;
-    }
+    document.getElementById('privateBadge').textContent = unreadCount || '';
     
-    let blockKey = `${ACTIVE_USER.id}_${user.id}`;
-    if (BLOCKED_USERS[blockKey] && BLOCKED_USERS[blockKey].expiry > Date.now() && ACTIVE_USER.role !== 'owner') {
-        addSystemMessage(`🚫 ${username} 24 saat engellendi.`);
-        return;
-    }
-    let reverseKey = `${user.id}_${ACTIVE_USER.id}`;
-    if (BLOCKED_USERS[reverseKey] && BLOCKED_USERS[reverseKey].expiry > Date.now() && ACTIVE_USER.role !== 'owner') {
-        addSystemMessage(`🚫 ${username} tarafından engellendiniz.`);
-        return;
-    }
-
-    currentPrivateChat = { name: username, id: user.id };
-    document.getElementById('privateChatName').textContent = username;
-    document.getElementById('privateChatAvatar').innerHTML = username.charAt(0).toUpperCase();
-    document.getElementById('privateChatPanel').classList.add('active');
-    loadPrivateMessages();
+    let html = '';
+    list.sort((a, b) => b.unread - a.unread).forEach(item => {
+        html += `
+            <div class="private-item" onclick="openPrivateChat('${item.name}')">
+                <div class="private-avatar">${item.name.charAt(0)}</div>
+                <div class="private-info">
+                    <div class="private-name">${item.name}</div>
+                    <div class="private-meta">${escapeHTML(item.lastMsg)} • ${item.time}</div>
+                </div>
+                ${item.unread ? `<div class="badge" style="position:static;">${item.unread}</div>` : ''}
+            </div>
+        `;
+    });
+    
+    document.getElementById('privateList').innerHTML = html || '<div style="padding:20px; text-align:center;">Henüz özel sohbet yok</div>';
 }
 
-// Özel sohbet kapat
+// ========== ÖZEL SOHBET AÇ ==========
+async function openPrivateChat(username) {
+    if (username === currentUser.name) {
+        addSystemMessage('❌ Kendinize mesaj gönderemezsiniz!');
+        return;
+    }
+    
+    const snap = await db.users.orderByChild('nameLower').equalTo(username.toLowerCase()).once('value');
+    let targetUser = null;
+    let targetId = null;
+    
+    snap.forEach(child => {
+        targetUser = child.val();
+        targetId = child.key;
+    });
+    
+    if (!targetUser) {
+        addSystemMessage('❌ Kullanıcı bulunamadı');
+        return;
+    }
+    
+    currentPrivateChat = { id: targetId, name: targetUser.name };
+    
+    document.getElementById('privateName').textContent = targetUser.name;
+    document.getElementById('privateChat').classList.add('active');
+    
+    await loadPrivateMessages(targetId);
+}
+
+// ========== ÖZEL MESAJLARI YÜKLE ==========
+async function loadPrivateMessages(targetId) {
+    const chatId = generateChatId(currentUser.id, targetId);
+    const snap = await db.privateChats.child(chatId).orderByChild('timestamp').limitToLast(50).once('value');
+    const messages = snap.val() || {};
+    
+    const container = document.getElementById('privateMessages');
+    container.innerHTML = '';
+    
+    Object.values(messages)
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .forEach(msg => appendPrivateMessage(msg));
+}
+
+// ========== ÖZEL MESAJ EKLE ==========
+function appendPrivateMessage(msg) {
+    const container = document.getElementById('privateMessages');
+    const isMe = msg.senderId === currentUser.id;
+    
+    const div = document.createElement('div');
+    div.className = `private-message ${isMe ? 'right' : ''}`;
+    
+    if (msg.type === 'text') {
+        div.innerHTML = `<div class="private-message-text">${escapeHTML(msg.content)}</div>`;
+    } else if (msg.type === 'image') {
+        div.innerHTML = `<img src="${escapeHTML(msg.content)}" onclick="window.open(this.src)">`;
+    } else if (msg.type === 'video') {
+        div.innerHTML = `<video controls src="${escapeHTML(msg.content)}"></video>`;
+    }
+    
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+// ========== ÖZEL MESAJ GÖNDER ==========
+async function sendPrivate() {
+    const input = document.getElementById('privateInput');
+    const text = input.value.trim();
+    
+    if (!text || !currentPrivateChat) return;
+    
+    const chatId = generateChatId(currentUser.id, currentPrivateChat.id);
+    
+    const msg = {
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        receiverId: currentPrivateChat.id,
+        receiverName: currentPrivateChat.name,
+        type: 'text',
+        content: text,
+        timestamp: Date.now()
+    };
+    
+    await db.privateChats.child(chatId).push(msg);
+    input.value = '';
+}
+
+// ========== ÖZEL SOHBETİ KAPAT ==========
 function closePrivateChat() {
-    document.getElementById('privateChatPanel').classList.remove('active');
+    document.getElementById('privateChat').classList.remove('active');
     currentPrivateChat = null;
 }
 
-// Özel mesajları yükle
-function loadPrivateMessages() {
-    if (!currentPrivateChat || !ACTIVE_USER) return;
-    let chatId = [ACTIVE_USER.id, currentPrivateChat.id].sort().join('_');
-    let msgs = PRIVATE_CHATS[chatId] || [];
-    let container = document.getElementById('privateChatMessages');
-    let html = '';
-    msgs.forEach((msg, index) => {
-        let isMe = msg.senderId === ACTIVE_USER.id;
-        let time = new Date(msg.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-        let deleteBtn = isMe ? `<div class="delete-msg" onclick="deletePrivateMessage(${index}, '${chatId}')"><i class="fas fa-trash"></i></div>` : '';
-        if (msg.type === 'text') {
-            html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender">${msg.senderName}</span></div><div class="private-message-text">${escapeHTML(msg.content)}</div></div>`;
-        } else if (msg.type === 'image') {
-            html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender">${msg.senderName}</span></div><div class="private-message-media"><img src="${escapeHTML(msg.content)}" onclick="window.open(this.src)"></div></div>`;
-        } else if (msg.type === 'video') {
-            html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender">${msg.senderName}</span></div><div class="private-message-media"><video controls src="${escapeHTML(msg.content)}"></video></div></div>`;
-        }
-    });
-    container.innerHTML = html;
-    container.scrollTop = container.scrollHeight;
+// ========== RESİM GÖNDER ==========
+function uploadPrivateImage() {
+    document.getElementById('privateImage').click();
+}
+
+document.getElementById('privateImage').addEventListener('change', async (e) => {
+    if (!e.target.files?.[0] || !currentPrivateChat) return;
     
-    if (msgs.length > 0) {
-        let updated = false;
-        msgs.forEach(msg => {
-            if (msg.senderId !== ACTIVE_USER.id && !msg.read) {
-                msg.read = true;
-                updated = true;
-            }
-        });
-        if (updated) {
-            localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
-            if (typeof updateUnreadBadge === 'function') updateUnreadBadge();
-        }
-    }
-}
-
-// Özel mesaj gönder
-function sendPrivateMessage() {
-    let input = document.getElementById('privateMessageInput');
-    if (!input) return;
-    let text = input.value.trim();
-    if (!text || !currentPrivateChat || !ACTIVE_USER) return;
-    let banned = checkBannedWords(text);
-    if (banned) {
-        addSystemMessage(`🚫 Yasaklı kelime tespit edildi: "${banned}". Mesajınız gönderilmedi.`);
-        input.value = '';
-        return;
-    }
-
-    const message = {
-        from: ACTIVE_USER.id,
-        fromName: ACTIVE_USER.name,
-        to: currentPrivateChat.id,
-        text: text,
-        type: 'text',
-        timestamp: Date.now()
-    };
-
-    if (database) {
-        database.ref('private').push(message)
-            .then(() => {
-                console.log('Özel mesaj gönderildi');
-            })
-            .catch(err => {
-                console.error('Özel mesaj gönderilemedi:', err);
-                savePrivateMessageToLocal(message);
-            });
-    } else {
-        savePrivateMessageToLocal(message);
-    }
-
-    if (typeof logPrivateMessageForOwner === 'function') {
-        logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, text, 'text', text);
-    }
-
-    input.value = '';
-}
-
-// Özel mesajı local'e kaydet
-function savePrivateMessageToLocal(message) {
-    const chatId = [message.from, message.to].sort().join('_');
-    if (!PRIVATE_CHATS[chatId]) {
-        PRIVATE_CHATS[chatId] = [];
-    }
-    
-    PRIVATE_CHATS[chatId].push({
-        id: Date.now(),
-        senderId: message.from,
-        senderName: message.fromName,
-        type: 'text',
-        content: message.text,
-        timestamp: message.timestamp,
-        read: true
-    });
-    
-    localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
-    loadPrivateMessages();
-    if (typeof updateUnreadBadge === 'function') updateUnreadBadge();
-}
-
-// Özel mesaj sil
-function deletePrivateMessage(index, chatId) {
-    if (PRIVATE_CHATS[chatId]) {
-        PRIVATE_CHATS[chatId].splice(index, 1);
-        localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
-        loadPrivateMessages();
-        if (typeof updateUnreadBadge === 'function') updateUnreadBadge();
-    }
-}
-
-// Resim gönderme
-function triggerPrivateImageUpload() { 
-    let input = document.getElementById('privateImageUpload');
-    if (input) input.click(); 
-}
-
-function sendPrivateImageFile(input) {
-    if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) return;
-    let file = input.files[0];
-    let reader = new FileReader();
-    reader.onload = (e) => {
-        const message = {
-            from: ACTIVE_USER.id,
-            fromName: ACTIVE_USER.name,
-            to: currentPrivateChat.id,
-            content: e.target.result,
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+        const chatId = generateChatId(currentUser.id, currentPrivateChat.id);
+        await db.privateChats.child(chatId).push({
+            senderId: currentUser.id,
+            senderName: currentUser.name,
+            receiverId: currentPrivateChat.id,
+            receiverName: currentPrivateChat.name,
             type: 'image',
+            content: ev.target.result,
             timestamp: Date.now()
-        };
-
-        if (database) {
-            database.ref('private').push(message)
-                .then(() => {
-                    console.log('Resim gönderildi');
-                })
-                .catch(err => {
-                    console.error('Resim gönderilemedi:', err);
-                    savePrivateMediaToLocal(message);
-                });
-        } else {
-            savePrivateMediaToLocal(message);
-        }
-
-        if (typeof logPrivateMessageForOwner === 'function') {
-            logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Resim gönderdi', 'image', e.target.result);
-        }
+        });
     };
-    reader.readAsDataURL(file);
-    input.value = '';
+    reader.readAsDataURL(e.target.files[0]);
+    e.target.value = '';
+});
+
+// ========== VİDEO GÖNDER ==========
+function uploadPrivateVideo() {
+    document.getElementById('privateVideo').click();
 }
 
-// Video gönderme
-function triggerPrivateVideoUpload() { 
-    let input = document.getElementById('privateVideoUpload');
-    if (input) input.click(); 
-}
-
-function sendPrivateVideoFile(input) {
-    if (!input.files || !input.files[0] || !currentPrivateChat || !ACTIVE_USER) return;
-    let file = input.files[0];
-    let reader = new FileReader();
-    reader.onload = (e) => {
-        const message = {
-            from: ACTIVE_USER.id,
-            fromName: ACTIVE_USER.name,
-            to: currentPrivateChat.id,
-            content: e.target.result,
+document.getElementById('privateVideo').addEventListener('change', async (e) => {
+    if (!e.target.files?.[0] || !currentPrivateChat) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+        const chatId = generateChatId(currentUser.id, currentPrivateChat.id);
+        await db.privateChats.child(chatId).push({
+            senderId: currentUser.id,
+            senderName: currentUser.name,
+            receiverId: currentPrivateChat.id,
+            receiverName: currentPrivateChat.name,
             type: 'video',
+            content: ev.target.result,
             timestamp: Date.now()
-        };
-
-        if (database) {
-            database.ref('private').push(message)
-                .then(() => {
-                    console.log('Video gönderildi');
-                })
-                .catch(err => {
-                    console.error('Video gönderilemedi:', err);
-                    savePrivateMediaToLocal(message);
-                });
-        } else {
-            savePrivateMediaToLocal(message);
-        }
-
-        if (typeof logPrivateMessageForOwner === 'function') {
-            logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Video gönderdi', 'video', e.target.result);
-        }
+        });
     };
-    reader.readAsDataURL(file);
-    input.value = '';
-}
-
-// Medyayı local'e kaydet
-function savePrivateMediaToLocal(message) {
-    const chatId = [message.from, message.to].sort().join('_');
-    if (!PRIVATE_CHATS[chatId]) {
-        PRIVATE_CHATS[chatId] = [];
-    }
-    
-    PRIVATE_CHATS[chatId].push({
-        id: Date.now(),
-        senderId: message.from,
-        senderName: message.fromName,
-        type: message.type,
-        content: message.content,
-        timestamp: message.timestamp,
-        read: true
-    });
-    
-    localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
-    loadPrivateMessages();
-}
-
-// Kullanıcı engelle
-function blockUser() {
-    if (!currentPrivateChat || !ACTIVE_USER) return;
-    let blockKey = `${ACTIVE_USER.id}_${currentPrivateChat.id}`;
-    BLOCKED_USERS[blockKey] = { userId: currentPrivateChat.id, userName: currentPrivateChat.name, expiry: Date.now() + 24 * 60 * 60 * 1000, blockedBy: ACTIVE_USER.id };
-    localStorage.setItem('cetcety_blocks', JSON.stringify(BLOCKED_USERS));
-    addSystemMessage(`🚫 ${currentPrivateChat.name} 24 saatliğine engellendi.`);
-    sendToAdminChannel(`🚫 ${ACTIVE_USER.name}, ${currentPrivateChat.name} kullanıcısını engelledi.`);
-    closePrivateChat();
-}
-
-// Kullanıcı şikayet et
-function reportUser() {
-    if (currentPrivateChat) {
-        let msg = `⚠️ ${currentPrivateChat.name} kullanıcısı şikayet edildi. Şikayet eden: ${ACTIVE_USER.name}`;
-        addSystemMessage(msg);
-        sendToAdminChannel(msg);
-    }
-}
-
-// Private tab değiştir
-function switchPrivateTab(tab) {
-    if (tab !== 'chat') addSystemMessage('🔜 Bu özellik yakında aktif olacak.');
-}
+    reader.readAsDataURL(e.target.files[0]);
+    e.target.value = '';
+});
