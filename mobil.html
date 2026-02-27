@@ -6,7 +6,141 @@
     <title>CETCETY • Mobil</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- YOUTUBE API -->
     <script src="https://www.youtube.com/iframe_api"></script>
+    
+    <!-- FIREBASE KÜTÜPHANELERİ -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    
+    <!-- BAĞLANTI DURUMU FONKSİYONU -->
+    <script>
+        function updateConnectionStatus(status, text) {
+            const statusEl = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('statusText');
+            if (statusEl && statusText) {
+                statusEl.className = `connection-status ${status}`;
+                statusText.textContent = text;
+            }
+        }
+    </script>
+    
+    <!-- URL'DEN KULLANICI VERİSİ ALMA -->
+    <script>
+        function getUserFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const userParam = urlParams.get('user');
+            if (userParam) {
+                try {
+                    return JSON.parse(decodeURIComponent(userParam));
+                } catch (e) {
+                    console.error('Kullanıcı verisi okunamadı:', e);
+                }
+            }
+            return null;
+        }
+    </script>
+    
+    <!-- FIREBASE KONFİGÜRASYONU -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
+            authDomain: "popboxmusicchat.firebaseapp.com",
+            databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
+            projectId: "popboxmusicchat",
+            storageBucket: "popboxmusicchat.appspot.com",
+            messagingSenderId: "206625719024",
+            appId: "1:206625719024:web:d28f478a2c96d10412f835"
+        };
+
+        let database = null;
+        let firebaseListeners = {};
+
+        try {
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+            console.log('🔥 Firebase başlatıldı!');
+            updateConnectionStatus('connected', 'Firebase Aktif');
+        } catch (error) {
+            console.error('❌ Firebase başlatılamadı:', error);
+            updateConnectionStatus('disconnected', 'Yerel Mod');
+        }
+    </script>
+    
+    <!-- FIREBASE VERİ SENKRONİZASYON FONKSİYONLARI -->
+    <script>
+        // Kanal mesajlarını Firebase'e kaydet
+        function saveMessageToFirebase(channel, message) {
+            if (database) {
+                const messageId = Date.now().toString();
+                const messageRef = database.ref(`channels/${channel}/messages/${messageId}`);
+                messageRef.set({
+                    ...message,
+                    firebaseId: messageId,
+                    syncedAt: firebase.database.ServerValue.TIMESTAMP
+                });
+            }
+        }
+        
+        // Kanal mesajlarını Firebase'den yükle
+        function loadMessagesFromFirebase(channel, callback) {
+            if (database) {
+                if (firebaseListeners[channel]) {
+                    database.ref(`channels/${channel}/messages`).off('child_added', firebaseListeners[channel]);
+                }
+                
+                firebaseListeners[channel] = database.ref(`channels/${channel}/messages`)
+                    .orderByChild('timestamp')
+                    .limitToLast(50)
+                    .on('child_added', (snapshot) => {
+                        const message = snapshot.val();
+                        if (callback) callback(message);
+                    });
+            }
+        }
+        
+        // Kullanıcıyı Firebase'e kaydet
+        function saveUserToFirebase(user) {
+            if (database) {
+                database.ref(`users/${user.id}`).set({
+                    name: user.name,
+                    role: user.role,
+                    lastSeen: firebase.database.ServerValue.TIMESTAMP,
+                    online: true
+                });
+            }
+        }
+        
+        // Kanalı Firebase'e kaydet
+        function saveChannelToFirebase(channelName, channelData) {
+            if (database) {
+                database.ref(`channels/${channelName}/info`).set({
+                    ...channelData,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                });
+            }
+        }
+        
+        // Tüm kanalları Firebase'den yükle
+        function loadChannelsFromFirebase(callback) {
+            if (database) {
+                database.ref('channels').on('value', (snapshot) => {
+                    const channels = snapshot.val();
+                    if (callback) callback(channels);
+                });
+            }
+        }
+        
+        // Kullanıcı çıkış yaptığında online durumunu güncelle
+        function setUserOffline(userId) {
+            if (database) {
+                database.ref(`users/${userId}/online`).set(false);
+                database.ref(`users/${userId}/lastSeen`).set(firebase.database.ServerValue.TIMESTAMP);
+            }
+        }
+    </script>
+    
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
@@ -346,7 +480,7 @@
             color: #fff;
         }
 
-        /* ÖZEL SOHBET PANELİ - Genel sohbet alanı kadar */
+        /* ÖZEL SOHBET PANELİ */
         .private-chat-panel {
             position: absolute;
             top: 0;
@@ -769,7 +903,7 @@
             </div>
         </div>
 
-        <!-- ÖZEL SOHBET PANELİ - Genel sohbet alanı kadar -->
+        <!-- ÖZEL SOHBET PANELİ -->
         <div class="private-chat-panel" id="privateChatPanel">
             <div class="private-header">
                 <div class="private-back" onclick="closePrivateChat()">
@@ -944,6 +1078,17 @@
             }
         };
 
+        // ========== MODAL FONKSİYONLARI ==========
+        function openKvkkModal() {
+            document.getElementById('kvkkModal').classList.add('active');
+        }
+        function openTermsModal() {
+            document.getElementById('termsModal').classList.add('active');
+        }
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
         // ========== STORAGE İŞLEMLERİ ==========
         function saveChannels() { localStorage.setItem('cetcety_channels', JSON.stringify(channels)); }
         
@@ -1000,6 +1145,11 @@
             }
             saveChannels();
 
+            // Firebase'e kullanıcıyı kaydet
+            if (database) {
+                saveUserToFirebase(ACTIVE_USER);
+            }
+
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('app').style.display = 'flex';
 
@@ -1009,7 +1159,6 @@
             updateMediaDisplay();
             addSystemMessage(`👋 Hoş geldin, ${ACTIVE_USER.name}!`);
 
-            // YouTube API'yi başlat
             if (typeof YT === 'undefined' || !YT.Player) {
                 let tag = document.createElement('script');
                 tag.src = 'https://www.youtube.com/iframe_api';
@@ -1019,14 +1168,32 @@
             }
         }
 
+        // URL'den kullanıcı verisini kontrol et
+        const urlUser = getUserFromUrl();
+        if (urlUser) {
+            ACTIVE_USER = urlUser;
+            localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
+            
+            // Kullanıcıyı USERS_DB'ye ekle (yoksa)
+            if (!USERS_DB.some(u => u.id === ACTIVE_USER.id)) {
+                USERS_DB.push(ACTIVE_USER);
+                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+            }
+            
+            // Firebase'e kullanıcıyı kaydet
+            if (database) {
+                saveUserToFirebase(ACTIVE_USER);
+            }
+        }
+
         function updateUIForUser() {
             let avatarSpan = document.getElementById('navAvatarText');
             let avatarImg = document.getElementById('navAvatarImage');
-            if (ACTIVE_USER.avatarData) {
+            if (ACTIVE_USER && ACTIVE_USER.avatarData) {
                 avatarSpan.style.display = 'none';
                 avatarImg.style.display = 'block';
                 avatarImg.src = ACTIVE_USER.avatarData;
-            } else {
+            } else if (ACTIVE_USER) {
                 avatarSpan.style.display = 'block';
                 avatarImg.style.display = 'none';
                 avatarSpan.textContent = ACTIVE_USER.avatar || ACTIVE_USER.name.charAt(0).toUpperCase();
@@ -1073,6 +1240,10 @@
                                 icon.className = event.data === YT.PlayerState.PLAYING ? 'fas fa-pause' : 'fas fa-play';
                             }
                             isPlaying = event.data === YT.PlayerState.PLAYING;
+                            
+                            if (event.data === YT.PlayerState.ENDED) {
+                                playNextVideo();
+                            }
                         }
                     }
                 });
@@ -1105,6 +1276,17 @@
             } else {
                 ytPlayer.playVideo();
             }
+        }
+
+        function playNextVideo() {
+            let c = channels[currentChannel];
+            if (!c || !c.youtube.playlist || c.youtube.playlist.length === 0) return;
+            
+            let currentIndex = c.youtube.playlist.findIndex(item => item.id === c.youtube.currentVideo);
+            let nextIndex = (currentIndex + 1) % c.youtube.playlist.length;
+            let nextVideo = c.youtube.playlist[nextIndex];
+            
+            playYoutubeVideo(nextVideo.id, nextVideo.title, nextVideo.addedBy, nextVideo.role);
         }
 
         function updateMediaDisplay() {
@@ -1233,6 +1415,17 @@
             updateAllBadges();
             addSystemMessage(`📢 #${ch} kanalına katıldın!`);
             closeLeftPanel();
+            
+            // Firebase'den mesajları dinlemeye başla
+            if (database) {
+                loadMessagesFromFirebase(ch, (message) => {
+                    if (!CHANNEL_MESSAGES[ch].some(m => m.timestamp === message.timestamp && m.sender === message.sender)) {
+                        CHANNEL_MESSAGES[ch].push(message);
+                        localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
+                        appendMessageToChat(message, message.sender === ACTIVE_USER?.name);
+                    }
+                });
+            }
         }
 
         function loadChannelMessages(channel) {
@@ -1249,17 +1442,25 @@
                     container.appendChild(msgDiv);
                 } else {
                     let isMe = msg.sender === ACTIVE_USER?.name;
-                    let msgDiv = document.createElement('div');
-                    msgDiv.className = `message ${isMe ? 'right' : ''}`;
-                    msgDiv.innerHTML = `
-                        <div class="message-header" style="${isMe ? 'justify-content:flex-end;' : ''}">
-                            <span class="message-time">${msg.time || ''}</span>
-                            <span class="message-sender" onclick="${!isMe ? `openPrivateChat('${msg.sender}')` : ''}">${escapeHTML(msg.sender)}</span>
-                        </div>
-                        <div class="message-text">${escapeHTML(msg.text)}</div>`;
-                    container.appendChild(msgDiv);
+                    appendMessageToChat(msg, isMe);
                 }
             });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function appendMessageToChat(msg, isMe) {
+            let container = document.getElementById('messages');
+            if (!container) return;
+
+            let msgDiv = document.createElement('div');
+            msgDiv.className = `message ${isMe ? 'right' : ''}`;
+            msgDiv.innerHTML = `
+                <div class="message-header" style="${isMe ? 'justify-content:flex-end;' : ''}">
+                    <span class="message-time">${msg.time || ''}</span>
+                    <span class="message-sender" onclick="${!isMe ? `openPrivateChat('${msg.sender}')` : ''}">${escapeHTML(msg.sender)}</span>
+                </div>
+                <div class="message-text">${escapeHTML(msg.text)}</div>`;
+            container.appendChild(msgDiv);
             container.scrollTop = container.scrollHeight;
         }
 
@@ -1281,17 +1482,12 @@
             CHANNEL_MESSAGES[currentChannel].push(msg);
             localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
 
-            let msgDiv = document.createElement('div');
-            msgDiv.className = 'message right';
-            msgDiv.innerHTML = `
-                <div class="message-header" style="justify-content:flex-end;">
-                    <span class="message-time">${time}</span>
-                    <span class="message-sender">${ACTIVE_USER.name}</span>
-                </div>
-                <div class="message-text">${escapeHTML(txt)}</div>`;
-            
-            document.getElementById('messages').appendChild(msgDiv);
-            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+            // Firebase'e de kaydet
+            if (database) {
+                saveMessageToFirebase(currentChannel, msg);
+            }
+
+            appendMessageToChat(msg, true);
             inp.value = '';
         }
 
@@ -1605,15 +1801,15 @@
             }
         }
 
-        // ========== MODAL ==========
-        function openKvkkModal() { document.getElementById('kvkkModal').classList.add('active'); }
-        function openTermsModal() { document.getElementById('termsModal').classList.add('active'); }
-        function closeModal(modalId) { document.getElementById(modalId).classList.remove('active'); }
-
         function logout() {
             if (ACTIVE_USER && channels[currentChannel]) {
                 channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
                 saveChannels();
+                
+                // Firebase'de kullanıcıyı offline yap
+                if (database) {
+                    setUserOffline(ACTIVE_USER.id);
+                }
             }
             localStorage.removeItem('cetcety_active_user');
             location.reload();
@@ -1621,19 +1817,29 @@
 
         // ========== BAŞLANGIÇ ==========
         document.addEventListener('DOMContentLoaded', function() {
-            ACTIVE_USER = JSON.parse(localStorage.getItem('cetcety_active_user'));
+            // URL'den gelen kullanıcıyı kontrol et
+            if (!ACTIVE_USER) {
+                ACTIVE_USER = JSON.parse(localStorage.getItem('cetcety_active_user'));
+            }
+            
             if (ACTIVE_USER) {
                 if (!channels.genel.onlineUsers.includes(ACTIVE_USER.name)) {
                     channels.genel.onlineUsers.push(ACTIVE_USER.name);
                     saveChannels();
                 }
+                
+                // Firebase'de kullanıcıyı online yap
+                if (database) {
+                    saveUserToFirebase(ACTIVE_USER);
+                }
+                
                 document.getElementById('loginOverlay').classList.add('hidden');
                 document.getElementById('app').style.display = 'flex';
                 updateUIForUser();
                 updateAllBadges();
                 loadChannelMessages('genel');
                 updateMediaDisplay();
-                addSystemMessage(`👋 Tekrar hoş geldin, ${ACTIVE_USER.name}!`);
+                addSystemMessage(`👋 Hoş geldin, ${ACTIVE_USER.name}!`);
                 
                 if (typeof YT === 'undefined') {
                     let tag = document.createElement('script');
