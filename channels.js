@@ -1,196 +1,344 @@
-// ========== KANAL İŞLEMLERİ ==========
-
-// Kanal mesajlarını başlat
-function initChannelMessages(channel) {
-    if (!CHANNEL_MESSAGES[channel]) {
-        CHANNEL_MESSAGES[channel] = [];
-    }
-}
-
-// Kanalları kaydet
-function saveChannels() {
-    localStorage.setItem('cetcety_channels', JSON.stringify(channels));
-}
-
-// Kanal UI'ını güncelle
-function updateChannelUI() {
-    let c = channels[currentChannel];
-    if (c) {
-        document.getElementById('currentChannelName').textContent = currentChannel;
-        document.getElementById('channelUserCount').textContent = c.onlineUsers ? c.onlineUsers.length : 1;
-        
-        let sub = c.subscribers || 1;
-        let fmt = sub >= 1000000 ? (sub / 1000000).toFixed(1) + 'M' : sub >= 1000 ? (sub / 1000).toFixed(1) + 'K' : sub;
-        document.getElementById('channelSubscribers').textContent = fmt;
-    }
-}
-
-// Kanala katıl
-function joinChannel(ch) {
-    if (!channels[ch]) return;
-
-    if (channels[ch].isSuperHidden && ACTIVE_USER.role !== 'owner') {
-        addSystemMessage('❌ Bu kanala erişim yetkiniz yok.');
-        return;
-    }
-
-    if (ch === 'admin' && !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin')) {
-        addSystemMessage('❌ Bu kanala erişim yetkiniz yok.');
-        return;
-    }
-
-    // Eski kanaldan ayrıl
-    if (currentChannel && channels[currentChannel] && typeof updateUserOnlineStatus === 'function' && database && ACTIVE_USER) {
-        updateUserOnlineStatus(ACTIVE_USER, currentChannel, 'offline');
-    }
-
-    currentChannel = ch;
+// ========== KANAL AÇ PANELİ ==========
+function loadCreateChannelPanel(panel) {
+    let html = `
+        <div class="panel-header">
+            <h3><i class="fas fa-plus-circle" style="color:#ff0000;"></i> Kanal Aç</h3>
+            <div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div>
+        </div>
+        <div class="panel-content">
+            <div class="info-box">
+                <p><i class="fas fa-info-circle"></i> Yeni bir kanal açarak kendi topluluğunu oluşturabilirsin. Kanal sahibi olarak co-admin yetkilerine sahip olursun.</p>
+            </div>
+    `;
     
-    // Yeni kanala katıl
-    if (typeof updateUserOnlineStatus === 'function' && database && ACTIVE_USER) {
-        updateUserOnlineStatus(ACTIVE_USER, ch, 'online');
-        listenChannelMessages(ch);
-        listenChannelInfo(ch);
-        listenChannelUsers(ch);
-    }
-
-    let c = channels[ch];
-    if (!c.onlineUsers.includes(ACTIVE_USER.name)) {
-        c.onlineUsers.push(ACTIVE_USER.name);
-    }
-    saveChannels();
-
-    document.getElementById('currentChannelName').textContent = ch;
-    let sub = c.subscribers || 1;
-    let fmt = sub >= 1000000 ? (sub / 1000000).toFixed(1) + 'M' : sub >= 1000 ? (sub / 1000).toFixed(1) + 'K' : sub;
-    document.getElementById('channelSubscribers').textContent = fmt;
-    document.getElementById('channelUserCount').textContent = c.onlineUsers.length;
-
-    if (typeof updateMediaDisplay === 'function') updateMediaDisplay();
-    if (typeof loadChannelMessages === 'function') loadChannelMessages(ch);
-
-    let subBtn = document.getElementById('subscribeChannelBtn');
-    if (ACTIVE_USER.subscribedChannels.includes(ch)) {
-        subBtn.innerHTML = '<i class="fas fa-check"></i> Abone Olundu';
-        subBtn.classList.add('subscribed');
+    if (currentUser.role !== 'owner' && currentUser.myChannel) {
+        html += `
+            <div class="info-box" style="border-left-color: #ffaa00;">
+                <p><i class="fas fa-exclamation-triangle" style="color:#ffaa00;"></i> 
+                Zaten bir kanalınız var: <strong>#${currentUser.myChannel}</strong>. 
+                Bir kullanıcı sadece bir kanala sahip olabilir.</p>
+            </div>
+        `;
     } else {
-        subBtn.innerHTML = '<i class="fas fa-plus"></i> Abone Ol';
-        subBtn.classList.remove('subscribed');
+        html += `
+            <div class="form-group">
+                <label class="form-label">Kanal Adı</label>
+                <input type="text" id="newChannelName" class="form-input" 
+                       placeholder="örnek: teknoloji, oyun, müzik" maxlength="20">
+                <div style="font-size:11px; color:#aaa; margin-top:4px;">
+                    Sadece küçük harf, rakam ve tire kullanabilirsiniz.
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Kanal Açıklaması</label>
+                <textarea id="newChannelDesc" class="form-textarea" 
+                          placeholder="Kanalın konusu ve kuralları..."></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Kategori</label>
+                <select id="newChannelCategory" class="form-select">
+                    <option value="general">Genel</option>
+                    <option value="music">Müzik</option>
+                    <option value="gaming">Oyun</option>
+                    <option value="technology">Teknoloji</option>
+                    <option value="sports">Spor</option>
+                </select>
+            </div>
+            <button class="form-button" onclick="createChannel()">Kanalı Oluştur</button>
+        `;
     }
-
-    if (typeof updateRoleControls === 'function') updateRoleControls();
-    addSystemMessage(`📢 #${ch} kanalına katıldın! ${fmt} abone, ${c.onlineUsers.length} çevrimiçi.`);
+    
+    html += `</div>`;
+    panel.innerHTML = html;
 }
 
-// Kanal gizle/göster
-function toggleChannelHidden() {
-    let c = channels[currentChannel];
-    if (!c) return;
-    
-    if (c.isSuperHidden && ACTIVE_USER.role !== 'owner') {
-        addSystemMessage('❌ Bu kanalı gizleme yetkiniz yok!');
-        return;
-    }
-    
-    if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name)) {
-        c.isHidden = !c.isHidden;
-        saveChannels();
-        let icon = document.getElementById('hideYoutubeIcon');
-        if (icon) icon.className = c.isHidden ? 'fas fa-eye-slash' : 'fas fa-eye';
-        
-        addSystemMessage(`👁️ #${currentChannel} ${c.isHidden ? 'gizlendi' : 'gösteriliyor'}.`);
-        sendToAdminChannel(`👁️ ${ACTIVE_USER.name}, #${currentChannel} kanalını ${c.isHidden ? 'gizledi' : 'gösterdi'}.`);
-        if (typeof updatePopularChannels === 'function') updatePopularChannels();
-    } else {
-        addSystemMessage('❌ Yetkiniz yok!');
-    }
-}
-
-// Kanal oluştur
-function createChannel() {
-    if (ACTIVE_USER.role !== 'owner' && ACTIVE_USER.myChannel) {
+// ========== KANAL OLUŞTUR ==========
+async function createChannel() {
+    if (currentUser.role !== 'owner' && currentUser.myChannel) {
         alert('Zaten bir kanalınız var!');
         return;
     }
     
-    let name = document.getElementById('newChannelName')?.value?.toLowerCase().trim();
+    const name = document.getElementById('newChannelName')?.value?.toLowerCase().trim();
     if (!name) {
         alert('Kanal adı girin!');
         return;
     }
     
-    if (!/^[a-z0-9-]+$/.test(name)) {
+    if (!isValidChannelName(name)) {
         alert('Kanal adı sadece küçük harf, rakam ve tire içerebilir!');
         return;
     }
     
-    if (channels[name]) {
+    // Kanal adı kontrolü
+    const snapshot = await db.channels.child(name).once('value');
+    if (snapshot.exists()) {
         alert('Bu kanal adı zaten mevcut!');
         return;
     }
     
-    let desc = document.getElementById('newChannelDesc')?.value?.trim() || `${ACTIVE_USER.name} tarafından oluşturuldu.`;
-    let category = document.getElementById('newChannelCategory')?.value || 'general';
+    const desc = document.getElementById('newChannelDesc')?.value?.trim() || 
+                `${currentUser.name} tarafından oluşturuldu.`;
+    const category = document.getElementById('newChannelCategory')?.value || 'general';
     
-    channels[name] = {
-        name, 
-        owner: ACTIVE_USER.name, 
-        ownerRole: 'coadmin', 
-        coAdmins: [ACTIVE_USER.name],
-        subscribers: 1, 
-        online: 1, 
-        description: desc, 
+    const newChannel = {
+        name: name,
+        owner: currentUser.name,
+        ownerRole: 'coadmin',
+        coAdmins: [currentUser.name],
+        subscribers: 1,
+        description: desc,
         category: category,
-        isPrivate: false, 
         isHidden: false,
         isSuperHidden: false,
+        createdAt: Date.now(),
         youtube: {
             currentVideo: 'jfKfPfyJRdk',
             currentTitle: 'CETCETY Radio',
-            currentArtist: ACTIVE_USER.name,
-            playlist: [{ id: 'jfKfPfyJRdk', title: 'CETCETY Radio', addedBy: ACTIVE_USER.name, role: 'coadmin' }]
+            currentArtist: currentUser.name,
+            playlist: [{
+                id: 'jfKfPfyJRdk',
+                title: 'CETCETY Radio',
+                addedBy: currentUser.name,
+                role: 'coadmin',
+                addedAt: Date.now()
+            }]
         },
-        onlineUsers: [ACTIVE_USER.name]
+        onlineUsers: {},
+        onlineCount: 0
     };
     
-    saveChannels();
-    ACTIVE_USER.myChannel = name;
+    await db.channels.child(name).set(newChannel);
     
-    if (ACTIVE_USER.role !== 'owner') ACTIVE_USER.role = 'coadmin';
-    if (!ACTIVE_USER.subscribedChannels.includes(name)) ACTIVE_USER.subscribedChannels.push(name);
+    // Kullanıcıyı güncelle
+    currentUser.myChannel = name;
+    if (currentUser.role !== 'owner') currentUser.role = 'coadmin';
     
-    localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-    
-    const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-    if (index !== -1) {
-        USERS_DB[index] = ACTIVE_USER;
-        localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+    if (!currentUser.subscribedChannels.includes(name)) {
+        currentUser.subscribedChannels.push(name);
     }
     
-    if (typeof updateAllBadges === 'function') updateAllBadges();
+    await db.users.child(currentUser.id).update({
+        myChannel: name,
+        role: currentUser.role,
+        subscribedChannels: currentUser.subscribedChannels
+    });
+    
     addSystemMessage(`✅ #${name} kanalı oluşturuldu!`);
-    sendToAdminChannel(`✅ ${ACTIVE_USER.name}, #${name} kanalını oluşturdu.`);
-    joinChannel(name);
-    if (typeof loadLeftPanel === 'function') loadLeftPanel('channels');
+    
+    // Admin kanalına bildir
+    db.messages.child('admin').push({
+        senderId: 'system',
+        senderName: '🔔 SİSTEM',
+        text: `✅ ${currentUser.name}, #${name} kanalını oluşturdu.`,
+        time: formatTime(Date.now()),
+        timestamp: Date.now()
+    });
+    
+    await joinChannel(name);
+    loadLeftPanel('channels');
 }
 
-// Kanalı sil
-function deleteMyChannel() {
-    if (!ACTIVE_USER.myChannel) return;
-    if (confirm(`#${ACTIVE_USER.myChannel} kanalını kalıcı olarak silmek istediğinize emin misiniz?`)) {
-        let channelName = ACTIVE_USER.myChannel;
-        delete channels[ACTIVE_USER.myChannel];
-        saveChannels();
-        ACTIVE_USER.myChannel = null;
-        if (ACTIVE_USER.role !== 'owner') ACTIVE_USER.role = 'user';
-        localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-        const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-        if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-        localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-        addSystemMessage('🗑️ Kanalınız silindi.');
-        sendToAdminChannel(`🗑️ ${ACTIVE_USER.name}, #${channelName} kanalını sildi.`);
-        if (typeof updateAllBadges === 'function') updateAllBadges();
-        joinChannel('genel');
-        if (typeof loadLeftPanel === 'function') loadLeftPanel('profile');
+// ========== KANALI SİL ==========
+async function deleteMyChannel() {
+    if (!currentUser.myChannel) {
+        addSystemMessage('❌ Silinecek bir kanalınız yok!');
+        return;
     }
+    
+    if (!confirm(`#${currentUser.myChannel} kanalını kalıcı olarak silmek istediğinize emin misiniz?`)) {
+        return;
+    }
+    
+    const channelName = currentUser.myChannel;
+    
+    // Kanalı sil
+    await db.channels.child(channelName).remove();
+    
+    // Kullanıcıyı güncelle
+    currentUser.myChannel = null;
+    if (currentUser.role !== 'owner') currentUser.role = 'user';
+    
+    await db.users.child(currentUser.id).update({
+        myChannel: null,
+        role: currentUser.role
+    });
+    
+    addSystemMessage('🗑️ Kanalınız silindi.');
+    
+    // Admin kanalına bildir
+    db.messages.child('admin').push({
+        senderId: 'system',
+        senderName: '🔔 SİSTEM',
+        text: `🗑️ ${currentUser.name}, #${channelName} kanalını sildi.`,
+        time: formatTime(Date.now()),
+        timestamp: Date.now()
+    });
+    
+    if (currentChannel === channelName) {
+        await joinChannel('genel');
+    }
+    
+    loadLeftPanel('profile');
+}
+
+// ========== KANAL AYARLARI ==========
+async function updateChannelSettings(settings) {
+    const snapshot = await db.channels.child(currentChannel).once('value');
+    const channel = snapshot.val();
+    
+    if (!channel) return;
+    
+    // Yetki kontrolü
+    const canEdit = currentUser.role === 'owner' || 
+                   currentUser.role === 'admin' || 
+                   channel.owner === currentUser.name;
+    
+    if (!canEdit) {
+        addSystemMessage('❌ Bu kanalı düzenleme yetkiniz yok!');
+        return;
+    }
+    
+    Object.assign(channel, settings);
+    await db.channels.child(currentChannel).set(channel);
+    
+    addSystemMessage(`✅ #${currentChannel} güncellendi.`);
+}
+
+// ========== CO-ADMIN EKLE ==========
+async function addCoAdmin(username) {
+    const snapshot = await db.channels.child(currentChannel).once('value');
+    const channel = snapshot.val();
+    
+    if (!channel) return;
+    
+    // Yetki kontrolü
+    const canAdd = currentUser.role === 'owner' || 
+                  currentUser.role === 'admin' || 
+                  channel.owner === currentUser.name;
+    
+    if (!canAdd) {
+        addSystemMessage('❌ Co-admin ekleme yetkiniz yok!');
+        return;
+    }
+    
+    // Kullanıcıyı bul
+    const userSnapshot = await db.users.orderByChild('nameLower')
+        .equalTo(username.toLowerCase()).once('value');
+    
+    let targetUser = null;
+    userSnapshot.forEach(child => {
+        targetUser = { id: child.key, ...child.val() };
+    });
+    
+    if (!targetUser) {
+        addSystemMessage(`❌ ${username} bulunamadı!`);
+        return;
+    }
+    
+    if (!channel.coAdmins) channel.coAdmins = [];
+    
+    if (!channel.coAdmins.includes(targetUser.name)) {
+        channel.coAdmins.push(targetUser.name);
+        await db.channels.child(currentChannel).set(channel);
+        
+        // Kullanıcının rolünü güncelle
+        if (targetUser.role === 'user') {
+            targetUser.role = 'coadmin';
+            await db.users.child(targetUser.id).update({ role: 'coadmin' });
+        }
+        
+        addSystemMessage(`🔧 ${username} artık #${currentChannel} kanalında co-admin.`);
+        
+        // Admin kanalına bildir
+        db.messages.child('admin').push({
+            senderId: 'system',
+            senderName: '🔔 SİSTEM',
+            text: `🔧 ${currentUser.name}, ${username} kullanıcısını #${currentChannel} kanalında co-admin yaptı.`,
+            time: formatTime(Date.now()),
+            timestamp: Date.now()
+        });
+    } else {
+        addSystemMessage(`ℹ️ ${username} zaten co-admin.`);
+    }
+}
+
+// ========== CO-ADMIN KALDIR ==========
+async function removeCoAdmin(username) {
+    const snapshot = await db.channels.child(currentChannel).once('value');
+    const channel = snapshot.val();
+    
+    if (!channel) return;
+    
+    // Yetki kontrolü
+    const canRemove = currentUser.role === 'owner' || 
+                     currentUser.role === 'admin' || 
+                     channel.owner === currentUser.name;
+    
+    if (!canRemove) {
+        addSystemMessage('❌ Co-admin kaldırma yetkiniz yok!');
+        return;
+    }
+    
+    if (channel.coAdmins && channel.coAdmins.includes(username)) {
+        channel.coAdmins = channel.coAdmins.filter(u => u !== username);
+        await db.channels.child(currentChannel).set(channel);
+        
+        addSystemMessage(`🔨 ${username} co-admin yetkisi alındı.`);
+        
+        // Admin kanalına bildir
+        db.messages.child('admin').push({
+            senderId: 'system',
+            senderName: '🔔 SİSTEM',
+            text: `🔨 ${currentUser.name}, ${username} kullanıcısının co-admin yetkisini aldı.`,
+            time: formatTime(Date.now()),
+            timestamp: Date.now()
+        });
+    } else {
+        addSystemMessage(`ℹ️ ${username} co-admin değil.`);
+    }
+}
+
+// ========== KANAL BİLGİSİ ==========
+async function showChannelInfo() {
+    const snapshot = await db.channels.child(currentChannel).once('value');
+    const channel = snapshot.val();
+    
+    if (!channel) return;
+    
+    const subCount = formatNumber(channel.subscribers || 1);
+    const onlineCount = channel.onlineCount || 0;
+    
+    let info = `📢 #${currentChannel}\n`;
+    info += `• Sahip: ${channel.owner}\n`;
+    info += `• ${subCount} abone\n`;
+    info += `• ${onlineCount} çevrimiçi\n`;
+    info += `• Kategori: ${channel.category || 'Genel'}\n`;
+    info += `• Açıklama: ${channel.description || 'Açıklama yok'}`;
+    
+    addSystemMessage(info);
+}
+
+// ========== KANAL LİSTESİ ==========
+async function listChannels() {
+    const snapshot = await db.channels.once('value');
+    const channels = snapshot.val() || {};
+    
+    let list = '📋 **TÜM KANALLAR**\n\n';
+    let count = 0;
+    
+    Object.values(channels)
+        .filter(ch => {
+            if (ch.isSuperHidden && currentUser.role !== 'owner') return false;
+            if (ch.name === 'admin' && currentUser.role !== 'owner' && currentUser.role !== 'admin') return false;
+            return true;
+        })
+        .sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0))
+        .forEach(ch => {
+            count++;
+            list += `#${ch.name} - ${formatNumber(ch.subscribers || 1)} abone - ${ch.onlineCount || 0} çevrimiçi\n`;
+        });
+    
+    list += `\nToplam ${count} kanal`;
+    addSystemMessage(list);
 }
