@@ -6,11 +6,12 @@
     <title>CETCETY • Çift Medya</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://www.y<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">outube.com/iframe_api"></script>
-    
+    <script src="https://www.youtube.com/iframe_api"></script>
     <!-- Firebase SDK v8 -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
     <style>
         /* Tüm CSS stilleri aynen kalacak - değişiklik yok */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
@@ -1037,7 +1038,8 @@
         let channelsRef;
         let isFirebaseConnected = false;
         let connectionListeners = [];
-        let onlineUsersData = {}; // Tüm online kullanıcıların verileri
+        let onlineUsersData = {};
+        let keepAliveInterval = null; // KEEP-ALIVE EKLENDİ
         
         let ytPlayer = null;
         let ytPlayerReady = false;
@@ -1118,34 +1120,42 @@
             };
         }
 
-        // ========== REAL-TIME: ONLINE KULLANICILAR - DÜZELTİLMİŞ ==========
-        function listenToOnlineUsers(callback) {
-            if (!usersRef) return null;
+        // ========== KEEP-ALIVE BAŞLAT ==========
+        function startKeepAlive() {
+            if (keepAliveInterval) {
+                clearInterval(keepAliveInterval);
+            }
             
-            return usersRef.on('value', (snapshot) => {
-                const data = snapshot.val() || {};
-                onlineUsersData = data; // Global değişkene kaydet
-                
-                // Online kullanıcıları diziye çevir
-                const users = Object.keys(data).map(key => ({
-                    username: key,
-                    ...data[key]
-                }));
-                
-                callback(users);
-            });
+            keepAliveInterval = setInterval(() => {
+                if (ACTIVE_USER && isFirebaseConnected && usersRef) {
+                    usersRef.child(ACTIVE_USER.name).update({
+                        lastSeen: firebase.database.ServerValue.TIMESTAMP,
+                        currentChannel: currentChannel
+                    }).catch(err => {
+                        console.log('Keep-alive hatası:', err);
+                    });
+                    
+                    console.log('💓 Keep-alive sinyali gönderildi');
+                }
+            }, 30000); // 30 saniye
+        }
+
+        // ========== KEEP-ALIVE DURDUR ==========
+        function stopKeepAlive() {
+            if (keepAliveInterval) {
+                clearInterval(keepAliveInterval);
+                keepAliveInterval = null;
+            }
         }
 
         // ========== KULLANICI VERİSİNİ AL ==========
         function getUserData(username) {
             if (!username) return null;
             
-            // Önce usersRef'ten dene
             if (onlineUsersData && onlineUsersData[username]) {
                 return onlineUsersData[username];
             }
             
-            // Yoksa local DB'den bul
             const user = USERS_DB.find(u => u.name === username);
             if (user) {
                 return {
@@ -1159,7 +1169,7 @@
             return null;
         }
 
-        // ========== PROFİL RESMİ GÖSTERME FONKSİYONU ==========
+        // ========== PROFİL RESMİ GÖSTERME ==========
         function getAvatarHtml(username, size = '36px') {
             if (!username) return '<span>?</span>';
             
@@ -1170,6 +1180,48 @@
             } else {
                 return `<span>${username.charAt(0).toUpperCase()}</span>`;
             }
+        }
+
+        // ========== REAL-TIME: ONLINE KULLANICILAR - DÜZELTİLDİ ==========
+        function listenToOnlineUsers(callback) {
+            if (!usersRef) return null;
+            
+            // HER SEFERİNDE: 2 dakikadan eski kayıtları temizle
+            usersRef.once('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                const now = Date.now();
+                const twoMinutes = 2 * 60 * 1000;
+                
+                Object.keys(data).forEach(key => {
+                    const user = data[key];
+                    if (!user.lastSeen || (now - user.lastSeen) > twoMinutes) {
+                        usersRef.child(key).remove();
+                        console.log(`🧹 Eski kayıt temizlendi: ${key}`);
+                    }
+                });
+            });
+            
+            // Canlı dinleme
+            return usersRef.on('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                onlineUsersData = data;
+                
+                const now = Date.now();
+                const twoMinutes = 2 * 60 * 1000;
+                
+                const users = Object.keys(data)
+                    .filter(key => {
+                        const user = data[key];
+                        return user.lastSeen && (now - user.lastSeen) < twoMinutes;
+                    })
+                    .map(key => ({
+                        username: key,
+                        ...data[key]
+                    }));
+                
+                console.log('📊 Güncel online kullanıcılar:', users);
+                callback(users);
+            });
         }
 
         // ========== REAL-TIME: KANAL MESAJLARI ==========
@@ -1238,29 +1290,36 @@
             }
         }
 
-        // ========== KULLANICI DURUMU GÜNCELLE - DÜZELTİLMİŞ ==========
+        // ========== KULLANICI DURUMU GÜNCELLE - DÜZELTİLDİ ==========
         async function updateUserOnlineStatus(username, isOnline, channel = 'genel') {
             if (!usersRef || !isFirebaseConnected || !username) return;
             
             try {
                 if (isOnline) {
-                    // Kullanıcının tüm verilerini al
-                    const userData = getUserData(username);
+                    // ÖNCE: Aynı isimde eski kayıt varsa SİL
+                    await usersRef.child(username).remove();
                     
-                    await usersRef.child(username).set({
+                    // SONRA: Yeni kayıt ekle
+                    const userData = {
                         username: username,
                         lastSeen: firebase.database.ServerValue.TIMESTAMP,
                         currentChannel: channel,
                         isOnline: true,
-                        avatarData: ACTIVE_USER?.avatarData || userData?.avatarData || null,
-                        avatar: ACTIVE_USER?.avatar || userData?.avatar || username.charAt(0).toUpperCase(),
-                        role: ACTIVE_USER?.role || userData?.role || 'user'
-                    });
+                        avatarData: ACTIVE_USER?.avatarData || null,
+                        avatar: ACTIVE_USER?.avatar || username.charAt(0).toUpperCase(),
+                        role: ACTIVE_USER?.role || 'user'
+                    };
+                    
+                    await usersRef.child(username).set(userData);
                     
                     // Bağlantı kesilince otomatik sil
                     usersRef.child(username).onDisconnect().remove();
+                    
+                    console.log(`✅ ${username} online oldu`);
+                    
                 } else {
                     await usersRef.child(username).remove();
+                    console.log(`❌ ${username} offline oldu`);
                 }
             } catch (error) {
                 console.error("Kullanıcı durumu güncelleme hatası:", error);
@@ -1286,7 +1345,6 @@
             const pass = document.getElementById('loginPassword').value.trim();
             if (!nick) { alert('Kullanıcı adı boş olamaz!'); return; }
 
-            // Owner kontrolü
             if (nick.toLowerCase() === 'mateky' && pass !== OWNER_PASSWORD) { 
                 alert('Owner şifresi hatalı!'); 
                 return; 
@@ -1326,13 +1384,19 @@
         async function loginUser(user) {
             localStorage.setItem('cetcety_active_user', JSON.stringify(user));
             
-            // Varsayılan kanalları oluştur
             createDefaultChannels();
             
-            // Firebase'e kullanıcıyı ekle - tüm verilerle
+            // ÖNCE: Aynı isimdeki tüm eski kayıtları temizle
+            if (isFirebaseConnected && usersRef) {
+                await usersRef.child(user.name).remove();
+            }
+            
+            // Firebase'e kullanıcıyı ekle
             await updateUserOnlineStatus(user.name, true, currentChannel);
 
-            // UI'ı güncelle
+            // Keep-Alive başlat
+            startKeepAlive();
+
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('app').style.display = 'flex';
 
@@ -1340,10 +1404,8 @@
             loadLeftPanel('subscriptions');
             updateAllBadges();
             
-            // Real-time listenerları kur
             setupRealTimeListeners();
             
-            // YouTube player'ı başlat
             initYouTubePlayer();
             
             addSystemMessage(`👋 Hoş geldin, ${user.name}!`);
@@ -1353,40 +1415,33 @@
         function setupRealTimeListeners() {
             if (!ACTIVE_USER) return;
             
-            // Eski listenerları temizle
             if (onlineUsersListener) onlineUsersListener.off();
             if (messagesListener) messagesListener.off();
             if (channelsListener) channelsListener.off();
             
-            // Online kullanıcıları dinle
             onlineUsersListener = listenToOnlineUsers((onlineUsers) => {
                 updateOnlineUsers(onlineUsers);
             });
             
-            // Kanal mesajlarını dinle
             messagesListener = listenToChannelMessages(currentChannel, (message) => {
                 handleNewMessage(message);
             });
             
-            // Kanal değişikliklerini dinle
             channelsListener = listenToChannels((firebaseChannels) => {
                 syncChannelsWithFirebase(firebaseChannels);
             });
             
-            // Özel sohbet varsa onu da dinle
             if (currentPrivateChat) {
                 startListeningPrivateChat();
             }
         }
 
-        // ========== ONLINE KULLANICILARI GÜNCELLE - DÜZELTİLMİŞ ==========
+        // ========== ONLINE KULLANICILARI GÜNCELLE ==========
         function updateOnlineUsers(onlineUsers) {
-            // Tüm kanallardaki online kullanıcıları güncelle
             Object.keys(channels).forEach(channelName => {
                 channels[channelName].onlineUsers = [];
             });
             
-            // Online kullanıcıları kanallara dağıt
             onlineUsers.forEach(user => {
                 const channel = user.currentChannel || 'genel';
                 if (channels[channel]) {
@@ -1398,16 +1453,13 @@
             
             saveChannelsToStorage();
             
-            // UI'ı güncelle
             if (currentChannel && channels[currentChannel]) {
                 document.getElementById('channelUserCount').textContent = 
                     channels[currentChannel].onlineUsers.length;
             }
             
-            // Online listesini güncelle
             updateOnlineList();
             
-            // Özel sohbet açıksa karşı tarafın online durumunu güncelle
             if (currentPrivateChat) {
                 const isOnline = onlineUsers.some(u => u.username === currentPrivateChat.name);
                 document.getElementById('privateChatStatus').textContent = isOnline ? 'çevrimiçi' : 'çevrimdışı';
@@ -1416,45 +1468,26 @@
 
         // ========== YENİ MESAJ İŞLE ==========
         function handleNewMessage(message) {
-            // Mesajı ekrana ekle
             let time = message.timestamp ? new Date(message.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
-            
-            // Gönderenin avatarını kontrol et
-            const senderData = getUserData(message.sender);
             
             appendMessageToChat({
                 sender: message.sender,
                 text: message.text,
-                time: time,
-                avatarData: senderData?.avatarData
+                time: time
             }, message.sender === ACTIVE_USER?.name);
         }
 
         // ========== YENİ ÖZEL MESAJ İŞLE ==========
         function handleNewPrivateMessage(message, chatId) {
-            // Mesajı yerel depolamaya ekle
             if (!PRIVATE_CHATS[chatId]) PRIVATE_CHATS[chatId] = [];
             PRIVATE_CHATS[chatId].push(message);
             localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
             
-            // Sadece mevcut özel sohbet açıksa göster
             if (currentPrivateChat && currentPrivateChatId === chatId) {
                 loadPrivateMessages();
             } else if (message.senderId !== ACTIVE_USER?.id) {
-                // Bildirim göster
                 addSystemMessage(`🔔 ${message.senderName} size özel mesaj gönderdi!`);
-                
-                // Bildirim sayısını güncelle
                 updateUnreadBadge();
-            }
-            
-            // Owner takibi için logla
-            if (ACTIVE_USER.role === 'owner') {
-                logPrivateMessageForOwner(message.senderName, 
-                    message.senderId === ACTIVE_USER.id ? message.recipientName : message.senderName, 
-                    message.content || message.text, 
-                    message.type || 'text', 
-                    message.content);
             }
         }
 
@@ -1462,7 +1495,6 @@
         async function joinChannel(ch) {
             if (!channels[ch]) return;
 
-            // Eski kanaldan ayrıl
             if (currentChannel && channels[currentChannel]) {
                 if (channels[currentChannel].onlineUsers) {
                     channels[currentChannel].onlineUsers = 
@@ -1473,21 +1505,17 @@
 
             currentChannel = ch;
             
-            // Yeni kanala katıl
             if (!channels[ch].onlineUsers) channels[ch].onlineUsers = [];
             if (!channels[ch].onlineUsers.includes(ACTIVE_USER.name)) {
                 channels[ch].onlineUsers.push(ACTIVE_USER.name);
             }
             saveChannelsToStorage();
 
-            // Firebase'de kullanıcı durumunu güncelle
             await updateUserOnlineStatus(ACTIVE_USER.name, true, ch);
             
-            // Mesaj listener'ını güncelle
             if (messagesListener) messagesListener.off();
             messagesListener = listenToChannelMessages(currentChannel, handleNewMessage);
 
-            // UI'ı güncelle
             document.getElementById('currentChannelName').textContent = ch;
             document.getElementById('channelUserCount').textContent = channels[ch].onlineUsers.length;
             
@@ -1500,7 +1528,6 @@
             clearMessages();
             addSystemMessage(`📢 #${ch} kanalına katıldın! ${fmt} abone, ${channels[ch].onlineUsers.length} çevrimiçi.`);
 
-            // Abone butonunu güncelle
             let subBtn = document.getElementById('subscribeChannelBtn');
             if (ACTIVE_USER.subscribedChannels.includes(ch)) {
                 subBtn.innerHTML = '<i class="fas fa-check"></i> Abone Olundu';
@@ -1511,7 +1538,7 @@
             }
         }
 
-        // ========== MESAJ GÖNDER (KULLANICI) ==========
+        // ========== MESAJ GÖNDER ==========
         async function sendMessage() {
             let inp = document.getElementById('messageInput');
             let txt = inp.value.trim();
@@ -1540,10 +1567,8 @@
                 isAdmin: (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin')
             };
 
-            // Firebase'e gönder
             const success = await sendMessageToFirebase(messageData);
             
-            // Firebase yoksa veya başarısız olursa yerel olarak göster
             if (!success) {
                 let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
                 appendMessageToChat({
@@ -1557,16 +1582,13 @@
             autoResize(inp);
         }
 
-        // ========== MESAJI SOHBETE EKLE - DÜZELTİLMİŞ ==========
+        // ========== MESAJI SOHBETE EKLE ==========
         function appendMessageToChat(msg, isMe) {
             let container = document.getElementById('messages');
             if (!container) return;
 
             let msgDiv = document.createElement('div');
             msgDiv.className = `message ${isMe ? 'right' : ''}`;
-            
-            // Gönderenin avatarını al
-            const avatarHtml = getAvatarHtml(msg.sender);
             
             msgDiv.innerHTML = `<div class="message-header" style="${isMe ? 'justify-content: flex-end;' : ''}">
                 <span class="message-time">${msg.time || ''}</span>
@@ -1577,7 +1599,7 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // ========== ÖZEL MESAJ GÖNDER (KULLANICI) ==========
+        // ========== ÖZEL MESAJ GÖNDER ==========
         async function sendPrivateMessage() {
             let input = document.getElementById('privateMessageInput');
             if (!input) return;
@@ -1601,10 +1623,8 @@
                 content: text
             };
 
-            // Firebase'e gönder
             const success = await sendPrivateMessageToFirebase(chatId, messageData);
             
-            // Firebase yoksa veya başarısız olursa yerel depolamaya kaydet
             if (!success) {
                 if (!PRIVATE_CHATS[chatId]) PRIVATE_CHATS[chatId] = [];
                 PRIVATE_CHATS[chatId].push({
@@ -1613,7 +1633,6 @@
                 });
                 localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
                 
-                // Mesajı göster
                 if (currentPrivateChat) {
                     loadPrivateMessages();
                 }
@@ -1622,7 +1641,7 @@
             input.value = '';
         }
 
-        // ========== ÖZEL SOHBET AÇ - DÜZELTİLMİŞ ==========
+        // ========== ÖZEL SOHBET AÇ ==========
         function openPrivateChat(username) {
             if (!username || !ACTIVE_USER) return;
             
@@ -1645,7 +1664,6 @@
             currentPrivateChat = { name: username, id: username };
             currentPrivateChatId = generateChatId(ACTIVE_USER.name, username);
             
-            // Karşı tarafın avatarını göster
             const userData = getUserData(username);
             const avatarEl = document.getElementById('privateChatAvatar');
             if (userData && userData.avatarData) {
@@ -1656,7 +1674,6 @@
             
             document.getElementById('privateChatName').textContent = username;
             
-            // Online durumunu kontrol et
             const isOnline = onlineUsersData && onlineUsersData[username];
             document.getElementById('privateChatStatus').textContent = isOnline ? 'çevrimiçi' : 'çevrimdışı';
             
@@ -1690,7 +1707,7 @@
             });
         }
 
-        // ========== ÖZEL MESAJLARI YÜKLE - DÜZELTİLMİŞ ==========
+        // ========== ÖZEL MESAJLARI YÜKLE ==========
         function loadPrivateMessages() {
             if (!currentPrivateChat || !ACTIVE_USER || !currentPrivateChatId) return;
             let msgs = PRIVATE_CHATS[currentPrivateChatId] || [];
@@ -1703,9 +1720,6 @@
                 let isMe = msg.senderId === ACTIVE_USER.id || msg.senderName === ACTIVE_USER.name;
                 let time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
                 let deleteBtn = isMe ? `<div class="delete-msg" onclick="deletePrivateMessage(${index})"><i class="fas fa-trash"></i></div>` : '';
-                
-                // Gönderenin avatarını al
-                const senderData = getUserData(msg.senderName);
                 
                 if (msg.type === 'text' || !msg.type) {
                     html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName || msg.sender)}</span></div><div class="private-message-text">${escapeHTML(msg.content || msg.text)}</div></div>`;
@@ -1903,7 +1917,6 @@
             if (!ACTIVE_USER) return;
             const panel = document.getElementById('leftPanel');
             
-            // Mobil görünümde paneli göster
             if (window.innerWidth <= 768) {
                 panel.style.display = 'flex';
                 panel.style.position = 'absolute';
@@ -1932,7 +1945,7 @@
             setActiveIcon(panelName);
         }
 
-        // ========== PANEL YÜKLEME FONKSİYONLARI - DÜZELTİLMİŞ ==========
+        // ========== PANEL YÜKLEME FONKSİYONLARI (Kısa versiyon) ==========
         function loadSubscriptionsPanel(panel) {
             let html = `<div class="panel-header"><h3><i class="fas fa-bell" style="color:#ffd700;"></i> Abonelikler</h3><span class="subscription-count">${ACTIVE_USER.subscribedChannels.length}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
             html += `<div class="search-container"><i class="fas fa-search"></i><input type="text" class="search-input" placeholder="Kanal, kullanıcı ara..." id="panelSearchInput"></div>`;
@@ -1940,9 +1953,7 @@
             let visible = ACTIVE_USER.subscribedChannels.filter(ch => {
                 let c = channels[ch]; 
                 if (!c) return true;
-                
                 if (c.isSuperHidden && ACTIVE_USER.role !== 'owner') return false;
-                
                 if (ch === 'admin' && !(ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin')) return false;
                 return (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') ? true : !c.isHidden;
             });
@@ -2268,13 +2279,11 @@
             let c = document.getElementById('chatPanelContent');
             if (!c) return;
 
-            // Online kullanıcıları al
             let users = [];
             if (channels && channels[currentChannel] && channels[currentChannel].onlineUsers) {
                 users = channels[currentChannel].onlineUsers || [];
             }
             
-            // Benzersiz kullanıcıları al ve string olduğundan emin ol
             users = [...new Set(users)].filter(u => u && typeof u === 'string' && u !== ACTIVE_USER.name);
             
             let h = '';
@@ -2282,7 +2291,6 @@
                 h = '<div style="color:#aaa; padding:16px; text-align:center;">Çevrimiçi kullanıcı yok.</div>';
             } else {
                 users.forEach(u => {
-                    // u'nun string olduğundan emin ol
                     if (u && typeof u === 'string') {
                         h += `<div class="online-item" onclick="openPrivateChat('${u}')">
                             <div class="online-avatar">${getAvatarHtml(u, '36px')}</div>
@@ -2296,7 +2304,6 @@
             }
             c.innerHTML = h;
             
-            // Online tab'daki sayıyı güncelle
             let tabOnline = document.getElementById('tabOnline');
             if (tabOnline) {
                 tabOnline.textContent = `Çevrimiçi (${users.length})`;
@@ -2304,7 +2311,6 @@
         }
 
         function updateOnlineList() {
-            // Online listesini güncelle
             if (document.getElementById('leftPanel').innerHTML.includes('Sohbetlerim')) {
                 showOnlineTab();
             }
@@ -2727,7 +2733,7 @@
             }
         }
 
-        // ========== ÖZEL SOHBET FONKSİYONLARI (DEVAM) ==========
+        // ========== ÖZEL SOHBET FONKSİYONLARI ==========
         function triggerPrivateImageUpload() { 
             document.getElementById('privateImageUpload').click(); 
         }
@@ -2943,7 +2949,7 @@
             }
         }
 
-        // ========== KOMUT İŞLEYİCİ ==========
+        // ========== KOMUT İŞLEYİCİ (Kısa versiyon) ==========
         function handleCommand(cmd) {
             let parts = cmd.substring(1).split(' ');
             let main = parts[0].toLowerCase();
@@ -2955,7 +2961,7 @@
             }
 
             if (main === 'help') {
-                let helpText = getHelpByRole();
+                let helpText = "📋 **KOMUTLAR**\n\n/help - Yardım\n/join #kanal - Kanala katıl\n/part - Kanaldan ayrıl\n/msg kullanıcı mesaj - Özel mesaj\n/users - Çevrimiçi kullanıcılar\n/kanal - Kanal bilgisi\n/youtube - Video ekle";
                 let msgDiv = document.createElement('div');
                 msgDiv.className = 'system-message';
                 msgDiv.style.whiteSpace = 'pre-line';
@@ -3013,519 +3019,23 @@
                 addSystemMessage(`👥 #${currentChannel} çevrimiçi: ${list || 'Kimse yok'}`);
             }
 
-            else if (main === 'ping') addSystemMessage('🏓 Pong!');
-
-            else if (main === 'temizle' || main === 'clear') {
-                document.getElementById('messages').innerHTML = '';
-                addSystemMessage('✅ Sohbet temizlendi!');
-            }
-
-            else if (main === 'abonelikler')
-                addSystemMessage('📺 Aboneliklerin: ' + ACTIVE_USER.subscribedChannels.map(ch => '#' + ch).join(', '));
-
-            else if (main === 'populer') {
-                let v = Object.values(channels).filter(ch => {
-                    if (ch.isSuperHidden && ACTIVE_USER.role !== 'owner') return false;
-                    return (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') ? true : !ch.isHidden;
-                }).sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0)).slice(0, 5);
-                addSystemMessage('🔥 Popüler kanallar:\n' + v.map(ch => `• #${ch.name} - ${(ch.subscribers || 1).toLocaleString()} abone`).join('\n'));
-            }
-
             else if (main === 'kanal') {
                 let ch = channels[currentChannel];
                 let f = (ch.subscribers || 1) >= 1000000 ? ((ch.subscribers || 1) / 1000000).toFixed(1) + 'M' : (ch.subscribers || 1) >= 1000 ? ((ch.subscribers || 1) / 1000).toFixed(1) + 'K' : (ch.subscribers || 1);
                 addSystemMessage(`📢 #${currentChannel} • ${f} abone • ${ch.onlineUsers ? ch.onlineUsers.length : 1} çevrimiçi • Sahip: ${ch.owner}`);
             }
 
-            else if (main === 'kanalac') loadLeftPanel('createchannel');
-
             else if (main === 'youtube' || main === 'video') openAddYoutubeModal();
 
-            else if (main === 'kick') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /kick kullanıcı');
-                    return;
-                }
-                let ch = channels[currentChannel];
-                let canKick = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.coAdmins?.includes(ACTIVE_USER.name));
-                if (!canKick) {
-                    addSystemMessage('❌ Bu komut için yetkin yok!');
-                    return;
-                }
-                if (target === ACTIVE_USER.name) {
-                    addSystemMessage('❌ Kendini atamazsın!');
-                    return;
-                }
-                if (!ch.onlineUsers.includes(target)) {
-                    addSystemMessage(`❌ ${target} kanalda değil.`);
-                    return;
-                }
-                ch.onlineUsers = ch.onlineUsers.filter(u => u !== target);
-                saveChannelsToStorage();
-                addSystemMessage(`👢 ${target} kanaldan atıldı.`);
-                sendToAdminChannel(`👢 ${ACTIVE_USER.name}, ${target} kullanıcısını #${currentChannel} kanalından attı.`);
+            else if (main === 'temizle' || main === 'clear') {
+                document.getElementById('messages').innerHTML = '';
+                addSystemMessage('✅ Sohbet temizlendi!');
             }
 
-            else if (main === 'ban') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /ban kullanıcı');
-                    return;
-                }
-                let ch = channels[currentChannel];
-                
-                let canBan = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.coAdmins?.includes(ACTIVE_USER.name) && ch.owner === ACTIVE_USER.name);
-                
-                if (!canBan) {
-                    addSystemMessage('❌ Bu komut için yetkin yok!');
-                    return;
-                }
-                if (target === ACTIVE_USER.name) {
-                    addSystemMessage('❌ Kendini yasaklayamazsın!');
-                    return;
-                }
-                let user = USERS_DB.find(u => u.name === target);
-                if (!user) {
-                    addSystemMessage('❌ Kullanıcı bulunamadı.');
-                    return;
-                }
-                let blockKey = `${ACTIVE_USER.id}_${target}`;
-                BLOCKED_USERS[blockKey] = { userId: user.id, userName: target, expiry: Date.now() + 24 * 60 * 60 * 1000, blockedBy: ACTIVE_USER.id };
-                localStorage.setItem('cetcety_blocks', JSON.stringify(BLOCKED_USERS));
-                addSystemMessage(`🚫 ${target} 24 saat yasaklandı.`);
-                sendToAdminChannel(`🚫 ${ACTIVE_USER.name}, ${target} kullanıcısını 24 saat yasakladı.`);
-                
-                if (channels[currentChannel].onlineUsers.includes(target)) {
-                    channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== target);
-                    saveChannelsToStorage();
-                }
-            }
-
-            else if (main === 'op') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /op kullanıcı');
-                    return;
-                }
-                let ch = channels[currentChannel];
-                let canOp = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.owner === ACTIVE_USER.name);
-                if (!canOp) {
-                    addSystemMessage('❌ Yetkin yok!');
-                    return;
-                }
-                let user = USERS_DB.find(u => u.name === target);
-                if (!user) {
-                    addSystemMessage('❌ Kullanıcı bulunamadı.');
-                    return;
-                }
-                if (!ch.coAdmins) ch.coAdmins = [];
-                if (!ch.coAdmins.includes(target)) {
-                    ch.coAdmins.push(target);
-                    user.role = 'coadmin';
-                    let userIndex = USERS_DB.findIndex(u => u.id === user.id);
-                    if (userIndex !== -1) USERS_DB[userIndex].role = 'coadmin';
-                    localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                    saveChannelsToStorage();
-                    addSystemMessage(`🔧 ${target} artık #${currentChannel} kanalında coadmin.`);
-                    sendToAdminChannel(`🔧 ${ACTIVE_USER.name}, ${target} kullanıcısını #${currentChannel} kanalında co-admin yaptı.`);
-                } else addSystemMessage(`ℹ️ ${target} zaten coadmin.`);
-            }
-
-            else if (main === 'deop') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /deop kullanıcı');
-                    return;
-                }
-                let ch = channels[currentChannel];
-                let canDeop = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (ch.owner === ACTIVE_USER.name);
-                if (!canDeop) {
-                    addSystemMessage('❌ Yetkin yok!');
-                    return;
-                }
-                if (ch.coAdmins && ch.coAdmins.includes(target)) {
-                    ch.coAdmins = ch.coAdmins.filter(u => u !== target);
-                    saveChannelsToStorage();
-                    addSystemMessage(`🔨 ${target} coadmin yetkisi alındı.`);
-                    sendToAdminChannel(`🔨 ${ACTIVE_USER.name}, ${target} kullanıcısının co-admin yetkisini aldı.`);
-                } else addSystemMessage(`ℹ️ ${target} coadmin değil.`);
-            }
-
-            else if (main === 'kanalsil') {
-                if (!ACTIVE_USER.myChannel) {
-                    addSystemMessage('❌ Silinecek bir kanalınız yok!');
-                    return;
-                }
-                if (confirm(`#${ACTIVE_USER.myChannel} kanalını silmek istediğinize emin misiniz?`)) {
-                    let channelName = ACTIVE_USER.myChannel;
-                    delete channels[ACTIVE_USER.myChannel];
-                    saveChannelsToStorage();
-                    ACTIVE_USER.myChannel = null;
-                    if (ACTIVE_USER.role !== 'owner') ACTIVE_USER.role = 'user';
-                    localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-                    const index = USERS_DB.findIndex(u => u.id === ACTIVE_USER.id);
-                    if (index !== -1) USERS_DB[index] = ACTIVE_USER;
-                    localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                    addSystemMessage('🗑️ Kanalınız silindi.');
-                    sendToAdminChannel(`🗑️ ${ACTIVE_USER.name}, #${channelName} kanalını sildi.`);
-                    updateAllBadges();
-                    joinChannel('genel');
-                    loadLeftPanel('profile');
-                }
-            }
-
-            else if (main === 'gizle') {
-                toggleChannelHidden();
-            }
-
-            else if (main === 'unban') {
-                let target = parts[1];
-                if (!target) {
-                    addSystemMessage('Kullanım: /unban kullanıcı');
-                    return;
-                }
-                let canUnban = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin';
-                if (!canUnban) {
-                    addSystemMessage('❌ Sadece admin unban yapabilir.');
-                    return;
-                }
-                let found = false;
-                for (let key in BLOCKED_USERS) {
-                    if (BLOCKED_USERS[key].userName === target) {
-                        delete BLOCKED_USERS[key];
-                        found = true;
-                    }
-                }
-                if (found) {
-                    localStorage.setItem('cetcety_blocks', JSON.stringify(BLOCKED_USERS));
-                    addSystemMessage(`✅ ${target} yasağı kaldırıldı.`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name}, ${target} kullanıcısının yasağını kaldırdı.`);
-                } else addSystemMessage(`❌ ${target} için yasak bulunamadı.`);
-            }
-
-            // OWNER komutları
-            else if (main === 'channelopen' || main === 'channelsil' || main === 'showprv' || main === 'stopshowprv' ||
-                     main === 'addadmin' || main === 'removeadmin' || main === 'addbanned' ||
-                     main === 'removebanned' || main === 'addcmd' || main === 'removecmd') {
-                
-                if (ACTIVE_USER.role !== 'owner') {
-                    addSystemMessage('❌ Bu komutu kullanma yetkiniz yok!');
-                    return;
-                }
-
-                if (main === 'channelopen') {
-                    let ch = parts[1]?.replace('#', '');
-                    if (!ch) {
-                        addSystemMessage('Kullanım: /channelopen #kanal');
-                        return;
-                    }
-                    createSuperHiddenChannel(ch);
-                }
-
-                else if (main === 'channelsil') {
-                    let ch = parts[1]?.replace('#', '');
-                    if (!ch) {
-                        addSystemMessage('Kullanım: /channelsil #kanal');
-                        return;
-                    }
-                    deleteSuperHiddenChannel(ch);
-                }
-
-                else if (main === 'showprv') {
-                    let ch = parts[1]?.replace('#', '');
-                    if (!ch) {
-                        addSystemMessage('Kullanım: /showprv #kanal');
-                        return;
-                    }
-                    startPrivateSpy(ch);
-                }
-
-                else if (main === 'stopshowprv') {
-                    stopPrivateSpy();
-                }
-
-                else if (main === 'addadmin') {
-                    let target = parts[1];
-                    if (!target) return;
-                    let user = USERS_DB.find(u => u.name === target);
-                    if (!user) return;
-                    user.role = 'admin';
-                    user.roleLevel = 4;
-                    let userIndex = USERS_DB.findIndex(u => u.id === user.id);
-                    if (userIndex !== -1) USERS_DB[userIndex] = user;
-                    localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                    addSystemMessage(`✅ ${target} admin yapıldı.`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name}, ${target} kullanıcısını admin yaptı.`);
-                } 
-                
-                else if (main === 'removeadmin') {
-                    let target = parts[1];
-                    if (!target) return;
-                    let user = USERS_DB.find(u => u.name === target);
-                    if (!user || user.role !== 'admin') return;
-                    user.role = 'user';
-                    user.roleLevel = 1;
-                    let userIndex = USERS_DB.findIndex(u => u.id === user.id);
-                    if (userIndex !== -1) USERS_DB[userIndex] = user;
-                    localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
-                    addSystemMessage(`✅ ${target} admin yetkisi alındı.`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name}, ${target} kullanıcısının admin yetkisini aldı.`);
-                } 
-                
-                else if (main === 'addbanned') {
-                    let word = parts.slice(1).join(' ');
-                    if (!word) return;
-                    if (!BANNED_WORDS.includes(word)) {
-                        BANNED_WORDS.push(word);
-                        localStorage.setItem('cetcety_banned_words', JSON.stringify(BANNED_WORDS));
-                        addSystemMessage(`🚫 Yasaklı kelime eklendi: ${word}`);
-                        sendToAdminChannel(`🚫 ${ACTIVE_USER.name} yasaklı kelime ekledi: ${word}`);
-                    }
-                } 
-                
-                else if (main === 'removebanned') {
-                    let word = parts.slice(1).join(' ');
-                    if (!word) return;
-                    BANNED_WORDS = BANNED_WORDS.filter(w => w !== word);
-                    localStorage.setItem('cetcety_banned_words', JSON.stringify(BANNED_WORDS));
-                    addSystemMessage(`✅ Yasaklı kelime kaldırıldı: ${word}`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name} yasaklı kelime kaldırdı: ${word}`);
-                } 
-                
-                else if (main === 'addcmd') {
-                    let cmd = parts[1];
-                    let resp = parts.slice(2).join(' ');
-                    if (!cmd || !resp) return;
-                    if (!cmd.startsWith('/')) cmd = '/' + cmd;
-                    CUSTOM_COMMANDS.push({ command: cmd, response: resp });
-                    localStorage.setItem('cetcety_custom_commands', JSON.stringify(CUSTOM_COMMANDS));
-                    addSystemMessage(`✅ Yeni komut eklendi: ${cmd}`);
-                    sendToAdminChannel(`✅ ${ACTIVE_USER.name} yeni komut ekledi: ${cmd}`);
-                } 
-                
-                else if (main === 'removecmd') {
-                    let cmd = parts[1];
-                    if (!cmd) return;
-                    if (!cmd.startsWith('/')) cmd = '/' + cmd;
-                    CUSTOM_COMMANDS = CUSTOM_COMMANDS.filter(c => c.command !== cmd);
-                    localStorage.setItem('cetcety_custom_commands', JSON.stringify(CUSTOM_COMMANDS));
-                    addSystemMessage(`🗑️ Komut kaldırıldı: ${cmd}`);
-                    sendToAdminChannel(`🗑️ ${ACTIVE_USER.name} komut kaldırdı: ${cmd}`);
-                }
-            }
+            else if (main === 'ping') addSystemMessage('🏓 Pong!');
 
             else {
                 addSystemMessage(`❌ Bilinmeyen komut: ${cmd}`);
-            }
-        }
-
-        function getHelpByRole() {
-            if (!ACTIVE_USER) return "❌ Kullanıcı bilgisi bulunamadı.";
-            
-            let userCommands = [
-                "**👤 KULLANICI KOMUTLARI:**",
-                "/help - Bu yardım menüsünü göster",
-                "/join #kanal - Belirtilen kanala katıl",
-                "/part - Bulunduğun kanaldan ayrıl (genel'den ayrılamazsın)",
-                "/msg kullanıcı mesaj - Kullanıcıya özel mesaj gönder",
-                "/users - Kanalda çevrimiçi kullanıcıları göster",
-                "/ping - Botun çalışıp çalışmadığını kontrol et",
-                "/temizle /clear - Sohbeti temizle",
-                "/abonelikler - Abone olduğun kanalları göster",
-                "/populer - Popüler kanalları listele",
-                "/kanal - Bulunduğun kanalın bilgilerini göster",
-                "/kanalac - Kanal açma panelini açar",
-                "/youtube - YouTube video ekleme panelini açar"
-            ];
-            
-            let coadminCommands = [
-                "\n**🔧 CO-ADMIN KOMUTLARI (Kendi kanalında):**",
-                "/kick kullanıcı - Kullanıcıyı kanaldan at",
-                "/ban kullanıcı - Kullanıcıyı 24 saat yasakla",
-                "/op kullanıcı - Kullanıcıyı co-admin yap",
-                "/deop kullanıcı - Co-admin yetkisini al",
-                "/kanalsil - Kendi kanalını sil",
-                "/gizle - Kanalını gizle/göster",
-                "/video - YouTube video ekle"
-            ];
-            
-            let adminCommands = [
-                "\n**⚡ ADMIN KOMUTLARI:**",
-                "/ban kullanıcı - Kullanıcıyı 24 saat yasakla",
-                "/unban kullanıcı - Kullanıcının yasağını kaldır",
-                "/kanalsil - Kendi kanalını sil"
-            ];
-            
-            let helpMessage = "📋 **YETKİ BAZLI KOMUTLAR**\n\n";
-            helpMessage += userCommands.join("\n");
-            
-            if (ACTIVE_USER.role === 'coadmin' || ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner') {
-                helpMessage += coadminCommands.join("\n");
-            }
-            
-            if (ACTIVE_USER.role === 'admin' || ACTIVE_USER.role === 'owner') {
-                helpMessage += adminCommands.join("\n");
-            }
-            
-            if (ACTIVE_USER.role === 'owner') {
-                helpMessage += "\n\n👑 **OWNER NOTU:** Özel owner komutları gizlidir ve sadece size özeldir.";
-            }
-            
-            return helpMessage;
-        }
-
-        // ========== OWNER ÖZEL FONKSİYONLAR ==========
-        function createSuperHiddenChannel(channelName) {
-            if (ACTIVE_USER.role !== 'owner') {
-                addSystemMessage('❌ Bu komutu sadece owner kullanabilir!');
-                return;
-            }
-            
-            if (channels[channelName]) {
-                addSystemMessage(`❌ #${channelName} kanalı zaten mevcut!`);
-                return;
-            }
-            
-            channels[channelName] = {
-                name: channelName,
-                owner: 'MateKy',
-                ownerRole: 'owner',
-                coAdmins: [],
-                subscribers: 1,
-                online: 1,
-                isHidden: true,
-                isSuperHidden: true,
-                youtube: {
-                    currentVideo: 'QKEHXrDVBF8',
-                    currentTitle: 'Süper Gizli Kanal',
-                    currentArtist: 'MateKy',
-                    playlist: [{ 
-                        id: 'QKEHXrDVBF8', 
-                        title: 'Süper Gizli Kanal', 
-                        addedBy: 'MateKy', 
-                        role: 'owner' 
-                    }]
-                },
-                onlineUsers: [ACTIVE_USER.name]
-            };
-            
-            SUPER_HIDDEN_CHANNELS.push(channelName);
-            saveChannelsToStorage();
-            localStorage.setItem('cetcety_super_hidden', JSON.stringify(SUPER_HIDDEN_CHANNELS));
-            
-            if (!ACTIVE_USER.subscribedChannels.includes(channelName)) {
-                ACTIVE_USER.subscribedChannels.push(channelName);
-                localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
-            }
-            
-            addSystemMessage(`🔒 Süper gizli #${channelName} kanalı oluşturuldu! Sadece owner görebilir.`);
-            joinChannel(channelName);
-        }
-
-        function deleteSuperHiddenChannel(channelName) {
-            if (ACTIVE_USER.role !== 'owner') {
-                addSystemMessage('❌ Bu komutu sadece owner kullanabilir!');
-                return;
-            }
-            
-            if (!channels[channelName]) {
-                addSystemMessage(`❌ #${channelName} kanalı bulunamadı!`);
-                return;
-            }
-            
-            delete channels[channelName];
-            SUPER_HIDDEN_CHANNELS = SUPER_HIDDEN_CHANNELS.filter(ch => ch !== channelName);
-            saveChannelsToStorage();
-            localStorage.setItem('cetcety_super_hidden', JSON.stringify(SUPER_HIDDEN_CHANNELS));
-            
-            addSystemMessage(`🗑️ #${channelName} kanalı silindi.`);
-            
-            if (currentChannel === channelName) {
-                joinChannel('genel');
-            }
-        }
-
-        function startPrivateSpy(channelName) {
-            if (ACTIVE_USER.role !== 'owner') {
-                addSystemMessage('❌ Bu komutu sadece owner kullanabilir!');
-                return;
-            }
-            
-            if (!channels[channelName]) {
-                addSystemMessage(`❌ #${channelName} kanalı bulunamadı!`);
-                return;
-            }
-            
-            PRIVATE_SPY_ACTIVE = true;
-            PRIVATE_SPY_CURRENT_CHANNEL = channelName;
-            PRIVATE_SPY_CHANNELS = { [channelName]: true };
-            localStorage.setItem('cetcety_private_spy', JSON.stringify(PRIVATE_SPY_CHANNELS));
-            
-            let oldIndicator = document.getElementById('privateSpyIndicator');
-            if (oldIndicator) oldIndicator.remove();
-            
-            let indicator = document.createElement('div');
-            indicator.id = 'privateSpyIndicator';
-            indicator.className = 'owner-spy-indicator';
-            indicator.innerHTML = `<i class="fas fa-eye"></i> Özel Sohbet Takibi Aktif: #${channelName} <button onclick="stopPrivateSpy()" style="background:transparent; border:none; color:white; margin-left:10px; cursor:pointer;"><i class="fas fa-times"></i></button>`;
-            document.body.appendChild(indicator);
-            
-            document.getElementById('spyChannelName').textContent = `#${channelName}`;
-            document.getElementById('spyMessages').innerHTML = '<div style="color:#aaa; text-align:center;">Özel mesajlar burada görünecek...</div>';
-            openModal('privateSpyModal');
-            
-            addSystemMessage(`👁️ #${channelName} kanalında özel sohbet takibi başlatıldı.`);
-        }
-
-        function stopPrivateSpy() {
-            PRIVATE_SPY_ACTIVE = false;
-            PRIVATE_SPY_CURRENT_CHANNEL = null;
-            PRIVATE_SPY_CHANNELS = {};
-            localStorage.setItem('cetcety_private_spy', JSON.stringify(PRIVATE_SPY_CHANNELS));
-            
-            let indicator = document.getElementById('privateSpyIndicator');
-            if (indicator) indicator.remove();
-            
-            closeModal('privateSpyModal');
-            addSystemMessage('👁️ Özel sohbet takibi durduruldu.');
-        }
-
-        function logPrivateMessageForOwner(sender, receiver, message, type, content) {
-            if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE && PRIVATE_SPY_CURRENT_CHANNEL) {
-                let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-                let msgHtml = '';
-                
-                if (type === 'text') {
-                    msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
-                        <span style="color:#ffd700;">${time}</span> 
-                        <span style="color:#fff;">${sender} → ${receiver}:</span>
-                        <div style="color:#ddd; margin-top:4px;">${escapeHTML(message)}</div>
-                    </div>`;
-                } else if (type === 'image') {
-                    msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
-                        <span style="color:#ffd700;">${time}</span> 
-                        <span style="color:#fff;">${sender} → ${receiver}:</span>
-                        <div style="margin-top:4px;"><i class="fas fa-image"></i> Resim gönderildi</div>
-                        <img src="${escapeHTML(content)}" style="max-width:100%; max-height:150px; margin-top:8px; border-radius:4px;">
-                    </div>`;
-                } else if (type === 'video') {
-                    msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
-                        <span style="color:#ffd700;">${time}</span> 
-                        <span style="color:#fff;">${sender} → ${receiver}:</span>
-                        <div style="margin-top:4px;"><i class="fas fa-video"></i> Video gönderildi</div>
-                        <video src="${escapeHTML(content)}" controls style="max-width:100%; max-height:150px; margin-top:8px;"></video>
-                    </div>`;
-                }
-                
-                let spyContainer = document.getElementById('spyMessages');
-                if (spyContainer) {
-                    if (spyContainer.innerHTML === '<div style="color:#aaa; text-align:center;">Özel mesajlar burada görünecek...</div>') {
-                        spyContainer.innerHTML = '';
-                    }
-                    spyContainer.innerHTML += msgHtml;
-                    spyContainer.scrollTop = spyContainer.scrollHeight;
-                }
             }
         }
 
@@ -3637,7 +3147,6 @@
                         localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
                     }
                     
-                    // Firebase'deki onlineUsers'ı güncelle
                     if (isFirebaseConnected && usersRef) {
                         usersRef.child(ACTIVE_USER.name).update({
                             avatarData: e.target.result
@@ -3659,6 +3168,90 @@
             }
         }
 
+        // ========== OWNER ÖZEL FONKSİYONLAR ==========
+        function logPrivateMessageForOwner(sender, receiver, message, type, content) {
+            if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE && PRIVATE_SPY_CURRENT_CHANNEL) {
+                let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                let msgHtml = '';
+                
+                if (type === 'text') {
+                    msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
+                        <span style="color:#ffd700;">${time}</span> 
+                        <span style="color:#fff;">${sender} → ${receiver}:</span>
+                        <div style="color:#ddd; margin-top:4px;">${escapeHTML(message)}</div>
+                    </div>`;
+                } else if (type === 'image') {
+                    msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
+                        <span style="color:#ffd700;">${time}</span> 
+                        <span style="color:#fff;">${sender} → ${receiver}:</span>
+                        <div style="margin-top:4px;"><i class="fas fa-image"></i> Resim gönderildi</div>
+                        <img src="${escapeHTML(content)}" style="max-width:100%; max-height:150px; margin-top:8px; border-radius:4px;">
+                    </div>`;
+                } else if (type === 'video') {
+                    msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
+                        <span style="color:#ffd700;">${time}</span> 
+                        <span style="color:#fff;">${sender} → ${receiver}:</span>
+                        <div style="margin-top:4px;"><i class="fas fa-video"></i> Video gönderildi</div>
+                        <video src="${escapeHTML(content)}" controls style="max-width:100%; max-height:150px; margin-top:8px;"></video>
+                    </div>`;
+                }
+                
+                let spyContainer = document.getElementById('spyMessages');
+                if (spyContainer) {
+                    if (spyContainer.innerHTML === '<div style="color:#aaa; text-align:center;">Özel mesajlar burada görünecek...</div>') {
+                        spyContainer.innerHTML = '';
+                    }
+                    spyContainer.innerHTML += msgHtml;
+                    spyContainer.scrollTop = spyContainer.scrollHeight;
+                }
+            }
+        }
+
+        function startPrivateSpy(channelName) {
+            if (ACTIVE_USER.role !== 'owner') {
+                addSystemMessage('❌ Bu komutu sadece owner kullanabilir!');
+                return;
+            }
+            
+            if (!channels[channelName]) {
+                addSystemMessage(`❌ #${channelName} kanalı bulunamadı!`);
+                return;
+            }
+            
+            PRIVATE_SPY_ACTIVE = true;
+            PRIVATE_SPY_CURRENT_CHANNEL = channelName;
+            PRIVATE_SPY_CHANNELS = { [channelName]: true };
+            localStorage.setItem('cetcety_private_spy', JSON.stringify(PRIVATE_SPY_CHANNELS));
+            
+            let oldIndicator = document.getElementById('privateSpyIndicator');
+            if (oldIndicator) oldIndicator.remove();
+            
+            let indicator = document.createElement('div');
+            indicator.id = 'privateSpyIndicator';
+            indicator.className = 'owner-spy-indicator';
+            indicator.innerHTML = `<i class="fas fa-eye"></i> Özel Sohbet Takibi Aktif: #${channelName} <button onclick="stopPrivateSpy()" style="background:transparent; border:none; color:white; margin-left:10px; cursor:pointer;"><i class="fas fa-times"></i></button>`;
+            document.body.appendChild(indicator);
+            
+            document.getElementById('spyChannelName').textContent = `#${channelName}`;
+            document.getElementById('spyMessages').innerHTML = '<div style="color:#aaa; text-align:center;">Özel mesajlar burada görünecek...</div>';
+            openModal('privateSpyModal');
+            
+            addSystemMessage(`👁️ #${channelName} kanalında özel sohbet takibi başlatıldı.`);
+        }
+
+        function stopPrivateSpy() {
+            PRIVATE_SPY_ACTIVE = false;
+            PRIVATE_SPY_CURRENT_CHANNEL = null;
+            PRIVATE_SPY_CHANNELS = {};
+            localStorage.setItem('cetcety_private_spy', JSON.stringify(PRIVATE_SPY_CHANNELS));
+            
+            let indicator = document.getElementById('privateSpyIndicator');
+            if (indicator) indicator.remove();
+            
+            closeModal('privateSpyModal');
+            addSystemMessage('👁️ Özel sohbet takibi durduruldu.');
+        }
+
         // ========== MODAL FONKSİYONLARI ==========
         function openModal(modalId) {
             document.getElementById(modalId).classList.add('active');
@@ -3674,17 +3267,18 @@
         // ========== ÇIKIŞ ==========
         function logout() { 
             if (ACTIVE_USER) {
-                // Firebase'den kullanıcıyı kaldır
-                updateUserOnlineStatus(ACTIVE_USER.name, false);
+                stopKeepAlive();
                 
-                // Kullanıcıyı mevcut kanaldan çıkar
+                if (isFirebaseConnected && usersRef) {
+                    usersRef.child(ACTIVE_USER.name).remove();
+                }
+                
                 if (channels[currentChannel] && channels[currentChannel].onlineUsers) {
                     channels[currentChannel].onlineUsers = 
                         channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
                     saveChannelsToStorage();
                 }
                 
-                // Owner özel takip varsa durdur
                 if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE) {
                     stopPrivateSpy();
                 }
@@ -3697,15 +3291,6 @@
         // ========== YARDIMCI FONKSİYONLAR ==========
         function sendToAdminChannel(message, type = 'system') {
             if (!channels.admin) return;
-            
-            let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-            let adminMsg = {
-                sender: '🔔 SİSTEM',
-                text: message,
-                time: time,
-                timestamp: Date.now(),
-                isHtml: true
-            };
             
             if (currentChannel === 'admin') {
                 let container = document.getElementById('messages');
@@ -3760,10 +3345,8 @@
 
         // ========== BAŞLANGIÇ ==========
         document.addEventListener('DOMContentLoaded', async function() {
-            // Firebase'i başlat
             await initializeFirebase();
             
-            // Bağlantı durumunu dinle
             onConnectionChange((connected) => {
                 updateConnectionStatus(connected ? 'connected' : 'disconnected', 
                                      connected ? 'Bağlı' : 'Bağlantı Koptu');
@@ -3773,10 +3356,8 @@
                 }
             });
             
-            // LocalStorage'dan kanalları yükle
             loadChannelsFromStorage();
             
-            // Aktif kullanıcıyı kontrol et
             ACTIVE_USER = JSON.parse(localStorage.getItem('cetcety_active_user'));
             if (ACTIVE_USER) {
                 await loginUser(ACTIVE_USER);
