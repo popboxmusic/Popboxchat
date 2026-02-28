@@ -3648,5 +3648,101 @@
             }
         });
     </script>
+    <script>
+// ========== ACİL DÜZELTME: ÖZEL SOHBET ve ONLINE LİSTE ==========
+// Bu kod, mevcut fonksiyonları geçersiz kılarak düzeltir
+
+// Online kullanıcıları güncelle
+if (typeof usersRef !== 'undefined' && usersRef) {
+    usersRef.on('value', (snapshot) => {
+        const users = snapshot.val() || {};
+        const now = Date.now();
+        let onlineCount = 0;
+        
+        // Online kullanıcıları say
+        Object.keys(users).forEach(username => {
+            const userData = users[username];
+            if (userData && userData.lastSeen) {
+                const timeDiff = now - userData.lastSeen;
+                if (timeDiff < 30000) { // 30 saniye içinde aktifse
+                    onlineCount++;
+                }
+            }
+        });
+        
+        // Online sayısını güncelle
+        const onlineCountEl = document.getElementById('onlineCount');
+        const chatOnlineCount = document.getElementById('chatOnlineCount');
+        if (onlineCountEl) onlineCountEl.textContent = onlineCount;
+        if (chatOnlineCount) chatOnlineCount.textContent = onlineCount;
+        
+        console.log('Online kullanıcı sayısı:', onlineCount);
+    });
+}
+
+// Özel sohbet açma fonksiyonunu düzelt
+window.openPrivateChat = function(username) {
+    if (!username || !ACTIVE_USER) {
+        alert('Önce giriş yapın!');
+        return;
+    }
+    
+    if (username === ACTIVE_USER.name) {
+        alert('Kendinizle özel sohbet açamazsınız!');
+        return;
+    }
+    
+    console.log('Özel sohbet açılıyor:', username);
+    
+    // Private chat panelini göster
+    const panel = document.getElementById('privateChatPanel');
+    const nameEl = document.getElementById('privateChatName');
+    const avatarEl = document.getElementById('privateChatAvatar');
+    
+    if (panel && nameEl && avatarEl) {
+        nameEl.textContent = username;
+        avatarEl.innerHTML = username.charAt(0).toUpperCase();
+        panel.classList.add('active');
+        
+        // Chat ID oluştur
+        currentPrivateChat = { name: username, id: username };
+        currentPrivateChatId = [ACTIVE_USER.name, username].sort().join('_');
+        
+        // Mesajları yükle
+        loadPrivateMessages();
+        
+        // Firebase listener kur
+        if (privateChatsRef && currentPrivateChatId) {
+            if (privateMessagesListener) privateMessagesListener.off();
+            
+            privateMessagesListener = privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                if (message) {
+                    if (!PRIVATE_CHATS[currentPrivateChatId]) PRIVATE_CHATS[currentPrivateChatId] = [];
+                    PRIVATE_CHATS[currentPrivateChatId].push(message);
+                    localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
+                    
+                    if (currentPrivateChat && message.senderName !== ACTIVE_USER.name) {
+                        loadPrivateMessages();
+                    }
+                }
+            });
+        }
+    }
+};
+
+// Tüm kullanıcı adlarına tıklama özelliği ekle
+document.addEventListener('click', function(e) {
+    const userElement = e.target.closest('.message-user, .online-item, .chat-item');
+    if (userElement) {
+        const username = userElement.textContent.trim().replace(/[👤⭐️⚡️🔧👑]/g, '').trim();
+        if (username && typeof window.openPrivateChat === 'function') {
+            window.openPrivateChat(username);
+        }
+    }
+});
+
+console.log('✅ Acil düzeltmeler eklendi!');
+</script>
 </body>
 </html>
