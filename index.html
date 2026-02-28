@@ -10,10 +10,8 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-    <!-- Firebase.js dosyası -->
-    <script src="firebase.js"></script>
     <style>
-        /* Tüm CSS stilleri burada olacak */
+        /* TÜM CSS STILLERI AYNI - DEĞİŞMEDİ */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         
         body { 
@@ -1013,6 +1011,233 @@
     </div>
 
     <script>
+        // ========== FIREBASE KONFİGÜRASYONU (DOĞRUDAN BURADA) ==========
+        const firebaseConfig = {
+            apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
+            authDomain: "popboxmusicchat.firebaseapp.com",
+            databaseURL: "https://popboxmusicchat-default-rtdb.firebaseio.com",
+            projectId: "popboxmusicchat",
+            storageBucket: "popboxmusicchat.firebasestorage.app",
+            messagingSenderId: "206625719024",
+            appId: "1:206625719024:web:d28f478a2c96d10412f835",
+            measurementId: "G-SB1K22FLEX"
+        };
+
+        // Firebase değişkenleri
+        let database;
+        let usersRef, messagesRef, privateChatsRef, channelsRef, notificationsRef;
+        let isFirebaseConnected = false;
+        let connectionListeners = [];
+
+        // ========== FIREBASE BAŞLATMA ==========
+        function initializeFirebase() {
+            return new Promise((resolve, reject) => {
+                try {
+                    console.log("🔥 Firebase başlatılıyor...");
+                    
+                    if (!firebase.apps.length) {
+                        firebase.initializeApp(firebaseConfig);
+                    }
+                    database = firebase.database();
+                    
+                    const connectedRef = database.ref(".info/connected");
+                    connectedRef.on("value", function(snap) {
+                        if (snap.val() === true) {
+                            console.log("✅ Firebase'e BAĞLANDI!");
+                            isFirebaseConnected = true;
+                            
+                            // Referansları tanımla
+                            usersRef = database.ref('onlineUsers');
+                            messagesRef = database.ref('messages');
+                            privateChatsRef = database.ref('privateChats');
+                            channelsRef = database.ref('channels');
+                            notificationsRef = database.ref('notifications');
+                            
+                            connectionListeners.forEach(listener => listener(true));
+                            resolve(true);
+                        } else {
+                            console.log("❌ Firebase bağlantısı KESİLDİ");
+                            isFirebaseConnected = false;
+                            connectionListeners.forEach(listener => listener(false));
+                        }
+                    });
+                    
+                } catch (error) {
+                    console.error("❌ Firebase başlatma hatası:", error);
+                    connectionListeners.forEach(listener => listener(false));
+                    reject(error);
+                }
+            });
+        }
+
+        // ========== BAĞLANTI DURUMU DİNLEME ==========
+        function onConnectionChange(callback) {
+            connectionListeners.push(callback);
+            return () => {
+                connectionListeners = connectionListeners.filter(cb => cb !== callback);
+            };
+        }
+
+        // ========== REAL-TIME: ONLINE KULLANICILAR ==========
+        function listenToOnlineUsers(callback) {
+            if (!usersRef) return null;
+            
+            return usersRef.on('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                const users = Object.keys(data).map(key => ({
+                    username: key,
+                    ...data[key]
+                }));
+                callback(users);
+            });
+        }
+
+        // ========== REAL-TIME: KANAL MESAJLARI ==========
+        function listenToChannelMessages(channelName, callback) {
+            if (!messagesRef) return null;
+            
+            const query = messagesRef.orderByChild('channel').equalTo(channelName).limitToLast(100);
+            
+            return query.on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                callback(message);
+            });
+        }
+
+        // ========== REAL-TIME: ÖZEL MESAJLAR ==========
+        function listenToPrivateMessages(chatId, callback) {
+            if (!privateChatsRef) return null;
+            
+            return privateChatsRef.child(chatId).limitToLast(50).on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                callback(message);
+            });
+        }
+
+        // ========== REAL-TIME: KANAL DEĞİŞİKLİKLERİ ==========
+        function listenToChannels(callback) {
+            if (!channelsRef) return null;
+            
+            return channelsRef.on('value', (snapshot) => {
+                const channels = snapshot.val() || {};
+                callback(channels);
+            });
+        }
+
+        // ========== REAL-TIME: BİLDİRİMLER ==========
+        function listenToNotifications(userId, callback) {
+            if (!notificationsRef) return null;
+            
+            return notificationsRef.child(userId).limitToLast(20).on('child_added', (snapshot) => {
+                const notification = snapshot.val();
+                callback(notification);
+            });
+        }
+
+        // ========== MESAJ GÖNDER ==========
+        async function sendMessage(messageData) {
+            if (!messagesRef || !isFirebaseConnected) {
+                // Firebase yoksa yerel olarak göster
+                let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                appendMessageToChat({
+                    sender: messageData.sender,
+                    text: messageData.text,
+                    time: time
+                }, true);
+                return false;
+            }
+            
+            try {
+                await messagesRef.push({
+                    ...messageData,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+                return true;
+            } catch (error) {
+                console.error("Mesaj gönderme hatası:", error);
+                return false;
+            }
+        }
+
+        // ========== ÖZEL MESAJ GÖNDER ==========
+        async function sendPrivateMessage(chatId, messageData) {
+            if (!privateChatsRef || !isFirebaseConnected) {
+                // Firebase yoksa yerel depolamaya kaydet
+                if (!PRIVATE_CHATS[chatId]) PRIVATE_CHATS[chatId] = [];
+                PRIVATE_CHATS[chatId].push({
+                    ...messageData,
+                    timestamp: Date.now()
+                });
+                localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
+                
+                // Mesajı göster
+                if (currentPrivateChat) {
+                    loadPrivateMessages();
+                }
+                return false;
+            }
+            
+            try {
+                await privateChatsRef.child(chatId).push({
+                    ...messageData,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+                return true;
+            } catch (error) {
+                console.error("Özel mesaj gönderme hatası:", error);
+                return false;
+            }
+        }
+
+        // ========== KULLANICI DURUMU GÜNCELLE ==========
+        async function updateUserOnlineStatus(username, isOnline, channel = 'genel') {
+            if (!usersRef || !isFirebaseConnected || !username) return;
+            
+            try {
+                if (isOnline) {
+                    await usersRef.child(username).set({
+                        username: username,
+                        lastSeen: firebase.database.ServerValue.TIMESTAMP,
+                        currentChannel: channel
+                    });
+                } else {
+                    await usersRef.child(username).remove();
+                }
+            } catch (error) {
+                console.error("Kullanıcı durumu güncelleme hatası:", error);
+            }
+        }
+
+        // ========== KANAL GÜNCELLE ==========
+        async function updateChannel(channelName, channelData) {
+            if (!channelsRef || !isFirebaseConnected) return false;
+            
+            try {
+                await channelsRef.child(channelName).set(channelData);
+                return true;
+            } catch (error) {
+                console.error("Kanal güncelleme hatası:", error);
+                return false;
+            }
+        }
+
+        // ========== BİLDİRİM GÖNDER ==========
+        async function sendNotification(userId, notificationData) {
+            if (!notificationsRef || !isFirebaseConnected) return false;
+            
+            try {
+                await notificationsRef.child(userId).push({
+                    ...notificationData,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP,
+                    read: false
+                });
+                return true;
+            } catch (error) {
+                console.error("Bildirim gönderme hatası:", error);
+                return false;
+            }
+        }
+
         // ========== GLOBAL DEĞİŞKENLER ==========
         let ytPlayer = null;
         let ytPlayerReady = false;
@@ -1028,7 +1253,7 @@
         let currentPrivateChat = null;
         let currentChannel = 'genel';
         let channels = {};
-        let PRIVATE_CHATS = {};
+        let PRIVATE_CHATS = JSON.parse(localStorage.getItem('cetcety_private_chats')) || {};
         
         // Firebase listener referansları
         let onlineUsersListener = null;
@@ -1129,6 +1354,9 @@
             }
             saveChannelsToStorage();
 
+            // Firebase'e kullanıcıyı ekle
+            await updateUserOnlineStatus(user.name, true, currentChannel);
+
             // UI'ı güncelle
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('app').style.display = 'flex';
@@ -1142,9 +1370,6 @@
             
             // YouTube player'ı başlat
             initYouTubePlayer();
-            
-            // Firebase'de online olarak işaretle
-            await updateUserOnlineStatus(user.name, true, currentChannel);
             
             addSystemMessage(`👋 Hoş geldin, ${user.name}!`);
         }
@@ -1225,16 +1450,12 @@
         // ========== YENİ MESAJ İŞLE ==========
         function handleNewMessage(message) {
             // Mesajı ekrana ekle
+            let time = new Date(message.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
             appendMessageToChat({
                 sender: message.sender,
                 text: message.text,
-                time: new Date(message.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                time: time
             }, message.sender === ACTIVE_USER?.name);
-            
-            // Admin mesajıysa admin kanalına da ekle
-            if (message.isAdmin && message.channel !== 'admin') {
-                sendToAdminChannel(message.text);
-            }
         }
 
         // ========== YENİ BİLDİRİM İŞLE ==========
@@ -1376,17 +1597,6 @@
             // Firebase'e gönder
             const success = await sendMessage(messageData);
             
-            if (!success) {
-                // Firebase yoksa yerel depolamaya kaydet
-                let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-                let localMsg = {
-                    sender: ACTIVE_USER.name,
-                    text: txt,
-                    time: time
-                };
-                appendMessageToChat(localMsg, true);
-            }
-            
             inp.value = '';
             autoResize(inp);
         }
@@ -1411,23 +1621,13 @@
                 senderId: ACTIVE_USER.id,
                 senderName: ACTIVE_USER.name,
                 type: 'text',
-                content: text
+                content: text,
+                timestamp: Date.now()
             };
 
             // Firebase'e gönder
             const success = await sendPrivateMessage(chatId, messageData);
             
-            if (!success) {
-                // Firebase yoksa yerel depolamaya kaydet
-                if (!PRIVATE_CHATS[chatId]) PRIVATE_CHATS[chatId] = [];
-                PRIVATE_CHATS[chatId].push({
-                    ...messageData,
-                    timestamp: Date.now()
-                });
-                localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
-                loadPrivateMessages();
-            }
-
             input.value = '';
         }
 
@@ -1623,7 +1823,7 @@
             setActiveIcon(panelName);
         }
 
-        // ========== PANEL YÜKLEME FONKSİYONLARI ==========
+        // ========== PANEL YÜKLEME FONKSİYONLARI (KISALTILDI - AYNI KALACAK) ==========
         function loadSubscriptionsPanel(panel) {
             let html = `<div class="panel-header"><h3><i class="fas fa-bell" style="color:#ffd700;"></i> Abonelikler</h3><span class="subscription-count">${ACTIVE_USER.subscribedChannels.length}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
             html += `<div class="search-container"><i class="fas fa-search"></i><input type="text" class="search-input" placeholder="Kanal, kullanıcı ara..." id="panelSearchInput"></div>`;
