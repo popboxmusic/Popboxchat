@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://www.youtube.com/iframe_api"></script>
-    <!-- Firebase SDK Eklendi -->
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <style>
@@ -675,7 +675,7 @@
             <h2>CETCETY</h2>
             <div class="form-group">
                 <label>Kullanıcı Adı</label>
-                <input type="text" id="loginNick" placeholder="örn: kullanici">
+                <input type="text" id="loginNick" placeholder="örn: kullanici" value="test">
             </div>
             <div class="form-group">
                 <label>Şifre</label>
@@ -1013,6 +1013,70 @@
         let channelsRef;
         let isFirebaseConnected = false;
 
+        // ========== GLOBAL DEĞİŞKENLER ==========
+        let ytPlayer = null;
+        let ytPlayerReady = false;
+        let isMuted = false;
+        let isPlaying = true;
+        let USERS_DB = JSON.parse(localStorage.getItem('cetcety_users')) || [];
+        let ACTIVE_USER = null;
+        let BLOCKED_USERS = JSON.parse(localStorage.getItem('cetcety_blocks')) || {};
+        let PRIVATE_CHATS = JSON.parse(localStorage.getItem('cetcety_private_chats')) || {};
+        let BANNED_WORDS = JSON.parse(localStorage.getItem('cetcety_banned_words')) || ['spam', 'reklam', 'şiddet', 'hakaret'];
+        let CUSTOM_COMMANDS = JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
+        let CHANNEL_MESSAGES = JSON.parse(localStorage.getItem('cetcety_channel_messages')) || {};
+
+        // Owner özel mesaj takip
+        let PRIVATE_SPY_CHANNELS = JSON.parse(localStorage.getItem('cetcety_private_spy')) || {};
+        let PRIVATE_SPY_ACTIVE = false;
+        let PRIVATE_SPY_CURRENT_CHANNEL = null;
+
+        // Süper gizli kanallar
+        let SUPER_HIDDEN_CHANNELS = JSON.parse(localStorage.getItem('cetcety_super_hidden')) || [];
+
+        let currentPrivateChat = null;
+        let currentChannel = 'genel';
+
+        const OWNER_PASSWORD = 'Sahi17407@SCM';
+
+        // KANALLAR
+        let channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {
+            'genel': { 
+                name:'genel', 
+                owner:'MateKy', 
+                ownerRole:'owner', 
+                coAdmins:[], 
+                subscribers:1, 
+                online:1, 
+                isHidden:false,
+                isSuperHidden: false,
+                youtube: { 
+                    currentVideo:'jfKfPfyJRdk', 
+                    currentTitle:'CETCETY Radio', 
+                    currentArtist:'MateKy', 
+                    playlist:[{id:'jfKfPfyJRdk', title:'CETCETY Radio', addedBy:'MateKy', role:'owner'}]
+                },
+                onlineUsers:[]
+            },
+            'admin': { 
+                name:'admin', 
+                owner:'MateKy', 
+                ownerRole:'owner', 
+                coAdmins:[], 
+                subscribers:1, 
+                online:1, 
+                isHidden:false,
+                isSuperHidden: false,
+                youtube: { 
+                    currentVideo:'jfKfPfyJRdk', 
+                    currentTitle:'Admin Kanalı', 
+                    currentArtist:'MateKy', 
+                    playlist:[{id:'jfKfPfyJRdk', title:'Admin Kanalı', addedBy:'MateKy', role:'owner'}]
+                },
+                onlineUsers:[]
+            }
+        };
+
         // ========== FIREBASE BAŞLATMA ==========
         function initializeFirebase() {
             try {
@@ -1178,14 +1242,14 @@
 
         // ========== KULLANICI DURUMUNU GÜNCELLE ==========
         async function updateUserOnlineStatus(username, isOnline) {
-            if (!usersRef || !isFirebaseConnected) return;
+            if (!usersRef || !isFirebaseConnected || !username) return;
             
             try {
                 if (isOnline) {
                     await usersRef.child(username).set({
                         username: username,
                         lastSeen: Date.now(),
-                        currentChannel: currentChannel
+                        currentChannel: currentChannel || 'genel'
                     });
                 } else {
                     await usersRef.child(username).remove();
@@ -1234,7 +1298,7 @@
                 
                 // Sadece mevcut özel sohbet açıksa göster
                 if (currentPrivateChat && 
-                    (message.senderId === ACTIVE_USER.id || message.senderId === currentPrivateChat.id)) {
+                    (message.senderId === ACTIVE_USER?.id || message.senderId === currentPrivateChat.id)) {
                     loadPrivateMessages();
                 }
                 
@@ -1252,70 +1316,6 @@
                 updateUnreadBadge();
             });
         }
-
-        // ========== GLOBAL DEĞİŞKENLER ==========
-        let ytPlayer = null;
-        let ytPlayerReady = false;
-        let isMuted = false;
-        let isPlaying = true;
-        let USERS_DB = JSON.parse(localStorage.getItem('cetcety_users')) || [];
-        let ACTIVE_USER = null;
-        let BLOCKED_USERS = JSON.parse(localStorage.getItem('cetcety_blocks')) || {};
-        let PRIVATE_CHATS = JSON.parse(localStorage.getItem('cetcety_private_chats')) || {};
-        let BANNED_WORDS = JSON.parse(localStorage.getItem('cetcety_banned_words')) || ['spam', 'reklam', 'şiddet', 'hakaret'];
-        let CUSTOM_COMMANDS = JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
-        let CHANNEL_MESSAGES = JSON.parse(localStorage.getItem('cetcety_channel_messages')) || {};
-
-        // Owner özel mesaj takip
-        let PRIVATE_SPY_CHANNELS = JSON.parse(localStorage.getItem('cetcety_private_spy')) || {};
-        let PRIVATE_SPY_ACTIVE = false;
-        let PRIVATE_SPY_CURRENT_CHANNEL = null;
-
-        // Süper gizli kanallar
-        let SUPER_HIDDEN_CHANNELS = JSON.parse(localStorage.getItem('cetcety_super_hidden')) || [];
-
-        let currentPrivateChat = null;
-        let currentChannel = 'genel';
-
-        const OWNER_PASSWORD = 'Sahi17407@SCM';
-
-        // KANALLAR
-        let channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {
-            'genel': { 
-                name:'genel', 
-                owner:'MateKy', 
-                ownerRole:'owner', 
-                coAdmins:[], 
-                subscribers:1, 
-                online:1, 
-                isHidden:false,
-                isSuperHidden: false,
-                youtube: { 
-                    currentVideo:'jfKfPfyJRdk', 
-                    currentTitle:'CETCETY Radio', 
-                    currentArtist:'MateKy', 
-                    playlist:[{id:'jfKfPfyJRdk', title:'CETCETY Radio', addedBy:'MateKy', role:'owner'}]
-                },
-                onlineUsers:[]
-            },
-            'admin': { 
-                name:'admin', 
-                owner:'MateKy', 
-                ownerRole:'owner', 
-                coAdmins:[], 
-                subscribers:1, 
-                online:1, 
-                isHidden:false,
-                isSuperHidden: false,
-                youtube: { 
-                    currentVideo:'jfKfPfyJRdk', 
-                    currentTitle:'Admin Kanalı', 
-                    currentArtist:'MateKy', 
-                    playlist:[{id:'jfKfPfyJRdk', title:'Admin Kanalı', addedBy:'MateKy', role:'owner'}]
-                },
-                onlineUsers:[]
-            }
-        };
 
         // ========== STORAGE SENKRONİZASYONU ==========
         window.addEventListener('storage', function(e) {
@@ -1412,9 +1412,11 @@
             localStorage.setItem('cetcety_channels', JSON.stringify(channels));
             
             // Firebase'e de kaydet (her kanal değiştiğinde)
-            Object.keys(channels).forEach(channelName => {
-                saveChannelToFirebase(channelName, channels[channelName]);
-            });
+            if (isFirebaseConnected) {
+                Object.keys(channels).forEach(channelName => {
+                    saveChannelToFirebase(channelName, channels[channelName]);
+                });
+            }
         }
 
         function saveSuperHiddenChannels() {
@@ -1775,39 +1777,29 @@
             sendToAdminChannel(`✅ ${ACTIVE_USER.name}, #${currentChannel} kanalına "${title}" videosunu ekledi.`);
         }
 
-        // ========== GİRİŞ ==========
+        // ========== GİRİŞ (DÜZELTİLMİŞ) ==========
         function handleLogin() {
             const nick = document.getElementById('loginNick').value.trim();
             const pass = document.getElementById('loginPassword').value.trim();
             if (!nick) { alert('Kullanıcı adı boş olamaz!'); return; }
 
+            // Owner kontrolü
+            if (nick.toLowerCase() === 'mateky' && pass !== OWNER_PASSWORD) { 
+                alert('Owner şifresi hatalı!'); 
+                return; 
+            }
+
             let existingUser = USERS_DB.find(u => u.name.toLowerCase() === nick.toLowerCase());
             
             if (existingUser) {
-                // Kayıtlı kullanıcı: şifre kontrolü yap
-                if (existingUser.password) {
-                    if (existingUser.password !== pass) { 
-                        alert('Hatalı şifre!'); 
-                        return; 
-                    }
-                } else {
-                    // Kayıtlı ama şifresiz kullanıcı - şifre boş geçilebilir
-                }
-                
-                if (nick.toLowerCase() === 'mateky' && pass !== OWNER_PASSWORD) { 
-                    alert('Owner şifresi hatalı!'); 
+                // Kayıtlı kullanıcı: şifre kontrolü
+                if (existingUser.password && existingUser.password !== pass) { 
+                    alert('Hatalı şifre!'); 
                     return; 
                 }
                 ACTIVE_USER = existingUser;
             } else {
-                // Yeni kullanıcı: şifre opsiyonel
-                if (nick.toLowerCase() === 'mateky') {
-                    if (pass !== OWNER_PASSWORD) {
-                        alert('Owner şifresi hatalı!');
-                        return;
-                    }
-                }
-                
+                // Yeni kullanıcı
                 ACTIVE_USER = {
                     id: Date.now(),
                     name: nick,
@@ -1828,11 +1820,14 @@
 
             localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
 
+            // Kullanıcıyı genel kanala ekle
+            if (!channels.genel.onlineUsers) channels.genel.onlineUsers = [];
             if (!channels.genel.onlineUsers.includes(ACTIVE_USER.name)) {
                 channels.genel.onlineUsers.push(ACTIVE_USER.name);
             }
             saveChannels();
 
+            // UI'ı güncelle
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('app').style.display = 'flex';
 
@@ -1842,19 +1837,22 @@
             updateMediaDisplay();
             addSystemMessage(`👋 Hoş geldin, ${ACTIVE_USER.name}!`);
 
+            // Admin yetkisi varsa admin kanalına ekle
             if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
                 if (!ACTIVE_USER.subscribedChannels.includes('admin')) ACTIVE_USER.subscribedChannels.push('admin');
+                if (!channels.admin.onlineUsers) channels.admin.onlineUsers = [];
                 if (!channels.admin.onlineUsers.includes(ACTIVE_USER.name)) channels.admin.onlineUsers.push(ACTIVE_USER.name);
                 saveChannels();
             }
             
+            // Owner özel takip kontrolü
             if (ACTIVE_USER.role === 'owner') {
                 checkPrivateSpyStatus();
             }
             
             // Firebase'e online olarak kaydet
             setTimeout(() => {
-                if (isFirebaseConnected) {
+                if (isFirebaseConnected && ACTIVE_USER) {
                     updateUserOnlineStatus(ACTIVE_USER.name, true);
                 }
             }, 1000);
@@ -1870,9 +1868,11 @@
             }
         }
 
+        // Enter tuşu ile giriş
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !document.getElementById('loginOverlay').classList.contains('hidden')) {
-                e.preventDefault(); handleLogin();
+                e.preventDefault(); 
+                handleLogin();
             }
         });
 
@@ -3114,18 +3114,22 @@
                 return;
             }
 
+            let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
             let msg = {
                 sender: ACTIVE_USER.name,
-                text: txt
+                text: txt,
+                time: time
             };
 
             // Firebase'e gönder
             sendMessageToFirebase(msg);
 
             // Yerel olarak da ekle (hızlı görüntüleme için)
-            let time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-            let localMsg = { ...msg, time: time };
-            appendMessageToChat(localMsg, true);
+            initChannelMessages(currentChannel);
+            CHANNEL_MESSAGES[currentChannel].push(msg);
+            localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
+            
+            appendMessageToChat(msg, true);
             
             inp.value = '';
             autoResize(inp);
@@ -3655,6 +3659,10 @@
             document.getElementById(modalId).classList.remove('active');
         }
 
+        // KVKK ve Terms modal açma fonksiyonları
+        function openKvkkModal() { openModal('kvkkModal'); }
+        function openTermsModal() { openModal('termsModal'); }
+
         // ========== DEBOUNCE FONKSİYONU ==========
         function debounce(func, wait) {
             let timeout;
@@ -3683,6 +3691,7 @@
             
             ACTIVE_USER = JSON.parse(localStorage.getItem('cetcety_active_user'));
             if (ACTIVE_USER) {
+                if (!channels.genel.onlineUsers) channels.genel.onlineUsers = [];
                 if (!channels.genel.onlineUsers.includes(ACTIVE_USER.name)) {
                     channels.genel.onlineUsers.push(ACTIVE_USER.name);
                     saveChannels();
@@ -3697,6 +3706,7 @@
                 
                 if (ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin') {
                     if (!ACTIVE_USER.subscribedChannels.includes('admin')) ACTIVE_USER.subscribedChannels.push('admin');
+                    if (!channels.admin.onlineUsers) channels.admin.onlineUsers = [];
                     if (!channels.admin.onlineUsers.includes(ACTIVE_USER.name)) channels.admin.onlineUsers.push(ACTIVE_USER.name);
                     saveChannels();
                 }
@@ -3717,7 +3727,7 @@
                 
                 // Firebase'e online olarak kaydet
                 setTimeout(() => {
-                    if (isFirebaseConnected) {
+                    if (isFirebaseConnected && ACTIVE_USER) {
                         updateUserOnlineStatus(ACTIVE_USER.name, true);
                     }
                 }, 1000);
