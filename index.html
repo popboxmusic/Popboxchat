@@ -11,7 +11,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <style>
-        /* ORİJİNAL STİLLER - AYNEN KORUNDU */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         
         body { 
@@ -689,7 +688,7 @@
         </div>
     </div>
 
-    <!-- KVKK METNİ MODALİ -->
+    <!-- KVKK MODALİ -->
     <div id="kvkkModal" class="modal-overlay">
         <div class="modal-panel">
             <div class="modal-header">
@@ -896,7 +895,7 @@
                 <div class="media-now-playing">
                     <i class="fas fa-circle" style="color: #ff0000; font-size: 8px;"></i>
                     <div class="now-playing-info">
-                        <div class="now-playing-title" id="youtubeNowPlayingTitle">CETCETY Radio</div>
+                        <div class="now-playing-title" id="youtubeNowPlayingTitle">Crispy Concords</div>
                         <div class="now-playing-artist" id="youtubeNowPlayingArtist">
                             <span class="role-icon owner">👑</span>
                             <span id="youtubeNowPlayingOwner">MateKy</span>
@@ -1005,13 +1004,15 @@
             measurementId: "G-SB1K22FLEX"
         };
 
-        // ========== GLOBAL DEĞİŞKENLER ==========
+        // Firebase referansları (önce boş tanımla)
         let database;
-        let usersRef;
-        let messagesRef;
-        let privateChatsRef;
-        let channelsRef;
+        let usersRef = null;
+        let messagesRef = null;
+        let privateChatsRef = null;
+        let channelsRef = null;
         let isFirebaseConnected = false;
+
+        // ========== GLOBAL DEĞİŞKENLER ==========
         let ytPlayer = null;
         let ytPlayerReady = false;
         let isMuted = false;
@@ -1023,15 +1024,21 @@
         let BANNED_WORDS = JSON.parse(localStorage.getItem('cetcety_banned_words')) || ['spam', 'reklam', 'şiddet', 'hakaret'];
         let CUSTOM_COMMANDS = JSON.parse(localStorage.getItem('cetcety_custom_commands')) || [];
         let CHANNEL_MESSAGES = JSON.parse(localStorage.getItem('cetcety_channel_messages')) || {};
+
+        // Owner özel mesaj takip
         let PRIVATE_SPY_CHANNELS = JSON.parse(localStorage.getItem('cetcety_private_spy')) || {};
         let PRIVATE_SPY_ACTIVE = false;
         let PRIVATE_SPY_CURRENT_CHANNEL = null;
+
+        // Süper gizli kanallar
         let SUPER_HIDDEN_CHANNELS = JSON.parse(localStorage.getItem('cetcety_super_hidden')) || [];
+
         let currentPrivateChat = null;
         let currentChannel = 'genel';
+
         const OWNER_PASSWORD = 'Sahi17407@SCM';
 
-        // KANALLAR - varsayılan video QKEHXrDVBF8 (Crispy Concords) olarak güncellendi
+        // KANALLAR - Varsayılan video QKEHXrDVBF8 (Crispy Concords)
         let channels = JSON.parse(localStorage.getItem('cetcety_channels')) || {
             'genel': { 
                 name:'genel', 
@@ -1048,7 +1055,7 @@
                     currentArtist:'MateKy', 
                     playlist:[{id:'QKEHXrDVBF8', title:'Crispy Concords', addedBy:'MateKy', role:'owner'}]
                 },
-                onlineUsers:[]
+                onlineUsers:[]  // Başlangıçta boş dizi
             },
             'admin': { 
                 name:'admin', 
@@ -1091,7 +1098,7 @@
                         privateChatsRef = database.ref('privateChats');
                         channelsRef = database.ref('channels');
                         
-                        // Verileri yükle ve dinlemeye başla
+                        // Bağlantı başarılı, verileri yükle
                         loadChannelsFromFirebase();
                         listenToMessages();
                         listenToChannels();
@@ -1117,9 +1124,10 @@
         function updateConnectionStatus(status, text) {
             const statusEl = document.getElementById('connectionStatus');
             const statusText = document.getElementById('statusText');
-            
-            statusEl.className = `connection-status ${status}`;
-            statusText.textContent = text;
+            if (statusEl && statusText) {
+                statusEl.className = `connection-status ${status}`;
+                statusText.textContent = text;
+            }
         }
 
         // ========== KANALLARI FIREBASE'DEN YÜKLE ==========
@@ -1135,6 +1143,8 @@
                     if (!channels[channelName]) {
                         channels[channelName] = firebaseChannels[channelName];
                     }
+                    // onlineUsers dizisi yoksa oluştur
+                    if (!channels[channelName].onlineUsers) channels[channelName].onlineUsers = [];
                 });
                 
                 saveChannels();
@@ -1154,6 +1164,7 @@
                 // Yerel kanalları Firebase ile senkronize et
                 Object.keys(firebaseChannels).forEach(channelName => {
                     channels[channelName] = firebaseChannels[channelName];
+                    if (!channels[channelName].onlineUsers) channels[channelName].onlineUsers = [];
                 });
                 
                 // Silinen kanalları temizle
@@ -1164,7 +1175,7 @@
                 });
                 
                 saveChannels();
-                updateAllBadges();
+                if (ACTIVE_USER) updateAllBadges();
                 
                 // Eğer mevcut kanal silindiyse genel'e dön
                 if (!channels[currentChannel] && currentChannel !== 'genel') {
@@ -1306,7 +1317,7 @@
                     );
                 }
                 
-                updateUnreadBadge();
+                if (ACTIVE_USER) updateUnreadBadge();
             });
         }
 
@@ -1316,12 +1327,15 @@
                 let newChannels = JSON.parse(e.newValue);
                 if (newChannels && newChannels[currentChannel]) {
                     channels = newChannels;
+                    Object.keys(channels).forEach(ch => {
+                        if (!channels[ch].onlineUsers) channels[ch].onlineUsers = [];
+                    });
                     
                     // UI'ı güncelle
-                    updateChannelUI();
+                    if (ACTIVE_USER) updateChannelUI();
                     updateYoutubePlaylist();
                     
-                    // YouTube player'ı güncelle (tüm kullanıcılar için eşzamanlı)
+                    // YouTube player'ı güncelle
                     let c = channels[currentChannel];
                     if (c && ytPlayer && ytPlayerReady && typeof ytPlayer.loadVideoById === 'function') {
                         try {
@@ -1342,7 +1356,7 @@
                 if (currentPrivateChat) {
                     loadPrivateMessages();
                 }
-                updateUnreadBadge();
+                if (ACTIVE_USER) updateUnreadBadge();
             }
             
             if (e.key === 'cetcety_users') {
@@ -1446,7 +1460,7 @@
             // Sıradaki videoyu al
             let nextVideo = c.youtube.playlist[nextIndex];
             
-            // Videoyu oynat (tüm kullanıcılar için eşzamanlı)
+            // Videoyu oynat
             playYoutubeVideo(nextVideo.id, nextVideo.title, nextVideo.addedBy, nextVideo.role);
             
             // Sistem mesajı göster
@@ -1569,7 +1583,7 @@
             
             updateYoutubePlaylist();
             
-            // YouTube player'ı güncelle (tüm kullanıcılar için eşzamanlı)
+            // YouTube player'ı güncelle
             if (ytPlayer && ytPlayerReady && c.youtube.currentVideo) {
                 try {
                     if (typeof ytPlayer.loadVideoById === 'function') {
@@ -1590,7 +1604,7 @@
             let c = channels[currentChannel];
             if (!c || !ACTIVE_USER) return;
             
-            let canEdit = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || c.coAdmins?.includes(ACTIVE_USER.name);
+            let canEdit = ACTIVE_USER.role === 'owner' || ACTIVE_USER.role === 'admin' || (c.coAdmins?.includes(ACTIVE_USER.name));
             
             let addYoutubeBtn = document.getElementById('addYoutubeBtn');
             if (addYoutubeBtn) addYoutubeBtn.classList.toggle('disabled', !canEdit);
@@ -1650,7 +1664,7 @@
             c.youtube.currentArtist = by;
             saveChannels();
             
-            // YouTube player'ı güncelle (tüm kullanıcılar için eşzamanlı)
+            // YouTube player'ı güncelle
             if (ytPlayer && ytPlayerReady && typeof ytPlayer.loadVideoById === 'function') {
                 try {
                     ytPlayer.loadVideoById({
@@ -1813,7 +1827,7 @@
 
             localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
 
-            // Kullanıcıyı genel kanala ekle
+            // Kullanıcıyı genel kanala ekle - onlineUsers dizisini kontrol et
             if (!channels.genel.onlineUsers) channels.genel.onlineUsers = [];
             if (!channels.genel.onlineUsers.includes(ACTIVE_USER.name)) {
                 channels.genel.onlineUsers.push(ACTIVE_USER.name);
@@ -1845,7 +1859,7 @@
             
             // Firebase'e online olarak kaydet
             setTimeout(() => {
-                if (isFirebaseConnected && ACTIVE_USER) {
+                if (isFirebaseConnected && ACTIVE_USER && usersRef) {
                     updateUserOnlineStatus(ACTIVE_USER.name, true);
                 }
             }, 1000);
@@ -2711,7 +2725,7 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // ========== ÖZEL MESAJ GÖNDERME (GÜNCELLENMİŞ) ==========
+        // ========== ÖZEL MESAJ GÖNDERME ==========
         function sendPrivateMessage() {
             let input = document.getElementById('privateMessageInput');
             if (!input) return;
@@ -2738,7 +2752,7 @@
             // Firebase'e gönder
             sendPrivateMessageToFirebase(chatId, newMsg);
 
-            // Yerel depolamaya da ekle (hemen görüntülemek için)
+            // Yerel depolamaya da ekle
             if (!PRIVATE_CHATS[chatId]) PRIVATE_CHATS[chatId] = [];
             PRIVATE_CHATS[chatId].push(newMsg);
             localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
@@ -2869,13 +2883,17 @@
 
             // Eski kanaldan ayrıl
             if (currentChannel && channels[currentChannel]) {
-                channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
+                if (channels[currentChannel].onlineUsers) {
+                    channels[currentChannel].onlineUsers = channels[currentChannel].onlineUsers.filter(u => u !== ACTIVE_USER.name);
+                }
                 saveChannels();
             }
 
             currentChannel = ch;
             let c = channels[ch];
-
+            
+            // onlineUsers dizisini kontrol et
+            if (!c.onlineUsers) c.onlineUsers = [];
             if (!c.onlineUsers.includes(ACTIVE_USER.name)) {
                 c.onlineUsers.push(ACTIVE_USER.name);
             }
@@ -3036,6 +3054,7 @@
         }
 
         function updateAllBadges() {
+            if (!ACTIVE_USER) return;
             document.getElementById('subscriptionBadge').textContent = ACTIVE_USER.subscribedChannels.length;
             document.getElementById('channelCountBadge').textContent = Object.keys(channels).length;
             updateUnreadBadge();
@@ -3043,10 +3062,11 @@
         }
 
         function updateUnreadBadge() {
+            if (!ACTIVE_USER) return;
             let total = 0;
             for (let chatId in PRIVATE_CHATS) {
                 if (PRIVATE_CHATS[chatId]) {
-                    total += PRIVATE_CHATS[chatId].filter(m => m.senderId != ACTIVE_USER?.id && !m.read).length;
+                    total += PRIVATE_CHATS[chatId].filter(m => m.senderId != ACTIVE_USER.id && !m.read).length;
                 }
             }
             document.getElementById('chatListBadge').textContent = total || 0;
@@ -3087,7 +3107,7 @@
             });
         }
 
-        // ========== MESAJ GÖNDER (GÜNCELLENMİŞ) ==========
+        // ========== MESAJ GÖNDER ==========
         function sendMessage() {
             let inp = document.getElementById('messageInput');
             let txt = inp.value.trim();
@@ -3117,7 +3137,7 @@
             // Firebase'e gönder
             sendMessageToFirebase(msg);
 
-            // Yerel olarak da ekle (hızlı görüntüleme için)
+            // Yerel olarak da ekle
             initChannelMessages(currentChannel);
             CHANNEL_MESSAGES[currentChannel].push(msg);
             localStorage.setItem('cetcety_channel_messages', JSON.stringify(CHANNEL_MESSAGES));
@@ -3720,7 +3740,7 @@
                 
                 // Firebase'e online olarak kaydet
                 setTimeout(() => {
-                    if (isFirebaseConnected && ACTIVE_USER) {
+                    if (isFirebaseConnected && ACTIVE_USER && usersRef) {
                         updateUserOnlineStatus(ACTIVE_USER.name, true);
                     }
                 }, 1000);
