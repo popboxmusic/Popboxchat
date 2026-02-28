@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
-        /* Tüm CSS stilleri aynen kalacak */
+        /* Tüm CSS stilleri aynen kalacak - değişiklik yok */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         
         body { 
@@ -531,7 +531,7 @@
         }
         .private-message.right { align-self: flex-end; }
         .private-message-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-        .private-message-sender { font-weight: 600; font-size: 12px; color: #fff; }
+        .private-message-sender { font-weight: 600; font-size: 12px; color: #fff; cursor: pointer; }
         .private-message-time { font-size: 10px; color: #aaa; }
         .private-message-text {
             font-size: 13px; line-height: 1.4; color: #fff; word-break: break-word;
@@ -851,7 +851,7 @@
                             <div class="private-chat-avatar" id="privateChatAvatar">?</div>
                             <div class="private-chat-info">
                                 <h4 id="privateChatName">Kullanıcı</h4>
-                                <span>çevrimiçi</span>
+                                <span id="privateChatStatus">çevrimiçi</span>
                             </div>
                         </div>
                         <div class="private-chat-actions">
@@ -1036,6 +1036,7 @@
         let channelsRef;
         let isFirebaseConnected = false;
         let connectionListeners = [];
+        let onlineUsersData = {}; // Tüm online kullanıcıların verileri
         
         let ytPlayer = null;
         let ytPlayerReady = false;
@@ -1074,7 +1075,10 @@
                 try {
                     console.log("🔥 Firebase başlatılıyor...");
                     
-                    firebase.initializeApp(firebaseConfig);
+                    if (!firebase.apps.length) {
+                        firebase.initializeApp(firebaseConfig);
+                    }
+                    
                     database = firebase.database();
                     
                     const connectedRef = database.ref(".info/connected");
@@ -1089,11 +1093,6 @@
                             channelsRef = database.ref('channels');
                             
                             connectionListeners.forEach(listener => listener(true));
-                            
-                            // Bağlantı kesilince temizlik
-                            if (ACTIVE_USER) {
-                                usersRef.child(ACTIVE_USER.name).onDisconnect().remove();
-                            }
                             
                             resolve(true);
                         } else {
@@ -1118,18 +1117,58 @@
             };
         }
 
-        // ========== REAL-TIME: ONLINE KULLANICILAR ==========
+        // ========== REAL-TIME: ONLINE KULLANICILAR - DÜZELTİLMİŞ ==========
         function listenToOnlineUsers(callback) {
             if (!usersRef) return null;
             
             return usersRef.on('value', (snapshot) => {
                 const data = snapshot.val() || {};
+                onlineUsersData = data; // Global değişkene kaydet
+                
+                // Online kullanıcıları diziye çevir
                 const users = Object.keys(data).map(key => ({
                     username: key,
                     ...data[key]
                 }));
+                
                 callback(users);
             });
+        }
+
+        // ========== KULLANICI VERİSİNİ AL ==========
+        function getUserData(username) {
+            if (!username) return null;
+            
+            // Önce usersRef'ten dene
+            if (onlineUsersData && onlineUsersData[username]) {
+                return onlineUsersData[username];
+            }
+            
+            // Yoksa local DB'den bul
+            const user = USERS_DB.find(u => u.name === username);
+            if (user) {
+                return {
+                    username: user.name,
+                    avatarData: user.avatarData,
+                    avatar: user.avatar,
+                    role: user.role
+                };
+            }
+            
+            return null;
+        }
+
+        // ========== PROFİL RESMİ GÖSTERME FONKSİYONU ==========
+        function getAvatarHtml(username, size = '36px') {
+            if (!username) return '<span>?</span>';
+            
+            const userData = getUserData(username);
+            
+            if (userData && userData.avatarData) {
+                return `<img src="${userData.avatarData}" style="width:100%; height:100%; object-fit:cover;">`;
+            } else {
+                return `<span>${username.charAt(0).toUpperCase()}</span>`;
+            }
         }
 
         // ========== REAL-TIME: KANAL MESAJLARI ==========
@@ -1157,8 +1196,8 @@
             if (!channelsRef) return null;
             
             return channelsRef.on('value', (snapshot) => {
-                const channels = snapshot.val() || {};
-                callback(channels);
+                const firebaseChannels = snapshot.val() || {};
+                callback(firebaseChannels);
             });
         }
 
@@ -1198,18 +1237,27 @@
             }
         }
 
-        // ========== KULLANICI DURUMU GÜNCELLE ==========
+        // ========== KULLANICI DURUMU GÜNCELLE - DÜZELTİLMİŞ ==========
         async function updateUserOnlineStatus(username, isOnline, channel = 'genel') {
             if (!usersRef || !isFirebaseConnected || !username) return;
             
             try {
                 if (isOnline) {
+                    // Kullanıcının tüm verilerini al
+                    const userData = getUserData(username);
+                    
                     await usersRef.child(username).set({
                         username: username,
                         lastSeen: firebase.database.ServerValue.TIMESTAMP,
                         currentChannel: channel,
-                        isOnline: true
+                        isOnline: true,
+                        avatarData: ACTIVE_USER?.avatarData || userData?.avatarData || null,
+                        avatar: ACTIVE_USER?.avatar || userData?.avatar || username.charAt(0).toUpperCase(),
+                        role: ACTIVE_USER?.role || userData?.role || 'user'
                     });
+                    
+                    // Bağlantı kesilince otomatik sil
+                    usersRef.child(username).onDisconnect().remove();
                 } else {
                     await usersRef.child(username).remove();
                 }
@@ -1280,7 +1328,7 @@
             // Varsayılan kanalları oluştur
             createDefaultChannels();
             
-            // Firebase'e kullanıcıyı ekle
+            // Firebase'e kullanıcıyı ekle - tüm verilerle
             await updateUserOnlineStatus(user.name, true, currentChannel);
 
             // UI'ı güncelle
@@ -1330,7 +1378,7 @@
             }
         }
 
-        // ========== ONLINE KULLANICILARI GÜNCELLE ==========
+        // ========== ONLINE KULLANICILARI GÜNCELLE - DÜZELTİLMİŞ ==========
         function updateOnlineUsers(onlineUsers) {
             // Tüm kanallardaki online kullanıcıları güncelle
             Object.keys(channels).forEach(channelName => {
@@ -1357,16 +1405,27 @@
             
             // Online listesini güncelle
             updateOnlineList();
+            
+            // Özel sohbet açıksa karşı tarafın online durumunu güncelle
+            if (currentPrivateChat) {
+                const isOnline = onlineUsers.some(u => u.username === currentPrivateChat.name);
+                document.getElementById('privateChatStatus').textContent = isOnline ? 'çevrimiçi' : 'çevrimdışı';
+            }
         }
 
         // ========== YENİ MESAJ İŞLE ==========
         function handleNewMessage(message) {
             // Mesajı ekrana ekle
-            let time = new Date(message.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+            let time = message.timestamp ? new Date(message.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+            
+            // Gönderenin avatarını kontrol et
+            const senderData = getUserData(message.sender);
+            
             appendMessageToChat({
                 sender: message.sender,
                 text: message.text,
-                time: time
+                time: time,
+                avatarData: senderData?.avatarData
             }, message.sender === ACTIVE_USER?.name);
         }
 
@@ -1378,8 +1437,7 @@
             localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
             
             // Sadece mevcut özel sohbet açıksa göster
-            if (currentPrivateChat && 
-                (message.senderId === ACTIVE_USER?.id || message.senderId === currentPrivateChat.id)) {
+            if (currentPrivateChat && currentPrivateChatId === chatId) {
                 loadPrivateMessages();
             } else if (message.senderId !== ACTIVE_USER?.id) {
                 // Bildirim göster
@@ -1387,6 +1445,15 @@
                 
                 // Bildirim sayısını güncelle
                 updateUnreadBadge();
+            }
+            
+            // Owner takibi için logla
+            if (ACTIVE_USER.role === 'owner') {
+                logPrivateMessageForOwner(message.senderName, 
+                    message.senderId === ACTIVE_USER.id ? message.recipientName : message.senderName, 
+                    message.content || message.text, 
+                    message.type || 'text', 
+                    message.content);
             }
         }
 
@@ -1489,6 +1556,26 @@
             autoResize(inp);
         }
 
+        // ========== MESAJI SOHBETE EKLE - DÜZELTİLMİŞ ==========
+        function appendMessageToChat(msg, isMe) {
+            let container = document.getElementById('messages');
+            if (!container) return;
+
+            let msgDiv = document.createElement('div');
+            msgDiv.className = `message ${isMe ? 'right' : ''}`;
+            
+            // Gönderenin avatarını al
+            const avatarHtml = getAvatarHtml(msg.sender);
+            
+            msgDiv.innerHTML = `<div class="message-header" style="${isMe ? 'justify-content: flex-end;' : ''}">
+                <span class="message-time">${msg.time || ''}</span>
+                <span class="message-sender" onclick="openPrivateChat('${msg.sender}')" style="cursor:pointer;">${escapeHTML(msg.sender) || ''}</span>
+            </div>
+            <div class="message-text">${escapeHTML(msg.text) || ''}</div>`;
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
         // ========== ÖZEL MESAJ GÖNDER (KULLANICI) ==========
         async function sendPrivateMessage() {
             let input = document.getElementById('privateMessageInput');
@@ -1508,6 +1595,7 @@
             let messageData = {
                 senderId: ACTIVE_USER.id,
                 senderName: ACTIVE_USER.name,
+                recipientName: currentPrivateChat.name,
                 type: 'text',
                 content: text
             };
@@ -1533,7 +1621,7 @@
             input.value = '';
         }
 
-        // ========== ÖZEL SOHBET AÇ ==========
+        // ========== ÖZEL SOHBET AÇ - DÜZELTİLMİŞ ==========
         function openPrivateChat(username) {
             if (!username || !ACTIVE_USER) return;
             
@@ -1556,8 +1644,21 @@
             currentPrivateChat = { name: username, id: username };
             currentPrivateChatId = generateChatId(ACTIVE_USER.name, username);
             
+            // Karşı tarafın avatarını göster
+            const userData = getUserData(username);
+            const avatarEl = document.getElementById('privateChatAvatar');
+            if (userData && userData.avatarData) {
+                avatarEl.innerHTML = `<img src="${userData.avatarData}" style="width:100%; height:100%; object-fit:cover;">`;
+            } else {
+                avatarEl.innerHTML = username.charAt(0).toUpperCase();
+            }
+            
             document.getElementById('privateChatName').textContent = username;
-            document.getElementById('privateChatAvatar').innerHTML = username.charAt(0).toUpperCase();
+            
+            // Online durumunu kontrol et
+            const isOnline = onlineUsersData && onlineUsersData[username];
+            document.getElementById('privateChatStatus').textContent = isOnline ? 'çevrimiçi' : 'çevrimdışı';
+            
             document.getElementById('privateChatPanel').classList.add('active');
             
             startListeningPrivateChat();
@@ -1588,7 +1689,7 @@
             });
         }
 
-        // ========== ÖZEL MESAJLARI YÜKLE ==========
+        // ========== ÖZEL MESAJLARI YÜKLE - DÜZELTİLMİŞ ==========
         function loadPrivateMessages() {
             if (!currentPrivateChat || !ACTIVE_USER || !currentPrivateChatId) return;
             let msgs = PRIVATE_CHATS[currentPrivateChatId] || [];
@@ -1602,12 +1703,15 @@
                 let time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
                 let deleteBtn = isMe ? `<div class="delete-msg" onclick="deletePrivateMessage(${index})"><i class="fas fa-trash"></i></div>` : '';
                 
+                // Gönderenin avatarını al
+                const senderData = getUserData(msg.senderName);
+                
                 if (msg.type === 'text' || !msg.type) {
-                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender">${msg.senderName || msg.sender}</span></div><div class="private-message-text">${escapeHTML(msg.content || msg.text)}</div></div>`;
+                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName || msg.sender)}</span></div><div class="private-message-text">${escapeHTML(msg.content || msg.text)}</div></div>`;
                 } else if (msg.type === 'image') {
-                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender">${msg.senderName}</span></div><div class="private-message-media"><img src="${escapeHTML(msg.content)}" onclick="window.open(this.src)"></div></div>`;
+                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName)}</span></div><div class="private-message-media"><img src="${escapeHTML(msg.content)}" onclick="window.open(this.src)"></div></div>`;
                 } else if (msg.type === 'video') {
-                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender">${msg.senderName}</span></div><div class="private-message-media"><video controls src="${escapeHTML(msg.content)}"></video></div></div>`;
+                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName)}</span></div><div class="private-message-media"><video controls src="${escapeHTML(msg.content)}"></video></div></div>`;
                 }
             });
             
@@ -1751,21 +1855,6 @@
             document.getElementById('chatListBadge').textContent = total || 0;
         }
 
-        function appendMessageToChat(msg, isMe) {
-            let container = document.getElementById('messages');
-            if (!container) return;
-
-            let msgDiv = document.createElement('div');
-            msgDiv.className = `message ${isMe ? 'right' : ''}`;
-            msgDiv.innerHTML = `<div class="message-header" style="${isMe ? 'justify-content: flex-end;' : ''}">
-                <span class="message-time">${msg.time || ''}</span>
-                <span class="message-sender">${escapeHTML(msg.sender) || ''}</span>
-            </div>
-            <div class="message-text">${escapeHTML(msg.text) || ''}</div>`;
-            container.appendChild(msgDiv);
-            container.scrollTop = container.scrollHeight;
-        }
-
         function addSystemMessage(t) {
             let d = document.createElement('div');
             d.className = 'system-message';
@@ -1842,7 +1931,7 @@
             setActiveIcon(panelName);
         }
 
-        // ========== PANEL YÜKLEME FONKSİYONLARI ==========
+        // ========== PANEL YÜKLEME FONKSİYONLARI - DÜZELTİLMİŞ ==========
         function loadSubscriptionsPanel(panel) {
             let html = `<div class="panel-header"><h3><i class="fas fa-bell" style="color:#ffd700;"></i> Abonelikler</h3><span class="subscription-count">${ACTIVE_USER.subscribedChannels.length}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
             html += `<div class="search-container"><i class="fas fa-search"></i><input type="text" class="search-input" placeholder="Kanal, kullanıcı ara..." id="panelSearchInput"></div>`;
@@ -2162,7 +2251,13 @@
                 h = '<div style="color:#aaa; padding:16px; text-align:center;">Henüz özel sohbet yok.</div>';
             } else {
                 chats.forEach(chat => {
-                    h += `<div class="chat-item" onclick="openPrivateChat('${chat.name}')"><div class="chat-avatar"><span>${chat.name.charAt(0)}</span></div><div class="chat-info"><div class="chat-name">${chat.name}${chat.unread > 0 ? '<span class="subscription-notification" style="margin-left:8px;"></span>' : ''}</div><div class="chat-meta"><span>${escapeHTML(chat.lastMsg)}</span><span>• ${chat.time}</span></div></div>${chat.unread > 0 ? `<div class="subscription-stats" style="color:#ff4444;">${chat.unread}</div>` : ''}</div>`;
+                    h += `<div class="chat-item" onclick="openPrivateChat('${chat.name}')">
+                        <div class="chat-avatar">${getAvatarHtml(chat.name, '36px')}</div>
+                        <div class="chat-info">
+                            <div class="chat-name">${chat.name}${chat.unread > 0 ? '<span class="subscription-notification" style="margin-left:8px;"></span>' : ''}</div>
+                            <div class="chat-meta"><span>${escapeHTML(chat.lastMsg)}</span><span>• ${chat.time}</span></div>
+                        </div>${chat.unread > 0 ? `<div class="subscription-stats" style="color:#ff4444;">${chat.unread}</div>` : ''}
+                    </div>`;
                 });
             }
             c.innerHTML = h;
@@ -2179,7 +2274,7 @@
             }
             
             // Benzersiz kullanıcıları al ve string olduğundan emin ol
-            users = [...new Set(users)].filter(u => u && typeof u === 'string');
+            users = [...new Set(users)].filter(u => u && typeof u === 'string' && u !== ACTIVE_USER.name);
             
             let h = '';
             if (users.length === 0) {
@@ -2189,7 +2284,7 @@
                     // u'nun string olduğundan emin ol
                     if (u && typeof u === 'string') {
                         h += `<div class="online-item" onclick="openPrivateChat('${u}')">
-                            <div class="online-avatar"><span>${u.charAt(0).toUpperCase()}</span></div>
+                            <div class="online-avatar">${getAvatarHtml(u, '36px')}</div>
                             <div class="online-info">
                                 <div class="online-name">${u}<span class="online-status"></span></div>
                                 <div class="online-meta"><span>#${currentChannel}</span></div>
@@ -2644,6 +2739,7 @@
                 let messageData = {
                     senderId: ACTIVE_USER.id,
                     senderName: ACTIVE_USER.name,
+                    recipientName: currentPrivateChat.name,
                     type: 'image',
                     content: e.target.result
                 };
@@ -2676,6 +2772,7 @@
                 let messageData = {
                     senderId: ACTIVE_USER.id,
                     senderName: ACTIVE_USER.name,
+                    recipientName: currentPrivateChat.name,
                     type: 'video',
                     content: e.target.result
                 };
@@ -3402,7 +3499,7 @@
                     msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
                         <span style="color:#ffd700;">${time}</span> 
                         <span style="color:#fff;">${sender} → ${receiver}:</span>
-                        <div style="color:#ddd; margin-top:4px;">${escapeHTML(content)}</div>
+                        <div style="color:#ddd; margin-top:4px;">${escapeHTML(message)}</div>
                     </div>`;
                 } else if (type === 'image') {
                     msgHtml = `<div style="margin-bottom:10px; padding:8px; background:#2a2a2a; border-radius:8px;">
@@ -3537,6 +3634,13 @@
                     if (index !== -1) {
                         USERS_DB[index].avatarData = e.target.result;
                         localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+                    }
+                    
+                    // Firebase'deki onlineUsers'ı güncelle
+                    if (isFirebaseConnected && usersRef) {
+                        usersRef.child(ACTIVE_USER.name).update({
+                            avatarData: e.target.result
+                        });
                     }
                     
                     updateUIForUser();
