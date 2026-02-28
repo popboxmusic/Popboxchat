@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://www.youtube.com/iframe_api"></script>
-    <!-- Firebase SDK v8 (ESKİ ÇALIŞAN VERSİYON) -->
+    <!-- Firebase SDK v8 -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
@@ -1016,7 +1016,7 @@
     </div>
 
     <script>
-        // ========== FIREBASE KONFİGÜRASYONU (ESKİ ÇALIŞAN VERSİYONDAN) ==========
+        // ========== FIREBASE KONFİGÜRASYONU ==========
         const firebaseConfig = {
             apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
             authDomain: "popboxmusicchat.firebaseapp.com",
@@ -1068,7 +1068,7 @@
 
         const OWNER_PASSWORD = 'Sahi17407@SCM';
 
-        // ========== FIREBASE BAŞLATMA (ESKİ ÇALIŞAN VERSİYONDAN) ==========
+        // ========== FIREBASE BAŞLATMA ==========
         function initializeFirebase() {
             return new Promise((resolve, reject) => {
                 try {
@@ -1800,11 +1800,37 @@
         function openNotificationPanel() { loadLeftPanel('notifications'); }
         function openProfilePanel() { loadLeftPanel('profile'); }
 
-        function closeLeftPanel() { loadLeftPanel('subscriptions'); }
+        function closeLeftPanel() { 
+            const leftPanel = document.getElementById('leftPanel');
+            if (window.innerWidth <= 768) {
+                leftPanel.style.display = 'none';
+            } else {
+                loadLeftPanel('subscriptions');
+            }
+        }
 
         function loadLeftPanel(panelName) {
             if (!ACTIVE_USER) return;
             const panel = document.getElementById('leftPanel');
+            
+            // Mobil görünümde paneli göster
+            if (window.innerWidth <= 768) {
+                panel.style.display = 'flex';
+                panel.style.position = 'absolute';
+                panel.style.top = '56px';
+                panel.style.left = '0';
+                panel.style.width = '100%';
+                panel.style.height = 'calc(100vh - 56px)';
+                panel.style.zIndex = '1000';
+                panel.style.background = 'rgba(10,10,10,0.95)';
+            } else {
+                panel.style.position = 'relative';
+                panel.style.display = 'flex';
+                panel.style.width = '320px';
+                panel.style.height = 'auto';
+                panel.style.zIndex = '15';
+            }
+            
             if (panelName === 'subscriptions') loadSubscriptionsPanel(panel);
             else if (panelName === 'channels') loadChannelsPanel(panel);
             else if (panelName === 'chatlist') loadChatListPanel(panel);
@@ -1816,7 +1842,7 @@
             setActiveIcon(panelName);
         }
 
-        // ========== PANEL YÜKLEME FONKSİYONLARI (KISALTILDI) ==========
+        // ========== PANEL YÜKLEME FONKSİYONLARI ==========
         function loadSubscriptionsPanel(panel) {
             let html = `<div class="panel-header"><h3><i class="fas fa-bell" style="color:#ffd700;"></i> Abonelikler</h3><span class="subscription-count">${ACTIVE_USER.subscribedChannels.length}</span><div class="panel-close" onclick="closeLeftPanel()"><i class="fas fa-times"></i></div></div><div class="panel-content">`;
             html += `<div class="search-container"><i class="fas fa-search"></i><input type="text" class="search-input" placeholder="Kanal, kullanıcı ara..." id="panelSearchInput"></div>`;
@@ -2146,23 +2172,30 @@
             let c = document.getElementById('chatPanelContent');
             if (!c) return;
 
-            let users = channels[currentChannel]?.onlineUsers || [];
+            // Online kullanıcıları al
+            let users = [];
+            if (channels && channels[currentChannel] && channels[currentChannel].onlineUsers) {
+                users = channels[currentChannel].onlineUsers || [];
+            }
             
-            // Benzersiz kullanıcıları al
-            users = [...new Set(users)];
+            // Benzersiz kullanıcıları al ve string olduğundan emin ol
+            users = [...new Set(users)].filter(u => u && typeof u === 'string');
             
             let h = '';
             if (users.length === 0) {
                 h = '<div style="color:#aaa; padding:16px; text-align:center;">Çevrimiçi kullanıcı yok.</div>';
             } else {
                 users.forEach(u => {
-                    h += `<div class="online-item" onclick="openPrivateChat('${u}')">
-                        <div class="online-avatar"><span>${u.charAt(0)}</span></div>
-                        <div class="online-info">
-                            <div class="online-name">${u}<span class="online-status"></span></div>
-                            <div class="online-meta"><span>#${currentChannel}</span></div>
-                        </div>
-                    </div>`;
+                    // u'nun string olduğundan emin ol
+                    if (u && typeof u === 'string') {
+                        h += `<div class="online-item" onclick="openPrivateChat('${u}')">
+                            <div class="online-avatar"><span>${u.charAt(0).toUpperCase()}</span></div>
+                            <div class="online-info">
+                                <div class="online-name">${u}<span class="online-status"></span></div>
+                                <div class="online-meta"><span>#${currentChannel}</span></div>
+                            </div>
+                        </div>`;
+                    }
                 });
             }
             c.innerHTML = h;
@@ -3648,154 +3681,5 @@
             }
         });
     </script>
-    <script>
-// ========== ACİL DÜZELTME: ÖZEL SOHBET ve ONLINE LİSTE ==========
-// Bu kod, mevcut fonksiyonları geçersiz kılarak düzeltir
-
-// Online kullanıcıları güncelle
-if (typeof usersRef !== 'undefined' && usersRef) {
-    usersRef.on('value', (snapshot) => {
-        const users = snapshot.val() || {};
-        const now = Date.now();
-        let onlineCount = 0;
-        
-        // Online kullanıcıları say
-        Object.keys(users).forEach(username => {
-            const userData = users[username];
-            if (userData && userData.lastSeen) {
-                const timeDiff = now - userData.lastSeen;
-                if (timeDiff < 30000) { // 30 saniye içinde aktifse
-                    onlineCount++;
-                }
-            }
-        });
-        
-        // Online sayısını güncelle
-        const onlineCountEl = document.getElementById('onlineCount');
-        const chatOnlineCount = document.getElementById('chatOnlineCount');
-        if (onlineCountEl) onlineCountEl.textContent = onlineCount;
-        if (chatOnlineCount) chatOnlineCount.textContent = onlineCount;
-        
-        console.log('Online kullanıcı sayısı:', onlineCount);
-    });
-}
-
-// Özel sohbet açma fonksiyonunu düzelt
-window.openPrivateChat = function(username) {
-    if (!username || !ACTIVE_USER) {
-        alert('Önce giriş yapın!');
-        return;
-    }
-    
-    if (username === ACTIVE_USER.name) {
-        alert('Kendinizle özel sohbet açamazsınız!');
-        return;
-    }
-    
-    console.log('Özel sohbet açılıyor:', username);
-    
-    // Private chat panelini göster
-    const panel = document.getElementById('privateChatPanel');
-    const nameEl = document.getElementById('privateChatName');
-    const avatarEl = document.getElementById('privateChatAvatar');
-    
-    if (panel && nameEl && avatarEl) {
-        nameEl.textContent = username;
-        avatarEl.innerHTML = username.charAt(0).toUpperCase();
-        panel.classList.add('active');
-        
-        // Chat ID oluştur
-        currentPrivateChat = { name: username, id: username };
-        currentPrivateChatId = [ACTIVE_USER.name, username].sort().join('_');
-        
-        // Mesajları yükle
-        loadPrivateMessages();
-        
-        // Firebase listener kur
-        if (privateChatsRef && currentPrivateChatId) {
-            if (privateMessagesListener) privateMessagesListener.off();
-            
-            privateMessagesListener = privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message) {
-                    if (!PRIVATE_CHATS[currentPrivateChatId]) PRIVATE_CHATS[currentPrivateChatId] = [];
-                    PRIVATE_CHATS[currentPrivateChatId].push(message);
-                    localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
-                    
-                    if (currentPrivateChat && message.senderName !== ACTIVE_USER.name) {
-                        loadPrivateMessages();
-                    }
-                }
-            });
-        }
-    }
-};
-
-// Tüm kullanıcı adlarına tıklama özelliği ekle
-document.addEventListener('click', function(e) {
-    const userElement = e.target.closest('.message-user, .online-item, .chat-item');
-    if (userElement) {
-        const username = userElement.textContent.trim().replace(/[👤⭐️⚡️🔧👑]/g, '').trim();
-        if (username && typeof window.openPrivateChat === 'function') {
-            window.openPrivateChat(username);
-        }
-    }
-});
-
-console.log('✅ Acil düzeltmeler eklendi!');
-</script>
-
-<!-- YENİ KOD BAŞLANGICI -->
-<script>
-// ========== SHOWONLINETAB FONKSİYONUNU DÜZELT ==========
-window.showOnlineTab = function() {
-    let c = document.getElementById('chatPanelContent');
-    if (!c) return;
-
-    // Online kullanıcıları al
-    let users = [];
-    if (channels && channels[currentChannel] && channels[currentChannel].onlineUsers) {
-        users = channels[currentChannel].onlineUsers || [];
-    }
-    
-    // Benzersiz kullanıcıları al ve string olduğundan emin ol
-    users = [...new Set(users)].filter(u => u && typeof u === 'string');
-    
-    let h = '';
-    if (users.length === 0) {
-        h = '<div style="color:#aaa; padding:16px; text-align:center;">Çevrimiçi kullanıcı yok.</div>';
-    } else {
-        users.forEach(u => {
-            // u'nun string olduğundan emin ol
-            if (u && typeof u === 'string') {
-                h += `<div class="online-item" onclick="openPrivateChat('${u}')">
-                    <div class="online-avatar"><span>${u.charAt(0).toUpperCase()}</span></div>
-                    <div class="online-info">
-                        <div class="online-name">${u}<span class="online-status"></span></div>
-                        <div class="online-meta"><span>#${currentChannel}</span></div>
-                    </div>
-                </div>`;
-            }
-        });
-    }
-    c.innerHTML = h;
-    
-    // Online tab'daki sayıyı güncelle
-    let tabOnline = document.getElementById('tabOnline');
-    if (tabOnline) {
-        tabOnline.textContent = `Çevrimiçi (${users.length})`;
-    }
-};
-
-// Sayfa yüklendiğinde online listeyi güncelle
-setInterval(() => {
-    if (document.getElementById('tabOnline')?.classList.contains('active')) {
-        window.showOnlineTab();
-    }
-}, 2000);
-
-console.log('✅ showOnlineTab düzeltmesi eklendi!');
-</script>
-<!-- YENİ KOD SONU -->   
 </body>
 </html>
