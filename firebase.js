@@ -1,6 +1,6 @@
-// ========== FIREBASE.JS - GERÇEK ZAMANLI VERİ TABANI ==========
-// Tüm veriler Firebase'de saklanır, localStorage sadece yedek
+// ========== firebase.js - Tüm Firebase Konfigürasyonu ve Real-time İşlemler ==========
 
+// Firebase yapılandırması
 const firebaseConfig = {
     apiKey: "AIzaSyCrn_tXJZCAlKhem45aXxj4f0h26EPOQ70",
     authDomain: "popboxmusicchat.firebaseapp.com",
@@ -8,306 +8,238 @@ const firebaseConfig = {
     projectId: "popboxmusicchat",
     storageBucket: "popboxmusicchat.firebasestorage.app",
     messagingSenderId: "206625719024",
-    appId: "1:206625719024:web:d28f478a2c96d10412f835"
+    appId: "1:206625719024:web:d28f478a2c96d10412f835",
+    measurementId: "G-SB1K22FLEX"
 };
 
-// Firebase'i başlat
-firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
-const storage = firebase.storage();
+// Firebase servisleri
+let database;
+let usersRef, messagesRef, privateChatsRef, channelsRef, notificationsRef;
 
-// ========== FIREBASE REFERANSLARI ==========
-const db = {
-    users: database.ref('users'),
-    channels: database.ref('channels'),
-    messages: database.ref('messages'),
-    privateChats: database.ref('privateChats'),
-    bannedWords: database.ref('bannedWords'),
-    customCommands: database.ref('customCommands'),
-    blocked: database.ref('blocked'),
-    superHidden: database.ref('superHidden'),
-    privateSpy: database.ref('privateSpy'),
-    connected: database.ref('.info/connected')
-};
+// Bağlantı durumu
+let isFirebaseConnected = false;
+let connectionListeners = [];
 
-// ========== BAĞLANTI DURUMU ==========
-db.connected.on('value', (snap) => {
-    const statusEl = document.getElementById('connectionStatus');
-    const statusText = document.getElementById('statusText');
-    
-    if (snap.val() === true) {
-        statusEl.className = 'connection-status connected';
-        statusText.textContent = 'Firebase Bağlı';
-        console.log('✅ Firebase bağlantısı kuruldu');
-        
-        // localStorage'daki verileri Firebase'e aktar (ilk çalıştırmada)
-        migrateLocalStorageToFirebase();
-    } else {
-        statusEl.className = 'connection-status disconnected';
-        statusText.textContent = 'Bağlantı Yok';
-        console.log('❌ Firebase bağlantısı kesildi');
-    }
-});
-
-// ========== VERİ AKTARIMI (localStorage -> Firebase) ==========
-async function migrateLocalStorageToFirebase() {
-    // Kullanıcıları aktar
-    const localUsers = localStorage.getItem('cetcety_users');
-    if (localUsers) {
-        const users = JSON.parse(localUsers);
-        users.forEach(async (user) => {
-            const snapshot = await db.users.orderByChild('nameLower').equalTo(user.name.toLowerCase()).once('value');
-            if (!snapshot.exists()) {
-                await db.users.push(user);
-            }
-        });
-    }
-    
-    // Kanalları aktar
-    const localChannels = localStorage.getItem('cetcety_channels');
-    if (localChannels) {
-        const channels = JSON.parse(localChannels);
-        Object.keys(channels).forEach(async (key) => {
-            const snapshot = await db.channels.child(key).once('value');
-            if (!snapshot.exists()) {
-                await db.channels.child(key).set(channels[key]);
-            }
-        });
-    }
-    
-    // Yasaklı kelimeleri aktar
-    const localBanned = localStorage.getItem('cetcety_banned_words');
-    if (localBanned) {
-        const banned = JSON.parse(localBanned);
-        const snap = await db.bannedWords.once('value');
-        if (!snap.exists()) {
-            await db.bannedWords.set(banned);
+// ========== FIREBASE BAŞLATMA ==========
+function initializeFirebase() {
+    return new Promise((resolve, reject) => {
+        try {
+            console.log("🔥 Firebase başlatılıyor...");
+            
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+            
+            const connectedRef = database.ref(".info/connected");
+            connectedRef.on("value", function(snap) {
+                if (snap.val() === true) {
+                    console.log("✅ Firebase'e BAĞLANDI!");
+                    isFirebaseConnected = true;
+                    
+                    // Referansları tanımla
+                    usersRef = database.ref('onlineUsers');
+                    messagesRef = database.ref('messages');
+                    privateChatsRef = database.ref('privateChats');
+                    channelsRef = database.ref('channels');
+                    notificationsRef = database.ref('notifications');
+                    
+                    // Bağlantı başarılı
+                    connectionListeners.forEach(listener => listener(true));
+                    resolve(true);
+                } else {
+                    console.log("❌ Firebase bağlantısı KESİLDİ");
+                    isFirebaseConnected = false;
+                    connectionListeners.forEach(listener => listener(false));
+                }
+            });
+            
+        } catch (error) {
+            console.error("❌ Firebase başlatma hatası:", error);
+            connectionListeners.forEach(listener => listener(false));
+            reject(error);
         }
-    }
+    });
+}
+
+// ========== BAĞLANTI DURUMU DİNLEME ==========
+function onConnectionChange(callback) {
+    connectionListeners.push(callback);
+    return () => {
+        connectionListeners = connectionListeners.filter(cb => cb !== callback);
+    };
+}
+
+// ========== REAL-TIME: ONLINE KULLANICILAR ==========
+function listenToOnlineUsers(callback) {
+    if (!usersRef) return null;
     
-    // Özel komutları aktar
-    const localCommands = localStorage.getItem('cetcety_custom_commands');
-    if (localCommands) {
-        const commands = JSON.parse(localCommands);
-        const snap = await db.customCommands.once('value');
-        if (!snap.exists()) {
-            await db.customCommands.set(commands);
+    return usersRef.on('value', (snapshot) => {
+        const data = snapshot.val() || {};
+        const users = Object.keys(data).map(key => ({
+            username: key,
+            ...data[key]
+        }));
+        callback(users);
+    });
+}
+
+// ========== REAL-TIME: KANAL MESAJLARI ==========
+function listenToChannelMessages(channelName, callback) {
+    if (!messagesRef) return null;
+    
+    const query = messagesRef.orderByChild('channel').equalTo(channelName).limitToLast(100);
+    
+    return query.on('child_added', (snapshot) => {
+        const message = snapshot.val();
+        callback(message);
+    });
+}
+
+// ========== REAL-TIME: ÖZEL MESAJLAR ==========
+function listenToPrivateMessages(chatId, callback) {
+    if (!privateChatsRef) return null;
+    
+    return privateChatsRef.child(chatId).limitToLast(50).on('child_added', (snapshot) => {
+        const message = snapshot.val();
+        callback(message);
+    });
+}
+
+// ========== REAL-TIME: KANAL DEĞİŞİKLİKLERİ ==========
+function listenToChannels(callback) {
+    if (!channelsRef) return null;
+    
+    return channelsRef.on('value', (snapshot) => {
+        const channels = snapshot.val() || {};
+        callback(channels);
+    });
+}
+
+// ========== REAL-TIME: BİLDİRİMLER ==========
+function listenToNotifications(userId, callback) {
+    if (!notificationsRef) return null;
+    
+    return notificationsRef.child(userId).limitToLast(20).on('child_added', (snapshot) => {
+        const notification = snapshot.val();
+        callback(notification);
+    });
+}
+
+// ========== MESAJ GÖNDER ==========
+async function sendMessage(messageData) {
+    if (!messagesRef || !isFirebaseConnected) return false;
+    
+    try {
+        await messagesRef.push({
+            ...messageData,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
+        return true;
+    } catch (error) {
+        console.error("Mesaj gönderme hatası:", error);
+        return false;
+    }
+}
+
+// ========== ÖZEL MESAJ GÖNDER ==========
+async function sendPrivateMessage(chatId, messageData) {
+    if (!privateChatsRef || !isFirebaseConnected) return false;
+    
+    try {
+        await privateChatsRef.child(chatId).push({
+            ...messageData,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
+        return true;
+    } catch (error) {
+        console.error("Özel mesaj gönderme hatası:", error);
+        return false;
+    }
+}
+
+// ========== KULLANICI DURUMU GÜNCELLE ==========
+async function updateUserOnlineStatus(username, isOnline, channel = 'genel') {
+    if (!usersRef || !isFirebaseConnected || !username) return;
+    
+    try {
+        if (isOnline) {
+            await usersRef.child(username).set({
+                username: username,
+                lastSeen: firebase.database.ServerValue.TIMESTAMP,
+                currentChannel: channel
+            });
+        } else {
+            await usersRef.child(username).remove();
         }
-    }
-    
-    console.log('✅ localStorage verileri Firebase\'e aktarıldı');
-}
-
-// ========== KULLANICI İŞLEMLERİ ==========
-async function saveUserToFirebase(user) {
-    const snapshot = await db.users.orderByChild('nameLower').equalTo(user.name.toLowerCase()).once('value');
-    
-    if (snapshot.exists()) {
-        // Kullanıcı varsa güncelle
-        let userId = null;
-        snapshot.forEach(child => { userId = child.key; });
-        await db.users.child(userId).update(user);
-        return userId;
-    } else {
-        // Yeni kullanıcı
-        const newRef = await db.users.push(user);
-        return newRef.key;
+        return true;
+    } catch (error) {
+        console.error("Kullanıcı durumu güncelleme hatası:", error);
+        return false;
     }
 }
 
-async function getUserFromFirebase(username) {
-    const snapshot = await db.users.orderByChild('nameLower').equalTo(username.toLowerCase()).once('value');
-    let user = null;
-    snapshot.forEach(child => { user = { id: child.key, ...child.val() }; });
-    return user;
-}
-
-async function getAllUsersFromFirebase() {
-    const snapshot = await db.users.once('value');
-    const users = [];
-    snapshot.forEach(child => {
-        users.push({ id: child.key, ...child.val() });
-    });
-    return users;
-}
-
-async function updateUserOnlineStatus(userId, isOnline, currentChannel) {
-    await db.users.child(userId).update({
-        isOnline: isOnline,
-        lastSeen: Date.now(),
-        currentChannel: isOnline ? currentChannel : null
-    });
-}
-
-// ========== KANAL İŞLEMLERİ ==========
-async function getChannelFromFirebase(channelName) {
-    const snapshot = await db.channels.child(channelName).once('value');
-    return snapshot.val();
-}
-
-async function saveChannelToFirebase(channelName, channelData) {
-    await db.channels.child(channelName).set(channelData);
-}
-
-async function getAllChannelsFromFirebase() {
-    const snapshot = await db.channels.once('value');
-    return snapshot.val() || {};
-}
-
-// ========== MESAJ İŞLEMLERİ ==========
-async function sendMessageToFirebase(channel, message) {
-    await db.messages.child(channel).push(message);
-}
-
-function listenMessages(channel, callback) {
-    db.messages.child(channel).limitToLast(50).on('child_added', (snapshot) => {
-        callback({ id: snapshot.key, ...snapshot.val() });
-    });
-}
-
-// ========== ÖZEL SOHBET İŞLEMLERİ ==========
-async function sendPrivateMessageToFirebase(chatId, message) {
-    await db.privateChats.child(chatId).push(message);
-}
-
-function listenPrivateMessages(chatId, callback) {
-    db.privateChats.child(chatId).limitToLast(50).on('child_added', (snapshot) => {
-        callback({ id: snapshot.key, ...snapshot.val() });
-    });
-}
-
-// ========== YASAKLI KELİMELER ==========
-async function getBannedWordsFromFirebase() {
-    const snapshot = await db.bannedWords.once('value');
-    return snapshot.val() || [];
-}
-
-async function saveBannedWordsToFirebase(words) {
-    await db.bannedWords.set(words);
-}
-
-// ========== ÖZEL KOMUTLAR ==========
-async function getCustomCommandsFromFirebase() {
-    const snapshot = await db.customCommands.once('value');
-    return snapshot.val() || [];
-}
-
-async function saveCustomCommandsToFirebase(commands) {
-    await db.customCommands.set(commands);
-}
-
-// ========== ENGELLENENLER ==========
-async function blockUserInFirebase(blockerId, targetId, targetName, hours, reason) {
-    const blockKey = `${blockerId}_${targetId}`;
-    await db.blocked.child(blockKey).set({
-        userId: targetId,
-        userName: targetName,
-        bannedUntil: Date.now() + (hours * 60 * 60 * 1000),
-        bannedBy: blockerId,
-        reason: reason,
-        timestamp: Date.now()
-    });
-}
-
-async function unblockUserInFirebase(blockerId, targetId) {
-    const blockKey = `${blockerId}_${targetId}`;
-    await db.blocked.child(blockKey).remove();
-}
-
-async function checkIfBlocked(userId, targetId) {
-    const blockKey = `${userId}_${targetId}`;
-    const reverseKey = `${targetId}_${userId}`;
+// ========== KANAL GÜNCELLE ==========
+async function updateChannel(channelName, channelData) {
+    if (!channelsRef || !isFirebaseConnected) return false;
     
-    const snap1 = await db.blocked.child(blockKey).once('value');
-    const snap2 = await db.blocked.child(reverseKey).once('value');
-    
-    return snap1.exists() || snap2.exists();
-}
-
-// ========== SÜPER GİZLİ KANALLAR ==========
-async function getSuperHiddenChannels() {
-    const snapshot = await db.superHidden.once('value');
-    return snapshot.val() || [];
-}
-
-async function addSuperHiddenChannel(channelName) {
-    const channels = await getSuperHiddenChannels();
-    if (!channels.includes(channelName)) {
-        channels.push(channelName);
-        await db.superHidden.set(channels);
+    try {
+        await channelsRef.child(channelName).set(channelData);
+        return true;
+    } catch (error) {
+        console.error("Kanal güncelleme hatası:", error);
+        return false;
     }
 }
 
-async function removeSuperHiddenChannel(channelName) {
-    let channels = await getSuperHiddenChannels();
-    channels = channels.filter(ch => ch !== channelName);
-    await db.superHidden.set(channels);
-}
-
-// ========== ÖZEL SOHBET TAKİP (OWNER) ==========
-async function setPrivateSpyChannel(channelName) {
-    await db.privateSpy.set({ channel: channelName, active: true, startedAt: Date.now() });
-}
-
-async function stopPrivateSpy() {
-    await db.privateSpy.set({ active: false });
-}
-
-async function getPrivateSpyStatus() {
-    const snapshot = await db.privateSpy.once('value');
-    return snapshot.val() || { active: false };
-}
-
-// ========== FIREBASE'DEN VERİLERİ ÇEK ==========
-async function loadAllFromFirebase() {
-    // Kullanıcıları yükle
-    const users = await getAllUsersFromFirebase();
-    localStorage.setItem('cetcety_users', JSON.stringify(users));
+// ========== BİLDİRİM GÖNDER ==========
+async function sendNotification(userId, notificationData) {
+    if (!notificationsRef || !isFirebaseConnected) return false;
     
-    // Kanalları yükle
-    const channels = await getAllChannelsFromFirebase();
-    localStorage.setItem('cetcety_channels', JSON.stringify(channels));
-    
-    // Yasaklı kelimeleri yükle
-    const banned = await getBannedWordsFromFirebase();
-    localStorage.setItem('cetcety_banned_words', JSON.stringify(banned));
-    
-    // Özel komutları yükle
-    const commands = await getCustomCommandsFromFirebase();
-    localStorage.setItem('cetcety_custom_commands', JSON.stringify(commands));
-    
-    return { users, channels, banned, commands };
+    try {
+        await notificationsRef.child(userId).push({
+            ...notificationData,
+            timestamp: firebase.database.ServerValue.TIMESTAMP,
+            read: false
+        });
+        return true;
+    } catch (error) {
+        console.error("Bildirim gönderme hatası:", error);
+        return false;
+    }
 }
 
-// ========== DIŞARI AKTAR ==========
-window.FirebaseDB = {
-    db,
-    storage,
-    saveUser: saveUserToFirebase,
-    getUser: getUserFromFirebase,
-    getAllUsers: getAllUsersFromFirebase,
-    updateUserOnline: updateUserOnlineStatus,
-    getChannel: getChannelFromFirebase,
-    saveChannel: saveChannelToFirebase,
-    getAllChannels: getAllChannelsFromFirebase,
-    sendMessage: sendMessageToFirebase,
-    listenMessages,
-    sendPrivate: sendPrivateMessageToFirebase,
-    listenPrivate: listenPrivateMessages,
-    getBannedWords: getBannedWordsFromFirebase,
-    saveBannedWords: saveBannedWordsToFirebase,
-    getCommands: getCustomCommandsFromFirebase,
-    saveCommands: saveCustomCommandsToFirebase,
-    blockUser: blockUserInFirebase,
-    unblockUser: unblockUserInFirebase,
-    checkBlocked: checkIfBlocked,
-    getSuperHidden: getSuperHiddenChannels,
-    addSuperHidden: addSuperHiddenChannel,
-    removeSuperHidden: removeSuperHiddenChannel,
-    setSpyChannel: setPrivateSpyChannel,
-    getSpyStatus: getPrivateSpyStatus,
-    stopSpy: stopPrivateSpy,
-    loadAll: loadAllFromFirebase
-};
+// ========== BİLDİRİM OKUNDU İŞARETLE ==========
+async function markNotificationAsRead(userId, notificationId) {
+    if (!notificationsRef || !isFirebaseConnected) return;
+    
+    try {
+        await notificationsRef.child(userId).child(notificationId).update({ read: true });
+    } catch (error) {
+        console.error("Bildirim güncelleme hatası:", error);
+    }
+}
 
-console.log('🔥 Firebase modülü yüklendi');
+// ========== MESAJ SİL ==========
+async function deleteMessage(messageId) {
+    if (!messagesRef || !isFirebaseConnected) return false;
+    
+    try {
+        await messagesRef.child(messageId).remove();
+        return true;
+    } catch (error) {
+        console.error("Mesaj silme hatası:", error);
+        return false;
+    }
+}
+
+// ========== ÖZEL MESAJ SİL ==========
+async function deletePrivateMessage(chatId, messageId) {
+    if (!privateChatsRef || !isFirebaseConnected) return false;
+    
+    try {
+        await privateChatsRef.child(chatId).child(messageId).remove();
+        return true;
+    } catch (error) {
+        console.error("Özel mesaj silme hatası:", error);
+        return false;
+    }
+}
