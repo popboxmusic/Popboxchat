@@ -1283,7 +1283,7 @@
 
         /* Medya Paneli (YouTube) - Masaüstünde büyütüldü */
         .media-panel {
-            width: 480px; /* 400px'den 480px'e çıkarıldı */
+            width: 480px;
             background: rgba(10, 10, 10, 0.95);
             backdrop-filter: blur(10px);
             border-left: 1px solid rgba(255, 255, 255, 0.1);
@@ -1792,6 +1792,46 @@
             pointer-events: none;
         }
 
+        /* Şikayet Modalı */
+        .report-reason-input {
+            width: 100%;
+            padding: 14px;
+            background: rgba(26, 26, 26, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+            margin-bottom: 16px;
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .report-reason-input:focus {
+            border-color: #ff0000;
+        }
+
+        .report-type-select {
+            width: 100%;
+            padding: 14px;
+            background: rgba(26, 26, 26, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+            margin-bottom: 16px;
+        }
+
+        /* Kaydırma ile kapatma göstergesi */
+        .swipe-indicator {
+            width: 40px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            margin: 8px auto;
+        }
+
         /* Mobil Düzenlemeler - GÜNCELLENDİ */
         @media (max-width: 768px) {
             /* Masaüstü ikon panelini gizle */
@@ -1815,19 +1855,27 @@
                 z-index: 1500;
                 transform: translateX(-100%);
                 box-shadow: 5px 0 30px rgba(0, 0, 0, 0.5);
+                transition: transform 0.3s ease;
+                overflow-y: auto;
             }
 
             .left-panel.active {
                 transform: translateX(0);
             }
 
-            /* Mobilde chat-container ve media-panel yeniden düzenlendi */
+            /* Mobilde kaydırma ile kapatma için */
+            .left-panel.dragging {
+                transition: none;
+            }
+
+            /* Mobilde chat-container ve media-panel yeniden düzenlendi - VIDEO %30, SOHBET %70 */
             .chat-container {
                 order: 2;
-                height: 45vh; /* 50%'den 45%'e düşürüldü */
-                min-height: 45vh;
+                height: 70vh;
+                min-height: 70vh;
                 display: flex;
                 flex-direction: column;
+                transition: height 0.3s ease;
             }
 
             .media-panel {
@@ -1835,21 +1883,31 @@
                 order: 1;
                 border-left: none;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-                height: 55vh; /* 50%'den 55%'e çıkarıldı - video daha büyük */
+                height: 30vh;
                 display: flex;
                 flex-direction: column;
+                transition: height 0.3s ease;
+                overflow: hidden;
+            }
+
+            .media-panel.collapsed {
+                height: 60px;
+            }
+
+            .media-panel.expanded {
+                height: 70vh;
             }
 
             .media-player {
                 height: auto;
-                max-height: 30vh;
+                max-height: 20vh;
                 aspect-ratio: 16/9;
             }
 
             .media-playlist-container {
                 flex: 1;
                 overflow-y: auto;
-                max-height: calc(55vh - 30vh - 90px); /* Dinamik hesaplama */
+                max-height: calc(30vh - 20vh - 90px);
             }
 
             .chat-header {
@@ -1906,7 +1964,7 @@
                 max-width: 85%;
             }
 
-            /* Özel sohbet paneli mobilde tam ekran ve optimize */
+            /* Özel sohbet paneli mobilde tam sayfa */
             .private-chat-panel {
                 position: fixed;
                 top: 0;
@@ -1916,6 +1974,7 @@
                 z-index: 1001;
                 display: none;
                 flex-direction: column;
+                background: rgba(10, 10, 10, 0.98);
             }
 
             .private-chat-panel.active {
@@ -1925,6 +1984,14 @@
             .private-chat-header {
                 padding: 12px 16px;
                 flex-shrink: 0;
+                position: relative;
+            }
+
+            .private-chat-header .swipe-indicator {
+                position: absolute;
+                top: 8px;
+                left: 50%;
+                transform: translateX(-50%);
             }
 
             .private-chat-avatar {
@@ -1968,6 +2035,17 @@
                 padding: 8px 16px;
                 font-size: 12px;
                 z-index: 1002;
+            }
+
+            /* Panel içerikleri kaydırılabilir */
+            .panel-content {
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .media-playlist-items {
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
             }
         }
 
@@ -2123,6 +2201,39 @@
         </div>
     </div>
 
+    <!-- Şikayet Modalı -->
+    <div id="reportModal" class="modal-overlay">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h3><i class="fas fa-flag"></i> Şikayet Et</h3>
+                <div class="modal-close" onclick="closeModal('reportModal')"><i class="fas fa-times"></i></div>
+            </div>
+            <div class="modal-content">
+                <div class="form-group">
+                    <label class="form-label">Şikayet Tipi</label>
+                    <select id="reportType" class="report-type-select">
+                        <option value="spam">Spam / Reklam</option>
+                        <option value="harassment">Taciz / Hakaret</option>
+                        <option value="inappropriate">Uygunsuz İçerik</option>
+                        <option value="violence">Şiddet / Nefret Söylemi</option>
+                        <option value="other">Diğer</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Şikayet Sebebi</label>
+                    <textarea id="reportReason" class="report-reason-input" placeholder="Detaylı açıklama..."></textarea>
+                </div>
+                <input type="hidden" id="reportTargetUser">
+                <input type="hidden" id="reportTargetChannel">
+                <input type="hidden" id="reportTargetMessage">
+            </div>
+            <div class="modal-footer">
+                <button class="form-button secondary" onclick="closeModal('reportModal')">İptal</button>
+                <button class="form-button" onclick="submitReport()">Şikayet Gönder</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobil Menü (Hamburger) -->
     <div id="mobileMenuOverlay" class="mobile-menu-overlay" onclick="closeMobileMenu()"></div>
     <div id="mobileMenuPanel" class="mobile-menu-panel">
@@ -2230,6 +2341,7 @@
                 <!-- Özel Sohbet Paneli -->
                 <div id="privateChatPanel" class="private-chat-panel">
                     <div class="private-chat-header">
+                        <div class="swipe-indicator" id="privateChatSwipeIndicator"></div>
                         <div class="private-chat-user">
                             <div class="private-chat-avatar" id="privateChatAvatar">?</div>
                             <div class="private-chat-info">
@@ -2239,7 +2351,7 @@
                         </div>
                         <div class="private-chat-actions">
                             <div class="private-chat-action" onclick="blockUser()" title="Engelle"><i class="fas fa-ban"></i></div>
-                            <div class="private-chat-action" onclick="reportUser()" title="Şikayet Et"><i class="fas fa-flag"></i></div>
+                            <div class="private-chat-action" onclick="openReportModal('user', currentPrivateChat?.name)" title="Şikayet Et"><i class="fas fa-flag"></i></div>
                             <div class="private-chat-action" onclick="closePrivateChat()" title="Kapat"><i class="fas fa-times"></i></div>
                         </div>
                     </div>
@@ -2283,7 +2395,7 @@
                             <div id="addYoutubeMenuItem" class="media-dropdown-item" onclick="openAddYoutubeModal(); closeMediaMenu();">
                                 <i class="fas fa-plus"></i> Video Ekle
                             </div>
-                            <div class="media-dropdown-item" onclick="reportMedia(); closeMediaMenu();">
+                            <div class="media-dropdown-item" onclick="openReportModal('media'); closeMediaMenu();">
                                 <i class="fas fa-flag"></i> Şikayet Et
                             </div>
                             <div id="hideYoutubeMenuItem" class="media-dropdown-item" onclick="toggleChannelHidden(); closeMediaMenu();">
@@ -2348,6 +2460,7 @@
         let messagesRef;
         let privateChatsRef;
         let channelsRef;
+        let reportsRef;
         let isFirebaseConnected = false;
         let connectionListeners = [];
         let onlineUsersData = {};
@@ -2406,6 +2519,7 @@
                             messagesRef = database.ref('messages');
                             privateChatsRef = database.ref('privateChats');
                             channelsRef = database.ref('channels');
+                            reportsRef = database.ref('reports');
                             
                             updateConnectionStatus('connected', 'Bağlı');
                             connectionListeners.forEach(listener => listener(true));
@@ -2659,6 +2773,45 @@
             }
         }
 
+        // Firebase'e şikayet gönder
+        async function sendReportToFirebase(reportData) {
+            if (!reportsRef || !isFirebaseConnected) return false;
+            
+            try {
+                await reportsRef.push({
+                    ...reportData,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP,
+                    status: 'pending'
+                });
+                
+                // Admin kanalına bildirim gönder
+                sendSystemMessageToAdmin(`🚨 YENİ ŞİKAYET\nTip: ${reportData.type}\nSebep: ${reportData.reason}\nŞikayet Eden: ${reportData.reporter}\nHedef: ${reportData.target}\nKanal: ${reportData.channel || 'Özel Sohbet'}`);
+                
+                return true;
+            } catch (error) {
+                console.error("Şikayet gönderme hatası:", error);
+                return false;
+            }
+        }
+
+        // Admin kanalına sistem mesajı gönder
+        async function sendSystemMessageToAdmin(message) {
+            if (!messagesRef || !isFirebaseConnected) return;
+            
+            try {
+                await messagesRef.push({
+                    sender: 'SİSTEM',
+                    senderId: 'system',
+                    text: message,
+                    channel: 'admin',
+                    isAdmin: true,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+            } catch (error) {
+                console.error("Admin mesajı gönderme hatası:", error);
+            }
+        }
+
         // Kullanıcı online durumu güncelle
         async function updateUserOnlineStatus(username, isOnline, channel = 'genel') {
             if (!usersRef || !isFirebaseConnected || !username) return;
@@ -2683,8 +2836,14 @@
                     // Sayfa kapanırken otomatik silinsin
                     usersRef.child(username).onDisconnect().remove();
                     
+                    // Admin kanalına giriş bildirimi
+                    if (channel !== 'admin') {
+                        sendSystemMessageToAdmin(`👤 ${username} giriş yaptı (Kanal: #${channel})`);
+                    }
+                    
                 } else {
                     await usersRef.child(username).remove();
+                    sendSystemMessageToAdmin(`👤 ${username} çıkış yaptı`);
                 }
             } catch (error) {
                 console.error("Kullanıcı durumu güncelleme hatası:", error);
@@ -2785,6 +2944,70 @@
             
             // Mobil menüyü güncelle
             updateMobileMenu();
+            
+            // Mobil kaydırma olaylarını başlat
+            initSwipeToClose();
+        }
+
+        // Mobilde kaydırma ile kapatma
+        function initSwipeToClose() {
+            if (window.innerWidth > 768) return;
+            
+            let startY = 0;
+            let currentY = 0;
+            let isDragging = false;
+            
+            const leftPanel = document.getElementById('leftPanel');
+            const privateChatPanel = document.getElementById('privateChatPanel');
+            
+            // Sol paneli kaydırma ile kapat
+            leftPanel.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1 && e.touches[0].clientX < 50) {
+                    startY = e.touches[0].clientY;
+                    isDragging = true;
+                    leftPanel.classList.add('dragging');
+                }
+            });
+            
+            leftPanel.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                currentY = e.touches[0].clientY;
+                const diff = currentY - startY;
+                
+                if (diff > 50) { // 50px yukarı kaydırınca kapat
+                    closeLeftPanel();
+                    isDragging = false;
+                    leftPanel.classList.remove('dragging');
+                }
+            });
+            
+            leftPanel.addEventListener('touchend', () => {
+                isDragging = false;
+                leftPanel.classList.remove('dragging');
+            });
+            
+            // Özel sohbet panelini kaydırma ile kapat
+            privateChatPanel.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1 && e.touches[0].clientY < 100) {
+                    startY = e.touches[0].clientY;
+                    isDragging = true;
+                }
+            });
+            
+            privateChatPanel.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                currentY = e.touches[0].clientY;
+                const diff = currentY - startY;
+                
+                if (diff > 50) { // 50px aşağı kaydırınca kapat
+                    closePrivateChat();
+                    isDragging = false;
+                }
+            });
+            
+            privateChatPanel.addEventListener('touchend', () => {
+                isDragging = false;
+            });
         }
 
         // Real-time dinleyicileri kur
@@ -2863,9 +3086,6 @@
             if (!PRIVATE_CHATS[chatId]) PRIVATE_CHATS[chatId] = [];
             PRIVATE_CHATS[chatId].push(message);
             
-            // Özel sohbetleri localStorage'a kaydetme - sadece oturum için
-            // localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
-            
             if (currentPrivateChat && currentPrivateChatId === chatId) {
                 loadPrivateMessages();
             } else if (message.senderId !== ACTIVE_USER?.id) {
@@ -2901,6 +3121,7 @@
                 saveChannelsToStorage();
             }
 
+            let oldChannel = currentChannel;
             currentChannel = ch;
             
             if (!channels[ch].onlineUsers) channels[ch].onlineUsers = [];
@@ -2914,6 +3135,11 @@
                 
                 if (messagesListener) messagesRef?.off('child_added', messagesListener);
                 messagesListener = listenToChannelMessages(currentChannel, handleNewMessage);
+                
+                // Admin kanalına kanal değişikliği bildirimi
+                if (ch !== 'admin') {
+                    sendSystemMessageToAdmin(`🔄 ${ACTIVE_USER.name} #${oldChannel} → #${ch} kanalına geçti`);
+                }
             }
 
             document.getElementById('currentChannelName').textContent = ch;
@@ -2998,7 +3224,12 @@
                 deleteBtn = `<div class="delete-message-btn" onclick="deleteMessage(this, '${msg.id}')"><i class="fas fa-trash"></i></div>`;
             }
             
-            msgDiv.innerHTML = `${deleteBtn}<div class="message-header" style="${isMe ? 'justify-content: flex-end;' : ''}">
+            let reportBtn = '';
+            if (!isMe) {
+                reportBtn = `<div class="delete-message-btn" style="left:-8px; right:auto; background:#ffaa00;" onclick="openReportModal('message', '${msg.sender}', '${msg.text}')"><i class="fas fa-flag"></i></div>`;
+            }
+            
+            msgDiv.innerHTML = `${deleteBtn}${reportBtn}<div class="message-header" style="${isMe ? 'justify-content: flex-end;' : ''}">
                 <span class="message-time">${msg.time || ''}</span>
                 <span class="message-sender" onclick="openPrivateChat('${msg.sender}')" style="cursor:pointer;">${escapeHTML(msg.sender) || ''}</span>
             </div>
@@ -3034,6 +3265,7 @@
                         
                         if (foundKey) {
                             await messagesRef.child(foundKey).remove();
+                            sendSystemMessageToAdmin(`🗑️ ${ACTIVE_USER.name} bir mesaj sildi: ${element.closest('.message').querySelector('.message-text').textContent}`);
                         }
                     } catch (error) {
                         console.error('Mesaj silme hatası:', error);
@@ -3075,8 +3307,6 @@
             if (!success) {
                 if (!PRIVATE_CHATS[chatId]) PRIVATE_CHATS[chatId] = [];
                 PRIVATE_CHATS[chatId].push(messageData);
-                // localStorage'a kaydetme - sadece oturum için
-                // localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
             }
             
             if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE) {
@@ -3169,13 +3399,14 @@
                 let isMe = msg.senderId === ACTIVE_USER.id || msg.senderName === ACTIVE_USER.name;
                 let time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
                 let deleteBtn = isMe ? `<div class="delete-msg" onclick="deletePrivateMessage(${index})"><i class="fas fa-trash"></i></div>` : '';
+                let reportBtn = !isMe ? `<div class="delete-msg" style="left:-8px; right:auto; background:#ffaa00;" onclick="openReportModal('private', '${msg.senderName}', '${msg.content}')"><i class="fas fa-flag"></i></div>` : '';
                 
                 if (msg.type === 'text' || !msg.type) {
-                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName || msg.sender)}</span></div><div class="private-message-text">${escapeHTML(msg.content || msg.text)}</div></div>`;
+                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}${reportBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName || msg.sender)}</span></div><div class="private-message-text">${escapeHTML(msg.content || msg.text)}</div></div>`;
                 } else if (msg.type === 'image') {
-                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName)}</span></div><div class="private-message-media"><img src="${escapeHTML(msg.content)}" onclick="window.open(this.src)"></div></div>`;
+                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}${reportBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName)}</span></div><div class="private-message-media"><img src="${escapeHTML(msg.content)}" onclick="window.open(this.src)"></div></div>`;
                 } else if (msg.type === 'video') {
-                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName)}</span></div><div class="private-message-media"><video controls src="${escapeHTML(msg.content)}"></video></div></div>`;
+                    html += `<div class="private-message ${isMe ? 'right' : ''}" style="position:relative;">${deleteBtn}${reportBtn}<div class="private-message-header" style="${isMe ? 'justify-content:flex-end;' : ''}"><span class="private-message-time">${time}</span><span class="private-message-sender" onclick="openPrivateChat('${msg.senderName}')">${escapeHTML(msg.senderName)}</span></div><div class="private-message-media"><video controls src="${escapeHTML(msg.content)}"></video></div></div>`;
                 }
             });
             
@@ -3188,8 +3419,6 @@
             if (!currentPrivateChatId) return;
             if (PRIVATE_CHATS[currentPrivateChatId]) {
                 PRIVATE_CHATS[currentPrivateChatId].splice(index, 1);
-                // localStorage'a kaydetme - sadece oturum için
-                // localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
                 loadPrivateMessages();
                 updateUnreadBadge();
             }
@@ -3198,13 +3427,56 @@
         // Tüm özel sohbetleri temizle (çıkışta)
         function clearAllPrivateChats() {
             PRIVATE_CHATS = {};
-            // localStorage'dan da temizle
             localStorage.removeItem('cetcety_private_chats');
         }
 
         // Chat ID oluştur
         function generateChatId(user1, user2) {
             return [user1, user2].sort().join('_');
+        }
+
+        // Şikayet modalını aç
+        function openReportModal(type, target, message = '') {
+            document.getElementById('reportTargetUser').value = target || '';
+            document.getElementById('reportTargetChannel').value = currentChannel || '';
+            document.getElementById('reportTargetMessage').value = message || '';
+            document.getElementById('reportReason').value = '';
+            document.getElementById('reportType').value = 'spam';
+            openModal('reportModal');
+        }
+
+        // Şikayet gönder
+        async function submitReport() {
+            let type = document.getElementById('reportType').value;
+            let reason = document.getElementById('reportReason').value.trim();
+            let target = document.getElementById('reportTargetUser').value;
+            let channel = document.getElementById('reportTargetChannel').value;
+            let message = document.getElementById('reportTargetMessage').value;
+            
+            if (!reason) {
+                alert('Lütfen şikayet sebebini yazın!');
+                return;
+            }
+            
+            let reportData = {
+                type: type,
+                reason: reason,
+                target: target || 'Bilinmiyor',
+                channel: channel,
+                message: message,
+                reporter: ACTIVE_USER.name,
+                reporterId: ACTIVE_USER.id,
+                status: 'pending'
+            };
+            
+            const success = await sendReportToFirebase(reportData);
+            
+            if (success) {
+                addSystemMessage('✅ Şikayetiniz iletildi. Teşekkürler!');
+                closeModal('reportModal');
+            } else {
+                addSystemMessage('❌ Şikayet gönderilemedi. Lütfen tekrar deneyin.');
+            }
         }
 
         // Varsayılan kanalları oluştur - DESTEK KANALI EKLENDİ
@@ -3726,6 +3998,7 @@
                 return;
             }
             addSystemMessage(`✅ Destek talebiniz alındı.`);
+            sendSystemMessageToAdmin(`📞 Destek Talebi - ${ACTIVE_USER.name}: ${message}`);
             loadLeftPanel('notifications');
         }
 
@@ -3955,6 +4228,7 @@
             
             playYoutubeVideo(nextVideo.id, nextVideo.title, nextVideo.addedBy, nextVideo.role);
             addSystemMessage(`⏭️ Sıradaki video: ${nextVideo.title}`);
+            sendSystemMessageToAdmin(`⏭️ ${currentChannel} kanalında sıradaki video: ${nextVideo.title} (Ekleyen: ${nextVideo.addedBy})`);
         }
 
         function playYoutubeVideo(vid, title, by, role) {
@@ -3993,6 +4267,7 @@
             
             updateYoutubePlaylist();
             addSystemMessage(`🎬 ${by} yeni video oynatıyor: ${title}`);
+            sendSystemMessageToAdmin(`🎬 ${currentChannel} kanalında yeni video: ${title} (Oynatan: ${by})`);
         }
 
         function updateMediaDisplay() {
@@ -4047,7 +4322,7 @@
                     </div>
                     <div class="media-playlist-actions">
                         ${canDel ? `<div class="media-playlist-action" onclick="event.stopPropagation(); removeYoutubeFromPlaylist(${i})"><i class="fas fa-trash"></i></div>` : ''}
-                        <div class="media-playlist-action media-report-btn" onclick="event.stopPropagation(); reportVideo('${item.id}')"><i class="fas fa-flag"></i></div>
+                        <div class="media-playlist-action media-report-btn" onclick="event.stopPropagation(); openReportModal('video', '${item.title}', 'Video ID: ${item.id}')"><i class="fas fa-flag"></i></div>
                     </div>
                 </div>`;
             });
@@ -4145,6 +4420,7 @@
             
             closeModal('youtubeModal');
             addSystemMessage(`✅ "${title}" eklendi!`);
+            sendSystemMessageToAdmin(`📹 ${ACTIVE_USER.name}, ${currentChannel} kanalına video ekledi: ${title}`);
         }
 
         function removeYoutubeFromPlaylist(i) {
@@ -4163,23 +4439,16 @@
             
             updateYoutubePlaylist();
             addSystemMessage(`🗑️ "${rem.title}" kaldırıldı.`);
+            sendSystemMessageToAdmin(`🗑️ ${ACTIVE_USER.name}, ${currentChannel} kanalından video sildi: ${rem.title}`);
         }
 
         function reportVideo(videoId) {
-            let reason = prompt('Bu videoyu neden şikayet ediyorsunuz?', '');
-            if (reason) {
-                let msg = `🚩 ${ACTIVE_USER.name}, bir videoyu şikayet etti. Video ID: ${videoId}, Sebep: ${reason}`;
-                addSystemMessage(msg);
-            }
+            openReportModal('video', 'Video', `Video ID: ${videoId}`);
             closeMediaMenu();
         }
 
         function reportMedia() {
-            let reason = prompt('Bu medyayı neden şikayet ediyorsunuz?', '');
-            if (reason) {
-                let msg = `🚩 ${ACTIVE_USER.name}, #${currentChannel} kanalındaki medyayı şikayet etti. Sebep: ${reason}`;
-                addSystemMessage(msg);
-            }
+            openReportModal('media', currentChannel, 'Medya şikayeti');
             closeMediaMenu();
         }
 
@@ -4203,6 +4472,7 @@
                 updateRoleControls();
                 
                 addSystemMessage(`👁️ #${currentChannel} ${c.isHidden ? 'gizlendi' : 'gösteriliyor'}.`);
+                sendSystemMessageToAdmin(`👁️ ${ACTIVE_USER.name}, #${currentChannel} kanalını ${c.isHidden ? 'gizledi' : 'gösterime açtı'}`);
                 updatePopularChannels();
             } else {
                 addSystemMessage('❌ Yetkiniz yok!');
@@ -4232,8 +4502,6 @@
 
                 if (!PRIVATE_CHATS[currentPrivateChatId]) PRIVATE_CHATS[currentPrivateChatId] = [];
                 PRIVATE_CHATS[currentPrivateChatId].push(messageData);
-                // localStorage'a kaydetme - sadece oturum için
-                // localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
 
                 if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE) {
                     logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Resim gönderdi', 'image', e.target.result);
@@ -4266,8 +4534,6 @@
 
                 if (!PRIVATE_CHATS[currentPrivateChatId]) PRIVATE_CHATS[currentPrivateChatId] = [];
                 PRIVATE_CHATS[currentPrivateChatId].push(messageData);
-                // localStorage'a kaydetme - sadece oturum için
-                // localStorage.setItem('cetcety_private_chats', JSON.stringify(PRIVATE_CHATS));
 
                 if (ACTIVE_USER.role === 'owner' && PRIVATE_SPY_ACTIVE) {
                     logPrivateMessageForOwner(ACTIVE_USER.name, currentPrivateChat.name, 'Video gönderdi', 'video', e.target.result);
@@ -4284,14 +4550,12 @@
             BLOCKED_USERS[blockKey] = { userId: currentPrivateChat.id, userName: currentPrivateChat.name, expiry: Date.now() + 24 * 60 * 60 * 1000, blockedBy: ACTIVE_USER.id };
             localStorage.setItem('cetcety_blocks', JSON.stringify(BLOCKED_USERS));
             addSystemMessage(`🚫 ${currentPrivateChat.name} 24 saatliğine engellendi.`);
+            sendSystemMessageToAdmin(`🚫 ${ACTIVE_USER.name}, ${currentPrivateChat.name} kullanıcısını engelledi`);
             closePrivateChat();
         }
 
         function reportUser() {
-            if (currentPrivateChat) {
-                let msg = `⚠️ ${currentPrivateChat.name} kullanıcısı şikayet edildi. Şikayet eden: ${ACTIVE_USER.name}`;
-                addSystemMessage(msg);
-            }
+            openReportModal('user', currentPrivateChat?.name);
         }
 
         function switchPrivateTab(tab) {
@@ -4317,6 +4581,7 @@
                 
                 localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
                 addSystemMessage(`✅ #${ch} abone olundu!`);
+                sendSystemMessageToAdmin(`✅ ${ACTIVE_USER.name}, #${ch} kanalına abone oldu`);
                 updateAllBadges();
                 updatePopularChannels();
             }
@@ -4335,6 +4600,7 @@
                 
                 localStorage.setItem('cetcety_active_user', JSON.stringify(ACTIVE_USER));
                 addSystemMessage(`❌ #${ch} abonelikten çıkıldı.`);
+                sendSystemMessageToAdmin(`❌ ${ACTIVE_USER.name}, #${ch} aboneliğinden çıktı`);
                 updateAllBadges();
                 updatePopularChannels();
             }
@@ -4410,6 +4676,7 @@
             
             updateAllBadges();
             addSystemMessage(`✅ #${name} kanalı oluşturuldu!`);
+            sendSystemMessageToAdmin(`✅ ${ACTIVE_USER.name} yeni kanal açtı: #${name}`);
             joinChannel(name);
             loadLeftPanel('channels');
         }
@@ -4432,6 +4699,7 @@
                 if (index !== -1) USERS_DB[index] = ACTIVE_USER;
                 localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
                 addSystemMessage('🗑️ Kanalınız silindi.');
+                sendSystemMessageToAdmin(`🗑️ ${ACTIVE_USER.name} kanalını sildi: #${channelName}`);
                 updateAllBadges();
                 joinChannel('genel');
                 loadLeftPanel('profile');
@@ -4456,8 +4724,30 @@
                 return false;
             }
             
-            // Kullanıcıyı bul
-            const user = USERS_DB.find(u => u.name === nick);
+            // Kullanıcıyı USERS_DB'de ara
+            let user = USERS_DB.find(u => u.name.toLowerCase() === nick.toLowerCase());
+            
+            // Eğer USERS_DB'de yoksa, online kullanıcılarda ara
+            if (!user && onlineUsersData && onlineUsersData[nick]) {
+                // Geçici kullanıcı oluştur
+                user = {
+                    id: Date.now() + Math.random(),
+                    name: nick,
+                    role: 'user',
+                    roleLevel: 1,
+                    subscribedChannels: ['genel'],
+                    myChannel: null,
+                    joinDate: new Date().toISOString(),
+                    avatar: nick.charAt(0).toUpperCase(),
+                    avatarData: null,
+                    password: '',
+                    privateMode: 'all',
+                    blockedNicks: []
+                };
+                USERS_DB.push(user);
+                localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+            }
+            
             if (!user) {
                 addSystemMessage(`❌ ${nick} kullanıcısı bulunamadı!`);
                 return false;
@@ -4472,6 +4762,13 @@
             if (channelName === 'admin') {
                 user.role = 'admin';
                 user.roleLevel = 4;
+                addSystemMessage(`✅ ${nick} kullanıcısı admin yapıldı!`);
+                sendSystemMessageToAdmin(`👑 ${ACTIVE_USER.name}, ${nick} kullanıcısını admin yaptı`);
+            } else if (channelName === 'destek') {
+                user.role = 'coadmin';
+                user.roleLevel = 3;
+                addSystemMessage(`✅ ${nick} kullanıcısı destek ekibine eklendi!`);
+                sendSystemMessageToAdmin(`📞 ${ACTIVE_USER.name}, ${nick} kullanıcısını destek ekibine ekledi`);
             }
             
             // Kullanıcıyı güncelle
@@ -4479,6 +4776,13 @@
             if (index !== -1) {
                 USERS_DB[index] = user;
                 localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
+            }
+            
+            // Eğer kullanıcı aktifse, online durumunu güncelle
+            if (onlineUsersData && onlineUsersData[nick] && isFirebaseConnected && usersRef) {
+                usersRef.child(nick).update({
+                    role: user.role
+                });
             }
             
             addSystemMessage(`✅ ${nick} kullanıcısı #${channelName} kanalına eklendi ve yetkilendirildi!`);
@@ -4499,6 +4803,7 @@
                 let helpText = "📋 **KOMUTLAR**\n\n" +
                     "/help - Yardım\n" +
                     "/join #kanal - Kanala katıl\n" +
+                    "/join nick #kanal - Kullanıcıyı kanala ekle (Admin/Owner)\n" +
                     "/part - Kanaldan ayrıl\n" +
                     "/msg kullanıcı mesaj - Özel mesaj\n" +
                     "/users - Çevrimiçi kullanıcılar\n" +
@@ -4613,6 +4918,7 @@
                 ch.onlineUsers = ch.onlineUsers.filter(u => u !== target);
                 saveChannelsToStorage();
                 addSystemMessage(`👢 ${target} kanaldan atıldı.`);
+                sendSystemMessageToAdmin(`👢 ${ACTIVE_USER.name}, ${target} kullanıcısını #${currentChannel} kanalından attı`);
             }
 
             else if (main === 'gizle') {
@@ -4654,12 +4960,14 @@
                     if (userIndex !== -1) USERS_DB[userIndex] = user;
                     localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
                     addSystemMessage(`✅ ${target} admin yapıldı!`);
+                    sendSystemMessageToAdmin(`👑 ${ACTIVE_USER.name}, ${target} kullanıcısını admin yaptı`);
                 }
 
                 else if (main === 'globalmsg') {
                     let msg = parts.slice(1).join(' ');
                     if (!msg) { addSystemMessage('Kullanım: /globalmsg mesaj'); return; }
                     addSystemMessage(`🌍 GLOBAL DUYURU: ${msg}`);
+                    sendSystemMessageToAdmin(`🌍 GLOBAL DUYURU: ${msg}`);
                 }
 
                 else {
@@ -4721,6 +5029,7 @@
             }
             
             addSystemMessage(`🔒 Süper gizli #${channelName} kanalı oluşturuldu! Sadece owner görebilir.`);
+            sendSystemMessageToAdmin(`🔒 ${ACTIVE_USER.name} süper gizli kanal oluşturdu: #${channelName}`);
             
             setTimeout(() => {
                 joinChannel(channelName);
@@ -4748,6 +5057,7 @@
             localStorage.setItem('cetcety_super_hidden', JSON.stringify(SUPER_HIDDEN_CHANNELS));
             
             addSystemMessage(`🗑️ #${channelName} kanalı silindi.`);
+            sendSystemMessageToAdmin(`🗑️ ${ACTIVE_USER.name} süper gizli kanalı sildi: #${channelName}`);
             
             if (currentChannel === channelName) {
                 joinChannel('genel');
@@ -4784,6 +5094,7 @@
             openModal('privateSpyModal');
             
             addSystemMessage(`👁️ #${channelName} kanalında özel sohbet takibi başlatıldı.`);
+            sendSystemMessageToAdmin(`👁️ ${ACTIVE_USER.name}, #${channelName} kanalında özel sohbet takibi başlattı`);
         }
 
         function stopPrivateSpy() {
@@ -4797,6 +5108,7 @@
             
             closeModal('privateSpyModal');
             addSystemMessage('👁️ Özel sohbet takibi durduruldu.');
+            sendSystemMessageToAdmin(`👁️ ${ACTIVE_USER.name} özel sohbet takibini durdurdu`);
         }
 
         function logPrivateMessageForOwner(sender, receiver, message, type, content) {
@@ -4886,6 +5198,7 @@
                     }
                     
                     addSystemMessage('✅ Profil resmi güncellendi.');
+                    sendSystemMessageToAdmin(`🖼️ ${ACTIVE_USER.name} profil resmini güncelledi`);
                 };
                 reader.readAsDataURL(fileInput.files[0]);
             } else {
@@ -4911,6 +5224,7 @@
             updateUIForUser();
             loadLeftPanel('profile');
             addSystemMessage(`✅ Kullanıcı adı değiştirildi: ${newNick}`);
+            sendSystemMessageToAdmin(`✏️ ${ACTIVE_USER.name} kullanıcı adını değiştirdi: ${newNick}`);
         }
 
         function changePassword() {
@@ -4949,6 +5263,7 @@
                 if (index !== -1) USERS_DB[index] = ACTIVE_USER;
                 localStorage.setItem('cetcety_users', JSON.stringify(USERS_DB));
                 addSystemMessage(`🚫 ${nick} engellendi.`);
+                sendSystemMessageToAdmin(`🚫 ${ACTIVE_USER.name}, ${nick} kullanıcısını engelledi`);
                 loadLeftPanel('profile');
             }
         }
@@ -4990,12 +5305,12 @@
                 
                 if (currentPrivateChatId && PRIVATE_CHATS[currentPrivateChatId]) {
                     delete PRIVATE_CHATS[currentPrivateChatId];
-                    // localStorage'dan da temizle
                     localStorage.removeItem('cetcety_private_chats');
                 }
                 
                 if (isFirebaseConnected && usersRef) {
                     await usersRef.child(ACTIVE_USER.name).remove();
+                    sendSystemMessageToAdmin(`👤 ${ACTIVE_USER.name} çıkış yaptı`);
                 }
                 
                 if (channels[currentChannel] && channels[currentChannel].onlineUsers) {
@@ -5056,6 +5371,7 @@
             closeModal('privateSpyModal');
             closeModal('kvkkModal');
             closeModal('termsModal');
+            closeModal('reportModal');
             closeLeftPanel();
             closeMobileMenu();
             closeMediaMenu();
