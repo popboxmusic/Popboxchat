@@ -1549,7 +1549,7 @@
             .chat-container {
                 width: 100%;
                 height: 70vh !important;
-                flex: 1;
+                flex: 4;
                 min-height: 0;
                 border-left: none;
                 border-top: 1px solid var(--border-color);
@@ -2186,8 +2186,7 @@
         <source src="https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3" type="audio/mpeg">
     </audio>
 
-  
-        <script>
+    <script>
         // ========== GÜVENLİK KONFİGÜRASYONU ==========
         const SECURE_CONFIG = {
             DEFAULT_ADMINS: ['popbox', 'popboxmusic'],
@@ -4223,95 +4222,31 @@
             }
         }
         
-        // ========== OWNER ÖZEL MESAJ İZLEME SİSTEMİ - GÜNCELLENMİŞ ==========
+        // ========== OWNER ÖZEL MESAJ İZLEME SİSTEMİ (ANLIK) ==========
         function startOwnerPrivateMessageMonitoring() {
             if (!privateChatsRef || !isOwner) return;
             
             console.log("🤴 Owner özel mesaj izleme başlatılıyor...");
             
-            // Önce tüm mevcut özel sohbetleri yükle
-            privateChatsRef.once('value', (snapshot) => {
-                const allChats = snapshot.val() || {};
-                console.log("📁 Tüm özel sohbetler yükleniyor:", Object.keys(allChats).length);
-                
-                Object.keys(allChats).forEach(chatId => {
-                    if (chatId && chatId.includes('_')) {
-                        const users = chatId.replace('chat_', '').split('_');
-                        
-                        if (users.length === 2) {
-                            const [user1, user2] = users;
-                            
-                            // Owner'ın kendi sohbetleri hariç
-                            if (user1 !== currentUser?.name && user2 !== currentUser?.name) {
-                                if (!activePrivateChatListeners[chatId]) {
-                                    console.log(`👀 İzleniyor: ${user1} ↔ ${user2}`);
-                                    activePrivateChatListeners[chatId] = true;
-                                    
-                                    // Mevcut mesajları yükle
-                                    const messages = allChats[chatId];
-                                    if (messages) {
-                                        Object.entries(messages).forEach(([msgId, message]) => {
-                                            if (message && !message.isNotification) {
-                                                storeOwnerPrivateMessage(chatId, user1, user2, message, msgId);
-                                            }
-                                        });
-                                    }
-                                    
-                                    // Yeni mesajları dinle
-                                    privateChatsRef.child(chatId).on('child_added', (msgSnapshot) => {
-                                        const message = msgSnapshot.val();
-                                        const msgId = msgSnapshot.key;
-                                        
-                                        if (message && !message.isNotification) {
-                                            console.log(`📩 Yeni özel mesaj: ${user1} ↔ ${user2} - ${message.sender}: ${message.text?.substring(0, 30)}`);
-                                            storeOwnerPrivateMessage(chatId, user1, user2, message, msgId);
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                    }
-                });
-                
-                console.log("✅ Özel mesaj izleme tamamlandı, toplam izlenen sohbet:", Object.keys(activePrivateChatListeners).length);
-                addSystemMessage(`🤴 ${Object.keys(activePrivateChatListeners).length} özel sohbet izleniyor.`);
-            });
-            
-            // Yeni oluşturulan özel sohbetleri dinle
             privateChatsRef.on('child_added', (snapshot) => {
                 const chatId = snapshot.key;
-                
-                // Daha önce dinlenmeye başlanmamışsa
-                if (!activePrivateChatListeners[chatId] && chatId && chatId.includes('_')) {
+                if (chatId && chatId.includes('_')) {
                     const users = chatId.replace('chat_', '').split('_');
                     
                     if (users.length === 2) {
                         const [user1, user2] = users;
                         
-                        // Owner'ın kendi sohbeti değilse
-                        if (user1 !== currentUser?.name && user2 !== currentUser?.name) {
-                            console.log(`👀 Yeni özel sohbet izleniyor: ${user1} ↔ ${user2}`);
-                            activePrivateChatListeners[chatId] = true;
-                            
-                            // İlk mesajları yükle
-                            const messages = snapshot.val();
-                            if (messages) {
-                                Object.entries(messages).forEach(([msgId, message]) => {
+                        if (user1 !== currentUser.name && user2 !== currentUser.name) {
+                            if (!activePrivateChatListeners[chatId]) {
+                                activePrivateChatListeners[chatId] = true;
+                                
+                                privateChatsRef.child(chatId).on('child_added', (msgSnapshot) => {
+                                    const message = msgSnapshot.val();
                                     if (message && !message.isNotification) {
-                                        storeOwnerPrivateMessage(chatId, user1, user2, message, msgId);
+                                        storeOwnerPrivateMessage(chatId, user1, user2, message, msgSnapshot.key);
                                     }
                                 });
                             }
-                            
-                            // Yeni mesajları dinle
-                            privateChatsRef.child(chatId).on('child_added', (msgSnapshot) => {
-                                const message = msgSnapshot.val();
-                                const msgId = msgSnapshot.key;
-                                
-                                if (message && !message.isNotification) {
-                                    storeOwnerPrivateMessage(chatId, user1, user2, message, msgId);
-                                }
-                            });
                         }
                     }
                 }
@@ -4441,24 +4376,15 @@
         function openOwnerPrivateMessages(user1, user2) {
             if (!isOwner) return;
             
-            const key1 = `${user1}_${user2}`;
-            const key2 = `${user2}_${user1}`;
-            
-            // Her iki sıralamayı da dene
-            const messages = ownerPrivateMessages[key1] || ownerPrivateMessages[key2] || [];
+            const key = `${user1}_${user2}`;
+            const messages = ownerPrivateMessages[key] || [];
             
             document.getElementById('ownerPrivateModal').style.display = 'flex';
-            document.getElementById('ownerPrivateModal').setAttribute('data-view', key1);
+            document.getElementById('ownerPrivateModal').setAttribute('data-view', key);
             document.getElementById('overlay').style.display = 'block';
             
             const container = document.getElementById('ownerPrivateMessages');
             container.innerHTML = '';
-            
-            // Modal başlığını güncelle
-            const header = document.querySelector('.owner-private-header div');
-            if (header) {
-                header.textContent = `🤴 ${user1} ↔ ${user2} Özel Sohbet İzleme`;
-            }
             
             if (messages.length === 0) {
                 container.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:20px;">Henüz mesaj yok.</div>';
@@ -4489,41 +4415,22 @@
             let chatList = "👁️ <strong>TÜM ÖZEL SOHBETLER:</strong><br><br>";
             let chatCount = 0;
             
-            // ownerPrivateMessages objesindeki tüm sohbetleri listele
             Object.entries(ownerPrivateMessages).forEach(([key, messages]) => {
-                if (messages && messages.length > 0) {
+                if (messages.length > 0) {
                     chatCount++;
-                    
-                    // Anahtarı parse et (chat_user1_user2 formatında olabilir)
-                    let user1, user2;
-                    
-                    if (key.startsWith('chat_')) {
-                        const users = key.replace('chat_', '').split('_');
-                        user1 = users[0];
-                        user2 = users[1];
-                    } else {
-                        const users = key.split('_');
-                        user1 = users[0];
-                        user2 = users[1];
-                    }
-                    
+                    const [user1, user2] = key.split('_');
                     const lastMessage = messages[messages.length - 1];
                     let lastMsgText = lastMessage.text;
                     if (lastMessage.image) {
                         lastMsgText = '📸 Resim';
                     }
                     
-                    const time = lastMessage.time || new Date(lastMessage.timestamp).toLocaleTimeString('tr-TR', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
-                    
                     chatList += `
                         <div style="margin-bottom: 10px; padding: 8px; background: var(--message-owner-bg); border-radius: 8px; cursor: pointer;" 
                              onclick="openOwnerPrivateMessages('${user1}', '${user2}')">
                             <strong>${user1} ↔ ${user2}</strong><br>
                             <small>Son mesaj: ${lastMessage.sender}: ${lastMsgText.length > 30 ? lastMsgText.substring(0, 30) + '...' : lastMsgText}</small><br>
-                            <small style="color: var(--text-secondary);">${time} (${messages.length} mesaj)</small>
+                            <small style="color: var(--text-secondary);">${lastMessage.time} (${messages.length} mesaj)</small>
                         </div>
                     `;
                 }
@@ -4531,40 +4438,8 @@
             
             if (chatCount === 0) {
                 chatList += "Henüz özel mesaj yok.";
-                
-                // Firebase'den doğrudan kontrol et
-                privateChatsRef.once('value', (snapshot) => {
-                    const chats = snapshot.val() || {};
-                    const chatKeys = Object.keys(chats);
-                    
-                    if (chatKeys.length > 0) {
-                        addSystemMessage(`⚠️ Firebase'de ${chatKeys.length} özel sohbet bulundu ama henüz yüklenmedi. Sayfayı yenileyin veya bekleyin.`);
-                        
-                        // Otomatik yüklemeyi dene
-                        chatKeys.forEach(chatId => {
-                            if (!activePrivateChatListeners[chatId] && chatId.includes('_')) {
-                                const users = chatId.replace('chat_', '').split('_');
-                                if (users.length === 2) {
-                                    const [u1, u2] = users;
-                                    if (u1 !== currentUser?.name && u2 !== currentUser?.name) {
-                                        activePrivateChatListeners[chatId] = true;
-                                        
-                                        privateChatsRef.child(chatId).once('value', (msgSnapshot) => {
-                                            const messages = msgSnapshot.val() || {};
-                                            Object.entries(messages).forEach(([msgId, message]) => {
-                                                if (message && !message.isNotification) {
-                                                    storeOwnerPrivateMessage(chatId, u1, u2, message, msgId);
-                                                }
-                                            });
-                                        });
-                                    }
-                                }
-                            }
-                        });
-                    }
-                });
             } else {
-                chatList += `<br><br><em>Toplam ${chatCount} özel sohbet</em>`;
+                chatList += `<br><em>Toplam ${chatCount} özel sohbet</em>`;
             }
             
             addSystemMessage(chatList);
@@ -4607,114 +4482,6 @@
             });
             
             addSystemMessage(resultList);
-        }
-        
-        // ========== HIZLI ÖZEL MESAJ YÜKLEME SİSTEMİ ==========
-        async function quickLoadPrivateChats() {
-            if (!isOwner) return;
-            
-            console.log("⚡ Hızlı özel mesaj yükleme başlatılıyor...");
-            
-            try {
-                const snapshot = await privateChatsRef.once('value');
-                const allChats = snapshot.val() || {};
-                
-                let loadedCount = 0;
-                let messageCount = 0;
-                
-                // Tüm sohbetleri anlık yükle
-                Object.entries(allChats).forEach(([chatId, messages]) => {
-                    if (chatId && chatId.includes('_') && messages) {
-                        const users = chatId.replace('chat_', '').split('_');
-                        
-                        if (users.length === 2) {
-                            const [user1, user2] = users;
-                            
-                            // Owner'ın kendi sohbetleri hariç
-                            if (user1 !== currentUser?.name && user2 !== currentUser?.name) {
-                                loadedCount++;
-                                
-                                // Sohbeti aktif dinlemeye ekle
-                                if (!activePrivateChatListeners[chatId]) {
-                                    activePrivateChatListeners[chatId] = true;
-                                    
-                                    // Yeni mesajları dinle
-                                    privateChatsRef.child(chatId).on('child_added', (msgSnapshot) => {
-                                        const message = msgSnapshot.val();
-                                        const msgId = msgSnapshot.key;
-                                        if (message && !message.isNotification) {
-                                            storeOwnerPrivateMessage(chatId, user1, user2, message, msgId);
-                                        }
-                                    });
-                                }
-                                
-                                // Mevcut mesajları yükle
-                                Object.entries(messages).forEach(([msgId, message]) => {
-                                    if (message && !message.isNotification) {
-                                        storeOwnerPrivateMessage(chatId, user1, user2, message, msgId);
-                                        messageCount++;
-                                    }
-                                });
-                            }
-                        }
-                    }
-                });
-                
-                console.log(`✅ ${loadedCount} sohbet, ${messageCount} mesaj yüklendi!`);
-                
-                // Şimdi tekrar göster
-                setTimeout(() => {
-                    showAllPrivateChats();
-                }, 500);
-                
-                return { loadedCount, messageCount };
-                
-            } catch (error) {
-                console.error("Hızlı yükleme hatası:", error);
-                return null;
-            }
-        }
-        
-        // ========== CANLI YÜKLEME BAŞLAT ==========
-        function startLivePrivateChatMonitoring() {
-            if (!isOwner || !privateChatsRef) return;
-            
-            console.log("🔴 Canlı özel mesaj izleme başlatılıyor...");
-            
-            // Tüm mevcut sohbetleri dinlemeye başla
-            privateChatsRef.on('value', (snapshot) => {
-                const allChats = snapshot.val() || {};
-                console.log("🔄 Özel sohbetler güncellendi:", Object.keys(allChats).length);
-                
-                // Her sohbet için dinleyici ekle
-                Object.keys(allChats).forEach(chatId => {
-                    if (chatId && chatId.includes('_')) {
-                        const users = chatId.replace('chat_', '').split('_');
-                        
-                        if (users.length === 2) {
-                            const [user1, user2] = users;
-                            
-                            if (user1 !== currentUser?.name && user2 !== currentUser?.name) {
-                                if (!activePrivateChatListeners[chatId]) {
-                                    console.log(`👀 Yeni sohbet izleniyor: ${user1} ↔ ${user2}`);
-                                    activePrivateChatListeners[chatId] = true;
-                                    
-                                    // Bu sohbet için tüm mesajları dinle
-                                    privateChatsRef.child(chatId).on('child_added', (msgSnapshot) => {
-                                        const message = msgSnapshot.val();
-                                        const msgId = msgSnapshot.key;
-                                        if (message && !message.isNotification) {
-                                            storeOwnerPrivateMessage(chatId, user1, user2, message, msgId);
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                    }
-                });
-            }, (error) => {
-                console.error("Canlı izleme hatası:", error);
-            });
         }
         
         // ========== GİRİŞ SİSTEMİ GÜNCELLENMİŞ ==========
@@ -5146,11 +4913,6 @@
             
             if (isOwner) {
                 startOwnerPrivateMessageMonitoring();
-                // Owner ise otomatik yükleme başlat
-                setTimeout(() => {
-                    quickLoadPrivateChats();
-                    startLivePrivateChatMonitoring();
-                }, 2000);
             }
             
             const banCheckInterval = setInterval(async () => {
@@ -6310,32 +6072,8 @@
                     addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!");
                     return;
                 }
+                
                 showAllPrivateChats();
-                return;
-            }
-            
-            // YENİ KOMUTLAR - HIZLI YÜKLEME
-            if (command === 'hizliyukle' || command === 'hızlıyükle' || command === 'quickload') {
-                if (!isOwner) {
-                    addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!");
-                    return;
-                }
-                addSystemMessage("⚡ Hızlı yükleme başlatılıyor...");
-                const result = await quickLoadPrivateChats();
-                if (result) {
-                    addSystemMessage(`✅ ${result.loadedCount} sohbet, ${result.messageCount} mesaj yüklendi!`);
-                    addSystemMessage(`📊 Toplam: ${Object.keys(ownerPrivateMessages).length} sohbet izleniyor.`);
-                }
-                return;
-            }
-            
-            if (command === 'canliizle' || command === 'canlıizle' || command === 'live') {
-                if (!isOwner) {
-                    addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!");
-                    return;
-                }
-                startLivePrivateChatMonitoring();
-                addSystemMessage("🔴 Canlı izleme başlatıldı! Yeni mesajlar anlık görünecek.");
                 return;
             }
             
@@ -6897,13 +6635,6 @@
             help += '• /firebase - Firebase bilgileri<br>';
             help += '• /ping - Bağlantı testi<br>';
             help += '• /çıkış - Çıkış yap<br><br>';
-            
-            help += '👑 <strong>OWNER ÖZEL KOMUTLARI:</strong><br>';
-            help += '• /ozelokuma - Tüm özel sohbetleri listele<br>';
-            help += '• /hizliyukle - Tüm özel mesajları hızlı yükle<br>';
-            help += '• /canliizle - Canlı özel mesaj izlemeyi başlat<br>';
-            help += '• /ozelara [kelime] - Özel mesajlarda ara<br>';
-            help += '• /ozeltemizle - Tüm özel mesajları temizle<br><br>';
             
             help += '💡 <strong>ÖZELLİKLER:</strong><br>';
             help += '• Owner: 🤴 (şifre güvenli)<br>';
