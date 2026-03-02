@@ -1,13 +1,13 @@
-
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CETCETY • Çift Medya</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://www.youtube.com/iframe_api"></script>
+    <title>Popbox Music Chat - Gelişmiş Sohbet Platformu</title>
+    <!-- FIREBASE SDK v8 -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         
@@ -1099,7 +1099,7 @@ function initializeFirebase() {
         showLoginError("Firebase başlatma hatası!");
     }
 }
-      // ========== GÜVENLİK KONFİGÜRASYONU ==========
+// ========== GÜVENLİK KONFİGÜRASYONU (TEK TANIM) ==========
 const SECURE_CONFIG = {
     DEFAULT_ADMINS: ['popbox', 'popboxmusic'],
     OWNER_CONFIG: {
@@ -5639,6 +5639,73 @@ window.addEventListener('load', async function() {
         console.log("📱 Mobil cihaz algılandı");
     }
 });  
+// ========== GİRİŞ İŞLEME FONKSİYONU ==========
+async function handleLogin() {
+    const nickInput = document.getElementById('loginNick');
+    const passwordInput = document.getElementById('loginPassword');
+    const nick = nickInput.value.trim();
+    const password = passwordInput.value;
+    
+    if (!nick) {
+        alert('❌ Lütfen bir kullanıcı adı girin!');
+        return;
+    }
+    
+    if (nick.length < 2 || nick.length > 20) {
+        alert('❌ Kullanıcı adı 2-20 karakter arasında olmalı!');
+        return;
+    }
+    
+    if (!isFirebaseConnected) {
+        alert('❌ Firebase bağlantısı kuruluyor, lütfen bekleyin...');
+        return;
+    }
+    
+    // Giriş işlemini başlat
+    try {
+        // Owner kontrolü
+        if (nick === SECURE_CONFIG.OWNER_CONFIG.username) {
+            if (!password) {
+                alert('🔐 Owner şifresi gerekli!');
+                return;
+            }
+            
+            const passwordValid = await verifyOwnerPassword(password);
+            if (!passwordValid) {
+                alert('❌ Hatalı şifre!');
+                return;
+            }
+            
+            await completeLogin(nick, 'owner', true, null);
+            return;
+        }
+        
+        // Normal kullanıcı girişi
+        const registeredUser = await isRegisteredUserSecure(nick);
+        
+        if (registeredUser && registeredUser.isRegistered) {
+            if (!password) {
+                alert('🔐 Bu kullanıcı kayıtlı! Şifre gerekli.');
+                return;
+            }
+            
+            const passwordValid = await verifyAdminPasswordSecure(registeredUser.originalName, password);
+            if (!passwordValid) {
+                alert('❌ Hatalı şifre!');
+                return;
+            }
+            
+            await completeLogin(registeredUser.originalName, registeredUser.role || 'user', true, registeredUser);
+        } else {
+            // Kayıtsız kullanıcı - şifresiz giriş
+            await completeLogin(nick, 'user', false, null);
+        }
+    } catch (error) {
+        console.error('Giriş hatası:', error);
+        alert('❌ Giriş hatası: ' + error.message);
+    }
+}
+        
        </script>
 </body>
 </html>     
