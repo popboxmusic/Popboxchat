@@ -577,6 +577,7 @@
             position: relative;
             backdrop-filter: blur(5px);
             -webkit-backdrop-filter: blur(5px);
+            font-family: 'Segoe UI', 'YouTube Sans', sans-serif;
         }
         
         .icon-btn::after {
@@ -3231,7 +3232,7 @@
             updateChannelList();
         }
         
-        // ========== KANAL SİSTEMİ ==========
+        // ========== KANAL SİSTEMİ - DÜZENLENMİŞ ==========
         async function createChannel() {
             if (!currentUser) {
                 addSystemMessage('❌ Önce giriş yapmalısınız!');
@@ -3264,7 +3265,8 @@
                     createdAt: Date.now(),
                     operators: [],
                     pinnedMessage: null,
-                    isActive: true
+                    isActive: true,
+                    playlist: [] // Her kanalın kendi playlist'i
                 };
                 
                 await channelsRef.child(channelId).set(channelData);
@@ -3283,6 +3285,11 @@
         async function joinChannel(channelId) {
             if (!channels[channelId]) return;
             
+            // Önceki kanalın playlist listener'ını temizle
+            if (currentChannel && playlistRef) {
+                playlistRef.off(); // Eski listener'ı kaldır
+            }
+            
             currentChannel = channels[channelId];
             
             document.getElementById('currentChatTitle').textContent = currentChannel.name;
@@ -3300,10 +3307,18 @@
                 hidePinnedMessage();
             }
             
+            // Kanalın mesajlarını yükle
             loadChannelMessages(channelId);
+            
+            // Kanalın playlist'ini yükle
+            loadChannelPlaylist(channelId);
         }
         
         function leaveChannel() {
+            if (currentChannel && playlistRef) {
+                playlistRef.off(); // Kanal playlist listener'ını kaldır
+            }
+            
             currentChannel = null;
             
             document.getElementById('currentChatTitle').textContent = 'Genel Sohbet';
@@ -3312,13 +3327,68 @@
             document.getElementById('channelOperatorActions').style.display = 'none';
             hidePinnedMessage();
             
+            // Genel playlist'i yükle
+            loadGeneralPlaylist();
+            
+            // Genel mesajları yükle
             loadGeneralMessages();
+        }
+        
+        // Kanal playlist'i yükleme
+        function loadChannelPlaylist(channelId) {
+            if (!channelsRef) return;
+            
+            // Kanalın playlist'ini dinle
+            channelsRef.child(channelId + '/playlist').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    playlist = Object.values(data);
+                } else {
+                    playlist = [];
+                }
+                updatePlaylistUI();
+                
+                // Kanalda video varsa oynat
+                if (playlist.length > 0) {
+                    playVideo(playlist[0].id);
+                } else if (player && player.stopVideo) {
+                    player.stopVideo();
+                    currentVideoId = null;
+                }
+            });
+        }
+        
+        // Genel playlist yükleme
+        function loadGeneralPlaylist() {
+            if (!playlistRef) return;
+            
+            playlistRef.off(); // Önceki listener'ı kaldır
+            playlistRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    playlist = Object.values(data);
+                } else {
+                    playlist = [];
+                }
+                updatePlaylistUI();
+                
+                if (playlist.length > 0 && (!currentVideoId || !playlist.some(item => item.id === currentVideoId))) {
+                    playVideo(playlist[0].id);
+                } else if (playlist.length === 0 && player && player.stopVideo) {
+                    player.stopVideo();
+                    currentVideoId = null;
+                }
+            });
         }
         
         async function loadChannelMessages(channelId) {
             if (!channelsRef) return;
             
             const messagesRef = database.ref('channelMessages/' + channelId);
+            
+            // Önceki listener'ı kaldır
+            messagesRef.off();
+            
             messagesRef.limitToLast(50).on('value', (snapshot) => {
                 updateChannelMessages(snapshot.val(), channelId);
             });
@@ -3343,7 +3413,7 @@
                 if (msg.sender === channels[channelId]?.owner) {
                     msgClass = 'channel-owner';
                 } else if (channels[channelId]?.operators?.includes(msg.sender)) {
-                    msgClass = 'channel-coadmin';
+                    msgClass = 'channel-operator';
                 }
                 
                 messageDiv.className = `message-item ${msgClass}`;
@@ -3395,6 +3465,7 @@
         function loadGeneralMessages() {
             if (!messagesRef) return;
             
+            messagesRef.off(); // Önceki listener'ı kaldır
             messagesRef.limitToLast(50).on('value', (snapshot) => {
                 updateMessages(snapshot.val());
             });
@@ -3680,7 +3751,7 @@
             container.innerHTML = html;
         }
         
-        // ========== PLAYLIST SİSTEMİ ==========
+        // ========== PLAYLIST SİSTEMİ - DÜZENLENMİŞ ==========
         function extractVideoId(url) {
             const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
             const match = url.match(regExp);
@@ -3705,14 +3776,30 @@
                 timestamp: Date.now()
             };
             
-            if (playlistRef) {
-                playlistRef.push(newPlaylistItem);
+            if (currentChannel) {
+                // Kanal playlist'ine ekle
+                const channelPlaylistRef = channelsRef.child(currentChannel.id + '/playlist');
+                channelPlaylistRef.push(newPlaylistItem);
+                
                 if (playlist.length === 0) {
                     setTimeout(() => {
                         if (playlist.length > 0) {
                             playVideo(playlist[0].id);
                         }
                     }, 500);
+                }
+            } else {
+                // Genel playlist'e ekle
+                if (playlistRef) {
+                    playlistRef.push(newPlaylistItem);
+                    
+                    if (playlist.length === 0) {
+                        setTimeout(() => {
+                            if (playlist.length > 0) {
+                                playVideo(playlist[0].id);
+                            }
+                        }, 500);
+                    }
                 }
             }
             
@@ -3744,22 +3831,56 @@
         
         function removeFromPlaylist(videoId, event) {
             event.stopPropagation();
-            const itemToRemove = playlist.find(item => item.id === videoId);
-            if (itemToRemove && playlistRef) {
-                const index = playlist.findIndex(item => item.id === videoId);
-                if (index !== -1) {
-                    playlist.splice(index, 1);
-                    playlistRef.set(playlist);
-                    updatePlaylistUI();
-                    
-                    if (playlist.length > 0 && videoId === currentVideoId) {
-                        playVideo(playlist[0].id);
-                    } else if (playlist.length === 0) {
-                        if (player && player.stopVideo) {
-                            player.stopVideo();
+            
+            if (currentChannel) {
+                // Kanal playlist'inden sil
+                const channelPlaylistRef = channelsRef.child(currentChannel.id + '/playlist');
+                const itemToRemove = playlist.find(item => item.id === videoId);
+                
+                if (itemToRemove && itemToRemove.id) {
+                    // Firebase'deki tüm playlist öğelerini kontrol et
+                    channelPlaylistRef.once('value', (snapshot) => {
+                        const items = snapshot.val();
+                        if (items) {
+                            Object.entries(items).forEach(([key, value]) => {
+                                if (value.id === videoId) {
+                                    channelPlaylistRef.child(key).remove();
+                                }
+                            });
                         }
-                        currentVideoId = null;
+                    });
+                }
+            } else {
+                // Genel playlist'ten sil
+                const itemToRemove = playlist.find(item => item.id === videoId);
+                if (itemToRemove && playlistRef) {
+                    // Firebase'deki tüm playlist öğelerini kontrol et
+                    playlistRef.once('value', (snapshot) => {
+                        const items = snapshot.val();
+                        if (items) {
+                            Object.entries(items).forEach(([key, value]) => {
+                                if (value.id === videoId) {
+                                    playlistRef.child(key).remove();
+                                }
+                            });
+                        }
+                    });
+                }
+            }
+            
+            // UI'dan kaldır
+            const index = playlist.findIndex(item => item.id === videoId);
+            if (index !== -1) {
+                playlist.splice(index, 1);
+                updatePlaylistUI();
+                
+                if (playlist.length > 0 && videoId === currentVideoId) {
+                    playVideo(playlist[0].id);
+                } else if (playlist.length === 0) {
+                    if (player && player.stopVideo) {
+                        player.stopVideo();
                     }
+                    currentVideoId = null;
                 }
             }
         }
@@ -3806,7 +3927,7 @@
                         updateBannedUsers();
                         startBanMonitoring();
                         startUserLocksCleanup();
-                        loadPlaylist();
+                        loadGeneralPlaylist(); // Genel playlist'i yükle
                         loadChannels();
                         
                         setupBase64VideoCallListener();
@@ -3823,26 +3944,6 @@
             } catch (error) {
                 console.error("Firebase başlatma hatası:", error);
             }
-        }
-        
-        function loadPlaylist() {
-            if (!playlistRef) return;
-            
-            playlistRef.on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    playlist = Object.values(data);
-                } else {
-                    playlist = [];
-                }
-                updatePlaylistUI();
-                if (playlist.length > 0 && (!currentVideoId || !playlist.some(item => item.id === currentVideoId))) {
-                    playVideo(playlist[0].id);
-                } else if (playlist.length === 0 && player && player.stopVideo) {
-                    player.stopVideo();
-                    currentVideoId = null;
-                }
-            });
         }
         
         function loadChannels() {
@@ -4966,7 +5067,6 @@
                     closeCommandModal();
                     closeOwnerPrivateModal();
                     closeCameraModal();
-                    closeProfileModal();
                     closeAddOperatorModal();
                     closeRemoveOperatorModal();
                     if (base64ActiveCall) {
@@ -4987,7 +5087,7 @@
                 });
             }
             
-            if (messagesRef) {
+            if (messagesRef && !currentChannel) {
                 messagesRef.limitToLast(50).on('value', (snapshot) => {
                     updateMessages(snapshot.val());
                 });
