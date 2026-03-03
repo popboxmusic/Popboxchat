@@ -3159,13 +3159,14 @@
         let recordedChunks = [];
         let isRecording = false;
         
-        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ ==========
+        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - DÜZELTİLMİŞ ==========
         let base64LocalStream = null;
         let base64ImageCaptureInterval = null;
         let base64ActiveCall = null;
         let base64IsAudioMuted = false;
         let base64IsVideoOff = false;
         let base64IncomingCallData = null;
+        let base64RemoteFrameInterval = null; // Uzaktan görüntü almak için interval
         
         // ========== BİLDİRİM SİSTEMİ ==========
         let notificationCount = 0;
@@ -4167,10 +4168,11 @@
             });
         }
         
-        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ ==========
+        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - DÜZELTİLMİŞ ==========
         function setupBase64VideoCallListener() {
             if (!videoCallsRef || !currentUser) return;
             
+            // Gelen çağrıları dinle
             videoCallsRef.orderByChild('to').equalTo(currentUser.name).on('child_added', (snapshot) => {
                 const callData = snapshot.val();
                 if (callData && callData.status === 'ringing' && callData.from !== currentUser.name && callData.type === 'base64') {
@@ -4182,24 +4184,53 @@
                 }
             });
             
-            videoCallsRef.on('child_changed', (snapshot) => {
+            // Çağrı durum değişikliklerini dinle (karşı taraf kabul ettiğinde)
+            videoCallsRef.orderByChild('from').equalTo(currentUser.name).on('child_changed', (snapshot) => {
                 const callData = snapshot.val();
-                if (callData && callData.type === 'base64' && callData.to === currentUser.name) {
-                    handleBase64CallStatusChange(snapshot.key, callData);
+                if (callData && callData.type === 'base64' && callData.status === 'accepted' && callData.to === privateChatWith) {
+                    // Karşı taraf kabul etti, frame göndermeye başla
+                    if (!base64ActiveCall || base64ActiveCall.id !== snapshot.key) {
+                        base64ActiveCall = {
+                            id: snapshot.key,
+                            from: currentUser.name,
+                            to: privateChatWith,
+                            status: 'accepted'
+                        };
+                    }
+                    base64ActiveCall.status = 'accepted';
+                    startBase64VideoFrameCapture();
+                    document.getElementById('remoteVideoPlaceholder').style.display = 'none';
+                    document.getElementById('remoteVideoImage').style.display = 'block';
                 }
             });
             
+            // Çağrı sonlandırma
             videoCallsRef.on('child_removed', (snapshot) => {
                 if (base64ActiveCall && base64ActiveCall.id === snapshot.key) {
+                    addSystemMessage('📹 Görüntülü sohbet sonlandırıldı!');
                     endBase64VideoCall();
                 }
             });
             
+            // Diğer taraftan gelen frame'leri dinle
             if (currentUser) {
-                videoCallsRef.orderByChild('from').equalTo(currentUser.name).on('child_added', (snapshot) => {
+                videoCallsRef.orderByChild('to').equalTo(currentUser.name).on('child_changed', (snapshot) => {
                     const callData = snapshot.val();
-                    if (callData && callData.type === 'base64' && callData.status === 'accepted' && callData.to === privateChatWith) {
-                        startBase64VideoFrameCapture();
+                    if (callData && callData.type === 'base64' && callData.status === 'frame' && base64ActiveCall) {
+                        // Gelen frame'i göster
+                        document.getElementById('remoteVideoImage').src = callData.image;
+                        document.getElementById('remoteVideoPlaceholder').style.display = 'none';
+                        document.getElementById('remoteVideoImage').style.display = 'block';
+                    }
+                });
+                
+                videoCallsRef.orderByChild('from').equalTo(currentUser.name).on('child_changed', (snapshot) => {
+                    const callData = snapshot.val();
+                    if (callData && callData.type === 'base64' && callData.status === 'frame' && base64ActiveCall) {
+                        // Gelen frame'i göster (karşı taraftan)
+                        document.getElementById('remoteVideoImage').src = callData.image;
+                        document.getElementById('remoteVideoPlaceholder').style.display = 'none';
+                        document.getElementById('remoteVideoImage').style.display = 'block';
                     }
                 });
             }
@@ -4271,6 +4302,7 @@
                 document.getElementById('remoteVideo').style.display = 'none';
                 document.getElementById('remoteVideoPlaceholder').style.display = 'flex';
                 
+                // Karşı tarafın cevabını bekle
                 listenForBase64CallResponse(base64ActiveCall.id);
                 
                 const chatId = generateChatId(currentUser.name, privateChatWith);
@@ -4281,6 +4313,16 @@
                     type: 'video-call-start',
                     timestamp: Date.now(),
                     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                });
+                
+                // Karşı taraftan gelen frame'leri dinle
+                videoCallsRef.child(base64ActiveCall.id).on('value', (snapshot) => {
+                    const callData = snapshot.val();
+                    if (callData && callData.status === 'frame' && callData.image) {
+                        document.getElementById('remoteVideoImage').src = callData.image;
+                        document.getElementById('remoteVideoPlaceholder').style.display = 'none';
+                        document.getElementById('remoteVideoImage').style.display = 'block';
+                    }
                 });
                 
             } catch (error) {
@@ -4305,8 +4347,6 @@
                 } else if (callData.status === 'rejected') {
                     alert('Görüntülü sohbet daveti reddedildi!');
                     endBase64VideoCall();
-                } else if (callData.status === 'frame' && callData.image && base64ActiveCall && base64ActiveCall.status === 'accepted') {
-                    document.getElementById('remoteVideoImage').src = callData.image;
                 }
             });
         }
@@ -4323,7 +4363,7 @@
                 clearInterval(base64ImageCaptureInterval);
             }
             
-            base64ImageCaptureInterval = setInterval(captureAndSendBase64Frame, 300);
+            base64ImageCaptureInterval = setInterval(captureAndSendBase64Frame, 200); // 200ms'de bir frame
         }
         
         async function captureAndSendBase64Frame() {
@@ -4374,6 +4414,7 @@
                 
                 document.getElementById('localVideo').srcObject = base64LocalStream;
                 
+                // Çağrıyı kabul et
                 await videoCallsRef.child(base64IncomingCallData.id).update({
                     status: 'accepted'
                 });
@@ -4396,9 +4437,11 @@
                 document.getElementById('remoteVideo').style.display = 'none';
                 document.getElementById('remoteVideoPlaceholder').style.display = 'none';
                 
+                // Kendi frame'lerini göndermeye başla
                 startBase64VideoFrameCapture();
                 
-                videoCallsRef.child(base64IncomingCallData.id).on('value', (snapshot) => {
+                // Karşı taraftan gelen frame'leri dinle
+                videoCallsRef.child(base64ActiveCall.id).on('value', (snapshot) => {
                     const callData = snapshot.val();
                     if (callData && callData.status === 'frame' && callData.image) {
                         document.getElementById('remoteVideoImage').src = callData.image;
