@@ -3145,12 +3145,12 @@
         
         // Kanal değişkenleri
         let channels = {};
-        let currentChannel = null; // { id, name, owner, operators, pinnedMessage, playlist }
+        let currentChannel = null;
         let channelOperators = {};
         let channelPinnedMessages = {};
         
         // Playlist değişkenleri
-        let playlist = []; // Mevcut kanalın veya genelin playlist'i
+        let playlist = [];
         let currentVideoId = 'i75BZYOAPl4';
         
         // Kamera değişkenleri
@@ -3159,14 +3159,13 @@
         let recordedChunks = [];
         let isRecording = false;
         
-        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - DÜZELTİLDİ ==========
+        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - YENİDEN YAZILDI ==========
         let base64LocalStream = null;
         let base64ImageCaptureInterval = null;
         let base64ActiveCall = null;
         let base64IsAudioMuted = false;
         let base64IsVideoOff = false;
         let base64IncomingCallData = null;
-        let base64RemoteFrameInterval = null; // Uzaktan görüntü almak için interval
         
         // ========== BİLDİRİM SİSTEMİ ==========
         let notificationCount = 0;
@@ -3399,21 +3398,17 @@
             }
         }
         
-        // joinChannel - Kanal değiştirildiğinde tüm listenerları sıfırla
         async function joinChannel(channelId) {
             if (!channels[channelId]) return;
             
-            // Önceki kanalın/sohbetin tüm listenerlarını temizle
             if (messagesRef && currentChannel === null) {
-                messagesRef.off(); // Genel mesaj listener'ını kaldır
+                messagesRef.off();
             }
             if (playlistRef && currentChannel === null) {
-                playlistRef.off(); // Genel playlist listener'ını kaldır
+                playlistRef.off();
             }
             if (currentChannel && channelsRef) {
-                // Önceki kanalın mesaj listener'ını kaldır
                 database.ref('channelMessages/' + currentChannel.id).off();
-                // Önceki kanalın playlist listener'ını kaldır (channel'ın içinde)
                 channelsRef.child(currentChannel.id + '/playlist').off();
             }
             
@@ -3422,42 +3417,30 @@
             document.getElementById('currentChatTitle').textContent = currentChannel.name;
             document.getElementById('channelIndicator').classList.add('active');
             
-            // Kanal sahibi rozetini güncelle
             if (currentChannel.owner === currentUser?.name) {
                 document.getElementById('channelOwnerBadge').style.display = 'flex';
             } else {
                 document.getElementById('channelOwnerBadge').style.display = 'none';
             }
             
-            // Operatör aksiyonlarını göster/gizle
             document.getElementById('channelOperatorActions').style.display = 
                 (currentChannel.owner === currentUser?.name) ? 'flex' : 'none';
             
-            // Sabit mesajı göster
             if (currentChannel.pinnedMessage) {
                 showPinnedMessage(currentChannel.pinnedMessage);
             } else {
                 hidePinnedMessage();
             }
             
-            // ** KANALIN BAĞIMSIZ MESAJLARINI YÜKLE **
             loadChannelMessages(channelId);
-            
-            // ** KANALIN BAĞIMSIZ PLAYLIST'İNİ YÜKLE **
             loadChannelPlaylist(channelId);
-            
-            // Online kullanıcıları sadece bu kanal için filtrele
             updateOnlineUsersForChannel(channelId);
-            
-            // Kanal listesini güncelle (aktif kanalı işaretlemek için)
             updateChannelList();
         }
         
-        // leaveChannel - Genel sohbete dön
         function leaveChannel() {
             if (!currentChannel) return;
             
-            // Kanalın listener'larını temizle
             database.ref('channelMessages/' + currentChannel.id).off();
             channelsRef.child(currentChannel.id + '/playlist').off();
             
@@ -3469,24 +3452,15 @@
             document.getElementById('channelOperatorActions').style.display = 'none';
             hidePinnedMessage();
             
-            // ** GENEL SOHBETİN MESAJLARINI YÜKLE **
             loadGeneralMessages();
-            
-            // ** GENEL SOHBETİN PLAYLIST'İNİ YÜKLE **
             loadGeneralPlaylist();
-            
-            // Online kullanıcıları genel için filtrele
             updateOnlineUsersForChannel('general');
-            
-            // Kanal listesini güncelle
             updateChannelList();
         }
         
-        // Kanalın bağımsız playlist'ini yükleme
         function loadChannelPlaylist(channelId) {
             if (!channelsRef) return;
             
-            // Kanalın playlist'ini dinle (channels/{id}/playlist altında)
             channelsRef.child(channelId + '/playlist').on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (data) {
@@ -3496,7 +3470,6 @@
                 }
                 updatePlaylistUI();
                 
-                // Kanalda video varsa oynat
                 if (playlist.length > 0) {
                     playVideo(playlist[0].id);
                 } else if (player && player.stopVideo) {
@@ -3506,11 +3479,10 @@
             });
         }
         
-        // Genel playlist yükleme (genel sohbet için)
         function loadGeneralPlaylist() {
             if (!playlistRef) return;
             
-            playlistRef.off(); // Önceki listener'ı kaldır
+            playlistRef.off();
             playlistRef.on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (data) {
@@ -3529,13 +3501,11 @@
             });
         }
         
-        // Kanalın bağımsız mesajlarını yükle
         async function loadChannelMessages(channelId) {
             if (!channelsRef) return;
             
             const channelMessagesRef = database.ref('channelMessages/' + channelId);
             
-            // Önceki listener'ı kaldır
             channelMessagesRef.off();
             
             channelMessagesRef.limitToLast(50).on('value', (snapshot) => {
@@ -3559,7 +3529,6 @@
                 const messageDiv = document.createElement('div');
                 
                 let msgClass = 'user';
-                // Kanal sahibi kontrolü
                 if (msg.sender === channels[channelId]?.owner) {
                     msgClass = 'channel-owner';
                 } else if (channels[channelId]?.operators?.includes(msg.sender)) {
@@ -3607,11 +3576,10 @@
             container.scrollTop = container.scrollHeight;
         }
         
-        // Genel sohbet mesajlarını yükle
         function loadGeneralMessages() {
             if (!messagesRef) return;
             
-            messagesRef.off(); // Önceki listener'ı kaldır
+            messagesRef.off();
             messagesRef.limitToLast(50).on('value', (snapshot) => {
                 updateMessages(snapshot.val());
             });
@@ -3897,7 +3865,7 @@
             container.innerHTML = html;
         }
         
-        // ========== PLAYLIST SİSTEMİ - KANAL BAĞIMSIZ ==========
+        // ========== PLAYLIST SİSTEMİ ==========
         function extractVideoId(url) {
             const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
             const match = url.match(regExp);
@@ -3923,7 +3891,6 @@
             };
             
             if (currentChannel) {
-                // Kanal playlist'ine ekle (channels/{id}/playlist altına)
                 const channelPlaylistRef = channelsRef.child(currentChannel.id + '/playlist');
                 channelPlaylistRef.push(newPlaylistItem);
                 
@@ -3935,7 +3902,6 @@
                     }, 500);
                 }
             } else {
-                // Genel playlist'e ekle (ana playlistRef)
                 if (playlistRef) {
                     playlistRef.push(newPlaylistItem);
                     
@@ -3979,7 +3945,6 @@
             event.stopPropagation();
             
             if (currentChannel) {
-                // Kanal playlist'inden sil
                 const channelPlaylistRef = channelsRef.child(currentChannel.id + '/playlist');
                 const itemToRemove = playlist.find(item => item.id === videoId);
                 
@@ -3996,7 +3961,6 @@
                     });
                 }
             } else {
-                // Genel playlist'ten sil
                 const itemToRemove = playlist.find(item => item.id === videoId);
                 if (itemToRemove && playlistRef) {
                     playlistRef.once('value', (snapshot) => {
@@ -4012,7 +3976,6 @@
                 }
             }
             
-            // UI'dan kaldır
             const index = playlist.findIndex(item => item.id === videoId);
             if (index !== -1) {
                 playlist.splice(index, 1);
@@ -4072,9 +4035,8 @@
                         startBanMonitoring();
                         startUserLocksCleanup();
                         
-                        // Başlangıçta genel playlist'i yükle (henüz kanal seçili değil)
                         loadGeneralPlaylist();
-                        loadGeneralMessages(); // Genel mesajları da yükle
+                        loadGeneralMessages();
                         
                         loadChannels();
                         
@@ -4088,13 +4050,10 @@
                             startOwnerPrivateMessageMonitoring();
                         }
                         
-                        // Online kullanıcıları genel sohbet için dinlemeye başla
                         usersRef.on('value', (snapshot) => {
                             if (!currentChannel) {
-                                // Genel sohbetteysek tüm online kullanıcıları göster
                                 updateOnlineUsersForChannel('general', snapshot.val());
                             } else {
-                                // Bir kanaldaysak sadece o kanaldaki kullanıcıları göster
                                 filterUsersByChannel(currentChannel.id, snapshot.val());
                             }
                         });
@@ -4105,25 +4064,21 @@
             }
         }
         
-        // Online kullanıcıları kanala göre filtreleme
         function filterUsersByChannel(channelId, allUsers) {
             if (!allUsers) allUsers = {};
             
             const now = Date.now();
             const channelUsers = {};
             
-            // Sadece belirtilen kanalda olan kullanıcıları al
             Object.entries(allUsers).forEach(([username, userData]) => {
                 if (!userData) return;
                 
-                // Owner gizliliği kontrolü
                 if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
                     (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
                     return;
                 }
                 
                 const timeDiff = now - (userData.lastSeen || 0);
-                // 30 saniye içinde aktifse ve doğru kanaldaysa
                 if (timeDiff < 30000 && userData.currentChannel === channelId) {
                     channelUsers[username] = userData;
                 }
@@ -4132,12 +4087,10 @@
             updateOnlineUsers(channelUsers);
         }
         
-        // Kanal değiştiğinde online kullanıcıları güncelle
         function updateOnlineUsersForChannel(channelId, usersData = null) {
             if (usersData) {
                 filterUsersByChannel(channelId, usersData);
             } else {
-                // Eğer usersData yoksa, mevcut snapshot'u al
                 usersRef.once('value', (snapshot) => {
                     filterUsersByChannel(channelId, snapshot.val());
                 });
@@ -4161,18 +4114,17 @@
                             hidePinnedMessage();
                         }
                     } else {
-                        // Mevcut kanal silinmişse genel sohbete dön
                         leaveChannel();
                     }
                 }
             });
         }
         
-        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - DÜZELTİLDİ ==========
+        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - DÜZGÜN ÇALIŞAN VERSİYON ==========
         function setupBase64VideoCallListener() {
             if (!videoCallsRef || !currentUser) return;
             
-            // Gelen çağrıları dinle (index uyarısını önlemek için)
+            // Gelen çağrıları dinle
             videoCallsRef.orderByChild('to').equalTo(currentUser.name).on('child_added', (snapshot) => {
                 const callData = snapshot.val();
                 if (callData && callData.status === 'ringing' && callData.from !== currentUser.name && callData.type === 'base64') {
@@ -4184,60 +4136,39 @@
                 }
             });
             
-            // Çağrı durum değişikliklerini dinle (karşı taraf kabul ettiğinde - Aramayı yapan için)
-            videoCallsRef.orderByChild('from').equalTo(currentUser.name).on('child_changed', (snapshot) => {
+            // Çağrı durum değişikliklerini dinle (kabul edildiğinde)
+            videoCallsRef.on('child_changed', (snapshot) => {
                 const callData = snapshot.val();
-                if (callData && callData.type === 'base64' && callData.status === 'accepted' && callData.to === privateChatWith) {
-                    // Karşı taraf kabul etti, frame göndermeye başla
-                    if (!base64ActiveCall || base64ActiveCall.id !== snapshot.key) {
-                        base64ActiveCall = {
-                            id: snapshot.key,
-                            from: currentUser.name,
-                            to: privateChatWith,
-                            status: 'accepted'
-                        };
+                if (!callData || callData.type !== 'base64') return;
+                
+                // Eğer bu bizim aktif çağrımızsa
+                if (base64ActiveCall && base64ActiveCall.id === snapshot.key) {
+                    if (callData.status === 'accepted') {
+                        base64ActiveCall.status = 'accepted';
+                        startBase64VideoFrameCapture();
+                        document.getElementById('remoteVideoPlaceholder').style.display = 'none';
+                        document.getElementById('remoteVideoImage').style.display = 'block';
+                    } else if (callData.status === 'ended') {
+                        if (base64ActiveCall) {
+                            addSystemMessage('📹 Görüntülü sohbet sonlandırıldı!');
+                            endBase64VideoCall();
+                        }
                     }
-                    base64ActiveCall.status = 'accepted';
-                    startBase64VideoFrameCapture();
+                }
+                
+                // Gelen frame'leri göster (eğer aktif çağrı varsa)
+                if (base64ActiveCall && callData.status === 'frame' && base64ActiveCall.id === snapshot.key) {
+                    document.getElementById('remoteVideoImage').src = callData.image;
                     document.getElementById('remoteVideoPlaceholder').style.display = 'none';
                     document.getElementById('remoteVideoImage').style.display = 'block';
-                    
-                    // Karşı taraftan gelen frame'leri dinlemeye başla
-                    listenForRemoteFrames(base64ActiveCall.id);
                 }
             });
             
-            // Çağrı sonlandırma
+            // Çağrı silindiğinde
             videoCallsRef.on('child_removed', (snapshot) => {
                 if (base64ActiveCall && base64ActiveCall.id === snapshot.key) {
                     addSystemMessage('📹 Görüntülü sohbet sonlandırıldı!');
                     endBase64VideoCall();
-                }
-            });
-            
-            // Bir çağrı için uzaktan gelen frame'leri dinleme fonksiyonu
-            function listenForRemoteFrames(callId) {
-                videoCallsRef.child(callId).on('value', (snapshot) => {
-                    const callData = snapshot.val();
-                    if (callData && callData.status === 'frame' && callData.image) {
-                        // Gelen frame'i göster
-                        document.getElementById('remoteVideoImage').src = callData.image;
-                        document.getElementById('remoteVideoPlaceholder').style.display = 'none';
-                        document.getElementById('remoteVideoImage').style.display = 'block';
-                    }
-                });
-            }
-            
-            // Karşı taraftan gelen frame'leri dinle (çağrı kabul edildikten sonra)
-            videoCallsRef.on('child_changed', (snapshot) => {
-                const callData = snapshot.val();
-                if (callData && callData.type === 'base64' && callData.status === 'frame') {
-                    // Eğer aktif bir çağrı varsa ve bu çağrıya ait bir frameyse göster
-                    if (base64ActiveCall && base64ActiveCall.id === snapshot.key) {
-                        document.getElementById('remoteVideoImage').src = callData.image;
-                        document.getElementById('remoteVideoPlaceholder').style.display = 'none';
-                        document.getElementById('remoteVideoImage').style.display = 'block';
-                    }
                 }
             });
         }
@@ -4308,9 +4239,6 @@
                 document.getElementById('remoteVideo').style.display = 'none';
                 document.getElementById('remoteVideoPlaceholder').style.display = 'flex';
                 
-                // Karşı tarafın cevabını bekle
-                listenForBase64CallResponse(base64ActiveCall.id);
-                
                 const chatId = generateChatId(currentUser.name, privateChatWith);
                 await privateChatsRef.child(chatId).push({
                     sender: currentUser.name,
@@ -4328,46 +4256,12 @@
             }
         }
         
-        function listenForBase64CallResponse(callId) {
-            videoCallsRef.child(callId).on('value', (snapshot) => {
-                const callData = snapshot.val();
-                if (!callData) return;
-                
-                if (callData.status === 'accepted') {
-                    if (base64ActiveCall && base64ActiveCall.id === callId) {
-                        base64ActiveCall.status = 'accepted';
-                        startBase64VideoFrameCapture();
-                        document.getElementById('remoteVideoPlaceholder').style.display = 'none';
-                        document.getElementById('remoteVideoImage').style.display = 'block';
-                        
-                        // Karşı taraftan gelen frame'leri dinlemeye başla (kabul edilince)
-                        videoCallsRef.child(callId).on('value', (frameSnapshot) => {
-                            const frameData = frameSnapshot.val();
-                            if (frameData && frameData.status === 'frame' && frameData.image) {
-                                document.getElementById('remoteVideoImage').src = frameData.image;
-                            }
-                        });
-                    }
-                } else if (callData.status === 'rejected') {
-                    alert('Görüntülü sohbet daveti reddedildi!');
-                    endBase64VideoCall();
-                }
-            });
-        }
-        
-        function handleBase64CallStatusChange(callId, callData) {
-            if (callData.status === 'ended' && base64ActiveCall && base64ActiveCall.id === callId) {
-                addSystemMessage('📹 Görüntülü sohbet sonlandırıldı!');
-                endBase64VideoCall();
-            }
-        }
-        
         function startBase64VideoFrameCapture() {
             if (base64ImageCaptureInterval) {
                 clearInterval(base64ImageCaptureInterval);
             }
             
-            base64ImageCaptureInterval = setInterval(captureAndSendBase64Frame, 200); // 200ms'de bir frame
+            base64ImageCaptureInterval = setInterval(captureAndSendBase64Frame, 200);
         }
         
         async function captureAndSendBase64Frame() {
@@ -4385,7 +4279,6 @@
                 
                 const imageData = canvas.toDataURL('image/jpeg', 0.5);
                 
-                // Bu fonksiyon sadece çağrının durumunu 'frame' olarak günceller ve image'i ekler.
                 await videoCallsRef.child(base64ActiveCall.id).update({
                     status: 'frame',
                     image: imageData,
@@ -4419,7 +4312,6 @@
                 
                 document.getElementById('localVideo').srcObject = base64LocalStream;
                 
-                // Çağrıyı kabul et
                 await videoCallsRef.child(base64IncomingCallData.id).update({
                     status: 'accepted'
                 });
@@ -4442,16 +4334,7 @@
                 document.getElementById('remoteVideo').style.display = 'none';
                 document.getElementById('remoteVideoPlaceholder').style.display = 'none';
                 
-                // Kendi frame'lerini göndermeye başla
                 startBase64VideoFrameCapture();
-                
-                // Karşı taraftan gelen frame'leri dinle
-                videoCallsRef.child(base64ActiveCall.id).on('value', (snapshot) => {
-                    const callData = snapshot.val();
-                    if (callData && callData.status === 'frame' && callData.image) {
-                        document.getElementById('remoteVideoImage').src = callData.image;
-                    }
-                });
                 
                 const chatId = generateChatId(currentUser.name, base64IncomingCallData.from);
                 await privateChatsRef.child(chatId).push({
@@ -4494,8 +4377,6 @@
             }
             
             if (base64ActiveCall) {
-                // Çağrı sonlandığında, o çağrıya ait listener'ları da temizlemek iyi olur.
-                videoCallsRef.child(base64ActiveCall.id).off();
                 videoCallsRef.child(base64ActiveCall.id).update({
                     status: 'ended',
                     endedAt: Date.now()
@@ -5197,7 +5078,7 @@
                 role: role,
                 isRegistered: isRegistered,
                 isHidden: role === 'owner',
-                currentChannel: 'general' // Varsayılan olarak genel sohbet
+                currentChannel: 'general'
             };
             
             await usersRef.child(username).set(userInfo);
@@ -5242,7 +5123,6 @@
             
             if (isOwner) startOwnerPrivateMessageMonitoring();
             
-            // Kullanıcının kanalını güncellemek için interval
             setInterval(() => {
                 if (currentUser && usersRef) {
                     usersRef.child(currentUser.name).update({
@@ -5344,16 +5224,13 @@
             if (usersRef) {
                 usersRef.on('value', (snapshot) => {
                     if (currentChannel) {
-                        // Bir kanaldaysak, o kanaldaki kullanıcıları filtrele
                         filterUsersByChannel(currentChannel.id, snapshot.val());
                     } else {
-                        // Genel sohbetteysek tüm online kullanıcıları göster (kanal kontrolü yapmadan)
                         updateOnlineUsersForChannel('general', snapshot.val());
                     }
                 });
             }
             
-            // Diğer listener'lar...
             if (messagesRef && !currentChannel) {
                 messagesRef.limitToLast(50).on('value', (snapshot) => {
                     updateMessages(snapshot.val());
@@ -5670,7 +5547,7 @@
             }
         }
         
-        // ========== ONLINE KULLANICILARI GÜNCELLEME (Kanal Bazlı) ==========
+        // ========== ONLINE KULLANICILARI GÜNCELLEME ==========
         function updateOnlineUsers(users) {
             if (!users) users = {};
             
@@ -5681,7 +5558,6 @@
             Object.entries(users).forEach(([username, userData]) => {
                 if (!userData) return;
                 
-                // Owner gizliliği
                 if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
                     (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
                     return;
@@ -5715,7 +5591,6 @@
                 const isCurrentUser = user.username === (currentUser?.name || '');
                 const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
                 
-                // Rozet belirleme (sadece renkli bir harf)
                 let badgeHtml = '';
                 if (isOwnerUser) badgeHtml = '<span class="badge owner" style="display:flex; width:18px; height:18px; font-size:9px;">O</span>';
                 else if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) badgeHtml = '<span class="badge admin" style="display:flex; width:18px; height:18px; font-size:9px;">A</span>';
@@ -5727,7 +5602,6 @@
                     `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">` : 
                     '';
                 
-                // ADAM EMOJİSİ KALDIRILDI - SADECE İSİM VE ROZET
                 html += `
                     <div class="user-item ${user.secondsAgo > 10 ? 'idle' : ''}" onclick="openPrivateChat('${user.username}')">
                         <div class="user-status">
@@ -5781,7 +5655,6 @@
                 return;
             }
             
-            // Genel sohbet mesajı
             const messageData = {
                 sender: currentUser.name,
                 text: text,
@@ -5812,7 +5685,6 @@
         function updateMessages(messages) {
             const container = document.getElementById('messages');
             if (!messages) {
-                // Genel sohbet boşsa hoş geldin mesajını göster
                 if (!currentChannel) {
                     container.innerHTML = '<div class="message-item system">🎉 Popbox Music Live\'e hoş geldiniz!</div>';
                 }
@@ -6599,7 +6471,7 @@
                                 time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                                 isNotification: true
                             });
-                            
+                
                             addSystemMessage(`✅ ${targetUser} kullanıcısına bildirim gönderildi!`);
                         } else {
                             addSystemMessage('Kullanım: /info [kullanıcı] [mesaj]');
