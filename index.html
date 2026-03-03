@@ -4168,7 +4168,7 @@
             });
         }
         
-        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - DÜZELTİLMİŞ ==========
+        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - DÜZELTİLDİ ==========
         function setupBase64VideoCallListener() {
             if (!videoCallsRef || !currentUser) return;
             
@@ -4184,6 +4184,29 @@
                 }
             });
             
+            // Çağrı durum değişikliklerini dinle (karşı taraf kabul ettiğinde - Aramayı yapan için)
+            videoCallsRef.orderByChild('from').equalTo(currentUser.name).on('child_changed', (snapshot) => {
+                const callData = snapshot.val();
+                if (callData && callData.type === 'base64' && callData.status === 'accepted' && callData.to === privateChatWith) {
+                    // Karşı taraf kabul etti, frame göndermeye başla
+                    if (!base64ActiveCall || base64ActiveCall.id !== snapshot.key) {
+                        base64ActiveCall = {
+                            id: snapshot.key,
+                            from: currentUser.name,
+                            to: privateChatWith,
+                            status: 'accepted'
+                        };
+                    }
+                    base64ActiveCall.status = 'accepted';
+                    startBase64VideoFrameCapture();
+                    document.getElementById('remoteVideoPlaceholder').style.display = 'none';
+                    document.getElementById('remoteVideoImage').style.display = 'block';
+                    
+                    // Karşı taraftan gelen frame'leri dinlemeye başla
+                    listenForRemoteFrames(base64ActiveCall.id);
+                }
+            });
+            
             // Çağrı sonlandırma
             videoCallsRef.on('child_removed', (snapshot) => {
                 if (base64ActiveCall && base64ActiveCall.id === snapshot.key) {
@@ -4191,6 +4214,19 @@
                     endBase64VideoCall();
                 }
             });
+            
+            // Bir çağrı için uzaktan gelen frame'leri dinleme fonksiyonu
+            function listenForRemoteFrames(callId) {
+                videoCallsRef.child(callId).on('value', (snapshot) => {
+                    const callData = snapshot.val();
+                    if (callData && callData.status === 'frame' && callData.image) {
+                        // Gelen frame'i göster
+                        document.getElementById('remoteVideoImage').src = callData.image;
+                        document.getElementById('remoteVideoPlaceholder').style.display = 'none';
+                        document.getElementById('remoteVideoImage').style.display = 'block';
+                    }
+                });
+            }
         }
         
         function showBase64IncomingCallNotification(caller) {
@@ -4216,24 +4252,24 @@
                 alert('Önce bir kullanıcı ile özel sohbette olmalısınız!');
                 return;
             }
-        
+            
             try {
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                     alert('Tarayıcınız görüntülü aramayı desteklemiyor!');
                     return;
                 }
-        
-                base64LocalStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
+                
+                base64LocalStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
                         width: { ideal: 320 },
                         height: { ideal: 240 },
                         facingMode: 'user'
-                    },
-                    audio: true
+                    }, 
+                    audio: true 
                 });
-        
+                
                 document.getElementById('localVideo').srcObject = base64LocalStream;
-        
+                
                 const callRef = await videoCallsRef.push({
                     from: currentUser.name,
                     to: privateChatWith,
@@ -4241,61 +4277,27 @@
                     type: 'base64',
                     timestamp: Date.now()
                 });
-        
+                
                 base64ActiveCall = {
                     id: callRef.key,
                     from: currentUser.name,
                     to: privateChatWith,
                     status: 'ringing'
                 };
-        
+                
                 addNotification(privateChatWith, `${currentUser.name} sizi görüntülü sohbete davet etti!`, 'video-call');
-        
+                
                 document.getElementById('videoCallWith').textContent = `📹 ${privateChatWith} ile görüntülü sohbet`;
                 document.getElementById('videoCallModal').style.display = 'flex';
                 document.getElementById('overlay').style.display = 'block';
-        
+                
                 document.getElementById('remoteVideoImage').style.display = 'none';
                 document.getElementById('remoteVideo').style.display = 'none';
                 document.getElementById('remoteVideoPlaceholder').style.display = 'flex';
-        
-                // --- DÜZELTME: Karşı tarafın cevabını ve frame'lerini dinle ---
-                if (base64ActiveCall) {
-                    // Önceki dinleyiciyi temizle (varsa)
-                    videoCallsRef.child(base64ActiveCall.id).off('value');
-        
-                    videoCallsRef.child(base64ActiveCall.id).on('value', (snapshot) => {
-                        const callData = snapshot.val();
-                        if (!callData) return;
-        
-                        // Çağrı kabul edildiğinde
-                        if (callData.status === 'accepted') {
-                            if (base64ActiveCall && base64ActiveCall.id === callRef.key) {
-                                base64ActiveCall.status = 'accepted';
-                                // Kendi frame'lerini göndermeye başla
-                                startBase64VideoFrameCapture();
-                                document.getElementById('remoteVideoPlaceholder').style.display = 'none';
-                                document.getElementById('remoteVideoImage').style.display = 'block';
-                            }
-                        }
-                        // Karşı taraftan frame geldiğinde
-                        else if (callData.status === 'frame' && callData.image) {
-                            document.getElementById('remoteVideoImage').src = callData.image;
-                            document.getElementById('remoteVideoPlaceholder').style.display = 'none';
-                            document.getElementById('remoteVideoImage').style.display = 'block';
-                        }
-                        // Çağrı reddedildiğinde
-                        else if (callData.status === 'rejected') {
-                            alert('Görüntülü sohbet daveti reddedildi!');
-                            endBase64VideoCall();
-                        }
-                        // Çağrı sonlandığında
-                        else if (callData.status === 'ended') {
-                            endBase64VideoCall();
-                        }
-                    });
-                }
-        
+                
+                // Karşı tarafın cevabını bekle
+                listenForBase64CallResponse(base64ActiveCall.id);
+                
                 const chatId = generateChatId(currentUser.name, privateChatWith);
                 await privateChatsRef.child(chatId).push({
                     sender: currentUser.name,
@@ -4305,7 +4307,7 @@
                     timestamp: Date.now(),
                     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                 });
-        
+                
             } catch (error) {
                 console.error('Görüntülü sohbet başlatma hatası:', error);
                 alert('Kamera veya mikrofon başlatılamadı!');
@@ -4324,6 +4326,14 @@
                         startBase64VideoFrameCapture();
                         document.getElementById('remoteVideoPlaceholder').style.display = 'none';
                         document.getElementById('remoteVideoImage').style.display = 'block';
+                        
+                        // Karşı taraftan gelen frame'leri dinlemeye başla (kabul edilince)
+                        videoCallsRef.child(callId).on('value', (frameSnapshot) => {
+                            const frameData = frameSnapshot.val();
+                            if (frameData && frameData.status === 'frame' && frameData.image) {
+                                document.getElementById('remoteVideoImage').src = frameData.image;
+                            }
+                        });
                     }
                 } else if (callData.status === 'rejected') {
                     alert('Görüntülü sohbet daveti reddedildi!');
@@ -4343,32 +4353,32 @@
             if (base64ImageCaptureInterval) {
                 clearInterval(base64ImageCaptureInterval);
             }
-            // 200ms'de bir frame gönder
-            base64ImageCaptureInterval = setInterval(captureAndSendBase64Frame, 200);
+            
+            base64ImageCaptureInterval = setInterval(captureAndSendBase64Frame, 200); // 200ms'de bir frame
         }
         
         async function captureAndSendBase64Frame() {
             if (!base64ActiveCall || base64ActiveCall.status !== 'accepted' || base64IsVideoOff || !base64LocalStream) return;
-        
+            
             try {
                 const video = document.getElementById('localVideo');
                 if (!video || !video.videoWidth) return;
-        
+                
                 const canvas = document.createElement('canvas');
                 canvas.width = 160;
                 canvas.height = 120;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
+                
                 const imageData = canvas.toDataURL('image/jpeg', 0.5);
-        
-                // Gönderilen frame'i Firebase'e yaz
+                
+                // Bu fonksiyon sadece çağrının durumunu 'frame' olarak günceller ve image'i ekler.
                 await videoCallsRef.child(base64ActiveCall.id).update({
                     status: 'frame',
                     image: imageData,
                     timestamp: Date.now()
                 });
-        
+                
             } catch (error) {
                 console.error('Kare gönderme hatası:', error);
             }
@@ -4376,73 +4386,60 @@
         
         async function acceptBase64VideoCall() {
             if (!base64IncomingCallData) return;
-        
+            
             try {
                 document.getElementById('incomingCallNotification').style.display = 'none';
-        
+                
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                     alert('Tarayıcınız görüntülü aramayı desteklemiyor!');
                     return;
                 }
-        
-                base64LocalStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
+                
+                base64LocalStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
                         width: { ideal: 320 },
                         height: { ideal: 240 },
                         facingMode: 'user'
-                    },
-                    audio: true
+                    }, 
+                    audio: true 
                 });
-        
+                
                 document.getElementById('localVideo').srcObject = base64LocalStream;
-        
+                
                 // Çağrıyı kabul et
                 await videoCallsRef.child(base64IncomingCallData.id).update({
                     status: 'accepted'
                 });
-        
+                
                 base64ActiveCall = {
                     id: base64IncomingCallData.id,
                     from: base64IncomingCallData.from,
                     to: currentUser.name,
                     status: 'accepted'
                 };
-        
+                
                 privateChatWith = base64IncomingCallData.from;
                 currentPrivateChatId = generateChatId(currentUser.name, base64IncomingCallData.from);
-        
+                
                 document.getElementById('videoCallWith').textContent = `📹 ${base64IncomingCallData.from} ile görüntülü sohbet`;
                 document.getElementById('videoCallModal').style.display = 'flex';
                 document.getElementById('overlay').style.display = 'block';
-        
+                
                 document.getElementById('remoteVideoImage').style.display = 'block';
                 document.getElementById('remoteVideo').style.display = 'none';
                 document.getElementById('remoteVideoPlaceholder').style.display = 'none';
-        
-                // --- DÜZELTME: Karşı taraftan gelen frame'leri dinle ---
-                if (base64ActiveCall) {
-                    // Önceki dinleyiciyi temizle (varsa)
-                    videoCallsRef.child(base64ActiveCall.id).off('value');
-        
-                    // Yeni dinleyiciyi ekle
-                    videoCallsRef.child(base64ActiveCall.id).on('value', (snapshot) => {
-                        const callData = snapshot.val();
-                        // Gelen frame'i göster (status 'frame' ise ve image varsa)
-                        if (callData && callData.status === 'frame' && callData.image) {
-                            document.getElementById('remoteVideoImage').src = callData.image;
-                            document.getElementById('remoteVideoPlaceholder').style.display = 'none';
-                            document.getElementById('remoteVideoImage').style.display = 'block';
-                        }
-                        // Çağrı sonlandıysa
-                        if (callData && callData.status === 'ended') {
-                            endBase64VideoCall();
-                        }
-                    });
-                }
-        
+                
                 // Kendi frame'lerini göndermeye başla
                 startBase64VideoFrameCapture();
-        
+                
+                // Karşı taraftan gelen frame'leri dinle
+                videoCallsRef.child(base64ActiveCall.id).on('value', (snapshot) => {
+                    const callData = snapshot.val();
+                    if (callData && callData.status === 'frame' && callData.image) {
+                        document.getElementById('remoteVideoImage').src = callData.image;
+                    }
+                });
+                
                 const chatId = generateChatId(currentUser.name, base64IncomingCallData.from);
                 await privateChatsRef.child(chatId).push({
                     sender: currentUser.name,
@@ -4452,9 +4449,9 @@
                     timestamp: Date.now(),
                     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                 });
-        
+                
                 base64IncomingCallData = null;
-        
+                
             } catch (error) {
                 console.error('Görüntülü sohbet kabul etme hatası:', error);
                 alert('Görüntülü sohbet başlatılamadı!');
@@ -4484,6 +4481,8 @@
             }
             
             if (base64ActiveCall) {
+                // Çağrı sonlandığında, o çağrıya ait listener'ları da temizlemek iyi olur.
+                videoCallsRef.child(base64ActiveCall.id).off();
                 videoCallsRef.child(base64ActiveCall.id).update({
                     status: 'ended',
                     endedAt: Date.now()
@@ -5563,7 +5562,7 @@
         async function showBanList() {
             try {
                 const banSnapshot = await bansRef.once('value');
-                const bans = bansSnapshot.val() || {};
+                const bans = banSnapshot.val() || {};
                 
                 if (Object.keys(bans).length === 0) {
                     addBanMessage("✅ Aktif banlı kullanıcı yok!");
