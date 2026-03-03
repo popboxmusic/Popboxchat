@@ -3159,7 +3159,7 @@
         let recordedChunks = [];
         let isRecording = false;
         
-        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - DÜZELTİLMİŞ ==========
+        // ========== BASE64 GÖRÜNTÜLÜ SOHBET SİSTEMİ - DÜZELTİLDİ ==========
         let base64LocalStream = null;
         let base64ImageCaptureInterval = null;
         let base64ActiveCall = null;
@@ -4172,7 +4172,7 @@
         function setupBase64VideoCallListener() {
             if (!videoCallsRef || !currentUser) return;
             
-            // Gelen çağrıları dinle
+            // Gelen çağrıları dinle (index uyarısını önlemek için)
             videoCallsRef.orderByChild('to').equalTo(currentUser.name).on('child_added', (snapshot) => {
                 const callData = snapshot.val();
                 if (callData && callData.status === 'ringing' && callData.from !== currentUser.name && callData.type === 'base64') {
@@ -4227,6 +4227,19 @@
                     }
                 });
             }
+            
+            // Karşı taraftan gelen frame'leri dinle (çağrı kabul edildikten sonra)
+            videoCallsRef.on('child_changed', (snapshot) => {
+                const callData = snapshot.val();
+                if (callData && callData.type === 'base64' && callData.status === 'frame') {
+                    // Eğer aktif bir çağrı varsa ve bu çağrıya ait bir frameyse göster
+                    if (base64ActiveCall && base64ActiveCall.id === snapshot.key) {
+                        document.getElementById('remoteVideoImage').src = callData.image;
+                        document.getElementById('remoteVideoPlaceholder').style.display = 'none';
+                        document.getElementById('remoteVideoImage').style.display = 'block';
+                    }
+                }
+            });
         }
         
         function showBase64IncomingCallNotification(caller) {
