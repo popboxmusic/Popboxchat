@@ -10,7 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     
     <style>
-        /* [CSS KISMI AYNI - DEĞİŞMEDİ] */
+        /* [CSS KISMI AYNI - KISALTMAK İÇİN SADECE ÖNEMLİ EKLENTİLER] */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -144,7 +144,6 @@
             margin-left: 8px;
         }
         
-        /* DEEPSEEK TARZI MİNİMAL RENKLİ ROZETLER - YOUTUBE TARZI */
         .badge {
             font-size: 10px;
             width: 22px;
@@ -3306,6 +3305,11 @@
         let recordedChunks = [];
         let isRecording = false;
         
+        // ========== BİLDİRİM SİSTEMİ DEĞİŞKENLERİ ==========
+        let notifications = [];
+        let notificationCount = 0;
+        let notificationPanelOpen = false;
+        
         // ========== WEBRTC GÖRÜNTÜLÜ SOHBET SİSTEMİ - ÇALIŞAN VERSİYON ==========
         let webrtcLocalStream = null;
         let webrtcPeerConnection = null;
@@ -3313,6 +3317,7 @@
         let webrtcIsAudioMuted = false;
         let webrtcIsVideoOff = false;
         let webrtcIncomingCallData = null;
+        let webrtcCallListener = null;
         
         // STUN sunucuları
         const webrtcConfig = {
@@ -3325,6 +3330,7 @@
             ]
         };
         
+        // ========== WEBRTC FONKSİYONLARI ==========
         async function startWebRTCVideoCall() {
             if (!privateChatWith) {
                 alert('Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -3365,16 +3371,6 @@
                     webrtcPeerConnection.addTrack(track, webrtcLocalStream);
                 });
                 
-                // ICE candidate olayını dinle
-                webrtcPeerConnection.onicecandidate = (event) => {
-                    if (event.candidate) {
-                        // ICE candidate'ı karşı tarafa gönder
-                        videoCallsRef.child(webrtcActiveCall.id).update({
-                            iceCandidate: event.candidate
-                        });
-                    }
-                };
-                
                 // Remote stream'i yakala
                 webrtcPeerConnection.ontrack = (event) => {
                     document.getElementById('remoteVideo').srcObject = event.streams[0];
@@ -3404,6 +3400,15 @@
                     to: privateChatWith,
                     status: 'ringing',
                     type: 'webrtc'
+                };
+                
+                // ICE candidate olayını dinle
+                webrtcPeerConnection.onicecandidate = (event) => {
+                    if (event.candidate && webrtcActiveCall && webrtcActiveCall.id) {
+                        videoCallsRef.child(webrtcActiveCall.id).update({
+                            iceCandidate: event.candidate
+                        });
+                    }
                 };
                 
                 addNotification(privateChatWith, `${currentUser.name} sizi görüntülü sohbete davet etti!`, 'video-call');
@@ -3442,26 +3447,22 @@
             
             if (!webrtcActiveCall || webrtcActiveCall.id !== snapshot.key) return;
             
-            if (callData.status === 'accepted' && callData.answer) {
-                // Answer'ı işle
-                try {
+            try {
+                if (callData.status === 'accepted' && callData.answer) {
+                    // Answer'ı işle
                     await webrtcPeerConnection.setRemoteDescription(new RTCSessionDescription(callData.answer));
-                } catch (error) {
-                    console.error('Answer işleme hatası:', error);
-                }
-            } else if (callData.status === 'rejected') {
-                addSystemMessage('📹 Görüntülü sohbet reddedildi!');
-                endWebRTCVideoCall();
-            } else if (callData.status === 'ended') {
-                addSystemMessage('📹 Görüntülü sohbet sonlandırıldı!');
-                endWebRTCVideoCall();
-            } else if (callData.iceCandidate) {
-                // ICE candidate'ı işle
-                try {
+                } else if (callData.status === 'rejected') {
+                    addSystemMessage('📹 Görüntülü sohbet reddedildi!');
+                    endWebRTCVideoCall();
+                } else if (callData.status === 'ended') {
+                    addSystemMessage('📹 Görüntülü sohbet sonlandırıldı!');
+                    endWebRTCVideoCall();
+                } else if (callData.iceCandidate) {
+                    // ICE candidate'ı işle
                     await webrtcPeerConnection.addIceCandidate(new RTCIceCandidate(callData.iceCandidate));
-                } catch (error) {
-                    console.error('ICE candidate ekleme hatası:', error);
                 }
+            } catch (error) {
+                console.error('WebRTC güncelleme işleme hatası:', error);
             }
         }
         
@@ -3499,18 +3500,18 @@
                     webrtcPeerConnection.addTrack(track, webrtcLocalStream);
                 });
                 
+                // Remote stream'i yakala
+                webrtcPeerConnection.ontrack = (event) => {
+                    document.getElementById('remoteVideo').srcObject = event.streams[0];
+                };
+                
                 // ICE candidate olayını dinle
                 webrtcPeerConnection.onicecandidate = (event) => {
-                    if (event.candidate) {
+                    if (event.candidate && webrtcIncomingCallData && webrtcIncomingCallData.id) {
                         videoCallsRef.child(webrtcIncomingCallData.id).update({
                             iceCandidate: event.candidate
                         });
                     }
-                };
-                
-                // Remote stream'i yakala
-                webrtcPeerConnection.ontrack = (event) => {
-                    document.getElementById('remoteVideo').srcObject = event.streams[0];
                 };
                 
                 // Offer'ı set et
@@ -3635,8 +3636,13 @@
         function setupWebRTCVideoCallListener() {
             if (!videoCallsRef || !currentUser) return;
             
+            // Önceki listener'ı temizle
+            if (webrtcCallListener) {
+                videoCallsRef.off('child_added', webrtcCallListener);
+            }
+            
             // Gelen çağrıları dinle
-            videoCallsRef.orderByChild('to').equalTo(currentUser.name).on('child_added', (snapshot) => {
+            webrtcCallListener = videoCallsRef.orderByChild('to').equalTo(currentUser.name).on('child_added', (snapshot) => {
                 const callData = snapshot.val();
                 if (!callData) return;
                 
@@ -4537,9 +4543,8 @@
                         
                         loadChannels();
                         
-                        setupWebRTCVideoCallListener();
-                        
                         if (currentUser) {
+                            setupWebRTCVideoCallListener();
                             loadUserProfile(currentUser.name);
                         }
                         
