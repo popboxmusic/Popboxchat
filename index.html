@@ -3376,6 +3376,15 @@
                     document.getElementById('remoteVideo').srcObject = event.streams[0];
                 };
                 
+                // ICE candidate olayını dinle
+                webrtcPeerConnection.onicecandidate = (event) => {
+                    if (event.candidate && webrtcActiveCall && webrtcActiveCall.id) {
+                        videoCallsRef.child(webrtcActiveCall.id).update({
+                            iceCandidate: event.candidate
+                        });
+                    }
+                };
+                
                 // Offer oluştur
                 const offer = await webrtcPeerConnection.createOffer({
                     offerToReceiveAudio: true,
@@ -3402,15 +3411,6 @@
                     type: 'webrtc'
                 };
                 
-                // ICE candidate olayını dinle
-                webrtcPeerConnection.onicecandidate = (event) => {
-                    if (event.candidate && webrtcActiveCall && webrtcActiveCall.id) {
-                        videoCallsRef.child(webrtcActiveCall.id).update({
-                            iceCandidate: event.candidate
-                        });
-                    }
-                };
-                
                 addNotification(privateChatWith, `${currentUser.name} sizi görüntülü sohbete davet etti!`, 'video-call');
                 
                 document.getElementById('videoCallWith').textContent = `📹 ${privateChatWith} ile görüntülü sohbet`;
@@ -3429,7 +3429,7 @@
                 
                 console.log('WebRTC arama başlatıldı, ID:', callRef.key);
                 
-                // Çağrı durumunu dinle
+                // Çağrı durumunu dinle - SADECE BU ÇAĞRIYA ÖZEL
                 videoCallsRef.child(callRef.key).on('value', handleWebRTCCallUpdate);
                 
             } catch (error) {
@@ -3449,17 +3449,23 @@
             
             try {
                 if (callData.status === 'accepted' && callData.answer) {
-                    // Answer'ı işle
-                    await webrtcPeerConnection.setRemoteDescription(new RTCSessionDescription(callData.answer));
+                    // Sadece 'have-local-offer' durumunda answer set et
+                    if (webrtcPeerConnection && webrtcPeerConnection.signalingState === 'have-local-offer') {
+                        await webrtcPeerConnection.setRemoteDescription(new RTCSessionDescription(callData.answer));
+                    }
                 } else if (callData.status === 'rejected') {
                     addSystemMessage('📹 Görüntülü sohbet reddedildi!');
                     endWebRTCVideoCall();
                 } else if (callData.status === 'ended') {
                     addSystemMessage('📹 Görüntülü sohbet sonlandırıldı!');
                     endWebRTCVideoCall();
-                } else if (callData.iceCandidate) {
-                    // ICE candidate'ı işle
-                    await webrtcPeerConnection.addIceCandidate(new RTCIceCandidate(callData.iceCandidate));
+                } else if (callData.iceCandidate && webrtcPeerConnection) {
+                    // ICE candidate ekle - sadece doğru durumda
+                    try {
+                        await webrtcPeerConnection.addIceCandidate(new RTCIceCandidate(callData.iceCandidate));
+                    } catch (e) {
+                        console.log('ICE candidate eklenemedi:', e);
+                    }
                 }
             } catch (error) {
                 console.error('WebRTC güncelleme işleme hatası:', error);
@@ -3514,49 +3520,51 @@
                     }
                 };
                 
-                // Offer'ı set et
-                await webrtcPeerConnection.setRemoteDescription(new RTCSessionDescription(webrtcIncomingCallData.offer));
-                
-                // Answer oluştur
-                const answer = await webrtcPeerConnection.createAnswer();
-                await webrtcPeerConnection.setLocalDescription(answer);
-                
-                // Firebase'de çağrıyı güncelle
-                await videoCallsRef.child(webrtcIncomingCallData.id).update({
-                    status: 'accepted',
-                    answer: answer
-                });
-                
-                webrtcActiveCall = {
-                    id: webrtcIncomingCallData.id,
-                    from: webrtcIncomingCallData.from,
-                    to: currentUser.name,
-                    status: 'accepted',
-                    type: 'webrtc'
-                };
-                
-                privateChatWith = webrtcIncomingCallData.from;
-                currentPrivateChatId = generateChatId(currentUser.name, webrtcIncomingCallData.from);
-                
-                document.getElementById('videoCallWith').textContent = `📹 ${webrtcIncomingCallData.from} ile görüntülü sohbet`;
-                document.getElementById('videoCallModal').style.display = 'flex';
-                document.getElementById('overlay').style.display = 'block';
-                
-                const chatId = generateChatId(currentUser.name, webrtcIncomingCallData.from);
-                await privateChatsRef.child(chatId).push({
-                    sender: currentUser.name,
-                    receiver: webrtcIncomingCallData.from,
-                    text: '📹 Görüntülü sohbeti kabul etti!',
-                    type: 'video-call-accept',
-                    timestamp: Date.now(),
-                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                });
-                
-                // Çağrı durumunu dinle
-                videoCallsRef.child(webrtcIncomingCallData.id).on('value', handleWebRTCCallUpdate);
-                
-                webrtcIncomingCallData = null;
-                console.log('WebRTC görüntülü arama kabul edildi');
+                // Offer'ı set et (sadece 'stable' durumunda)
+                if (webrtcPeerConnection.signalingState === 'stable') {
+                    await webrtcPeerConnection.setRemoteDescription(new RTCSessionDescription(webrtcIncomingCallData.offer));
+                    
+                    // Answer oluştur
+                    const answer = await webrtcPeerConnection.createAnswer();
+                    await webrtcPeerConnection.setLocalDescription(answer);
+                    
+                    // Firebase'de çağrıyı güncelle
+                    await videoCallsRef.child(webrtcIncomingCallData.id).update({
+                        status: 'accepted',
+                        answer: answer
+                    });
+                    
+                    webrtcActiveCall = {
+                        id: webrtcIncomingCallData.id,
+                        from: webrtcIncomingCallData.from,
+                        to: currentUser.name,
+                        status: 'accepted',
+                        type: 'webrtc'
+                    };
+                    
+                    privateChatWith = webrtcIncomingCallData.from;
+                    currentPrivateChatId = generateChatId(currentUser.name, webrtcIncomingCallData.from);
+                    
+                    document.getElementById('videoCallWith').textContent = `📹 ${webrtcIncomingCallData.from} ile görüntülü sohbet`;
+                    document.getElementById('videoCallModal').style.display = 'flex';
+                    document.getElementById('overlay').style.display = 'block';
+                    
+                    const chatId = generateChatId(currentUser.name, webrtcIncomingCallData.from);
+                    await privateChatsRef.child(chatId).push({
+                        sender: currentUser.name,
+                        receiver: webrtcIncomingCallData.from,
+                        text: '📹 Görüntülü sohbeti kabul etti!',
+                        type: 'video-call-accept',
+                        timestamp: Date.now(),
+                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                    });
+                    
+                    // Çağrı durumunu dinle - SADECE BU ÇAĞRIYA ÖZEL
+                    videoCallsRef.child(webrtcIncomingCallData.id).on('value', handleWebRTCCallUpdate);
+                    
+                    webrtcIncomingCallData = null;
+                    console.log('WebRTC görüntülü arama kabul edildi');
+                }
                 
             } catch (error) {
                 console.error('WebRTC görüntülü sohbet kabul etme hatası:', error);
@@ -3649,6 +3657,7 @@
                 console.log('Gelen WebRTC çağrı:', callData);
                 
                 if (callData.status === 'ringing' && callData.from !== currentUser.name && callData.type === 'webrtc') {
+                    // Zaten aktif çağrı varsa meşgul yanıtı ver
                     if (webrtcActiveCall) {
                         videoCallsRef.child(snapshot.key).update({ status: 'busy' });
                         return;
