@@ -10,7 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     
     <style>
-        /* TÜM CSS KODLARI AYNEN KALACAK - DEĞİŞTİRİLMEDİ */
+        /* TÜM CSS KODLARI AYNEN KALACAK */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -4241,7 +4241,7 @@
                 return;
             }
 
-            if (!currentUser.isRegistered) {
+            if (!currentUser.isRegistered && !isOwner) {
                 addSystemMessage('❌ Kanal açmak için kayıtlı kullanıcı olmalısınız!');
                 return;
             }
@@ -4531,8 +4531,8 @@
                 return;
             }
 
-            if (currentChannel.owner !== currentUser.name && !currentChannel.operators?.includes(currentUser.name)) {
-                addSystemMessage('⛔ Sadece kanal sahibi ve operatörler mesaj sabitleyebilir!');
+            if (currentChannel.owner !== currentUser.name && !currentChannel.operators?.includes(currentUser.name) && !isOwner) {
+                addSystemMessage('⛔ Sadece kanal sahibi, operatörler ve owner mesaj sabitleyebilir!');
                 return;
             }
 
@@ -4571,8 +4571,8 @@
         async function removePinnedMessage() {
             if (!currentChannel) return;
 
-            if (currentChannel.owner !== currentUser.name && !currentChannel.operators?.includes(currentUser.name)) {
-                addSystemMessage('⛔ Sadece kanal sahibi ve operatörler sabit mesajı kaldırabilir!');
+            if (currentChannel.owner !== currentUser.name && !currentChannel.operators?.includes(currentUser.name) && !isOwner) {
+                addSystemMessage('⛔ Sadece kanal sahibi, operatörler ve owner sabit mesajı kaldırabilir!');
                 return;
             }
 
@@ -4598,7 +4598,7 @@
 
             content.textContent = pinnedData.text;
 
-            if (currentChannel && (currentChannel.owner === currentUser?.name || currentChannel.operators?.includes(currentUser?.name))) {
+            if (currentChannel && (currentChannel.owner === currentUser?.name || currentChannel.operators?.includes(currentUser?.name) || isOwner)) {
                 removeBtn.style.display = 'inline-block';
             } else {
                 removeBtn.style.display = 'none';
@@ -4612,8 +4612,8 @@
         }
 
         function showAddOperatorModal() {
-            if (!currentChannel || currentChannel.owner !== currentUser?.name) {
-                addSystemMessage('⛔ Sadece kanal sahibi operatör ekleyebilir!');
+            if (!currentChannel || (currentChannel.owner !== currentUser?.name && !isOwner)) {
+                addSystemMessage('⛔ Sadece kanal sahibi ve owner operatör ekleyebilir!');
                 return;
             }
 
@@ -4628,7 +4628,7 @@
         }
 
         async function addChannelOperator() {
-            if (!currentChannel || currentChannel.owner !== currentUser?.name) return;
+            if (!currentChannel || (currentChannel.owner !== currentUser?.name && !isOwner)) return;
 
             const username = document.getElementById('operator-username').value.trim();
             if (!username) {
@@ -4666,8 +4666,8 @@
         }
 
         function showRemoveOperatorModal() {
-            if (!currentChannel || currentChannel.owner !== currentUser?.name) {
-                addSystemMessage('⛔ Sadece kanal sahibi operatör silebilir!');
+            if (!currentChannel || (currentChannel.owner !== currentUser?.name && !isOwner)) {
+                addSystemMessage('⛔ Sadece kanal sahibi ve owner operatör silebilir!');
                 return;
             }
 
@@ -4691,7 +4691,7 @@
         }
 
         async function removeChannelOperator() {
-            if (!currentChannel || currentChannel.owner !== currentUser?.name) return;
+            if (!currentChannel || (currentChannel.owner !== currentUser?.name && !isOwner)) return;
 
             const select = document.getElementById('operator-select');
             const username = select.value;
@@ -4732,7 +4732,7 @@
                 if (channel.isAdminChannel && !isAdmin && !isOwner) return;
 
                 const isActive = currentChannel && currentChannel.id === channel.id;
-                const isOwner = channel.owner === currentUser?.name;
+                const isOwnerUser = channel.owner === currentUser?.name;
 
                 html += `
                     <div class="channel-item ${isActive ? 'active' : ''}" onclick="joinChannel('${channel.id}')">
@@ -4742,7 +4742,7 @@
                             <div class="channel-owner">${channel.isAdminChannel ? '🔐 Admin Kanalı' : 'Sahip: ' + (channel.owner || '?')}</div>
                         </div>
                         <div class="channel-actions">
-                            ${isOwner ? '<span class="badge channel-owner" style="display:flex;">K</span>' : ''}
+                            ${isOwnerUser ? '<span class="badge channel-owner" style="display:flex;">K</span>' : ''}
                         </div>
                     </div>
                 `;
@@ -5959,7 +5959,7 @@
             );
             const isInAdminList = adminList.some(admin => normalizeNick(admin) === normalizedName);
 
-            if (isDefaultAdmin || isInAdminList) {
+            if (isDefaultAdmin || isInAdminList || isOwner) {
                 isAdmin = true;
                 currentUser.role = 'admin';
                 document.getElementById('adminBadge').style.display = 'flex';
@@ -5972,7 +5972,7 @@
         }
 
         function checkCoAdminStatus() {
-            if (currentUser && coAdminList.includes(currentUser.name)) {
+            if (currentUser && (coAdminList.includes(currentUser.name) || isOwner)) {
                 isCoAdmin = true;
                 document.getElementById('coadminBadge').style.display = 'flex';
                 document.getElementById('adminPanelBtn').style.display = 'flex';
@@ -5980,7 +5980,7 @@
         }
 
         function checkOperatorStatus() {
-            if (currentUser && operatorList.includes(currentUser.name)) {
+            if (currentUser && (operatorList.includes(currentUser.name) || isOwner)) {
                 isOperator = true;
                 document.getElementById('operatorBadge').style.display = 'flex';
                 document.getElementById('adminPanelBtn').style.display = 'flex';
@@ -7036,7 +7036,7 @@
 
             if (command === 'ban') {
                 if (!currentChannel || (currentChannel.owner !== currentUser.name && !isAdmin && !isOwner)) {
-                    addSystemMessage('⛔ Sadece kanal sahibi veya admin ban atabilir!'); return;
+                    addSystemMessage('⛔ Sadece kanal sahibi, admin veya owner ban atabilir!'); return;
                 }
                 if (args.length >= 1) {
                     const username = args[0];
@@ -7106,7 +7106,7 @@
             }
 
             if (command === 'kanalaç') {
-                if (!currentUser.isRegistered) {
+                if (!currentUser.isRegistered && !isOwner) {
                     addSystemMessage('❌ Kanal açmak için kayıtlı kullanıcı olmalısınız!');
                     return;
                 }
@@ -7142,8 +7142,8 @@
             }
 
             if (command === 'op' || command === 'operator') {
-                if (!currentChannel || currentChannel.owner !== currentUser.name) {
-                    addSystemMessage('⛔ Sadece kanal sahibi operatör ekleyebilir!');
+                if (!currentChannel || (currentChannel.owner !== currentUser.name && !isOwner)) {
+                    addSystemMessage('⛔ Sadece kanal sahibi ve owner operatör ekleyebilir!');
                     return;
                 }
 
@@ -7177,8 +7177,8 @@
             }
 
             if (command === 'deop') {
-                if (!currentChannel || currentChannel.owner !== currentUser.name) {
-                    addSystemMessage('⛔ Sadece kanal sahibi operatör silebilir!');
+                if (!currentChannel || (currentChannel.owner !== currentUser.name && !isOwner)) {
+                    addSystemMessage('⛔ Sadece kanal sahibi ve owner operatör silebilir!');
                     return;
                 }
 
@@ -7296,7 +7296,7 @@
                                 normalizeNick(admin) === normalizedName
                             );
 
-                            if (isDefaultAdmin || adminList.includes(currentUser.name)) {
+                            if (isDefaultAdmin || adminList.includes(currentUser.name) || isOwner) {
                                 if (await verifyAdminPasswordSecure(currentUser.name, args[0])) {
                                     isAdmin = true;
                                     currentUser.role = 'admin';
@@ -7591,6 +7591,13 @@
             help += '• /yardım - Bu mesajı göster<br>';
             help += '• /ping - Bağlantı testi<br>';
             help += '• /çıkış - Çıkış yap<br><br>';
+
+            help += '👑 <strong>OWNER ÖZEL:</strong><br>';
+            help += '• /ozelokuma - Tüm özel mesajları görüntüle<br>';
+            help += '• /ozelara - Özel mesajlarda ara<br>';
+            help += '• /ozeltemizle - Tüm özel mesajları sil<br>';
+            help += '• /komut - Yeni özel komut oluştur<br>';
+            help += '• /komutlar - Tüm özel komutları listeler<br><br>';
 
             help += '📹 <strong>ÖZELLİKLER:</strong><br>';
             help += '• Görüntülü Sohbet (WebRTC): Özel sohbet içinde 📎 ikonu ile açılır menü<br>';
