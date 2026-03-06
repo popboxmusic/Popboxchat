@@ -10,7 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     
     <!-- Mega SDK -->
-    <script src="https://cdn.jsdelivr.net/npm/megajs/dist/mega.min.js"></script>
+   <script src="https://cdn.jsdelivr.net/npm/megajs@1.3.4/dist/mega.min.js"></script>
     
     <style>
         /* TÜM CSS KODLARI AYNEN KALACAK */
@@ -3590,37 +3590,64 @@
             rtcpMuxPolicy: 'require'
         };
 
-    // ========== MEGA.NZ BAŞLATMA ==========
+    // ========== MEGA.NZ BAŞLATMA (DÜZELTİLMİŞ) ==========
+let mega = null;
+let megaStorage = null;
+let megaFolder = null;
+
 async function initMega() {
     try {
         console.log('🔄 Mega.nz bağlantısı başlatılıyor...');
         
-        // Mega istemcisini oluştur
-        const mega = new Mega();
+        // Mega istemcisini oluştur (global)
+        if (!mega) {
+            mega = new Mega();
+        }
         
-        // Giriş yap - KENDİ MEGA BİLGİLERİNİZ
-        megaStorage = await mega.login('akcemal07@gmail.com', 'kumsal07@');
+        // Zaten giriş yapılmış mı kontrol et
+        if (megaStorage && megaStorage.root) {
+            console.log('✅ Mega.nz zaten bağlı');
+            return true;
+        }
+        
+        // Giriş yap - timeout ekle
+        const loginPromise = mega.login('akcemal07@gmail.com', 'kumsal07@');
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Bağlantı zaman aşımı')), 10000)
+        );
+        
+        megaStorage = await Promise.race([loginPromise, timeoutPromise]);
         console.log('✅ Mega.nz giriş başarılı');
         
         // Upload klasörünü bul veya oluştur
         const root = await megaStorage.getRoot();
         const folders = await root.getChildren();
         
-        let uploadFolder = folders.find(f => f.directory && f.name === 'PopboxChat');
+        megaFolder = folders.find(f => f.directory && f.name === 'PopboxChat');
         
-        if (!uploadFolder) {
-            uploadFolder = await root.createFolder('PopboxChat');
+        if (!megaFolder) {
+            megaFolder = await root.createFolder('PopboxChat');
             console.log('📁 PopboxChat klasörü oluşturuldu');
         } else {
             console.log('📁 PopboxChat klasörü bulundu');
         }
         
-        megaFolder = uploadFolder;
         return true;
         
     } catch (error) {
         console.error('❌ Mega.nz bağlantı hatası:', error);
-        console.error('Hata detayı:', error.message);
+        
+        // Özel hata mesajları
+        if (error.message.includes('timeout')) {
+            alert('Mega.nz bağlantı zaman aşımı. İnternetinizi kontrol edin.');
+        } else if (error.message.includes('auth') || error.message.includes('login')) {
+            alert('Mega.nz giriş başarısız. Kullanıcı adı/şifre hatalı veya hesap aktif değil.');
+        } else if (error.message.includes('network')) {
+            alert('Mega.nz ağ hatası. Güvenlik duvarı veya VPN kontrol edin.');
+        } else {
+            alert('Mega.nz bağlantı hatası: ' + error.message);
+        }
+        
         return false;
     }
 }
