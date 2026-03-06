@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -1946,8 +1945,8 @@
         </div>
         <div class="private-messages" id="privateMessages"></div>
         <div class="private-input-area">
-            <input type="file" id="imageUpload" accept="image/*" style="display: none;">
-            <button class="image-upload-btn" onclick="openPrivateImageUpload()" title="Resim gönder">
+            <input type="file" id="imageUpload" accept="image/*,video/*" style="display: none;">
+            <button class="image-upload-btn" onclick="openPrivateImageUpload()" title="Resim/Video gönder">
                 📷
             </button>
             <textarea 
@@ -2051,7 +2050,7 @@
             <input 
                 type="file" 
                 id="story-image-upload" 
-                accept="image/*" 
+                accept="image/*,video/*" 
                 class="modal-input" 
                 onchange="handleStoryImageUpload(event)"
             >
@@ -2088,7 +2087,7 @@
             <input 
                 type="file" 
                 id="edit-story-image" 
-                accept="image/*" 
+                accept="image/*,video/*" 
                 class="modal-input" 
                 onchange="handleEditStoryImageUpload(event)"
             >
@@ -3129,16 +3128,6 @@
             const file = event.target.files[0];
             if (!file) return;
             
-            if (!file.type.startsWith('image/')) {
-                alert('Lütfen sadece resim dosyası seçin!');
-                return;
-            }
-            
-            if (file.size > 5 * 1024 * 1024) {
-                alert('Resim çok büyük! Maksimum 5MB.');
-                return;
-            }
-            
             const reader = new FileReader();
             reader.onload = function(e) {
                 document.getElementById('preview-image').src = e.target.result;
@@ -3150,16 +3139,6 @@
         function handleEditStoryImageUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-            
-            if (!file.type.startsWith('image/')) {
-                alert('Lütfen sadece resim dosyası seçin!');
-                return;
-            }
-            
-            if (file.size > 5 * 1024 * 1024) {
-                alert('Resim çok büyük! Maksimum 5MB.');
-                return;
-            }
             
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -4334,6 +4313,30 @@ function storeOwnerPrivateMessage(chatId, user1, user2, message, messageId) {
     } catch (error) {
         console.error('Özel mesaj kaydetme hatası:', error);
     }
+}
+
+function addMessageToOwnerView(msg) {
+    const container = document.getElementById('ownerPrivateMessages');
+    if (!container) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'yt-message private-msg';
+    
+    let content = msg.text || '';
+    if (msg.image) {
+        content = `<img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
+    }
+    
+    messageDiv.innerHTML = `
+        <div class="message-header">
+            <span class="message-user">${msg.sender}</span>
+            <span class="message-time">${msg.time || '--:--'}</span>
+        </div>
+        <div class="message-content">${content}</div>
+    `;
+    
+    container.appendChild(messageDiv);
+    container.scrollTop = container.scrollHeight;
 }
 
 function showAllPrivateChats() {
@@ -5602,7 +5605,7 @@ function forceStartPrivateMonitoring() {
             document.body.appendChild(modal);
         }
         
-        // ========== ÖZELDEN RESİM GÖNDERME ==========
+        // ========== ÖZELDEN RESİM GÖNDERME (SINIRSIZ) ==========
         function openPrivateImageUpload() {
             if (!privateChatWith) {
                 alert('Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -5623,16 +5626,6 @@ function forceStartPrivateMonitoring() {
             const file = e.target.files[0];
             if (!file) return;
             
-            if (!file.type.startsWith('image/')) {
-                alert('Lütfen sadece resim dosyası seçin!');
-                return;
-            }
-            
-            if (file.size > 5 * 1024 * 1024) {
-                alert('Resim çok büyük! Maksimum 5MB.');
-                return;
-            }
-            
             const reader = new FileReader();
             reader.onload = async function(event) {
                 const imageData = event.target.result;
@@ -5641,7 +5634,7 @@ function forceStartPrivateMonitoring() {
                     const messageData = {
                         sender: currentUser.name,
                         receiver: privateChatWith,
-                        text: '📸 Resim gönderdi',
+                        text: file.type.startsWith('video/') ? '🎥 Video gönderdi' : '📸 Resim gönderdi',
                         image: imageData,
                         timestamp: Date.now(),
                         time: new Date().toLocaleTimeString('tr-TR', { 
@@ -5654,8 +5647,8 @@ function forceStartPrivateMonitoring() {
                     try {
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
                     } catch (error) {
-                        console.error('Resim gönderme hatası:', error);
-                        alert('Resim gönderilemedi!');
+                        console.error('Resim/Video gönderme hatası:', error);
+                        alert('Dosya gönderilemedi!');
                     }
                 }
             };
@@ -6208,7 +6201,7 @@ function forceStartPrivateMonitoring() {
                         const container = document.getElementById('messages');
                         container.innerHTML = '<div class="yt-message system">✅ Tüm mesajlar temizlendi!</div>';
                         
-                        addSystemMessage('✅ Tüm mesajlar temizlendi!');
+                        addSystemMessage('✅ Tüm mesajlar temimlendi!');
                     }
                 } catch (error) {
                     console.error('Temizleme hatası:', error);
@@ -6802,7 +6795,7 @@ function forceStartPrivateMonitoring() {
             help += '• Aynı nick koruması: Büyük/küçük harf duyarlı değil<br>';
             help += '• Otomatik nick öneri sistemi<br>';
             help += '• Özel sohbet: Kullanıcı adına tıklayarak<br>';
-            help += '• Özelden resim gönderme: 📷 butonu<br>';
+            help += '• Özelden resim/video gönderme: 📷 butonu (SINIRSIZ BOYUT)<br>';
             help += '• Kendi mesajını silme: 🗑️ butonu<br>';
             help += '• Online liste: Web\'de açılır/kapanır, Mobil\'de tam ekran<br>';
             help += '• Mobil görünüm: Video küçük, sohbet büyük<br>';
