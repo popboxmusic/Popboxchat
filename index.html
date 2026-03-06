@@ -9,8 +9,11 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     
+    <!-- Mega SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/megajs/dist/mega.min.js"></script>
+    
     <style>
-        /* TÜM CSS KODLARI AYNEN KALACAK - PERFORMANS İÇİN OPTİMİZE EDİLDİ */
+        /* TÜM CSS KODLARI AYNEN KALACAK */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -43,6 +46,8 @@
             --private-bg: rgba(255, 170, 51, 0.1);
             --camera: #3ea6ff;
             --camera-bg: rgba(62, 166, 255, 0.1);
+            --video-call: #3ea6ff;
+            --video-call-bg: rgba(62, 166, 255, 0.1);
             --ban: #ff4444;
             --ban-bg: rgba(255, 68, 68, 0.1);
             --report: #ffaa33;
@@ -1934,6 +1939,232 @@
             background: rgba(255, 255, 255, 0.1);
         }
         
+        .video-call-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.98);
+            z-index: 5000;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .video-call-container {
+            width: 100%;
+            max-width: 1200px;
+            height: 90%;
+            padding: 20px;
+            background: rgba(26, 26, 26, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+        }
+        
+        .video-call-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(33, 33, 33, 0.98);
+            backdrop-filter: blur(10px);
+            border-radius: 16px 16px 0 0;
+        }
+        
+        .video-call-header div {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--video-call);
+        }
+        
+        .video-call-header button {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-size: 24px;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(5px);
+        }
+        
+        .video-call-header button:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--ban);
+            border-color: var(--ban);
+            transform: scale(1.1);
+        }
+        
+        .video-call-content {
+            flex: 1;
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+            min-height: 0;
+            position: relative;
+        }
+        
+        .remote-video-container {
+            flex: 1;
+            background: #000;
+            border-radius: 16px;
+            overflow: hidden;
+            position: relative;
+            border: 2px solid var(--video-call);
+            box-shadow: 0 8px 16px rgba(62, 166, 255, 0.3);
+        }
+        
+        .local-video-container {
+            width: 240px;
+            height: 180px;
+            background: #000;
+            border-radius: 16px;
+            overflow: hidden;
+            position: relative;
+            border: 2px solid var(--camera);
+            box-shadow: 0 8px 16px rgba(62, 166, 255, 0.3);
+        }
+        
+        .local-video-label, .remote-video-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 10;
+            border: 1px solid var(--border-color);
+        }
+        
+        .video-element {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .video-call-controls {
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .video-call-control-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 1px solid var(--border-color);
+            font-size: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            background: transparent;
+            color: var(--text-primary);
+            backdrop-filter: blur(5px);
+        }
+        
+        .video-call-control-btn.end-call {
+            background: var(--ban-bg);
+            color: var(--ban);
+            border-color: var(--ban);
+        }
+        
+        .video-call-control-btn:hover {
+            transform: scale(1.1);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--video-call);
+        }
+        
+        .video-call-control-btn.end-call:hover {
+            background: var(--ban);
+            color: white;
+        }
+        
+        .incoming-call-notification {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(26, 26, 26, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 2px solid var(--video-call);
+            border-radius: 24px;
+            padding: 24px;
+            z-index: 6000;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+            min-width: 320px;
+            text-align: center;
+            animation: pulseCall 2s infinite;
+        }
+        
+        @keyframes pulseCall {
+            0% { box-shadow: 0 0 0 0 rgba(62, 166, 255, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(62, 166, 255, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(62, 166, 255, 0); }
+        }
+        
+        .incoming-call-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+        
+        .accept-call {
+            background: var(--video-call);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 24px;
+            cursor: pointer;
+            font-weight: 600;
+            flex: 1;
+            transition: all 0.2s ease;
+        }
+        
+        .accept-call:hover {
+            background: #2a8bff;
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(62, 166, 255, 0.4);
+        }
+        
+        .reject-call {
+            background: var(--ban-bg);
+            color: var(--ban);
+            border: 1px solid var(--ban);
+            padding: 12px 24px;
+            border-radius: 24px;
+            cursor: pointer;
+            font-weight: 600;
+            flex: 1;
+            transition: all 0.2s ease;
+        }
+        
+        .reject-call:hover {
+            background: var(--ban);
+            color: white;
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(255, 68, 68, 0.4);
+        }
+        
         .camera-modal {
             position: fixed;
             top: 0;
@@ -2523,6 +2754,24 @@
                 border-radius: 16px;
             }
             
+            .video-call-content {
+                flex-direction: column;
+            }
+            
+            .local-video-container {
+                width: 100%;
+                height: 120px;
+                position: absolute;
+                bottom: 80px;
+                right: 10px;
+                width: 120px;
+                height: 90px;
+            }
+            
+            .remote-video-container {
+                height: 100%;
+            }
+            
             .owner-search-area {
                 flex-direction: column;
                 align-items: stretch;
@@ -2617,6 +2866,7 @@
     </style>
 </head>
 <body>
+    <!-- TÜM HTML KODLARI AYNEN KALACAK -->
     <!-- HEADER -->
     <div class="youtube-header">
         <div class="header-left">
@@ -2994,10 +3244,13 @@
                 <button class="attach-btn" title="Dosya ekle">📎</button>
                 <div class="attach-dropdown">
                     <div class="attach-option" onclick="openMediaUpload()">
-                        <span>📁</span> Galeriden Gönder
+                        <span>📁</span> Galeriden Gönder (Sınırsız Mega)
                     </div>
                     <div class="attach-option" onclick="openCameraModal()">
                         <span>📷</span> Kameradan Çek
+                    </div>
+                    <div class="attach-option" onclick="startWebRTCVideoCall()">
+                        <span>📹</span> Görüntülü Sohbet (WebRTC)
                     </div>
                 </div>
             </div>
@@ -3053,6 +3306,40 @@
                 <button class="camera-btn-control" onclick="closeCameraModal()" title="Kapat">❌</button>
             </div>
             <canvas id="camera-preview" style="display: none;"></canvas>
+        </div>
+    </div>
+    
+    <!-- GÖRÜNTÜLÜ ARAMA MODALI -->
+    <div class="video-call-modal" id="videoCallModal">
+        <div class="video-call-container">
+            <div class="video-call-header">
+                <div id="videoCallWith">📹 Görüntülü Sohbet</div>
+                <button onclick="endWebRTCVideoCall()">×</button>
+            </div>
+            <div class="video-call-content">
+                <div class="remote-video-container">
+                    <div class="remote-video-label" id="remoteVideoLabel">Karşı Taraf</div>
+                    <video id="remoteVideo" class="video-element" autoplay playsinline></video>
+                </div>
+                <div class="local-video-container">
+                    <div class="local-video-label">Siz</div>
+                    <video id="localVideo" class="video-element" autoplay playsinline muted></video>
+                </div>
+            </div>
+            <div class="video-call-controls">
+                <button class="video-call-control-btn" onclick="toggleWebRTCAudio()" id="webrtcMuteBtn" title="Sesi Kapat/Aç">🔊</button>
+                <button class="video-call-control-btn" onclick="toggleWebRTCVideo()" id="webrtcVideoBtn" title="Kamerayı Kapat/Aç">📹</button>
+                <button class="video-call-control-btn end-call" onclick="endWebRTCVideoCall()" title="Görüntülü Sohbeti Sonlandır">📞</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- GELEN ARAMA BİLDİRİMİ -->
+    <div class="incoming-call-notification" id="incomingCallNotification" style="display: none;">
+        <div id="incomingCaller" style="margin-bottom: 10px; font-weight: bold;"></div>
+        <div class="incoming-call-buttons">
+            <button class="accept-call" onclick="acceptWebRTCVideoCall()">Kabul Et</button>
+            <button class="reject-call" onclick="rejectWebRTCVideoCall()">Reddet</button>
         </div>
     </div>
     
@@ -3155,7 +3442,7 @@
     
     <!-- FIREBASE BADGE -->
     <div class="firebase-badge">
-        <span>🔥</span> Firebase Active
+        <span>🔥</span> Firebase Active + Mega
     </div>
     
     <!-- SES ELEMANI -->
@@ -3184,6 +3471,16 @@
             messagingSenderId: "206625719024",
             appId: "1:206625719024:web:d28f478a2c96d10412f835"
         };
+        
+        // ========== MEGA.NZ KONFİGÜRASYONU ==========
+        const MEGA_CONFIG = {
+            email: 'popboxmusic@mega.nz', // KENDİ MEGA HESABINIZI GİRİN
+            password: 'Popbox17407SCM',    // KENDİ MEGA ŞİFRENİZİ GİRİN
+            uploadFolder: 'PopboxChat'
+        };
+        
+        let megaStorage = null;
+        let megaFolder = null;
         
         // ========== GLOBAL DEĞİŞKENLER ==========
         let database;
@@ -3249,6 +3546,588 @@
         let notifications = [];
         let notificationCount = 0;
         let notificationPanelOpen = false;
+        
+        // ========== DÜZELTİLMİŞ WEBRTC GÖRÜNTÜLÜ SOHBET SİSTEMİ ==========
+        let webrtcLocalStream = null;
+        let webrtcPeerConnection = null;
+        let webrtcActiveCall = null;
+        let webrtcIsAudioMuted = false;
+        let webrtcIsVideoOff = false;
+        let webrtcIncomingCallData = null;
+        let webrtcCallListener = null;
+        let webrtcCallRef = null;
+        
+        // DÜZELTİLMİŞ WEBRTC KONFİGÜRASYONU - TURN sunucuları eklendi
+        const webrtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
+                { urls: 'stun:stun.ekiga.net:3478' },
+                { urls: 'stun:stun.voiparound.com:3478' },
+                { urls: 'stun:stun.voipbuster.com:3478' },
+                // ÜCRETSİZ TURN SUNUCULARI - EKLENDİ
+                { 
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                { 
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                { 
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ],
+            iceCandidatePoolSize: 10,
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require'
+        };
+
+        // ========== MEGA.NZ BAŞLATMA ==========
+        async function initMega() {
+            try {
+                console.log('🔄 Mega.nz bağlantısı başlatılıyor...');
+                
+                // Mega istemcisini oluştur
+                const mega = new Mega();
+                
+                // Giriş yap
+                megaStorage = await mega.login(MEGA_CONFIG.email, MEGA_CONFIG.password);
+                console.log('✅ Mega.nz giriş başarılı');
+                
+                // Upload klasörünü bul veya oluştur
+                const root = await megaStorage.getRoot();
+                const folders = await root.getChildren();
+                
+                let uploadFolder = folders.find(f => f.directory && f.name === MEGA_CONFIG.uploadFolder);
+                
+                if (!uploadFolder) {
+                    uploadFolder = await root.createFolder(MEGA_CONFIG.uploadFolder);
+                    console.log(`📁 ${MEGA_CONFIG.uploadFolder} klasörü oluşturuldu`);
+                } else {
+                    console.log(`📁 ${MEGA_CONFIG.uploadFolder} klasörü bulundu`);
+                }
+                
+                megaFolder = uploadFolder;
+                return true;
+                
+            } catch (error) {
+                console.error('❌ Mega.nz bağlantı hatası:', error);
+                return false;
+            }
+        }
+
+        // ========== MEGA.NZ DOSYA YÜKLEME ==========
+        async function uploadToMega(file, chatId) {
+            if (!megaFolder) {
+                const initialized = await initMega();
+                if (!initialized) {
+                    throw new Error('Mega.nz bağlantısı kurulamadı!');
+                }
+            }
+            
+            // Benzersiz dosya adı oluştur
+            const timestamp = Date.now();
+            const randomStr = Math.random().toString(36).substring(2, 10);
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${chatId}_${timestamp}_${randomStr}.${fileExt}`;
+            
+            console.log(`📤 Mega.nz dosya yükleniyor: ${fileName} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+            
+            // Yükleme işlemi
+            const uploadedFile = await megaFolder.upload({
+                name: fileName,
+                file: file
+            });
+            
+            // Dosya işleminin tamamlanmasını bekle
+            await uploadedFile.complete;
+            
+            // Paylaşılabilir link oluştur
+            const link = await uploadedFile.link();
+            
+            console.log(`✅ Mega.nz yükleme tamam: ${link}`);
+            
+            return {
+                url: link,
+                fileName: fileName,
+                fileSize: file.size,
+                fileType: file.type
+            };
+        }
+
+        // ========== MEGA.NZ DOSYA SİLME ==========
+        async function deleteFromMega(fileUrl) {
+            // Mega linklerinden dosya silme işlemi API'de karmaşık
+            // İsteğe bağlı olarak eklenebilir
+            console.log('🗑️ Mega.nz dosya silme: ' + fileUrl);
+        }
+
+        // ========== WEBRTC FONKSİYONLARI - DÜZELTİLMİŞ VERSİYON ==========
+        
+        // GÖRÜNTÜLÜ ARAMA BAŞLAT
+        async function startWebRTCVideoCall() {
+            if (!privateChatWith) {
+                alert('❌ Önce bir kullanıcı ile özel sohbette olmalısınız!');
+                return;
+            }
+
+            if (await checkBlockStatus(privateChatWith)) {
+                alert('⛔ Bu kullanıcı ile görüntülü sohbet yapamazsınız!');
+                return;
+            }
+
+            if (webrtcActiveCall) {
+                alert('⚠️ Zaten aktif bir görüntülü sohbetiniz var!');
+                return;
+            }
+
+            try {
+                console.log('📹 WebRTC görüntülü arama başlatılıyor... Hedef:', privateChatWith);
+                
+                // KAMERA VE MİKROFON İZNİ İSTE
+                webrtcLocalStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: {
+                        width: { ideal: 640, max: 1280 },
+                        height: { ideal: 480, max: 720 },
+                        frameRate: { ideal: 30, max: 30 }
+                    }, 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                
+                console.log('✅ Kamera ve mikrofon erişimi başarılı');
+
+                // LOCAL VİDEOYU GÖSTER
+                const localVideo = document.getElementById('localVideo');
+                if (!localVideo) throw new Error('Local video elementi bulunamadı!');
+                
+                localVideo.srcObject = webrtcLocalStream;
+                try {
+                    await localVideo.play();
+                    console.log('✅ Local video oynatılıyor');
+                } catch (playError) {
+                    console.warn('Local video play hatası:', playError);
+                }
+
+                // PEER CONNECTION OLUŞTUR
+                webrtcPeerConnection = new RTCPeerConnection(webrtcConfig);
+                console.log('✅ Peer connection oluşturuldu (TURN sunucuları eklendi)');
+
+                // LOCAL STREAM'DEKİ TÜM TRACKLERİ EKLE
+                webrtcLocalStream.getTracks().forEach(track => {
+                    webrtcPeerConnection.addTrack(track, webrtcLocalStream);
+                    console.log(`✅ Track eklendi: ${track.kind}`);
+                });
+
+                // REMOTE STREAM'İ YAKALA
+                webrtcPeerConnection.ontrack = (event) => {
+                    console.log('📥 Uzaktaki kullanıcının yayını alındı');
+                    const remoteVideo = document.getElementById('remoteVideo');
+                    if (event.streams && event.streams[0]) {
+                        remoteVideo.srcObject = event.streams[0];
+                        remoteVideo.play().catch(e => console.log('Remote video play hatası:', e));
+                        console.log('✅ Remote video ayarlandı');
+                    }
+                };
+
+                // ICE CANDIDATE GÖNDER
+                webrtcPeerConnection.onicecandidate = (event) => {
+                    if (event.candidate && webrtcActiveCall && webrtcActiveCall.id) {
+                        console.log('📤 ICE candidate gönderiliyor');
+                        videoCallsRef.child(webrtcActiveCall.id).child('iceCandidates').push({
+                            candidate: event.candidate.candidate,
+                            sdpMid: event.candidate.sdpMid,
+                            sdpMLineIndex: event.candidate.sdpMLineIndex
+                        });
+                    }
+                };
+
+                // BAĞLANTI DURUMUNU İZLE
+                webrtcPeerConnection.onconnectionstatechange = () => {
+                    console.log('📊 Bağlantı durumu:', webrtcPeerConnection.connectionState);
+                    if (webrtcPeerConnection.connectionState === 'disconnected' || 
+                        webrtcPeerConnection.connectionState === 'failed' ||
+                        webrtcPeerConnection.connectionState === 'closed') {
+                        addSystemMessage('📹 Görüntülü sohbet bağlantısı koptu.');
+                        endWebRTCVideoCall();
+                    }
+                };
+
+                // ICE BAĞLANTI DURUMUNU İZLE
+                webrtcPeerConnection.oniceconnectionstatechange = () => {
+                    console.log('🧊 ICE bağlantı durumu:', webrtcPeerConnection.iceConnectionState);
+                };
+
+                // OFFER OLUŞTUR
+                const offer = await webrtcPeerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: true,
+                    iceRestart: true
+                });
+                
+                await webrtcPeerConnection.setLocalDescription(offer);
+                console.log('📤 Offer oluşturuldu ve setLocalDescription yapıldı');
+
+                // CALL VERİSİ OLUŞTUR
+                const callData = {
+                    from: currentUser.name,
+                    to: privateChatWith,
+                    status: 'ringing',
+                    offer: {
+                        type: offer.type,
+                        sdp: offer.sdp
+                    },
+                    timestamp: Date.now(),
+                    fromAvatar: currentProfileAvatar || null
+                };
+
+                // FIREBASE'E KAYDET
+                const callRef = await videoCallsRef.push(callData);
+                webrtcCallRef = callRef.key;
+
+                webrtcActiveCall = {
+                    id: callRef.key,
+                    from: currentUser.name,
+                    to: privateChatWith,
+                    status: 'ringing'
+                };
+
+                console.log('📞 Call oluşturuldu, ID:', webrtcActiveCall.id);
+
+                // ARAYANA BİLDİRİM GÖNDER
+                addNotification(privateChatWith, `${currentUser.name} sizi görüntülü sohbete davet etti!`, 'video-call');
+
+                // UI'ı GÜNCELLE
+                document.getElementById('videoCallWith').textContent = `📹 ${privateChatWith} ile görüntülü sohbet`;
+                document.getElementById('videoCallModal').style.display = 'flex';
+                document.getElementById('overlay').style.display = 'block';
+
+                // CALL GÜNCELLEMELERİNİ DİNLE
+                videoCallsRef.child(callRef.key).on('value', handleWebRTCCallUpdate);
+
+            } catch (error) {
+                console.error('❌ WebRTC görüntülü sohbet başlatma hatası:', error);
+                alert('Kamera veya mikrofon başlatılamadı: ' + error.message);
+                endWebRTCVideoCall();
+            }
+        }
+
+        // WEBRTC CALL GÜNCELLEMELERİNİ İŞLE
+        async function handleWebRTCCallUpdate(snapshot) {
+            const callData = snapshot.val();
+            if (!callData || !webrtcActiveCall || webrtcActiveCall.id !== snapshot.key) return;
+
+            console.log('📞 WebRTC çağrı güncellemesi:', callData);
+
+            try {
+                if (callData.status === 'accepted' && callData.answer && webrtcPeerConnection) {
+                    console.log('✅ Çağrı kabul edildi, answer alınıyor');
+                    
+                    if (webrtcPeerConnection.signalingState === 'have-local-offer') {
+                        await webrtcPeerConnection.setRemoteDescription(new RTCSessionDescription(callData.answer));
+                        console.log('✅ Remote description ayarlandı');
+                    }
+                } 
+                else if (callData.status === 'rejected') {
+                    console.log('❌ Çağrı reddedildi');
+                    addSystemMessage('📹 Görüntülü sohbet reddedildi.');
+                    endWebRTCVideoCall();
+                } 
+                else if (callData.status === 'ended') {
+                    console.log('📴 Çağrı sonlandırıldı');
+                    addSystemMessage('📹 Görüntülü sohbet sonlandırıldı.');
+                    endWebRTCVideoCall();
+                } 
+                else if (callData.iceCandidates && webrtcPeerConnection) {
+                    const candidates = callData.iceCandidates;
+                    if (candidates) {
+                        Object.values(candidates).forEach(async (candidateData) => {
+                            try {
+                                if (candidateData && candidateData.candidate) {
+                                    const candidate = new RTCIceCandidate({
+                                        candidate: candidateData.candidate,
+                                        sdpMid: candidateData.sdpMid,
+                                        sdpMLineIndex: candidateData.sdpMLineIndex
+                                    });
+                                    await webrtcPeerConnection.addIceCandidate(candidate);
+                                    console.log('✅ ICE candidate eklendi');
+                                }
+                            } catch (e) {
+                                console.warn('ICE candidate eklenirken hata:', e);
+                            }
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('WebRTC call update hatası:', error);
+            }
+        }
+
+        // GELEN ARAMAYI KABUL ET
+        async function acceptWebRTCVideoCall() {
+            if (!webrtcIncomingCallData) {
+                console.warn('Gelen arama verisi yok');
+                return;
+            }
+
+            try {
+                console.log('📞 WebRTC görüntülü arama kabul ediliyor...');
+
+                // BİLDİRİMİ GİZLE
+                document.getElementById('incomingCallNotification').style.display = 'none';
+
+                // KAMERA VE MİKROFON İZNİ İSTE
+                webrtcLocalStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: {
+                        width: { ideal: 640, max: 1280 },
+                        height: { ideal: 480, max: 720 }
+                    }, 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+
+                console.log('✅ Kamera ve mikrofon erişimi başarılı');
+
+                // LOCAL VİDEOYU GÖSTER
+                const localVideo = document.getElementById('localVideo');
+                localVideo.srcObject = webrtcLocalStream;
+                await localVideo.play();
+
+                // PEER CONNECTION OLUŞTUR
+                webrtcPeerConnection = new RTCPeerConnection(webrtcConfig);
+
+                // LOCAL STREAM'DEKİ TÜM TRACKLERİ EKLE
+                webrtcLocalStream.getTracks().forEach(track => {
+                    webrtcPeerConnection.addTrack(track, webrtcLocalStream);
+                });
+
+                // REMOTE STREAM'İ YAKALA
+                webrtcPeerConnection.ontrack = (event) => {
+                    console.log('📥 Arayan kullanıcının yayını alındı');
+                    const remoteVideo = document.getElementById('remoteVideo');
+                    if (event.streams && event.streams[0]) {
+                        remoteVideo.srcObject = event.streams[0];
+                        remoteVideo.play().catch(e => console.log('Remote video play hatası:', e));
+                    }
+                };
+
+                // ICE CANDIDATE GÖNDER
+                webrtcPeerConnection.onicecandidate = (event) => {
+                    if (event.candidate && webrtcActiveCall && webrtcActiveCall.id) {
+                        videoCallsRef.child(webrtcActiveCall.id).child('iceCandidates').push({
+                            candidate: event.candidate.candidate,
+                            sdpMid: event.candidate.sdpMid,
+                            sdpMLineIndex: event.candidate.sdpMLineIndex
+                        });
+                    }
+                };
+
+                // BAĞLANTI DURUMUNU İZLE
+                webrtcPeerConnection.onconnectionstatechange = () => {
+                    console.log('📊 Bağlantı durumu:', webrtcPeerConnection.connectionState);
+                    if (webrtcPeerConnection.connectionState === 'disconnected' || 
+                        webrtcPeerConnection.connectionState === 'failed' ||
+                        webrtcPeerConnection.connectionState === 'closed') {
+                        addSystemMessage('📹 Görüntülü sohbet bağlantısı koptu.');
+                        endWebRTCVideoCall();
+                    }
+                };
+
+                // GELEN OFFER'İ AYARLA
+                await webrtcPeerConnection.setRemoteDescription(new RTCSessionDescription(webrtcIncomingCallData.offer));
+
+                // ANSWER OLUŞTUR
+                const answer = await webrtcPeerConnection.createAnswer();
+                await webrtcPeerConnection.setLocalDescription(answer);
+
+                // FIREBASE'E ANSWER'İ GÖNDER
+                await videoCallsRef.child(webrtcIncomingCallData.id).update({
+                    status: 'accepted',
+                    answer: {
+                        type: answer.type,
+                        sdp: answer.sdp
+                    }
+                });
+
+                // AKTİF ÇAĞRI VERİLERİNİ AYARLA
+                webrtcActiveCall = {
+                    id: webrtcIncomingCallData.id,
+                    from: webrtcIncomingCallData.from,
+                    to: currentUser.name,
+                    status: 'accepted'
+                };
+                webrtcCallRef = webrtcIncomingCallData.id;
+
+                // ÖZEL SOHBET KİŞİSİNİ AYARLA
+                privateChatWith = webrtcIncomingCallData.from;
+                currentPrivateChatId = generateChatId(currentUser.name, webrtcIncomingCallData.from);
+
+                // UI'ı GÜNCELLE
+                document.getElementById('videoCallWith').textContent = `📹 ${webrtcIncomingCallData.from} ile görüntülü sohbet`;
+                document.getElementById('videoCallModal').style.display = 'flex';
+                document.getElementById('overlay').style.display = 'block';
+
+                // CALL GÜNCELLEMELERİNİ DİNLE
+                videoCallsRef.child(webrtcActiveCall.id).on('value', handleWebRTCCallUpdate);
+
+                webrtcIncomingCallData = null;
+                console.log('✅ WebRTC görüntülü arama kabul edildi');
+
+            } catch (error) {
+                console.error('❌ WebRTC görüntülü sohbet kabul etme hatası:', error);
+                alert('Görüntülü sohbet başlatılamadı: ' + error.message);
+                endWebRTCVideoCall();
+            }
+        }
+
+        // GELEN ARAMAYI REDDET
+        function rejectWebRTCVideoCall() {
+            if (webrtcIncomingCallData) {
+                console.log('❌ Çağrı reddediliyor');
+                videoCallsRef.child(webrtcIncomingCallData.id).update({ status: 'rejected' });
+                document.getElementById('incomingCallNotification').style.display = 'none';
+                webrtcIncomingCallData = null;
+            }
+        }
+
+        // WEBRTC GÖRÜNTÜLÜ SOHBETİ SONLANDIR
+        function endWebRTCVideoCall() {
+            console.log('📴 WebRTC görüntülü sohbet sonlandırılıyor...');
+
+            // PEER CONNECTION'I KAPAT
+            if (webrtcPeerConnection) {
+                webrtcPeerConnection.close();
+                webrtcPeerConnection = null;
+            }
+
+            // LOCAL STREAM'I DURDUR
+            if (webrtcLocalStream) {
+                webrtcLocalStream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log(`🛑 Track durduruldu: ${track.kind}`);
+                });
+                webrtcLocalStream = null;
+            }
+
+            // FIREBASE'DEKİ ÇAĞRIYI GÜNCELLE
+            if (webrtcActiveCall) {
+                videoCallsRef.child(webrtcActiveCall.id).off('value');
+                videoCallsRef.child(webrtcActiveCall.id).update({ status: 'ended' });
+                webrtcActiveCall = null;
+                webrtcCallRef = null;
+            }
+
+            // VİDEO ELEMENTLERİNİ TEMİZLE
+            const localVideo = document.getElementById('localVideo');
+            const remoteVideo = document.getElementById('remoteVideo');
+            
+            if (localVideo) localVideo.srcObject = null;
+            if (remoteVideo) remoteVideo.srcObject = null;
+
+            // UI'ı KAPAT
+            document.getElementById('videoCallModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('incomingCallNotification').style.display = 'none';
+
+            webrtcIncomingCallData = null;
+            webrtcIsAudioMuted = false;
+            webrtcIsVideoOff = false;
+
+            document.getElementById('webrtcMuteBtn').textContent = '🔊';
+            document.getElementById('webrtcVideoBtn').textContent = '📹';
+
+            console.log('✅ WebRTC görüntülü sohbet sonlandırıldı');
+        }
+
+        // GELEN ARAMA DİNLEYİCİSİNİ KUR
+        function setupWebRTCVideoCallListener() {
+            if (!videoCallsRef || !currentUser) return;
+
+            if (webrtcCallListener) {
+                videoCallsRef.off('child_added', webrtcCallListener);
+            }
+
+            webrtcCallListener = videoCallsRef.orderByChild('to').equalTo(currentUser.name).on('child_added', async (snapshot) => {
+                const callData = snapshot.val();
+                if (!callData) return;
+
+                if (callData.status === 'ringing' && callData.from !== currentUser.name) {
+                    console.log('📞 Gelen arama tespit edildi:', callData.from);
+
+                    // Engel kontrolü
+                    if (await checkBlockStatus(callData.from)) {
+                        videoCallsRef.child(snapshot.key).update({ status: 'blocked' });
+                        return;
+                    }
+
+                    // Zaten aktif çağrı varsa meşgul yanıtı ver
+                    if (webrtcActiveCall) {
+                        videoCallsRef.child(snapshot.key).update({ status: 'busy' });
+                        return;
+                    }
+
+                    webrtcIncomingCallData = {
+                        id: snapshot.key,
+                        from: callData.from,
+                        offer: callData.offer
+                    };
+
+                    document.getElementById('incomingCaller').innerHTML = `
+                        <div style="text-align: center;">
+                            <strong>${callData.from}</strong> sizi görüntülü sohbete davet ediyor!
+                        </div>
+                    `;
+                    document.getElementById('incomingCallNotification').style.display = 'block';
+                    playNotificationSound();
+
+                    // 30 SANİYE SONRA OTOMATİK REDDET
+                    setTimeout(() => {
+                        if (document.getElementById('incomingCallNotification').style.display === 'block' && webrtcIncomingCallData) {
+                            rejectWebRTCVideoCall();
+                        }
+                    }, 30000);
+                }
+            });
+        }
+
+        // WEBRTC SESİ AÇ/KAPAT
+        function toggleWebRTCAudio() {
+            if (!webrtcLocalStream) return;
+
+            webrtcIsAudioMuted = !webrtcIsAudioMuted;
+            webrtcLocalStream.getAudioTracks().forEach(track => {
+                track.enabled = !webrtcIsAudioMuted;
+            });
+
+            document.getElementById('webrtcMuteBtn').textContent = webrtcIsAudioMuted ? '🔇' : '🔊';
+            console.log(webrtcIsAudioMuted ? '🔇 Ses kapatıldı' : '🔊 Ses açıldı');
+        }
+
+        // WEBRTC VİDEOYU AÇ/KAPAT
+        function toggleWebRTCVideo() {
+            if (!webrtcLocalStream) return;
+
+            webrtcIsVideoOff = !webrtcIsVideoOff;
+            webrtcLocalStream.getVideoTracks().forEach(track => {
+                track.enabled = !webrtcIsVideoOff;
+            });
+
+            document.getElementById('webrtcVideoBtn').textContent = webrtcIsVideoOff ? '🚫' : '📹';
+            console.log(webrtcIsVideoOff ? '🚫 Video kapatıldı' : '📹 Video açıldı');
+        }
 
         // ========== SHA-256 ŞİFRELEME ==========
         async function sha256(message) {
@@ -3465,25 +4344,6 @@
             updateChannelList();
         }
 
-        // ========== FIREBASE STORAGE DOSYA YÜKLEME ==========
-        async function uploadFileToStorage(file, path) {
-            if (!storage) {
-                throw new Error('Firebase Storage bağlantısı yok!');
-            }
-
-            const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}_${file.name}`;
-            const storageRef = storage.ref().child(`${path}/${fileName}`);
-            
-            try {
-                const snapshot = await storageRef.put(file);
-                const downloadURL = await snapshot.ref.getDownloadURL();
-                return downloadURL;
-            } catch (error) {
-                console.error('Dosya yükleme hatası:', error);
-                throw error;
-            }
-        }
-
         // ========== KANAL SİSTEMİ ==========
         async function createChannel() {
             if (!currentUser) {
@@ -3642,64 +4502,77 @@
             const channelMessagesRef = database.ref('channelMessages/' + channelId);
             channelMessagesRef.off();
 
-            channelMessagesRef.limitToLast(50).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message) {
-                    message.id = snapshot.key;
-                    addChannelMessageToUI(message, channelId);
-                }
+            channelMessagesRef.limitToLast(50).on('value', (snapshot) => {
+                updateChannelMessages(snapshot.val(), channelId);
             });
         }
 
-        function addChannelMessageToUI(msg, channelId) {
+        function updateChannelMessages(messages, channelId) {
             const container = document.getElementById('messages');
-            
-            const messageDiv = document.createElement('div');
-
-            let msgClass = 'user';
-            if (msg.sender === channels[channelId]?.owner) {
-                msgClass = 'channel-owner';
-            } else if (channels[channelId]?.operators?.includes(msg.sender)) {
-                msgClass = 'channel-operator';
+            if (!messages) {
+                container.innerHTML = '<div class="message-item system">📺 Kanalda henüz mesaj yok.</div>';
+                return;
             }
 
-            messageDiv.className = `message-item ${msgClass}`;
-            messageDiv.id = `msg_${msg.id}`;
+            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
+            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
 
-            let deleteButton = '';
-            if (currentUser && (msg.sender === currentUser.name || 
-                channels[channelId]?.owner === currentUser.name || 
-                channels[channelId]?.operators?.includes(currentUser.name) ||
-                isAdmin || isOwner)) {
-                deleteButton = `<button class="delete-btn" onclick="deleteChannelMessage('${channelId}', '${msg.id}')">🗑️</button>`;
-            }
+            container.innerHTML = '';
 
-            let senderName = msg.sender;
+            messagesArray.slice(-100).forEach(msg => {
+                const messageDiv = document.createElement('div');
 
-            let content = msg.text;
-            if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-            if (msg.video) content += `<br><video src="${msg.video}" controls class="message-video"></video>`;
+                let msgClass = 'user';
+                if (msg.sender === channels[channelId]?.owner) {
+                    msgClass = 'channel-owner';
+                } else if (channels[channelId]?.operators?.includes(msg.sender)) {
+                    msgClass = 'channel-operator';
+                }
 
-            const userAvatar = userProfiles[msg.sender]?.avatar || null;
-            const avatarHtml = userAvatar ? 
-                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
-                '';
+                messageDiv.className = `message-item ${msgClass}`;
+                messageDiv.id = `msg_${msg.id}`;
 
-            messageDiv.innerHTML = `
-                <div class="message-header">
-                    <span class="message-user" onclick="openPrivateChat('${msg.sender}')">
-                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : ''}
-                        ${senderName}
-                    </span>
-                    <div>
-                        <span class="message-time">${msg.time || '--:--'}</span>
-                        ${deleteButton}
+                let deleteButton = '';
+                if (currentUser && (msg.sender === currentUser.name || 
+                    channels[channelId]?.owner === currentUser.name || 
+                    channels[channelId]?.operators?.includes(currentUser.name) ||
+                    isAdmin || isOwner)) {
+                    deleteButton = `<button class="delete-btn" onclick="deleteChannelMessage('${channelId}', '${msg.id}')">🗑️</button>`;
+                }
+
+                let senderName = msg.sender;
+
+                let content = msg.text;
+                if (msg.mediaURL) {
+                    if (msg.mediaType === 'image') {
+                        content += `<br><img src="${msg.mediaURL}" class="message-image" onclick="showImageModal('${msg.mediaURL}')">`;
+                    } else if (msg.mediaType === 'video') {
+                        content += `<br><video src="${msg.mediaURL}" controls class="message-video"></video>`;
+                    }
+                }
+
+                const userAvatar = userProfiles[msg.sender]?.avatar || null;
+                const avatarHtml = userAvatar ? 
+                    `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
+                    '';
+
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        <span class="message-user" onclick="openPrivateChat('${msg.sender}')">
+                            ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : ''}
+                            ${senderName}
+                        </span>
+                        <div>
+                            <span class="message-time">${msg.time || '--:--'}</span>
+                            ${deleteButton}
+                        </div>
                     </div>
-                </div>
-                <div class="message-content">${content}</div>
-            `;
+                    <div class="message-content">${content}</div>
+                `;
 
-            container.appendChild(messageDiv);
+                container.appendChild(messageDiv);
+            });
+
             container.scrollTop = container.scrollHeight;
         }
 
@@ -3707,54 +4580,9 @@
             if (!messagesRef) return;
 
             messagesRef.off();
-            messagesRef.limitToLast(50).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message) {
-                    message.id = snapshot.key;
-                    addMessageToUI(message);
-                }
+            messagesRef.limitToLast(50).on('value', (snapshot) => {
+                updateMessages(snapshot.val());
             });
-        }
-
-        function addMessageToUI(msg) {
-            const container = document.getElementById('messages');
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message-item ${msg.type || 'user'}`;
-            messageDiv.id = `msg_${msg.id}`;
-
-            let deleteButton = '';
-            if (currentUser && (msg.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner)) {
-                deleteButton = `<button class="delete-btn" onclick="deleteMessage('${msg.id}')">🗑️</button>`;
-            }
-
-            let senderName = msg.sender;
-
-            let content = msg.text;
-            if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-            if (msg.video) content += `<br><video src="${msg.video}" controls class="message-video"></video>`;
-
-            const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
-            const avatarHtml = userAvatar ? 
-                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
-                '';
-
-            messageDiv.innerHTML = `
-                <div class="message-header">
-                    <span class="message-user" onclick="openPrivateChat('${msg.sender}')">
-                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : ''}
-                        ${senderName}
-                    </span>
-                    <div>
-                        <span class="message-time">${msg.time || '--:--'}</span>
-                        ${deleteButton}
-                    </div>
-                </div>
-                <div class="message-content">${content}</div>
-            `;
-
-            container.appendChild(messageDiv);
-            container.scrollTop = container.scrollHeight;
         }
 
         async function sendChannelMessage(channelId, text) {
@@ -4182,7 +5010,7 @@
             try {
                 firebase.initializeApp(firebaseConfig);
                 database = firebase.database();
-                storage = firebase.storage();
+                storage = firebase.storage ? firebase.storage() : null;
 
                 const connectedRef = database.ref(".info/connected");
                 connectedRef.on("value", function(snap) {
@@ -4227,6 +5055,9 @@
                         updateBannedUsers();
                         startBanMonitoring();
                         startUserLocksCleanup();
+                        
+                        // Mega.nz başlat
+                        initMega();
 
                         loadGeneralPlaylist();
                         loadGeneralMessages();
@@ -4234,6 +5065,7 @@
                         loadChannels();
 
                         if (currentUser) {
+                            setupWebRTCVideoCallListener();
                             loadUserProfile(currentUser.name);
                             loadBlockedUsers();
 
@@ -4377,8 +5209,8 @@
                     text: message.text || '',
                     timestamp: message.timestamp || Date.now(),
                     time: message.time || new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                    image: message.image || null,
-                    video: message.video || null
+                    mediaURL: message.mediaURL || null,
+                    mediaType: message.mediaType || null
                 };
 
                 ownerPrivateMessages[key].push(messageData);
@@ -4407,10 +5239,14 @@
             messageDiv.id = `owner_msg_${message.id}`;
 
             let content = '';
-            if (message.image) {
-                content = `<img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-            } else if (message.video) {
-                content = `<video src="${message.video}" controls class="message-video"></video>`;
+            if (message.mediaURL) {
+                if (message.mediaType === 'image') {
+                    content = `<img src="${message.mediaURL}" class="message-image" onclick="showImageModal('${message.mediaURL}')">`;
+                } else if (message.mediaType === 'video') {
+                    content = `<video src="${message.mediaURL}" controls class="message-video"></video>`;
+                } else {
+                    content = message.text || '';
+                }
             } else {
                 content = message.text || '';
             }
@@ -4483,8 +5319,10 @@
                     const lastMessage = messages[messages.length - 1];
 
                     let lastMsgText = lastMessage.text || '';
-                    if (lastMessage.image) lastMsgText = '📸 Fotoğraf';
-                    else if (lastMessage.video) lastMsgText = '🎥 Video';
+                    if (lastMessage.mediaURL) {
+                        if (lastMessage.mediaType === 'image') lastMsgText = '📸 Fotoğraf';
+                        else if (lastMessage.mediaType === 'video') lastMsgText = '🎥 Video';
+                    }
 
                     const chatDiv = document.createElement('div');
                     chatDiv.className = 'owner-chat-list';
@@ -4660,19 +5498,19 @@
 
                 // Canvas'ı blob'a çevir
                 const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+                const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
                 
-                // Dosya adı oluştur
-                const fileName = `camera_${Date.now()}.jpg`;
-                const file = new File([blob], fileName, { type: 'image/jpeg' });
-
-                // Storage'e yükle
-                const downloadURL = await uploadFileToStorage(file, 'private_photos');
+                // Mega.nz'ye yükle
+                const megaData = await uploadToMega(file, currentPrivateChatId);
 
                 const messageData = {
                     sender: currentUser.name,
                     receiver: privateChatWith,
                     text: '📸 Fotoğraf çekti',
-                    image: downloadURL,
+                    mediaURL: megaData.url,
+                    mediaType: 'image',
+                    fileName: megaData.fileName,
+                    fileSize: megaData.fileSize,
                     timestamp: Date.now(),
                     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                 };
@@ -4682,7 +5520,7 @@
                 closeCameraModal();
 
             } catch (error) {
-                alert('Fotoğraf gönderilemedi: ' + error.message);
+                alert('Fotoğraf gönderilemedi! ' + error.message);
             }
         }
 
@@ -4700,20 +5538,20 @@
 
                 mediaRecorder.onstop = async () => {
                     const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                    
-                    try {
-                        // Dosya adı oluştur
-                        const fileName = `video_${Date.now()}.webm`;
-                        const file = new File([blob], fileName, { type: 'video/webm' });
+                    const file = new File([blob], `video_${Date.now()}.webm`, { type: 'video/webm' });
 
-                        // Storage'e yükle
-                        const downloadURL = await uploadFileToStorage(file, 'private_videos');
+                    try {
+                        // Mega.nz'ye yükle
+                        const megaData = await uploadToMega(file, currentPrivateChatId);
 
                         const messageData = {
                             sender: currentUser.name,
                             receiver: privateChatWith,
                             text: '🎥 Video kaydetti',
-                            video: downloadURL,
+                            mediaURL: megaData.url,
+                            mediaType: 'video',
+                            fileName: megaData.fileName,
+                            fileSize: megaData.fileSize,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
@@ -4722,7 +5560,7 @@
                         addNotification(privateChatWith, '🎥 Video gönderdi', 'private');
                         closeCameraModal();
                     } catch (error) {
-                        alert('Video yüklenirken hata oluştu: ' + error.message);
+                        alert('Video yüklenemedi! ' + error.message);
                     }
                 };
 
@@ -4767,41 +5605,30 @@
 
             if (await checkBlockStatus(privateChatWith)) return;
 
-            const attachBtn = document.querySelector('.attach-btn');
-            const originalText = attachBtn.innerHTML;
-            attachBtn.innerHTML = '⏳';
-            attachBtn.disabled = true;
-
             try {
-                const fileType = file.type.startsWith('image/') ? 'image' : 'video';
-                const storagePath = fileType === 'image' ? 'private_photos' : 'private_videos';
-                
-                const downloadURL = await uploadFileToStorage(file, storagePath);
+                // Mega.nz'ye yükle - SINIRSIZ BOYUT!
+                const megaData = await uploadToMega(file, currentPrivateChatId);
 
                 const messageData = {
                     sender: currentUser.name,
                     receiver: privateChatWith,
-                    text: fileType === 'image' ? '📸 Resim gönderdi' : '🎥 Video gönderdi',
+                    text: file.type.startsWith('image/') ? '📸 Resim gönderdi' : '🎥 Video gönderdi',
+                    mediaURL: megaData.url,
+                    mediaType: file.type.startsWith('image/') ? 'image' : 'video',
+                    fileName: megaData.fileName,
+                    fileSize: megaData.fileSize,
                     timestamp: Date.now(),
                     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                 };
 
-                if (fileType === 'image') {
-                    messageData.image = downloadURL;
-                } else {
-                    messageData.video = downloadURL;
-                }
-
                 await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                addNotification(privateChatWith, fileType === 'image' ? '📸 Resim gönderdi' : '🎥 Video gönderdi', 'private');
+                addNotification(privateChatWith, file.type.startsWith('image/') ? '📸 Resim gönderdi' : '🎥 Video gönderdi', 'private');
 
             } catch (error) {
-                alert('❌ Dosya gönderilemedi: ' + error.message);
-            } finally {
-                attachBtn.innerHTML = '📎';
-                attachBtn.disabled = false;
-                e.target.value = '';
+                alert('❌ Dosya gönderilemedi! ' + error.message);
             }
+            
+            e.target.value = '';
         }
 
         // ========== BİLDİRİM SİSTEMİ ==========
@@ -4875,7 +5702,7 @@
                     <div class="notification-item ${notif.read ? '' : 'unread'}" onclick="handleNotificationClick('${notif.id}')">
                         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                             <div style="width: 24px; height: 24px; border-radius: 50%; background: var(--bg-tertiary); border:1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 12px;">
-                                ${notif.type === 'private' ? '🔒' : (notif.type === 'admin' ? '⚠️' : 'ℹ️')}
+                                ${notif.type === 'private' ? '🔒' : (notif.type === 'video-call' ? '📹' : (notif.type === 'admin' ? '⚠️' : 'ℹ️'))}
                             </div>
                             <strong style="flex: 1;">${notif.sender}</strong>
                             <small style="color: var(--text-muted);">${notif.time}</small>
@@ -5053,6 +5880,8 @@
 
             addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}!`);
 
+            setupWebRTCVideoCallListener();
+
             loadUserProfile(username);
 
             if (isOwner) startOwnerPrivateMessageMonitoring();
@@ -5145,6 +5974,9 @@
                     closeRemoveOperatorModal();
                     closeReportModal();
                     document.getElementById('adminPanel').classList.remove('active');
+                    if (webrtcActiveCall) {
+                        endWebRTCVideoCall();
+                    }
                 }
             });
 
@@ -5161,6 +5993,12 @@
                     } else {
                         updateOnlineUsersForChannel('general', snapshot.val());
                     }
+                });
+            }
+
+            if (messagesRef && !currentChannel) {
+                messagesRef.limitToLast(50).on('value', (snapshot) => {
+                    updateMessages(snapshot.val());
                 });
             }
 
@@ -5205,6 +6043,7 @@
                     usersRef.child(currentUser.name).update({ isOnline: false, lastSeen: Date.now() });
                 }
                 if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+                if (webrtcLocalStream) webrtcLocalStream.getTracks().forEach(track => track.stop());
             });
 
             document.addEventListener('keydown', function(e) {
@@ -5229,6 +6068,10 @@
             closeProfileModal();
             closeReportModal();
             document.getElementById('adminPanel').classList.remove('active');
+
+            if (webrtcActiveCall) {
+                endWebRTCVideoCall();
+            }
 
             document.getElementById('usersSidebar').classList.remove('active');
             document.getElementById('notificationPanel').classList.remove('active');
@@ -5730,6 +6573,66 @@
             }
         }
 
+        function updateMessages(messages) {
+            const container = document.getElementById('messages');
+            if (!messages) {
+                if (!currentChannel) {
+                    container.innerHTML = '<div class="message-item system">🎉 Popbox Music Live\'e hoş geldiniz!</div>';
+                }
+                return;
+            }
+
+            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
+            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+
+            container.innerHTML = '';
+
+            messagesArray.slice(-100).forEach(msg => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message-item ${msg.type || 'user'}`;
+                messageDiv.id = `msg_${msg.id}`;
+
+                let deleteButton = '';
+                if (currentUser && (msg.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner)) {
+                    deleteButton = `<button class="delete-btn" onclick="deleteMessage('${msg.id}')">🗑️</button>`;
+                }
+
+                let senderName = msg.sender;
+
+                let content = msg.text;
+                if (msg.mediaURL) {
+                    if (msg.mediaType === 'image') {
+                        content += `<br><img src="${msg.mediaURL}" class="message-image" onclick="showImageModal('${msg.mediaURL}')">`;
+                    } else if (msg.mediaType === 'video') {
+                        content += `<br><video src="${msg.mediaURL}" controls class="message-video"></video>`;
+                    }
+                }
+
+                const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
+                const avatarHtml = userAvatar ? 
+                    `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
+                    '';
+
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        <span class="message-user" onclick="openPrivateChat('${msg.sender}')">
+                            ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : ''}
+                            ${senderName}
+                        </span>
+                        <div>
+                            <span class="message-time">${msg.time || '--:--'}</span>
+                            ${deleteButton}
+                        </div>
+                    </div>
+                    <div class="message-content">${content}</div>
+                `;
+
+                container.appendChild(messageDiv);
+            });
+
+            container.scrollTop = container.scrollHeight;
+        }
+
         async function deleteMessage(messageId) {
             if (!messagesRef || !currentUser) return;
 
@@ -5798,78 +6701,95 @@
             if (!currentPrivateChatId || !privateChatsRef) return;
 
             const container = document.getElementById('privateMessages');
-            container.innerHTML = '';
+            container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
 
-            privateChatsRef.child(currentPrivateChatId).off();
-
-            privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message) {
-                    message.id = snapshot.key;
-                    addPrivateMessageToUI(message);
-                }
+            privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('value', (snapshot) => {
+                updatePrivateMessages(snapshot.val());
             });
 
             privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
                 const message = snapshot.val();
                 if (message && message.sender !== currentUser.name) {
                     let msgText = message.text || '';
-                    if (message.image) msgText = '📸 Fotoğraf';
-                    else if (message.video) msgText = '🎥 Video';
+                    if (message.mediaURL) {
+                        if (message.mediaType === 'image') msgText = '📸 Fotoğraf';
+                        else if (message.mediaType === 'video') msgText = '🎥 Video';
+                    }
                     addNotification(message.sender, msgText, 'private');
                 }
             });
         }
 
-        function addPrivateMessageToUI(msg) {
+        function updatePrivateMessages(messages) {
             const container = document.getElementById('privateMessages');
 
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message-item private-msg';
-            messageDiv.id = `private_msg_${msg.id}`;
-
-            let deleteButton = '';
-            if (currentUser && msg.sender === currentUser.name) {
-                deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${msg.id}', '${currentPrivateChatId}')">🗑️</button>`;
+            if (!messages) {
+                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Henüz mesaj yok.</div>';
+                return;
             }
 
-            let content = msg.text || '';
-            if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-            else if (msg.video) content += `<br><video src="${msg.video}" controls class="message-video"></video>`;
+            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
+            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
 
-            const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
-            const avatarHtml = userAvatar ? 
-                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
-                '';
+            container.innerHTML = '';
 
-            let readStatus = '';
-            if (msg.sender === currentUser.name) {
-                readStatus = msg.isRead ? ' <span style="color: var(--online); margin-left: 4px;">✔✔</span>' : ' <span style="color: var(--text-muted); margin-left: 4px;">✔</span>';
-            }
+            const now = Date.now();
+            messagesArray.forEach(msg => {
+                if (msg.sender !== currentUser.name && !msg.isRead) {
+                    privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
+                        isRead: true,
+                        readAt: now
+                    });
+                }
+            });
 
-            messageDiv.innerHTML = `
-                <div class="message-header">
-                    <span class="message-user">
-                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : ''}
-                        ${msg.sender}
-                    </span>
-                    <div>
-                        <span class="message-time">${msg.time || '--:--'}${readStatus}</span>
-                        ${deleteButton}
+            messagesArray.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message-item private-msg';
+                messageDiv.id = `private_msg_${msg.id}`;
+
+                let deleteButton = '';
+                if (currentUser && msg.sender === currentUser.name) {
+                    deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${msg.id}', '${currentPrivateChatId}')">🗑️</button>`;
+                }
+
+                let content = msg.text || '';
+                if (msg.mediaURL) {
+                    if (msg.mediaType === 'image') {
+                        content += `<br><img src="${msg.mediaURL}" class="message-image" onclick="showImageModal('${msg.mediaURL}')">`;
+                    } else if (msg.mediaType === 'video') {
+                        content += `<br><video src="${msg.mediaURL}" controls class="message-video"></video>`;
+                    }
+                }
+
+                const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
+                const avatarHtml = userAvatar ? 
+                    `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
+                    '';
+
+                let readStatus = '';
+                if (msg.sender === currentUser.name) {
+                    readStatus = msg.isRead ? ' <span style="color: var(--online); margin-left: 4px;">✔✔</span>' : ' <span style="color: var(--text-muted); margin-left: 4px;">✔</span>';
+                }
+
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        <span class="message-user">
+                            ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : ''}
+                            ${msg.sender}
+                        </span>
+                        <div>
+                            <span class="message-time">${msg.time || '--:--'}${readStatus}</span>
+                            ${deleteButton}
+                        </div>
                     </div>
-                </div>
-                <div class="message-content">${content}</div>
-            `;
+                    <div class="message-content">${content}</div>
+                `;
 
-            container.appendChild(messageDiv);
+                container.appendChild(messageDiv);
+            });
+
             container.scrollTop = container.scrollHeight;
-
-            if (msg.sender !== currentUser.name && !msg.isRead) {
-                privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
-                    isRead: true,
-                    readAt: Date.now()
-                });
-            }
         }
 
         async function deletePrivateMessage(messageId, chatId) {
@@ -6820,13 +7740,10 @@
             help += '• /komut - Yeni özel komut oluştur<br>';
             help += '• /komutlar - Tüm özel komutları listeler<br><br>';
 
-            help += '📁 <strong>MEDYA PAYLAŞIMI:</strong><br>';
-            help += '• Özel sohbette 📎 ikonu ile galeriden resim/video gönderebilirsiniz<br>';
-            help += '• 📷 Kamera ikonu ile fotoğraf çekip gönderebilirsiniz<br>';
-            help += '• ⏺️ Video ikonu ile kamera kaydı yapıp gönderebilirsiniz<br>';
-            help += '• ✅ Hiçbir boyut sınırı yoktur! İstediğiniz büyüklükte dosya gönderebilirsiniz<br><br>';
-
-            help += '📹 <strong>DİĞER ÖZELLİKLER:</strong><br>';
+            help += '📹 <strong>ÖZELLİKLER:</strong><br>';
+            help += '• Görüntülü Sohbet (WebRTC): Özel sohbet içinde 📎 ikonu ile açılır menü<br>';
+            help += '• Gerçek zamanlı, düşük gecikmeli görüntülü görüşme (TURN sunucuları eklendi)<br>';
+            help += '• Mega.nz Entegrasyonu: Sınırsız boyutta resim/video gönderme<br>';
             help += '• Kanal Açma: Kayıtlı her kullanıcı 📺 ikonu ile kanal açabilir<br>';
             help += '• Owner: 🤴 /ozelokuma ile tüm özel mesajları görür<br>';
             help += '• Admin Paneli: ⚙️ ikonu ile sistem bilgileri, banlar, şikayetler, engellemeler<br>';
@@ -6876,6 +7793,7 @@
             }
 
             if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+            if (webrtcLocalStream) webrtcLocalStream.getTracks().forEach(track => track.stop());
 
             location.reload();
         }
