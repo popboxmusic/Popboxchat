@@ -2620,7 +2620,7 @@
     </style>
 </head>
 <body>
-    <!-- TÜM HTML KODLARI AYNEN KALACAK, sadece görüntülü sohbet butonu ve WebRTC ile ilgili kısımlar kaldırıldı -->
+    <!-- TÜM HTML KODLARI AYNEN KALACAK -->
     <!-- HEADER -->
     <div class="youtube-header">
         <div class="header-left">
@@ -2997,7 +2997,7 @@
             <div class="private-attach-container">
                 <button class="attach-btn" title="Dosya ekle">📎</button>
                 <div class="attach-dropdown">
-                    <div class="attach-option" onclick="openMediaUpload()">
+                    <div class="attach-option" onclick="openGallery()">
                         <span>📁</span> Galeriden Gönder (Base64 - Sınırsız)
                     </div>
                     <div class="attach-option" onclick="openCameraModal()">
@@ -3006,7 +3006,7 @@
                 </div>
             </div>
             
-            <input type="file" id="mediaUpload" accept="image/*,video/*" style="display: none;" capture="environment">
+            <input type="file" id="galleryUpload" accept="image/*,video/*" style="display: none;">
             
             <textarea 
                 id="private-input" 
@@ -3203,7 +3203,7 @@
         let adminPasswordsRef;
         let customCommandsRef;
         let adminListRef;
-        let videoCallsRef; // KALDIRILDI AMA REFERANS HATASI OLMAMASI İÇİN TUTULUYOR
+        let videoCallsRef;
         let playlistRef;
         let profilesRef;
         let channelsRef;
@@ -4156,7 +4156,7 @@
                         adminPasswordsRef = database.ref('adminPasswords');
                         customCommandsRef = database.ref('customCommands');
                         adminListRef = database.ref('adminList');
-                        videoCallsRef = database.ref('videoCalls'); // Kullanılmıyor ama referans hatası olmasın
+                        videoCallsRef = database.ref('videoCalls');
                         playlistRef = database.ref('playlist');
                         profilesRef = database.ref('profiles');
                         channelsRef = database.ref('channels');
@@ -4581,7 +4581,84 @@
             addSystemMessage('💬 Özel sohbet başlatmak için kullanıcı listesinden birine tıklayın.');
         }
 
-        // ========== KAMERA SİSTEMİ (Base64) ==========
+        // ========== GALERİ VE KAMERA SİSTEMİ (DÜZELTİLMİŞ) ==========
+        function openGallery() {
+            if (!privateChatWith) {
+                alert('Önce bir kullanıcı ile özel sohbette olmalısınız!');
+                return;
+            }
+            document.getElementById('galleryUpload').click();
+        }
+
+        document.getElementById('galleryUpload').addEventListener('change', handleGalleryUpload);
+
+        async function handleGalleryUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+                alert('❌ Lütfen sadece resim veya video dosyası seçin!');
+                return;
+            }
+
+            if (await checkBlockStatus(privateChatWith)) return;
+
+            // Video ise süre kontrolü yap
+            if (file.type.startsWith('video/')) {
+                const video = document.createElement('video');
+                video.preload = 'metadata';
+                
+                const videoCheck = new Promise((resolve) => {
+                    video.onloadedmetadata = function() {
+                        window.URL.revokeObjectURL(video.src);
+                        if (video.duration > 20) {
+                            alert('Video süresi 20 saniyeden uzun olamaz! Lütfen daha kısa bir video seçin.');
+                            resolve(false);
+                        } else {
+                            resolve(true);
+                        }
+                    }
+                    video.onerror = () => resolve(true); // Hata olursa geç
+                });
+                
+                video.src = URL.createObjectURL(file);
+                const isValid = await videoCheck;
+                if (!isValid) {
+                    e.target.value = '';
+                    return;
+                }
+            }
+
+            try {
+                // Dosyayı Base64'e çevir
+                const reader = new FileReader();
+                reader.onload = async function(event) {
+                    const base64Data = event.target.result;
+
+                    const messageData = {
+                        sender: currentUser.name,
+                        receiver: privateChatWith,
+                        text: file.type.startsWith('image/') ? '📸 Resim gönderdi' : '🎥 Video gönderdi',
+                        mediaURL: base64Data,
+                        mediaType: file.type.startsWith('image/') ? 'image' : 'video',
+                        fileName: file.name,
+                        fileSize: file.size,
+                        timestamp: Date.now(),
+                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                    };
+
+                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                    addNotification(privateChatWith, file.type.startsWith('image/') ? '📸 Resim gönderdi' : '🎥 Video gönderdi', 'private');
+                };
+                reader.readAsDataURL(file);
+
+            } catch (error) {
+                alert('❌ Dosya gönderilemedi! ' + error.message);
+            }
+            
+            e.target.value = '';
+        }
+
         async function openCameraModal() {
             if (!privateChatWith) {
                 alert('Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -4605,6 +4682,7 @@
                 document.getElementById('recordBtn').style.display = 'flex';
                 document.getElementById('stopBtn').style.display = 'none';
                 isRecording = false;
+                recordedChunks = [];
 
             } catch (error) {
                 alert('Kamera başlatılamadı!');
@@ -4734,72 +4812,6 @@
                 document.getElementById('recordBtn').style.display = 'flex';
                 document.getElementById('stopBtn').style.display = 'none';
             }
-        }
-
-        function openMediaUpload() {
-            if (!privateChatWith) {
-                alert('❌ Önce bir kullanıcı ile özel sohbette olmalısınız!');
-                return;
-            }
-            document.getElementById('mediaUpload').click();
-        }
-
-        document.getElementById('mediaUpload').addEventListener('change', handleMediaUpload);
-
-        async function handleMediaUpload(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-                alert('❌ Lütfen sadece resim veya video dosyası seçin!');
-                return;
-            }
-
-            if (await checkBlockStatus(privateChatWith)) return;
-
-            // Video ise süre kontrolü yap (isteğe bağlı, kullanıcıdan kısa video göndermesi beklenir)
-            if (file.type.startsWith('video/')) {
-                const video = document.createElement('video');
-                video.preload = 'metadata';
-                video.onloadedmetadata = function() {
-                    window.URL.revokeObjectURL(video.src);
-                    if (video.duration > 20) {
-                        alert('Video süresi 20 saniyeden uzun olamaz! Lütfen daha kısa bir video seçin.');
-                        e.target.value = '';
-                        return;
-                    }
-                }
-                video.src = URL.createObjectURL(file);
-            }
-
-            try {
-                // Dosyayı Base64'e çevir
-                const reader = new FileReader();
-                reader.onload = async function(event) {
-                    const base64Data = event.target.result;
-
-                    const messageData = {
-                        sender: currentUser.name,
-                        receiver: privateChatWith,
-                        text: file.type.startsWith('image/') ? '📸 Resim gönderdi' : '🎥 Video gönderdi',
-                        mediaURL: base64Data,
-                        mediaType: file.type.startsWith('image/') ? 'image' : 'video',
-                        fileName: file.name,
-                        fileSize: file.size,
-                        timestamp: Date.now(),
-                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                    };
-
-                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                    addNotification(privateChatWith, file.type.startsWith('image/') ? '📸 Resim gönderdi' : '🎥 Video gönderdi', 'private');
-                };
-                reader.readAsDataURL(file);
-
-            } catch (error) {
-                alert('❌ Dosya gönderilemedi! ' + error.message);
-            }
-            
-            e.target.value = '';
         }
 
         // ========== BİLDİRİM SİSTEMİ ==========
