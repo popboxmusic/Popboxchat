@@ -10,7 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     
     <!-- Mega SDK -->
-   <script src="https://cdn.jsdelivr.net/npm/megajs@1.3.4/dist/mega.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/megajs@1.3.4/dist/mega.min.js"></script>
     
     <style>
         /* TÜM CSS KODLARI AYNEN KALACAK */
@@ -3472,15 +3472,12 @@
             appId: "1:206625719024:web:d28f478a2c96d10412f835"
         };
         
-        // ========== MEGA.NZ KONFİGÜRASYONU ==========
+        // ========== MEGA.NZ KONFİGÜRASYONU (KENDİ BİLGİLERİNİZİ GİRİN) ==========
         const MEGA_CONFIG = {
-            email: 'akcemal07@gmail.com', // KENDİ MEGA HESABINIZI GİRİN
-            password: 'kumsal07@',    // KENDİ MEGA ŞİFRENİZİ GİRİN
+            email: 'akcemal07@gmail.com',    // Sizin email
+            password: 'kumsal07@',            // Sizin şifre
             uploadFolder: 'PopboxChat'
         };
-        
-        let megaStorage = null;
-        let megaFolder = null;
         
         // ========== GLOBAL DEĞİŞKENLER ==========
         let database;
@@ -3547,6 +3544,11 @@
         let notificationCount = 0;
         let notificationPanelOpen = false;
         
+        // ========== MEGA.NZ DEĞİŞKENLERİ (SADECE BURADA TANIMLI) ==========
+        let mega = null;
+        let megaStorage = null;
+        let megaFolder = null;
+        
         // ========== DÜZELTİLMİŞ WEBRTC GÖRÜNTÜLÜ SOHBET SİSTEMİ ==========
         let webrtcLocalStream = null;
         let webrtcPeerConnection = null;
@@ -3590,114 +3592,111 @@
             rtcpMuxPolicy: 'require'
         };
 
-    // ========== MEGA.NZ BAŞLATMA (DÜZELTİLMİŞ) ==========
-let mega = null;
-let megaStorage = null;
-let megaFolder = null;
+        // ========== MEGA.NZ BAŞLATMA (DÜZELTİLMİŞ) ==========
+        async function initMega() {
+            try {
+                console.log('🔄 Mega.nz bağlantısı başlatılıyor...');
+                
+                // Mega istemcisini oluştur (global)
+                if (!mega) {
+                    mega = new Mega();
+                }
+                
+                // Zaten giriş yapılmış mı kontrol et
+                if (megaStorage && megaStorage.root) {
+                    console.log('✅ Mega.nz zaten bağlı');
+                    return true;
+                }
+                
+                // Giriş yap - MEGA_CONFIG kullan!
+                const loginPromise = mega.login(MEGA_CONFIG.email, MEGA_CONFIG.password);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Bağlantı zaman aşımı')), 10000)
+                );
+                
+                megaStorage = await Promise.race([loginPromise, timeoutPromise]);
+                console.log('✅ Mega.nz giriş başarılı');
+                
+                // Upload klasörünü bul veya oluştur
+                const root = await megaStorage.getRoot();
+                const folders = await root.getChildren();
+                
+                megaFolder = folders.find(f => f.directory && f.name === MEGA_CONFIG.uploadFolder);
+                
+                if (!megaFolder) {
+                    megaFolder = await root.createFolder(MEGA_CONFIG.uploadFolder);
+                    console.log(`📁 ${MEGA_CONFIG.uploadFolder} klasörü oluşturuldu`);
+                } else {
+                    console.log(`📁 ${MEGA_CONFIG.uploadFolder} klasörü bulundu`);
+                }
+                
+                return true;
+                
+            } catch (error) {
+                console.error('❌ Mega.nz bağlantı hatası:', error);
+                
+                // Özel hata mesajları
+                if (error.message.includes('timeout')) {
+                    alert('Mega.nz bağlantı zaman aşımı. İnternetinizi kontrol edin.');
+                } else if (error.message.includes('auth') || error.message.includes('login')) {
+                    alert('Mega.nz giriş başarısız. Kullanıcı adı/şifre hatalı veya hesap aktif değil.');
+                } else if (error.message.includes('network')) {
+                    alert('Mega.nz ağ hatası. Güvenlik duvarı veya VPN kontrol edin.');
+                } else {
+                    alert('Mega.nz bağlantı hatası: ' + error.message);
+                }
+                
+                return false;
+            }
+        }
 
-async function initMega() {
-    try {
-        console.log('🔄 Mega.nz bağlantısı başlatılıyor...');
-        
-        // Mega istemcisini oluştur (global)
-        if (!mega) {
-            mega = new Mega();
+        // ========== MEGA.NZ DOSYA YÜKLEME ==========
+        async function uploadToMega(file, chatId) {
+            if (!megaFolder) {
+                const initialized = await initMega();
+                if (!initialized) {
+                    throw new Error('Mega.nz bağlantısı kurulamadı!');
+                }
+            }
+            
+            // Benzersiz dosya adı oluştur
+            const timestamp = Date.now();
+            const randomStr = Math.random().toString(36).substring(2, 10);
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${chatId}_${timestamp}_${randomStr}.${fileExt}`;
+            
+            console.log(`📤 Mega.nz dosya yükleniyor: ${fileName} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+            
+            // Yükleme işlemi
+            const uploadedFile = await megaFolder.upload({
+                name: fileName,
+                file: file
+            });
+            
+            // Dosya işleminin tamamlanmasını bekle
+            await uploadedFile.complete;
+            
+            // Paylaşılabilir link oluştur
+            const link = await uploadedFile.link();
+            
+            console.log(`✅ Mega.nz yükleme tamam: ${link}`);
+            
+            return {
+                url: link,
+                fileName: fileName,
+                fileSize: file.size,
+                fileType: file.type
+            };
         }
-        
-        // Zaten giriş yapılmış mı kontrol et
-        if (megaStorage && megaStorage.root) {
-            console.log('✅ Mega.nz zaten bağlı');
-            return true;
-        }
-        
-        // Giriş yap - timeout ekle
-        const loginPromise = mega.login('akcemal07@gmail.com', 'kumsal07@');
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Bağlantı zaman aşımı')), 10000)
-        );
-        
-        megaStorage = await Promise.race([loginPromise, timeoutPromise]);
-        console.log('✅ Mega.nz giriş başarılı');
-        
-        // Upload klasörünü bul veya oluştur
-        const root = await megaStorage.getRoot();
-        const folders = await root.getChildren();
-        
-        megaFolder = folders.find(f => f.directory && f.name === 'PopboxChat');
-        
-        if (!megaFolder) {
-            megaFolder = await root.createFolder('PopboxChat');
-            console.log('📁 PopboxChat klasörü oluşturuldu');
-        } else {
-            console.log('📁 PopboxChat klasörü bulundu');
-        }
-        
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Mega.nz bağlantı hatası:', error);
-        
-        // Özel hata mesajları
-        if (error.message.includes('timeout')) {
-            alert('Mega.nz bağlantı zaman aşımı. İnternetinizi kontrol edin.');
-        } else if (error.message.includes('auth') || error.message.includes('login')) {
-            alert('Mega.nz giriş başarısız. Kullanıcı adı/şifre hatalı veya hesap aktif değil.');
-        } else if (error.message.includes('network')) {
-            alert('Mega.nz ağ hatası. Güvenlik duvarı veya VPN kontrol edin.');
-        } else {
-            alert('Mega.nz bağlantı hatası: ' + error.message);
-        }
-        
-        return false;
-    }
-}
 
-// ========== MEGA.NZ DOSYA YÜKLEME ==========
-async function uploadToMega(file, chatId) {
-    if (!megaFolder) {
-        const initialized = await initMega();
-        if (!initialized) {
-            throw new Error('Mega.nz bağlantısı kurulamadı!');
+        // ========== MEGA.NZ DOSYA SİLME ==========
+        async function deleteFromMega(fileUrl) {
+            // Mega linklerinden dosya silme işlemi API'de karmaşık
+            // İsteğe bağlı olarak eklenebilir
+            console.log('🗑️ Mega.nz dosya silme: ' + fileUrl);
         }
-    }
-    
-    // Benzersiz dosya adı oluştur
-    const timestamp = Date.now();
-    const randomStr = Math.random().toString(36).substring(2, 10);
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${chatId}_${timestamp}_${randomStr}.${fileExt}`;
-    
-    console.log(`📤 Mega.nz dosya yükleniyor: ${fileName} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-    
-    // Yükleme işlemi
-    const uploadedFile = await megaFolder.upload({
-        name: fileName,
-        file: file
-    });
-    
-    // Dosya işleminin tamamlanmasını bekle
-    await uploadedFile.complete;
-    
-    // Paylaşılabilir link oluştur
-    const link = await uploadedFile.link();
-    
-    console.log(`✅ Mega.nz yükleme tamam: ${link}`);
-    
-    return {
-        url: link,
-        fileName: fileName,
-        fileSize: file.size,
-        fileType: file.type
-    };
-}
 
-// ========== MEGA.NZ DOSYA SİLME ==========
-async function deleteFromMega(fileUrl) {
-    // Mega linklerinden dosya silme işlemi API'de karmaşık
-    // İsteğe bağlı olarak eklenebilir
-    console.log('🗑️ Mega.nz dosya silme: ' + fileUrl);
-}
-        // ========== WEBRTC FONKSİYONLARI - DÜZELTİLMİŞ VERSİYON ==========
+        // ========== WEBRTC FONKSİYONLARI (KISALTILMIŞ VERSİYON) ==========
         
         // GÖRÜNTÜLÜ ARAMA BAŞLAT
         async function startWebRTCVideoCall() {
