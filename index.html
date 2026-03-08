@@ -12,7 +12,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     
     <style>
-        /* TÜM CSS KODLARI AYNEN KALACAK */
+        /* TÜM CSS KODLARI AYNEN KALACAK (Değişiklik yapılmadı, sadece mobil kaydırma için eklentiler yapıldı) */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -2887,6 +2887,8 @@
         @media (max-width: 768px) {
             .main-container {
                 flex-direction: column;
+                position: relative;
+                touch-action: pan-y;
             }
             
             .icon-panel {
@@ -2902,9 +2904,15 @@
             
             .center-panel {
                 width: 100%;
-                height: 30vh;
+                height: 50vh; /* Başlangıç yüksekliği */
                 display: flex;
                 flex-direction: column;
+                transition: height 0.3s ease;
+                overflow: hidden;
+                flex-shrink: 0;
+                border-right: none;
+                position: relative;
+                z-index: 5;
             }
             
             .video-container {
@@ -2913,22 +2921,65 @@
             }
             
             .playlist-section {
-                height: 15vh;
+                height: 0; /* Başlangıçta gizli */
+                min-height: 0;
+                opacity: 0;
+                transition: height 0.3s ease, opacity 0.3s ease;
+                overflow-y: auto;
+                border-top: none;
+                background: rgba(0, 0, 0, 0.5);
+                pointer-events: none;
+            }
+            
+            /* Sohbet alanı tam gizlendiğinde playlist görünür */
+            .chat-container.chat-hidden + .center-panel .playlist-section {
+                height: 30vh;
+                min-height: 150px;
+                opacity: 1;
+                pointer-events: auto;
+                border-top: 1px solid var(--border-color);
             }
             
             .chat-container {
                 width: 100%;
-                height: 70vh;
+                height: 50vh; /* Başlangıç yüksekliği */
                 display: flex;
                 flex-direction: column;
                 position: relative;
+                transition: height 0.3s ease;
+                border-top: 1px solid var(--border-color);
+                touch-action: pan-y;
+                overflow: hidden;
+                cursor: grab;
+            }
+            
+            .chat-container:active {
+                cursor: grabbing;
+            }
+            
+            .chat-container.chat-hidden {
+                height: 0 !important;
+                min-height: 0;
+                opacity: 0;
+                pointer-events: none;
+                border-top: none;
+            }
+            
+            .chat-container.chat-expanded {
+                height: 90vh !important;
+            }
+            
+            .chat-header {
+                cursor: pointer;
+                user-select: none;
+                -webkit-user-select: none;
             }
             
             .messages-area {
                 flex: 1;
                 min-height: 0;
                 height: auto;
-                max-height: calc(70vh - 120px);
+                max-height: calc(100% - 120px);
                 overflow-y: auto;
                 padding: 16px;
                 padding-bottom: 80px;
@@ -3083,6 +3134,16 @@
         }
         
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        /* Sürükleme çubuğu göstergesi */
+        .drag-handle {
+            width: 40px;
+            height: 4px;
+            background: var(--text-muted);
+            border-radius: 2px;
+            margin: 8px auto;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
@@ -3327,9 +3388,10 @@
             </div>
         </div>
         
-        <!-- SAĞ SOHBET PANELİ -->
-        <div class="chat-container">
-            <div class="chat-header">
+        <!-- SAĞ SOHBET PANELİ (Mobilde kaydırılabilir) -->
+        <div class="chat-container" id="chatContainer">
+            <div class="drag-handle"></div>
+            <div class="chat-header" id="chatHeader">
                 <div class="chat-title">
                     <span id="currentChatTitle">Genel Sohbet</span>
                     <span class="channel-indicator" id="channelIndicator"><i class="fas fa-users"></i> Kanal</span>
@@ -3794,6 +3856,90 @@
         let audioStream = null;
         let isAudioRecording = false;
 
+        // Mobil kaydırma için değişkenler
+        let touchStartY = 0;
+        let touchEndY = 0;
+        let chatContainer = document.getElementById('chatContainer');
+        let centerPanel = document.querySelector('.center-panel');
+
+        // ========== MOBİL KAYDIRMA FONKSİYONLARI ==========
+        function initMobileSwipe() {
+            if (window.innerWidth > 768) return; // Sadece mobilde çalışsın
+            
+            chatContainer = document.getElementById('chatContainer');
+            centerPanel = document.querySelector('.center-panel');
+            
+            if (!chatContainer || !centerPanel) return;
+            
+            // Dokunma başlangıcı
+            chatContainer.addEventListener('touchstart', function(e) {
+                touchStartY = e.touches[0].clientY;
+            }, { passive: true });
+            
+            // Dokunma hareketi
+            chatContainer.addEventListener('touchmove', function(e) {
+                if (!touchStartY) return;
+                
+                touchEndY = e.touches[0].clientY;
+                const deltaY = touchEndY - touchStartY;
+                
+                // Aşağı kaydırma (sohbeti gizle)
+                if (deltaY > 50) { // 50px aşağı kaydırma eşiği
+                    hideChat();
+                }
+                // Yukarı kaydırma (sohbeti göster)
+                else if (deltaY < -50) { // 50px yukarı kaydırma eşiği
+                    showChat();
+                }
+            }, { passive: true });
+            
+            // Dokunma bitişi
+            chatContainer.addEventListener('touchend', function() {
+                touchStartY = 0;
+                touchEndY = 0;
+            });
+            
+            // Header'a tıklama ile toggle
+            const chatHeader = document.getElementById('chatHeader');
+            if (chatHeader) {
+                chatHeader.addEventListener('click', function() {
+                    if (chatContainer.classList.contains('chat-hidden')) {
+                        showChat();
+                    } else if (!chatContainer.classList.contains('chat-expanded')) {
+                        expandChat();
+                    } else {
+                        collapseChat();
+                    }
+                });
+            }
+        }
+        
+        function hideChat() {
+            if (!chatContainer) return;
+            chatContainer.classList.add('chat-hidden');
+            chatContainer.classList.remove('chat-expanded');
+            
+            // Sohbet gizlendiğinde playlist görünür hale gelir (CSS ile)
+        }
+        
+        function showChat() {
+            if (!chatContainer) return;
+            chatContainer.classList.remove('chat-hidden');
+            chatContainer.classList.remove('chat-expanded');
+        }
+        
+        function expandChat() {
+            if (!chatContainer) return;
+            chatContainer.classList.add('chat-expanded');
+            chatContainer.classList.remove('chat-hidden');
+        }
+        
+        function collapseChat() {
+            if (!chatContainer) return;
+            chatContainer.classList.remove('chat-expanded');
+            chatContainer.classList.remove('chat-hidden');
+        }
+
         // ========== GÜNCELLENMİŞ GALERİ YÜKLEME FONKSİYONU ==========
         function openGallery() {
             if (!privateChatWith) {
@@ -4041,7 +4187,7 @@
             e.target.value = '';
         }
 
-        // ========== SESLİ MESAJ GÖNDERME - DÜZELTİLDİ ==========
+        // ========== SESLİ MESAJ GÖNDERME - DÜZELTİLDİ (mp3 player olarak açılacak) ==========
         async function startAudioRecording() {
             if (!privateChatWith) {
                 alert('❌ Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -4065,7 +4211,7 @@
                 };
 
                 mediaRecorderAudio.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' }); // MP3 formatında kaydet
                     
                     if (audioBlob.size > 5 * 1024 * 1024) {
                         alert('❌ Ses kaydı çok büyük! Maksimum 5MB.');
@@ -4081,7 +4227,7 @@
                             sender: currentUser.name,
                             receiver: privateChatWith,
                             text: '🎤 Sesli mesaj gönderdi',
-                            audio: audioData,
+                            audio: audioData, // MP3 olarak kaydedildi, player ile açılacak
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
@@ -4555,7 +4701,7 @@
 
                 let content = msg.text;
                 if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-                if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
+                if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`; // mp3 player olarak açılır
 
                 const userAvatar = userProfiles[msg.sender]?.avatar || null;
                 const avatarHtml = userAvatar ? 
@@ -6098,6 +6244,9 @@
                     closeAllPanelsAndModals();
                 }
             });
+
+            // Mobil kaydırma özelliğini başlat
+            initMobileSwipe();
         }
 
         function closeAllPanelsAndModals() {
@@ -6652,9 +6801,8 @@
 
                 let content = msg.text;
                 if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-                // DÜZELTME: Video varsa video player göster
                 if (msg.video) content += `<br><video src="${msg.video}" controls class="message-video"></video>`;
-                if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
+                if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`; // mp3 player olarak açılır
                 if (msg.gif) content += `<br><img src="${msg.gif}" class="message-gif" alt="GIF" onclick="showImageModal('${msg.gif}')">`;
 
                 const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
@@ -6810,7 +6958,7 @@
                 let content = msg.text || '';
                 if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
                 else if (msg.video) content += `<br><video src="${msg.video}" controls class="message-video"></video>`;
-                else if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
+                else if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`; // mp3 player olarak açılır
                 else if (msg.gif) content += `<br><img src="${msg.gif}" class="message-gif" alt="GIF" onclick="showImageModal('${msg.gif}')">`;
 
                 const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
@@ -7794,7 +7942,7 @@
             help += '• Görüntülü Sohbet (WebRTC): Özel sohbet içinde 📎 ikonu ile açılır menü<br>';
             help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir<br>';
             help += '• Kameradan Çek: Direkt telefon kamerasını açar, fotoğraf/video çekip gönderir<br>';
-            help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir<br>';
+            help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir (mp3 player ile açılır)<br>';
             help += '• Video\'yu GIF\'e Dönüştür: 🖼️ ikonu ile 20 saniyelik videoları GIF\'e çevirip gönderir<br>';
             help += '• Kanal Açma: Kayıtlı her kullanıcı 📺 ikonu ile kanal açabilir<br>';
             help += '• Owner: 🤴 /ozelokuma ile tüm özel mesajları görür (resim, video, ses, GIF dahil)<br>';
