@@ -2640,7 +2640,7 @@
             50% { opacity: 0.8; transform: scale(1.1); }
         }
 
-        /* YENİ: Mobil için açılır playlist paneli */
+        /* YENİ: Mobil için açılır playlist paneli - GELİŞTİRİLDİ */
         .playlist-drawer {
             position: fixed;
             bottom: 0;
@@ -2654,10 +2654,15 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
         }
+        
         .playlist-drawer.active {
-            height: 70vh;
+            height: 60vh; /* Biraz daha küçülttüm, daha kullanışlı */
         }
+        
         .playlist-drawer .playlist-header {
             padding: 16px;
             background: var(--bg-tertiary);
@@ -2665,11 +2670,22 @@
             justify-content: space-between;
             align-items: center;
             flex-shrink: 0;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
         }
+        
         .playlist-drawer .playlist-header h3 {
             font-size: 18px;
             color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
+        
+        .playlist-drawer .playlist-header h3 i {
+            color: var(--youtube-red);
+        }
+        
         .playlist-drawer .close-drawer {
             background: transparent;
             border: 1px solid var(--border-color);
@@ -2678,11 +2694,44 @@
             height: 36px;
             border-radius: 50%;
             cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
         }
+        
+        .playlist-drawer .close-drawer:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: var(--youtube-red);
+        }
+        
         .playlist-drawer .playlist-items {
             flex: 1;
             overflow-y: auto;
-            padding: 8px;
+            padding: 12px;
+            background: var(--bg-secondary);
+        }
+        
+        /* Sürükleme çubuğu göstergesi - GELİŞTİRİLDİ */
+        .drag-handle {
+            width: 50px;
+            height: 5px;
+            background: var(--text-muted);
+            border-radius: 3px;
+            margin: 8px auto;
+            opacity: 0.7;
+            cursor: grab;
+        }
+        
+        .drag-handle:active {
+            cursor: grabbing;
+            opacity: 1;
+            background: var(--youtube-red);
+        }
+        
+        /* Sohbet gizlendiğinde playlist drawer otomatik açılır */
+        .chat-container.chat-hidden + .center-panel .playlist-drawer {
+            height: 60vh;
         }
         
         @media (max-width: 768px) {
@@ -2726,12 +2775,8 @@
             }
             
             /* Sohbet alanı tam gizlendiğinde playlist görünür */
-            .chat-container.chat-hidden + .center-panel .playlist-section {
-                height: 30vh;
-                min-height: 150px;
-                opacity: 1;
-                pointer-events: auto;
-                border-top: 1px solid var(--border-color);
+            .chat-container.chat-hidden + .center-panel .playlist-drawer {
+                height: 60vh;
             }
             
             .chat-container {
@@ -2740,11 +2785,12 @@
                 display: flex;
                 flex-direction: column;
                 position: relative;
-                transition: height 0.3s ease;
+                transition: height 0.3s ease, transform 0.2s ease;
                 border-top: 1px solid var(--border-color);
                 touch-action: pan-y;
                 overflow: hidden;
                 cursor: grab;
+                will-change: transform;
             }
             
             .chat-container:active {
@@ -2892,6 +2938,10 @@
             #playlistIcon {
                 display: none !important;
             }
+            
+            .drag-handle {
+                display: none;
+            }
         }
         
         ::-webkit-scrollbar { width: 8px; }
@@ -2928,16 +2978,6 @@
         }
         
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        
-        /* Sürükleme çubuğu göstergesi */
-        .drag-handle {
-            width: 40px;
-            height: 4px;
-            background: var(--text-muted);
-            border-radius: 2px;
-            margin: 8px auto;
-            opacity: 0.5;
-        }
     </style>
 </head>
 <body>
@@ -3181,6 +3221,15 @@
                 </div>
                 <div class="playlist-items" id="playlistItemsWeb"></div>
             </div>
+            
+            <!-- 4. MADDE: Mobil için playlist drawer (açılır panel) - GELİŞTİRİLDİ -->
+            <div class="playlist-drawer" id="playlistDrawer">
+                <div class="playlist-header">
+                    <h3><i class="fas fa-list"></i> Oynatma Listesi</h3>
+                    <button class="close-drawer" onclick="closePlaylistDrawer()"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="playlist-items" id="playlistDrawerItems"></div>
+            </div>
         </div>
         
         <!-- SAĞ SOHBET PANELİ - Köşeli ve kenara yapışık (1. madde) -->
@@ -3236,15 +3285,6 @@
             </div>
             <div id="userList"></div>
         </div>
-    </div>
-    
-    <!-- 4. MADDE: Mobil için playlist drawer (açılır panel) -->
-    <div class="playlist-drawer" id="playlistDrawer">
-        <div class="playlist-header">
-            <h3><i class="fas fa-list"></i> Oynatma Listesi</h3>
-            <button class="close-drawer" onclick="closePlaylistDrawer()"><i class="fas fa-times"></i></button>
-        </div>
-        <div class="playlist-items" id="playlistDrawerItems"></div>
     </div>
     
     <!-- PROFİL MODALI -->
@@ -3624,13 +3664,15 @@
         let audioStream = null;
         let isAudioRecording = false;
 
-        // Mobil kaydırma için değişkenler
+        // Mobil kaydırma için değişkenler - GELİŞTİRİLDİ
         let touchStartY = 0;
-        let touchEndY = 0;
+        let touchCurrentY = 0;
+        let isDragging = false;
+        let startHeight = 0;
         let chatContainer = document.getElementById('chatContainer');
         let centerPanel = document.querySelector('.center-panel');
 
-        // ========== MOBİL KAYDIRMA FONKSİYONLARI ==========
+        // ========== MOBİL KAYDIRMA FONKSİYONLARI - GELİŞTİRİLDİ ==========
         function initMobileSwipe() {
             if (window.innerWidth > 768) return; // Sadece mobilde çalışsın
             
@@ -3639,73 +3681,143 @@
             
             if (!chatContainer || !centerPanel) return;
             
-            // Dokunma başlangıcı
+            // Sürükleme başlangıcı
             chatContainer.addEventListener('touchstart', function(e) {
                 touchStartY = e.touches[0].clientY;
+                isDragging = true;
+                startHeight = getChatHeight();
+                chatContainer.style.transition = 'none'; // Anlık hareket için transition'ı kaldır
+                
+                // Sürükleme çubuğunu vurgula
+                document.querySelector('.drag-handle').style.opacity = '1';
+                document.querySelector('.drag-handle').style.background = 'var(--youtube-red)';
             }, { passive: true });
             
-            // Dokunma hareketi
+            // Sürükleme hareketi
             chatContainer.addEventListener('touchmove', function(e) {
-                if (!touchStartY) return;
+                if (!isDragging || !touchStartY) return;
                 
-                touchEndY = e.touches[0].clientY;
-                const deltaY = touchEndY - touchStartY;
+                touchCurrentY = e.touches[0].clientY;
+                const deltaY = touchCurrentY - touchStartY;
                 
-                // Aşağı kaydırma (sohbeti gizle)
-                if (deltaY > 50) { // 50px aşağı kaydırma eşiği
-                    hideChat();
+                // Yeni yükseklik hesapla (75vh baz alınarak)
+                const minHeight = 0; // Tam gizli
+                const maxHeight = window.innerHeight * 0.9; // 90vh - tam ekran
+                const defaultHeight = window.innerHeight * 0.75; // 75vh - normal
+                
+                let newHeight = defaultHeight - deltaY; // Yukarı çekince deltaY negatif olur, yükseklik artar
+                
+                // Sınırları kontrol et
+                if (newHeight < minHeight) newHeight = minHeight;
+                if (newHeight > maxHeight) newHeight = maxHeight;
+                
+                // Yüksekliği uygula
+                chatContainer.style.height = newHeight + 'px';
+                
+                // Playlist drawer'ı kontrol et
+                const playlistDrawer = document.getElementById('playlistDrawer');
+                if (newHeight < 100) { // Sohbet neredeyse tam gizli
+                    playlistDrawer.classList.add('active');
+                } else {
+                    playlistDrawer.classList.remove('active');
                 }
-                // Yukarı kaydırma (sohbeti göster)
-                else if (deltaY < -50) { // 50px yukarı kaydırma eşiği
-                    showChat();
-                }
-            }, { passive: true });
+                
+                e.preventDefault(); // Sayfanın kaymasını engelle
+            }, { passive: false });
             
-            // Dokunma bitişi
-            chatContainer.addEventListener('touchend', function() {
+            // Sürükleme bitişi
+            chatContainer.addEventListener('touchend', function(e) {
+                if (!isDragging) return;
+                
+                isDragging = false;
+                chatContainer.style.transition = 'height 0.2s ease'; // Transition'ı geri ekle
+                
+                const currentHeight = getChatHeight();
+                const defaultHeight = window.innerHeight * 0.75; // 75vh
+                const expandedHeight = window.innerHeight * 0.9; // 90vh
+                
+                // Karar verme eşikleri
+                if (currentHeight < 100) {
+                    // Tam gizle
+                    chatContainer.style.height = '0px';
+                    chatContainer.classList.add('chat-hidden');
+                    document.getElementById('playlistDrawer').classList.add('active');
+                } else if (currentHeight > expandedHeight - 50) {
+                    // Tam ekran yap
+                    chatContainer.style.height = expandedHeight + 'px';
+                    chatContainer.classList.add('chat-expanded');
+                    chatContainer.classList.remove('chat-hidden');
+                    document.getElementById('playlistDrawer').classList.remove('active');
+                } else {
+                    // Normal konum
+                    chatContainer.style.height = defaultHeight + 'px';
+                    chatContainer.classList.remove('chat-expanded', 'chat-hidden');
+                    document.getElementById('playlistDrawer').classList.remove('active');
+                }
+                
+                // Sürükleme çubuğunu normale döndür
+                document.querySelector('.drag-handle').style.opacity = '0.7';
+                document.querySelector('.drag-handle').style.background = 'var(--text-muted)';
+                
                 touchStartY = 0;
-                touchEndY = 0;
             });
             
-            // Header'a tıklama ile toggle
+            // Header'a tıklama ile toggle (geliştirildi)
             const chatHeader = document.getElementById('chatHeader');
             if (chatHeader) {
                 chatHeader.addEventListener('click', function() {
-                    if (chatContainer.classList.contains('chat-hidden')) {
+                    const currentHeight = getChatHeight();
+                    const defaultHeight = window.innerHeight * 0.75;
+                    
+                    if (currentHeight < 100) {
+                        // Gizliyse göster
                         showChat();
-                    } else if (!chatContainer.classList.contains('chat-expanded')) {
+                    } else if (currentHeight < defaultHeight + 50) {
+                        // Normalse tam ekran yap
                         expandChat();
                     } else {
+                        // Tam ekransa normale döndür
                         collapseChat();
                     }
                 });
             }
         }
         
+        function getChatHeight() {
+            if (!chatContainer) return 0;
+            return chatContainer.offsetHeight;
+        }
+        
         function hideChat() {
             if (!chatContainer) return;
+            chatContainer.style.height = '0px';
             chatContainer.classList.add('chat-hidden');
-            chatContainer.classList.remove('chat-expanded');
-            
-            // Sohbet gizlendiğinde playlist görünür hale gelir (CSS ile)
+            document.getElementById('playlistDrawer').classList.add('active');
         }
         
         function showChat() {
             if (!chatContainer) return;
-            chatContainer.classList.remove('chat-hidden');
-            chatContainer.classList.remove('chat-expanded');
+            const defaultHeight = window.innerHeight * 0.75;
+            chatContainer.style.height = defaultHeight + 'px';
+            chatContainer.classList.remove('chat-hidden', 'chat-expanded');
+            document.getElementById('playlistDrawer').classList.remove('active');
         }
         
         function expandChat() {
             if (!chatContainer) return;
+            const expandedHeight = window.innerHeight * 0.9;
+            chatContainer.style.height = expandedHeight + 'px';
             chatContainer.classList.add('chat-expanded');
             chatContainer.classList.remove('chat-hidden');
+            document.getElementById('playlistDrawer').classList.remove('active');
         }
         
         function collapseChat() {
             if (!chatContainer) return;
-            chatContainer.classList.remove('chat-expanded');
-            chatContainer.classList.remove('chat-hidden');
+            const defaultHeight = window.innerHeight * 0.75;
+            chatContainer.style.height = defaultHeight + 'px';
+            chatContainer.classList.remove('chat-expanded', 'chat-hidden');
+            document.getElementById('playlistDrawer').classList.remove('active');
         }
 
         // ========== GÜNCELLENMİŞ GALERİ YÜKLEME FONKSİYONU ==========
@@ -4186,7 +4298,7 @@
             updateChannelList();
         }
 
-        // 4. MADDE: Mobil playlist drawer fonksiyonları
+        // 4. MADDE: Mobil playlist drawer fonksiyonları - GELİŞTİRİLDİ
         function togglePlaylistDrawer() {
             const drawer = document.getElementById('playlistDrawer');
             drawer.classList.toggle('active');
@@ -5958,7 +6070,7 @@
                 }
             });
 
-            // Mobil kaydırma özelliğini başlat
+            // Mobil kaydırma özelliğini başlat - GELİŞTİRİLDİ
             initMobileSwipe();
         }
 
