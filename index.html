@@ -2870,18 +2870,15 @@
             
             .profile-modal { width: 95%; max-height: 90vh; }
             
-            /* Mobil görünümde panel yüksekliği artırıldı - MADDE 2 */
             .slide-panel, .channel-panel {
-                max-height: 70vh !important;
+                max-height: 50vh !important;
                 height: auto;
                 top: 0;
-                background: rgba(26, 26, 26, 0.98);
             }
             
             .panel-content {
-                max-height: calc(70vh - 60px);
+                max-height: calc(50vh - 60px);
                 overflow-y: auto;
-                padding: 20px;
             }
             
             .private-input-area {
@@ -2923,16 +2920,6 @@
             .playlist-input-small,
             .playlist-add-btn-small {
                 width: 100%;
-            }
-            
-            /* Kanal ve playlist listeleri mobilde daha büyük */
-            .channel-list, .playlist-items {
-                max-height: none;
-            }
-            
-            .channel-item, .playlist-item {
-                padding: 15px;
-                font-size: 16px;
             }
         }
         
@@ -3024,7 +3011,7 @@
             
             <button class="icon-btn online-list-btn" onclick="toggleUserList()" title="Çevrimiçi Kullanıcılar">
                 <i class="fas fa-users"></i>
-                    <span style="margin-left:4px;" id="onlineCount">0</span>
+                <span style="margin-left:4px;" id="onlineCount">0</span>
             </button>
         </div>
     </div>
@@ -3659,8 +3646,6 @@
         let privateMessageListener = null;
         let lastMessageCount = 0;
         let messageObserver = null;
-        // Yeni eklenen: mesaj sayfa sınırı
-        const MAX_PRIVATE_MESSAGES_PER_PAGE = 50;
 
         let chatContainer = document.getElementById('chatContainer');
         let centerPanel = document.querySelector('.center-panel');
@@ -6380,8 +6365,8 @@
 
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
 
-            // Önce mevcut mesajları yükle (sayfalı)
-            privateChatsRef.child(currentPrivateChatId).orderByKey().limitToLast(MAX_PRIVATE_MESSAGES_PER_PAGE).once('value', (snapshot) => {
+            // Önce mevcut mesajları yükle
+            privateChatsRef.child(currentPrivateChatId).limitToLast(50).once('value', (snapshot) => {
                 const messages = snapshot.val() || {};
                 privateMessageCache = Object.entries(messages)
                     .map(([id, value]) => ({ id, ...value }))
@@ -6406,11 +6391,8 @@
                     privateMessageCache.sort((a, b) => a.timestamp - b.timestamp);
                     
                     // Sadece son 50 mesajı tut
-                    if (privateMessageCache.length > MAX_PRIVATE_MESSAGES_PER_PAGE) {
-                        // En eski mesajı kaldır
-                        const removedMessage = privateMessageCache.shift();
-                        const removedElement = document.getElementById(`private_msg_${removedMessage.id}`);
-                        if (removedElement) removedElement.remove();
+                    if (privateMessageCache.length > 50) {
+                        privateMessageCache = privateMessageCache.slice(-50);
                     }
                     
                     // SADECE yeni mesajı ekle, hepsini yeniden render etme
@@ -6613,80 +6595,75 @@
             });
         }
 
-        // OPTİMİZE: Galeri yükleme (MADDE 1 - Telefon galerisinden resim/video gönderme düzeltildi)
+        // OPTİMİZE: Galeri yükleme
         async function handleGalleryUpload(e) {
-            const files = e.target.files; // Çoklu dosya desteği
-            if (!files || files.length === 0 || !privateChatWith) return;
+            const file = e.target.files[0];
+            if (!file || !privateChatWith) return;
             
             if (await checkBlockStatus(privateChatWith)) {
                 alert('Bu kullanıcıya dosya gönderemezsiniz!');
                 return;
             }
             
-            // Her dosya için ayrı yükleme
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
+            // Yükleme durumunu göster
+            const loadingMsg = document.createElement('div');
+            loadingMsg.className = 'message-item system';
+            loadingMsg.innerHTML = '<span class="loading"></span> Video sıkıştırılıyor ve yükleniyor...';
+            document.getElementById('privateMessages').appendChild(loadingMsg);
+            
+            try {
+                let mediaURL, mediaType;
                 
-                // Yükleme durumunu göster
-                const loadingMsg = document.createElement('div');
-                loadingMsg.className = 'message-item system';
-                loadingMsg.innerHTML = `<span class="loading"></span> ${file.type.startsWith('video/') ? 'Video sıkıştırılıyor ve yükleniyor...' : 'Resim yükleniyor...'}`;
-                document.getElementById('privateMessages').appendChild(loadingMsg);
-                
-                try {
-                    let mediaURL, mediaType;
+                if (file.type.startsWith('video/')) {
+                    // Videoyu sıkıştır ve yükle
+                    const result = await compressAndUploadVideo(file, currentPrivateChatId);
+                    mediaURL = result.url;
+                    mediaType = 'video';
+                } else if (file.type.startsWith('image/')) {
+                    // Resmi doğrudan yükle
+                    const fileName = `${Date.now()}_${file.name}`;
+                    const filePath = `private_chats/${currentPrivateChatId}/images/${fileName}`;
+                    const storageRef = storage.ref().child(filePath);
                     
-                    if (file.type.startsWith('video/')) {
-                        // Videoyu sıkıştır ve yükle
-                        const result = await compressAndUploadVideo(file, currentPrivateChatId);
-                        mediaURL = result.url;
-                        mediaType = 'video';
-                    } else if (file.type.startsWith('image/')) {
-                        // Resmi doğrudan yükle
-                        const fileName = `${Date.now()}_${file.name}`;
-                        const filePath = `private_chats/${currentPrivateChatId}/images/${fileName}`;
-                        const storageRef = storage.ref().child(filePath);
-                        
-                        const snapshot = await storageRef.put(file, {
-                            contentType: file.type,
-                            customMetadata: { originalName: file.name }
-                        });
-                        mediaURL = await snapshot.ref.getDownloadURL();
-                        mediaType = 'image';
-                    } else {
-                        alert(`❌ Desteklenmeyen dosya türü: ${file.name}`);
-                        loadingMsg.remove();
-                        continue;
-                    }
-                    
-                    // Mesajı gönder
-                    const messageData = {
-                        sender: currentUser.name,
-                        receiver: privateChatWith,
-                        text: mediaType === 'image' ? `📸 Resim gönderdi: ${file.name}` : `🎥 Video gönderdi (720p): ${file.name}`,
-                        mediaURL: mediaURL,
-                        mediaType: mediaType,
-                        fileName: file.name,
-                        timestamp: Date.now(),
-                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                    };
-                    
-                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                    
+                    const snapshot = await storageRef.put(file, {
+                        contentType: file.type,
+                        customMetadata: { originalName: file.name }
+                    });
+                    mediaURL = await snapshot.ref.getDownloadURL();
+                    mediaType = 'image';
+                } else {
+                    alert('❌ Desteklenmeyen dosya türü!');
                     loadingMsg.remove();
-                    addNotification(privateChatWith, mediaType === 'image' ? '📸 Resim' : '🎥 Video', 'private');
-                    
-                } catch (error) {
-                    console.error('Yükleme hatası:', error);
-                    loadingMsg.remove();
-                    alert(`❌ Dosya yüklenemedi: ${file.name}`);
+                    return;
                 }
+                
+                // Mesajı gönder
+                const messageData = {
+                    sender: currentUser.name,
+                    receiver: privateChatWith,
+                    text: mediaType === 'image' ? '📸 Resim gönderdi' : '🎥 Video gönderdi (720p)',
+                    mediaURL: mediaURL,
+                    mediaType: mediaType,
+                    fileName: file.name,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                };
+                
+                await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                
+                loadingMsg.remove();
+                addNotification(privateChatWith, mediaType === 'image' ? '📸 Resim' : '🎥 Video', 'private');
+                
+            } catch (error) {
+                console.error('Yükleme hatası:', error);
+                loadingMsg.remove();
+                alert('❌ Dosya yüklenemedi!');
             }
             
             e.target.value = '';
         }
 
-        // OPTİMİZE: Kamera yükleme (MADDE 1 - Telefon kamerasından çekilen resim/video gönderme düzeltildi)
+        // OPTİMİZE: Kamera yükleme
         async function handleCameraUpload(e) {
             const file = e.target.files[0];
             if (!file || !privateChatWith) return;
@@ -6721,7 +6698,7 @@
                 const messageData = {
                     sender: currentUser.name,
                     receiver: privateChatWith,
-                    text: mediaType === 'image' ? `📸 Kameradan fotoğraf çekti: ${file.name}` : `🎥 Kameradan video çekti (720p): ${file.name}`,
+                    text: mediaType === 'image' ? '📸 Kameradan fotoğraf çekti' : '🎥 Kameradan video çekti (720p)',
                     mediaURL: mediaURL,
                     mediaType: mediaType,
                     fileName: file.name,
@@ -7972,7 +7949,7 @@
             help += '• /komutlar - Tüm özel komutları listeler<br><br>';
 
             help += '📹 <strong>ÖZELLİKLER:</strong><br>';
-            help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir (videolar 720p sıkıştırılır ve MP4 formatında oynatılır)<br>';
+            help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir (videolar 720p sıkıştırılır)<br>';
             help += '• Kameradan Çek: Direkt telefon kamerasını açar, fotoğraf/video çekip gönderir<br>';
             help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir (mp3 player ile açılır)<br>';
             help += '• Kanal Açma: Kayıtlı her kullanıcı 📺 ikonu ile kanal açabilir<br>';
