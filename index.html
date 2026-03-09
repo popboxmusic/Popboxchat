@@ -12,7 +12,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     
     <style>
-        /* TÜM CSS KODLARI AYNEN KALACAK */
+        /* TÜM CSS KODLARI AYNEN KALACAK - Değişiklik yok */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -1356,6 +1356,8 @@
             min-height: 0;
             background: transparent;
             scroll-behavior: smooth;
+            will-change: transform;
+            contain: strict;
         }
         
         .message-item {
@@ -1372,6 +1374,8 @@
             -webkit-backdrop-filter: blur(3px);
             position: relative;
             z-index: 1;
+            contain: content;
+            transform: translateZ(0);
         }
         
         .message-item:hover { 
@@ -1433,6 +1437,7 @@
             justify-content: center;
             font-size: 12px;
             overflow: hidden;
+            flex-shrink: 0;
         }
         .user-avatar-small i { display: none; }
         
@@ -1654,6 +1659,7 @@
             justify-content: center;
             font-size: 14px;
             overflow: hidden;
+            flex-shrink: 0;
         }
         .user-avatar-sidebar i { display: none; }
         
@@ -2637,7 +2643,7 @@
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.8; transform: scale(1.1); }
         }
-
+        
         .playlist-drawer {
             position: fixed;
             bottom: 0;
@@ -2968,26 +2974,6 @@
         }
         
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        
-        .video-download-btn {
-            background: rgba(62, 166, 255, 0.15);
-            border: 1px solid var(--camera);
-            color: var(--camera);
-            padding: 8px 16px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 13px;
-            margin-top: 5px;
-            transition: all 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .video-download-btn:hover {
-            background: rgba(62, 166, 255, 0.3);
-            transform: scale(1.02);
-        }
     </style>
 </head>
 <body>
@@ -3587,7 +3573,368 @@
             messagingSenderId: "206625719024",
             appId: "1:206625719024:web:d28f478a2c96d10412f835"
         };
+
+        // ========== INDEXEDDB KONFİGÜRASYONU ==========
+        const DB_NAME = 'cetcetyChatDB';
+        const DB_VERSION = 1;
+        let db = null;
+
+        // IndexedDB'yi başlat
+        function initIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                
+                request.onerror = (event) => {
+                    console.error('IndexedDB açılamadı:', event.target.error);
+                    reject(event.target.error);
+                };
+                
+                request.onsuccess = (event) => {
+                    db = event.target.result;
+                    console.log('✅ IndexedDB başarıyla açıldı');
+                    resolve(db);
+                };
+                
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    
+                    // Mesajlar için store
+                    if (!db.objectStoreNames.contains('messages')) {
+                        const messageStore = db.createObjectStore('messages', { keyPath: 'id' });
+                        messageStore.createIndex('timestamp', 'timestamp', { unique: false });
+                        messageStore.createIndex('channel', 'channel', { unique: false });
+                        messageStore.createIndex('sender', 'sender', { unique: false });
+                    }
+                    
+                    // Özel mesajlar için store
+                    if (!db.objectStoreNames.contains('privateMessages')) {
+                        const privateStore = db.createObjectStore('privateMessages', { keyPath: 'id' });
+                        privateStore.createIndex('timestamp', 'timestamp', { unique: false });
+                        privateStore.createIndex('chatId', 'chatId', { unique: false });
+                    }
+                    
+                    // Medya dosyaları için store (resim, video, ses)
+                    if (!db.objectStoreNames.contains('media')) {
+                        const mediaStore = db.createObjectStore('media', { keyPath: 'id' });
+                        mediaStore.createIndex('timestamp', 'timestamp', { unique: false });
+                        mediaStore.createIndex('messageId', 'messageId', { unique: false });
+                    }
+                    
+                    // Kullanıcı profilleri için store
+                    if (!db.objectStoreNames.contains('profiles')) {
+                        db.createObjectStore('profiles', { keyPath: 'username' });
+                    }
+                    
+                    console.log('✅ IndexedDB storeları oluşturuldu');
+                };
+            });
+        }
+
+        // ========== PERFORMANS OPTİMİZASYONU ==========
+        let messageCache = [];
+        let maxCachedMessages = 500;
+        let messageRenderBatch = 50;
+        let messageContainer = document.getElementById('messages');
+        let isScrolling = false;
+        let scrollTimeout;
+        let pendingMessages = [];
+        let renderScheduled = false;
+        let virtualScrollEnabled = true;
+        let lastMessageCount = 0;
+        let messageObserver = null;
+        let renderedMessages = new Map();
+
+        // Mesajları IndexedDB'ye kaydet
+        async function saveMessageToIndexedDB(message, channel = 'general') {
+            if (!db) return;
+            
+            const transaction = db.transaction(['messages'], 'readwrite');
+            const store = transaction.objectStore('messages');
+            
+            const messageWithChannel = {
+                ...message,
+                id: message.id || `msg_${Date.now()}_${Math.random().toString(36)}`,
+                channel: channel
+            };
+            
+            store.put(messageWithChannel);
+        }
+
+        // Medyayı IndexedDB'ye kaydet
+        async function saveMediaToIndexedDB(mediaData, messageId) {
+            if (!db) return;
+            
+            const transaction = db.transaction(['media'], 'readwrite');
+            const store = transaction.objectStore('media');
+            
+            store.put({
+                id: `media_${Date.now()}_${Math.random().toString(36)}`,
+                messageId: messageId,
+                data: mediaData,
+                timestamp: Date.now()
+            });
+        }
+
+        // Medyayı IndexedDB'den yükle
+        async function loadMediaFromIndexedDB(messageId) {
+            if (!db) return null;
+            
+            return new Promise((resolve) => {
+                const transaction = db.transaction(['media'], 'readonly');
+                const store = transaction.objectStore('media');
+                const index = store.index('messageId');
+                const request = index.getAll(messageId);
+                
+                request.onsuccess = () => {
+                    resolve(request.result[0] || null);
+                };
+                
+                request.onerror = () => {
+                    resolve(null);
+                };
+            });
+        }
+
+        // Mesajları IndexedDB'den yükle (son 500 mesaj)
+        async function loadMessagesFromIndexedDB(channel = 'general', limit = 500) {
+            if (!db) return [];
+            
+            return new Promise((resolve) => {
+                const transaction = db.transaction(['messages'], 'readonly');
+                const store = transaction.objectStore('messages');
+                const index = store.index('channel');
+                const request = index.getAll(channel);
+                
+                request.onsuccess = () => {
+                    const messages = request.result
+                        .filter(msg => msg.channel === channel)
+                        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+                        .slice(-limit);
+                    resolve(messages);
+                };
+                
+                request.onerror = () => {
+                    resolve([]);
+                };
+            });
+        }
+
+        // Optimize edilmiş mesaj güncelleme
+        function updateMessagesOptimized(messages) {
+            if (!messages) {
+                if (!currentChannel && messageCache.length === 0) {
+                    messageContainer.innerHTML = '<div class="message-item system"><i class="fas fa-fire" style="color: var(--youtube-red);"></i> cetcety Music Live\'e hoş geldiniz!</div>';
+                }
+                return;
+            }
+
+            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
+            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+            
+            // Sadece son 500 mesajı cache'le
+            const newMessages = messagesArray.slice(-500);
+            
+            // Her mesajı IndexedDB'ye kaydet
+            newMessages.forEach(msg => saveMessageToIndexedDB(msg, currentChannel ? currentChannel.id : 'general'));
+            
+            // Eğer mesaj sayısı çok değişmediyse ve kullanıcı scroll yapıyorsa, hemen render etme
+            if (Math.abs(newMessages.length - messageCache.length) < 10 && 
+                messageContainer.scrollTop < messageContainer.scrollHeight - messageContainer.clientHeight - 200) {
+                messageCache = newMessages;
+                return;
+            }
+            
+            messageCache = newMessages;
+            
+            // Render işlemini schedule et
+            if (!renderScheduled) {
+                renderScheduled = true;
+                setTimeout(() => {
+                    renderMessagesOptimized();
+                    renderScheduled = false;
+                }, 100);
+            }
+        }
+
+        // Optimize edilmiş mesaj render
+        function renderMessagesOptimized() {
+            if (!messageContainer || messageCache.length === 0) return;
+            
+            // Sadece son 200 mesajı render et (performans için)
+            const startIdx = Math.max(0, messageCache.length - 200);
+            const messagesToRender = messageCache.slice(startIdx);
+            
+            // Fragment kullanarak DOM manipülasyonunu azalt
+            const fragment = document.createDocumentFragment();
+            const existingMessages = new Set();
+            
+            // Mevcut mesaj ID'lerini topla
+            document.querySelectorAll('.message-item[id^="msg_"]').forEach(el => {
+                existingMessages.add(el.id);
+            });
+            
+            // Yeni mesajları ekle
+            messagesToRender.forEach(msg => {
+                const messageId = `msg_${msg.id}`;
+                if (!existingMessages.has(messageId)) {
+                    const messageDiv = createMessageElement(msg);
+                    if (messageDiv) {
+                        messageDiv.id = messageId;
+                        fragment.appendChild(messageDiv);
+                    }
+                }
+            });
+            
+            if (fragment.children.length > 0) {
+                messageContainer.appendChild(fragment);
+            }
+            
+            // Fazla mesajları temizle (1000'den fazla varsa)
+            if (messageContainer.children.length > 1000) {
+                const children = Array.from(messageContainer.children);
+                const toRemove = children.slice(0, children.length - 800);
+                toRemove.forEach(el => el.remove());
+            }
+            
+            // Otomatik scroll sadece en alttaysa
+            if (messageContainer.scrollHeight - messageContainer.scrollTop - messageContainer.clientHeight < 200) {
+                messageContainer.scrollTop = messageContainer.scrollHeight;
+            }
+        }
+
+        // Mesaj elementi oluştur (performanslı)
+        function createMessageElement(msg) {
+            if (!msg) return null;
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message-item ${msg.type || 'user'}`;
+            
+            let deleteButton = '';
+            if (currentUser && (msg.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner)) {
+                deleteButton = `<button class="delete-btn" onclick="deleteMessage('${msg.id}')"><i class="fas fa-trash"></i></button>`;
+            }
+            
+            let content = msg.text || '';
+            
+            // Medya içeriğini kontrol et
+            if (msg.image) {
+                content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.id}')" data-media-id="${msg.id}">`;
+            }
+            if (msg.video) {
+                content += `<br><video src="${msg.video}" controls class="message-video" preload="metadata"></video>`;
+            }
+            if (msg.audio) {
+                content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;" preload="none"></audio>`;
+            }
+            
+            const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
+            const avatarHtml = userAvatar ? 
+                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;" loading="lazy">` : 
+                '';
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-user" onclick="openPrivateChat('${msg.sender}')">
+                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
+                        ${msg.sender}
+                    </span>
+                    <div>
+                        <span class="message-time">${msg.time || '--:--'}</span>
+                        ${deleteButton}
+                    </div>
+                </div>
+                <div class="message-content">${content}</div>
+            `;
+            
+            return messageDiv;
+        }
+
+        // Galeri yükleme (IndexedDB ile optimize edilmiş)
+        document.getElementById('galleryUpload').addEventListener('change', handleGalleryUploadOptimized);
         
+        async function handleGalleryUploadOptimized(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+                alert('❌ Lütfen sadece resim veya video dosyası seçin!');
+                return;
+            }
+            
+            if (await checkBlockStatus(privateChatWith)) {
+                alert('Bu kullanıcıya dosya gönderemezsiniz!');
+                return;
+            }
+            
+            // Dosyayı IndexedDB'ye kaydet
+            const reader = new FileReader();
+            
+            reader.onload = async function(event) {
+                const fileData = event.target.result;
+                const messageId = `msg_${Date.now()}_${Math.random().toString(36)}`;
+                
+                // Medyayı IndexedDB'ye kaydet
+                await saveMediaToIndexedDB(fileData, messageId);
+                
+                // Mesajı Firebase'e gönder
+                const messageData = {
+                    sender: currentUser.name,
+                    receiver: privateChatWith,
+                    text: file.type.startsWith('video/') ? '🎥 Video gönderdi' : '📸 Resim gönderdi',
+                    mediaId: messageId,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                };
+                
+                if (file.type.startsWith('video/')) {
+                    messageData.video = fileData; // Video için
+                } else {
+                    messageData.image = fileData; // Resim için
+                }
+                
+                await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                addNotification(privateChatWith, file.type.startsWith('video/') ? '🎥 Video gönderdi' : '📸 Resim gönderdi', 'private');
+            };
+            
+            reader.readAsDataURL(file);
+            e.target.value = '';
+        }
+
+        // Görsel modal (IndexedDB'den yükle)
+        async function showImageModal(messageId) {
+            // Önce mesajı bul
+            const msgElement = document.getElementById(`msg_${messageId}`);
+            if (!msgElement) return;
+            
+            const imgElement = msgElement.querySelector('.message-image');
+            if (!imgElement) return;
+            
+            const imageUrl = imgElement.src;
+            
+            const modal = document.createElement('div');
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.width = '100%';
+            modal.style.height = '100%';
+            modal.style.background = 'rgba(0,0,0,0.98)';
+            modal.style.zIndex = '4000';
+            modal.style.display = 'flex';
+            modal.style.justifyContent = 'center';
+            modal.style.alignItems = 'center';
+            modal.style.cursor = 'pointer';
+
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            img.style.maxWidth = '90%';
+            img.style.maxHeight = '90%';
+            img.style.borderRadius = '12px';
+
+            modal.appendChild(img);
+            modal.onclick = () => document.body.removeChild(modal);
+            document.body.appendChild(modal);
+        }
+
         // ========== GLOBAL DEĞİŞKENLER ==========
         let database;
         let storage;
@@ -3699,7 +4046,6 @@
             document.getElementById('playlistDrawer').classList.remove('active');
         }
 
-        // ========== GÜNCELLENMİŞ VİDEO GÖNDERME FONKSİYONU ==========
         function openGallery() {
             if (!privateChatWith) {
                 alert('❌ Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -3714,80 +4060,6 @@
                 return;
             }
             document.getElementById('cameraUpload').click();
-        }
-        
-        document.getElementById('galleryUpload').addEventListener('change', handleGalleryUpload);
-        
-        async function handleGalleryUpload(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-                alert('❌ Lütfen sadece resim veya video dosyası seçin!');
-                return;
-            }
-            
-            if (await checkBlockStatus(privateChatWith)) {
-                alert('Bu kullanıcıya dosya gönderemezsiniz!');
-                return;
-            }
-            
-            const reader = new FileReader();
-            
-            reader.onload = async function(event) {
-                const fileData = event.target.result;
-                
-                if (file.type.startsWith('video/')) {
-                    try {
-                        const videoUrl = URL.createObjectURL(file);
-                        
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '📹 Video gönderdi',
-                            videoData: fileData, // Base64 video verisi
-                            videoType: file.type,
-                            videoName: file.name,
-                            videoSize: file.size,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                        };
-                        
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '📹 Video gönderdi', 'private');
-                        
-                    } catch (videoError) {
-                        console.error('Video gönderme hatası:', videoError);
-                        alert('❌ Video gönderilemedi!');
-                    }
-                } 
-                else if (file.type.startsWith('image/')) {
-                    try {
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '📸 Resim gönderdi',
-                            image: fileData,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                        };
-                        
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '📸 Resim gönderdi', 'private');
-                        
-                    } catch (imageError) {
-                        console.error('Resim gönderme hatası:', imageError);
-                        alert('❌ Resim gönderilemedi!');
-                    }
-                }
-            };
-            
-            reader.onerror = function() {
-                alert('❌ Dosya okuma hatası!');
-            };
-            
-            reader.readAsDataURL(file);
-            e.target.value = '';
         }
         
         document.getElementById('cameraUpload').addEventListener('change', handleCameraUpload);
@@ -3816,17 +4088,15 @@
                         const messageData = {
                             sender: currentUser.name,
                             receiver: privateChatWith,
-                            text: '📹 Kameradan video çekti',
-                            videoData: fileData, // Base64 video verisi
+                            text: '🎥 Kameradan video çekti',
+                            video: fileData,
                             videoType: file.type,
-                            videoName: file.name,
-                            videoSize: file.size,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
                         
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '📹 Video çekti', 'private');
+                        addNotification(privateChatWith, '🎥 Video çekti', 'private');
                         
                     } catch (videoError) {
                         console.error('Video gönderme hatası:', videoError);
@@ -3862,74 +4132,6 @@
             e.target.value = '';
         }
 
-        // ========== VİDEO OYNATMA FONKSİYONU (DÜZELTİLDİ) ==========
-        function playVideoMessage(videoData, videoType, videoName) {
-            const modal = document.createElement('div');
-            modal.style.position = 'fixed';
-            modal.style.top = '0';
-            modal.style.left = '0';
-            modal.style.width = '100%';
-            modal.style.height = '100%';
-            modal.style.background = 'rgba(0,0,0,0.98)';
-            modal.style.zIndex = '5000';
-            modal.style.display = 'flex';
-            modal.style.flexDirection = 'column';
-            modal.style.justifyContent = 'center';
-            modal.style.alignItems = 'center';
-            modal.style.cursor = 'pointer';
-
-            const video = document.createElement('video');
-            video.src = videoData; // Base64 video datası
-            video.controls = true;
-            video.autoplay = true;
-            video.style.maxWidth = '90%';
-            video.style.maxHeight = '80%';
-            video.style.borderRadius = '12px';
-            
-            // Video formatını belirle
-            if (videoType) {
-                video.type = videoType;
-            }
-
-            const closeBtn = document.createElement('button');
-            closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-            closeBtn.style.position = 'absolute';
-            closeBtn.style.top = '20px';
-            closeBtn.style.right = '20px';
-            closeBtn.style.background = 'rgba(255,255,255,0.2)';
-            closeBtn.style.border = 'none';
-            closeBtn.style.color = 'white';
-            closeBtn.style.fontSize = '24px';
-            closeBtn.style.width = '50px';
-            closeBtn.style.height = '50px';
-            closeBtn.style.borderRadius = '50%';
-            closeBtn.style.cursor = 'pointer';
-            closeBtn.onclick = () => document.body.removeChild(modal);
-
-            const downloadBtn = document.createElement('a');
-            downloadBtn.href = videoData;
-            downloadBtn.download = videoName || 'video.mp4';
-            downloadBtn.innerHTML = '<i class="fas fa-download"></i> İndir';
-            downloadBtn.style.marginTop = '10px';
-            downloadBtn.style.padding = '8px 16px';
-            downloadBtn.style.background = 'rgba(62,166,255,0.2)';
-            downloadBtn.style.color = 'white';
-            downloadBtn.style.border = '1px solid var(--camera)';
-            downloadBtn.style.borderRadius = '20px';
-            downloadBtn.style.textDecoration = 'none';
-            downloadBtn.style.cursor = 'pointer';
-
-            modal.appendChild(video);
-            modal.appendChild(closeBtn);
-            modal.appendChild(downloadBtn);
-            modal.onclick = (e) => {
-                if (e.target === modal) document.body.removeChild(modal);
-            };
-
-            document.body.appendChild(modal);
-        }
-
-        // ========== SESLİ MESAJ GÖNDERME ==========
         async function startAudioRecording() {
             if (!privateChatWith) {
                 alert('❌ Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -3964,12 +4166,17 @@
                     const reader = new FileReader();
                     reader.onload = async function(e) {
                         const audioData = e.target.result;
+                        
+                        // Ses kaydını IndexedDB'ye kaydet
+                        const messageId = `audio_${Date.now()}_${Math.random().toString(36)}`;
+                        await saveMediaToIndexedDB(audioData, messageId);
 
                         const messageData = {
                             sender: currentUser.name,
                             receiver: privateChatWith,
                             text: '🎤 Sesli mesaj gönderdi',
                             audio: audioData,
+                            mediaId: messageId,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
@@ -4014,7 +4221,6 @@
             }
         }
 
-        // ========== SHA-256 ŞİFRELEME ==========
         async function sha256(message) {
             const msgBuffer = new TextEncoder().encode(message);
             const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -4022,7 +4228,6 @@
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
-        // ========== OWNER ŞİFRE SİSTEMİ ==========
         async function initOwnerPassword() {
             try {
                 const ownerPassword = "kumsal07@";
@@ -4051,18 +4256,15 @@
             }
         }
 
-        // ========== NICK NORMALİZASYONU ==========
         function normalizeNick(nick) {
             return nick ? nick.toLowerCase().trim() : '';
         }
 
-        // ========== MOBİL MENÜ ==========
         function toggleMobileMenu() {
             const menu = document.getElementById('mobileMenu');
             menu.classList.toggle('active');
         }
 
-        // ========== PROFİL SİSTEMİ ==========
         let currentProfileBio = '';
         let currentProfileAvatar = null;
 
@@ -4273,7 +4475,6 @@
             });
         }
 
-        // ========== KANAL SİSTEMİ ==========
         async function createChannel() {
             if (!currentUser) {
                 addSystemMessage('❌ Önce giriş yapmalısınız!');
@@ -4485,7 +4686,7 @@
                 let senderName = msg.sender;
 
                 let content = msg.text;
-                if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
+                if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.id}')">`;
                 if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
 
                 const userAvatar = userProfiles[msg.sender]?.avatar || null;
@@ -4513,66 +4714,13 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // ========== MESAJ GÜNCELLEME ==========
         function loadGeneralMessages() {
             if (!messagesRef) return;
 
             messagesRef.off();
-            messagesRef.limitToLast(50).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message) {
-                    appendMessageToChat(message, snapshot.key);
-                }
+            messagesRef.limitToLast(50).on('value', (snapshot) => {
+                updateMessagesOptimized(snapshot.val());
             });
-        }
-
-        function appendMessageToChat(msg, messageId) {
-            const container = document.getElementById('messages');
-
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message-item ${msg.type || 'user'}`;
-            messageDiv.id = `msg_${messageId}`;
-
-            let deleteButton = '';
-            if (currentUser && (msg.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner)) {
-                deleteButton = `<button class="delete-btn" onclick="deleteMessage('${messageId}')"><i class="fas fa-trash"></i></button>`;
-            }
-
-            let senderName = msg.sender;
-
-            let content = msg.text || '';
-            if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-            if (msg.videoData) {
-                content += `<br><video src="${msg.videoData}" controls class="message-video" style="max-width:100%; max-height:200px;"></video>`;
-            }
-            if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
-
-            const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
-            const avatarHtml = userAvatar ? 
-                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
-                '';
-
-            messageDiv.innerHTML = `
-                <div class="message-header">
-                    <span class="message-user" onclick="openPrivateChat('${msg.sender}')">
-                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
-                        ${senderName}
-                    </span>
-                    <div>
-                        <span class="message-time">${msg.time || '--:--'}</span>
-                        ${deleteButton}
-                    </div>
-                </div>
-                <div class="message-content">${content}</div>
-            `;
-
-            container.appendChild(messageDiv);
-
-            if (container.children.length > 60) {
-                container.removeChild(container.children[0]);
-            }
-
-            container.scrollTop = container.scrollHeight;
         }
 
         async function sendChannelMessage(channelId, text) {
@@ -4590,7 +4738,11 @@
             };
 
             try {
-                await database.ref('channelMessages/' + channelId).push(messageData);
+                const messageRef = await database.ref('channelMessages/' + channelId).push(messageData);
+                const messageId = messageRef.key;
+                
+                // Mesajı IndexedDB'ye kaydet
+                saveMessageToIndexedDB({ ...messageData, id: messageId }, channelId);
 
                 if (usersRef) {
                     usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
@@ -4830,8 +4982,9 @@
 
             let html = '';
 
+            const isGeneralActive = currentChannel === null;
             html += `
-                <div class="channel-item ${currentChannel === null ? 'active' : ''}" data-channel="general" onclick="leaveChannel()">
+                <div class="channel-item ${isGeneralActive ? 'active' : ''}" data-channel="general" onclick="leaveChannel()">
                     <div class="channel-icon"><i class="fas fa-globe"></i></div>
                     <div class="channel-info">
                         <div class="channel-name">Genel Sohbet</div>
@@ -4870,7 +5023,6 @@
             container.innerHTML = html;
         }
 
-        // ========== PLAYLIST SİSTEMİ ==========
         function extractVideoId(url) {
             const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
             const match = url.match(regExp);
@@ -5085,7 +5237,6 @@
             updatePlaylistDrawer();
         }
 
-        // ========== FIREBASE BAŞLATMA ==========
         function initializeFirebase() {
             try {
                 firebase.initializeApp(firebaseConfig);
@@ -5240,7 +5391,6 @@
             });
         }
 
-        // ========== OWNER ÖZEL MESAJ İZLEME ==========
         function startOwnerPrivateMessageMonitoring() {
             if (!privateChatsRef || !isOwner) return;
 
@@ -5285,9 +5435,7 @@
                     timestamp: message.timestamp || Date.now(),
                     time: message.time || new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                     image: message.image || null,
-                    videoData: message.videoData || null,
-                    videoType: message.videoType || null,
-                    videoName: message.videoName || null,
+                    video: message.video || null,
                     audio: message.audio || null,
                 };
 
@@ -5318,9 +5466,9 @@
 
             let content = '';
             if (message.image) {
-                content = `<img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-            } else if (message.videoData) {
-                content = `<video src="${message.videoData}" controls class="message-video" style="max-width:100%; max-height:200px;"></video>`;
+                content = `<img src="${message.image}" class="message-image" onclick="showImageModal('${message.id}')">`;
+            } else if (message.video) {
+                content = `<video src="${message.video}" controls class="message-video"></video>`;
             } else if (message.audio) {
                 content = `<audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
             } else {
@@ -5396,7 +5544,7 @@
 
                     let lastMsgText = lastMessage.text || '';
                     if (lastMessage.image) lastMsgText = '📸 Fotoğraf';
-                    else if (lastMessage.videoData) lastMsgText = '📹 Video';
+                    else if (lastMessage.video) lastMsgText = '🎥 Video';
                     else if (lastMessage.audio) lastMsgText = '🎤 Ses Kaydı';
 
                     const chatDiv = document.createElement('div');
@@ -5503,7 +5651,6 @@
             document.getElementById('overlay').style.display = 'none';
         }
 
-        // ========== TEMEL FONKSİYONLAR ==========
         function autoResize(textarea) {
             textarea.style.height = 'auto';
             textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
@@ -5518,7 +5665,6 @@
             addSystemMessage('💬 Özel sohbet başlatmak için kullanıcı listesinden birine tıklayın.');
         }
 
-        // ========== KAMERA MODAL FONKSİYONLARI ==========
         async function openCameraModal() {
             if (!privateChatWith) {
                 alert('Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -5618,9 +5764,7 @@
                             sender: currentUser.name,
                             receiver: privateChatWith,
                             text: '🎥 Video kaydetti',
-                            videoData: videoData,
-                            videoType: 'video/webm',
-                            videoName: 'kamera_kaydi.webm',
+                            video: videoData,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
@@ -5663,7 +5807,6 @@
             }
         }
 
-        // ========== BİLDİRİM SİSTEMİ ==========
         function toggleNotificationPanel(e) {
             if (e) e.stopPropagation();
 
@@ -5777,7 +5920,6 @@
             } catch (error) {}
         }
 
-        // ========== GİRİŞ SİSTEMİ ==========
         async function login() {
             const nickInput = document.getElementById('login-nick');
             const passwordInput = document.getElementById('login-password');
@@ -5978,8 +6120,14 @@
             }
         }
 
-        // ========== UYGULAMA BAŞLATMA ==========
         function initApp() {
+            // IndexedDB'yi başlat
+            initIndexedDB().then(() => {
+                console.log('IndexedDB hazır');
+            }).catch(err => {
+                console.warn('IndexedDB kullanılamıyor:', err);
+            });
+
             document.getElementById('message-input').addEventListener('keydown', function(e) {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -6025,7 +6173,9 @@
             }
 
             if (messagesRef && !currentChannel) {
-                loadGeneralMessages();
+                messagesRef.limitToLast(50).on('value', (snapshot) => {
+                    updateMessagesOptimized(snapshot.val());
+                });
             }
 
             if (coAdminsRef) {
@@ -6181,7 +6331,6 @@
             } catch (error) {}
         }
 
-        // ========== BAN SİSTEMİ ==========
         async function checkIfBanned(username) {
             try {
                 if (!bansRef) return { isBanned: false };
@@ -6245,7 +6394,6 @@
             }
         }
 
-        // ========== GLOBAL BAN SİSTEMİ ==========
         async function globalBanUser(username, duration = 0, reason = "Global ban") {
             if (!isAdmin && !isOwner) { addSystemMessage("⛔ Yetkiniz yok!"); return; }
             if (!username) return;
@@ -6285,7 +6433,6 @@
             return true;
         }
 
-        // ========== KANAL BAN (KICK) - KANALDAN ÇIKARMA ==========
         async function kickUserFromChannel(username, channelId, reason = "Kanal banı") {
             if (!currentChannel || (currentChannel.owner !== currentUser.name && !isAdmin && !isOwner)) {
                 addSystemMessage("⛔ Yetkiniz yok!"); return;
@@ -6299,7 +6446,6 @@
             addSystemMessage(`🚪 ${username} kanaldan atıldı. Sebep: ${reason}`);
         }
 
-        // ========== MUTE SİSTEMİ ==========
         async function muteUser(username, duration = 10, reason = "Mute") {
             if (!isAdmin && !isOwner && (!currentChannel || currentChannel.owner !== currentUser.name)) {
                 addSystemMessage("⛔ Yetkiniz yok!"); return;
@@ -6432,7 +6578,6 @@
             }
         }
 
-        // ========== YOUTUBE PLAYER ==========
         function initYouTubePlayer() {
             if (typeof YT !== 'undefined' && YT.Player) {
                 player = new YT.Player('youtube-player', {
@@ -6454,7 +6599,6 @@
             }
         }
 
-        // ========== ONLINE KULLANICILARI GÜNCELLEME ==========
         function updateOnlineUsers(users) {
             if (!users) users = {};
 
@@ -6506,7 +6650,7 @@
 
                 const userAvatar = userProfiles[user.username]?.avatar || null;
                 const avatarHtml = userAvatar ? 
-                    `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">` : 
+                    `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;" loading="lazy">` : 
                     '';
 
                 html += `
@@ -6531,7 +6675,6 @@
             container.innerHTML = html;
         }
 
-        // ========== MESAJ GÖNDERME ==========
         async function sendMessage() {
             if (!isFirebaseConnected) {
                 addSystemMessage('❌ Firebase bağlantısı yok!');
@@ -6587,7 +6730,12 @@
             else if (isOperator) messageData.type = 'operator';
 
             try {
-                await messagesRef.push(messageData);
+                const messageRef = await messagesRef.push(messageData);
+                const messageId = messageRef.key;
+                
+                // Mesajı IndexedDB'ye kaydet
+                saveMessageToIndexedDB({ ...messageData, id: messageId }, 'general');
+                
                 input.value = '';
                 autoResize(input);
 
@@ -6625,7 +6773,6 @@
             }
         }
 
-        // ========== ÖZEL SOHBET FONKSİYONLARI ==========
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
                 addSystemMessage('Kendinle özel sohbet başlatamazsın!');
@@ -6674,68 +6821,75 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
 
-            privateChatsRef.child(currentPrivateChatId).off();
-            privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message) {
-                    appendPrivateMessage(message, snapshot.key);
-                }
+            privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('value', (snapshot) => {
+                updatePrivateMessages(snapshot.val());
             });
         }
 
-        function appendPrivateMessage(msg, messageId) {
+        function updatePrivateMessages(messages) {
             const container = document.getElementById('privateMessages');
 
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message-item private-msg';
-            messageDiv.id = `private_msg_${messageId}`;
-
-            let deleteButton = '';
-            if (currentUser && msg.sender === currentUser.name) {
-                deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${messageId}', '${currentPrivateChatId}')"><i class="fas fa-trash"></i></button>`;
+            if (!messages) {
+                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Henüz mesaj yok.</div>';
+                return;
             }
 
-            let content = msg.text || '';
-            if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-            else if (msg.videoData) content += `<br><video src="${msg.videoData}" controls class="message-video" style="max-width:100%; max-height:200px;"></video>`;
-            else if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
+            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
+            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
 
-            const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
-            const avatarHtml = userAvatar ? 
-                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
-                '';
+            container.innerHTML = '';
 
-            if (msg.sender !== currentUser.name && !msg.isRead) {
-                privateChatsRef.child(currentPrivateChatId).child(messageId).update({
-                    isRead: true,
-                    readAt: Date.now()
-                });
-            }
+            const now = Date.now();
+            messagesArray.forEach(msg => {
+                if (msg.sender !== currentUser.name && !msg.isRead) {
+                    privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
+                        isRead: true,
+                        readAt: now
+                    });
+                }
+            });
 
-            let readStatus = '';
-            if (msg.sender === currentUser.name) {
-                readStatus = msg.isRead ? ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
-            }
+            messagesArray.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message-item private-msg';
+                messageDiv.id = `private_msg_${msg.id}`;
 
-            messageDiv.innerHTML = `
-                <div class="message-header">
-                    <span class="message-user">
-                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
-                        ${msg.sender}
-                    </span>
-                    <div>
-                        <span class="message-time">${msg.time || '--:--'}${readStatus}</span>
-                        ${deleteButton}
+                let deleteButton = '';
+                if (currentUser && msg.sender === currentUser.name) {
+                    deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${msg.id}', '${currentPrivateChatId}')"><i class="fas fa-trash"></i></button>`;
+                }
+
+                let content = msg.text || '';
+                if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.id}')">`;
+                else if (msg.video) content += `<br><video src="${msg.video}" controls class="message-video"></video>`;
+                else if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
+
+                const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
+                const avatarHtml = userAvatar ? 
+                    `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;" loading="lazy">` : 
+                    '';
+
+                let readStatus = '';
+                if (msg.sender === currentUser.name) {
+                    readStatus = msg.isRead ? ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
+                }
+
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        <span class="message-user">
+                            ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
+                            ${msg.sender}
+                        </span>
+                        <div>
+                            <span class="message-time">${msg.time || '--:--'}${readStatus}</span>
+                            ${deleteButton}
+                        </div>
                     </div>
-                </div>
-                <div class="message-content">${content}</div>
-            `;
+                    <div class="message-content">${content}</div>
+                `;
 
-            container.appendChild(messageDiv);
-
-            if (container.children.length > 60) {
-                container.removeChild(container.children[0]);
-            }
+                container.appendChild(messageDiv);
+            });
 
             container.scrollTop = container.scrollHeight;
         }
@@ -6762,31 +6916,6 @@
             } catch (error) {
                 alert('Özel mesaj silinemedi!');
             }
-        }
-
-        function showImageModal(imageData) {
-            const modal = document.createElement('div');
-            modal.style.position = 'fixed';
-            modal.style.top = '0';
-            modal.style.left = '0';
-            modal.style.width = '100%';
-            modal.style.height = '100%';
-            modal.style.background = 'rgba(0,0,0,0.98)';
-            modal.style.zIndex = '4000';
-            modal.style.display = 'flex';
-            modal.style.justifyContent = 'center';
-            modal.style.alignItems = 'center';
-            modal.style.cursor = 'pointer';
-
-            const img = document.createElement('img');
-            img.src = imageData;
-            img.style.maxWidth = '90%';
-            img.style.maxHeight = '90%';
-            img.style.borderRadius = '12px';
-
-            modal.appendChild(img);
-            modal.onclick = () => document.body.removeChild(modal);
-            document.body.appendChild(modal);
         }
 
         async function sendPrivateMessage() {
@@ -6816,7 +6945,12 @@
             };
 
             try {
-                await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                const messageRef = await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                const messageId = messageRef.key;
+                
+                // Mesajı IndexedDB'ye kaydet
+                saveMessageToIndexedDB({ ...messageData, id: messageId, chatId: currentPrivateChatId }, 'private');
+                
                 input.value = '';
                 autoResize(input);
 
@@ -7073,7 +7207,6 @@
             }
         }
 
-        // ========== KOMUT İŞLEYİCİ ==========
         async function handleCommand(cmd) {
             const parts = cmd.substring(1).split(' ');
             const command = parts[0].toLowerCase();
@@ -8006,7 +8139,6 @@
             });
         }
 
-        // ========== ENGELLEME SİSTEMİ ==========
         async function toggleBlockUser() {
             if (!privateChatWith || !currentUser) return;
 
@@ -8102,7 +8234,6 @@
             });
         }
 
-        // ========== ŞİKAYET SİSTEMİ ==========
         function openReportModal() {
             if (!privateChatWith) return;
             document.getElementById('reportModal').style.display = 'block';
@@ -8162,7 +8293,6 @@
             if (notificationPanelOpen) updateNotificationPanel();
         }
 
-        // ========== ADMIN PANELİ FONKSİYONLARI ==========
         function toggleAdminPanel() {
             const panel = document.getElementById('adminPanel');
             panel.classList.toggle('active');
@@ -8282,7 +8412,6 @@
                 addSystemMessage(`✅ Engelleme kaldırıldı.`);
             }
         }
-        
     </script>
     
     <!-- YouTube IFrame API -->
