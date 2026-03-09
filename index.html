@@ -3675,6 +3675,32 @@
             });
         }
 
+        // Medyayı IndexedDB'den sil
+        async function deleteMediaFromIndexedDB(messageId) {
+            if (!db) return;
+            
+            return new Promise((resolve) => {
+                const transaction = db.transaction(['media'], 'readwrite');
+                const store = transaction.objectStore('media');
+                const index = store.index('messageId');
+                const request = index.getAll(messageId);
+                
+                request.onsuccess = () => {
+                    const mediaItems = request.result;
+                    if (mediaItems && mediaItems.length > 0) {
+                        mediaItems.forEach(item => {
+                            store.delete(item.id);
+                        });
+                    }
+                    resolve();
+                };
+                
+                request.onerror = () => {
+                    resolve();
+                };
+            });
+        }
+
         // Medyayı IndexedDB'den yükle
         async function loadMediaFromIndexedDB(messageId) {
             if (!db) return null;
@@ -3849,7 +3875,7 @@
             return messageDiv;
         }
 
-        // Galeri yükleme (IndexedDB ile optimize edilmiş)
+        // Galeri yükleme (DÜZELTİLMİŞ - VİDEO GÖNDERME SORUNU ÇÖZÜLDÜ)
         document.getElementById('galleryUpload').addEventListener('change', handleGalleryUploadOptimized);
         
         async function handleGalleryUploadOptimized(e) {
@@ -3861,39 +3887,69 @@
                 return;
             }
             
+            // Video dosyası boyut kontrolü (max 50MB)
+            if (file.type.startsWith('video/') && file.size > 50 * 1024 * 1024) {
+                alert('❌ Video çok büyük! Maksimum 50MB.');
+                return;
+            }
+            
             if (await checkBlockStatus(privateChatWith)) {
                 alert('Bu kullanıcıya dosya gönderemezsiniz!');
                 return;
             }
             
-            // Dosyayı IndexedDB'ye kaydet
+            // Kullanıcıya yükleme başladığını bildir
+            const loadingMsg = addSystemMessage('📤 Medya yükleniyor...');
+            
             const reader = new FileReader();
             
             reader.onload = async function(event) {
-                const fileData = event.target.result;
-                const messageId = `msg_${Date.now()}_${Math.random().toString(36)}`;
-                
-                // Medyayı IndexedDB'ye kaydet
-                await saveMediaToIndexedDB(fileData, messageId);
-                
-                // Mesajı Firebase'e gönder
-                const messageData = {
-                    sender: currentUser.name,
-                    receiver: privateChatWith,
-                    text: file.type.startsWith('video/') ? '🎥 Video gönderdi' : '📸 Resim gönderdi',
-                    mediaId: messageId,
-                    timestamp: Date.now(),
-                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                };
-                
-                if (file.type.startsWith('video/')) {
-                    messageData.video = fileData; // Video için
-                } else {
-                    messageData.image = fileData; // Resim için
+                try {
+                    const fileData = event.target.result;
+                    const messageId = `msg_${Date.now()}_${Math.random().toString(36)}`;
+                    
+                    // Medyayı IndexedDB'ye kaydet
+                    await saveMediaToIndexedDB(fileData, messageId);
+                    
+                    // Mesajı Firebase'e gönder
+                    const messageData = {
+                        sender: currentUser.name,
+                        receiver: privateChatWith,
+                        text: file.type.startsWith('video/') ? '🎥 Video gönderdi' : '📸 Resim gönderdi',
+                        mediaId: messageId,
+                        timestamp: Date.now(),
+                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                    };
+                    
+                    if (file.type.startsWith('video/')) {
+                        messageData.video = fileData; // Video için
+                        messageData.videoType = file.type;
+                    } else {
+                        messageData.image = fileData; // Resim için
+                    }
+                    
+                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                    addNotification(privateChatWith, file.type.startsWith('video/') ? '🎥 Video gönderdi' : '📸 Resim gönderdi', 'private');
+                    
+                    // Yükleme tamamlandı mesajını kaldır
+                    if (loadingMsg && loadingMsg.parentNode) {
+                        loadingMsg.remove();
+                    }
+                    
+                } catch (error) {
+                    console.error('Medya gönderme hatası:', error);
+                    alert('❌ Medya gönderilemedi!');
+                    if (loadingMsg && loadingMsg.parentNode) {
+                        loadingMsg.remove();
+                    }
                 }
-                
-                await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                addNotification(privateChatWith, file.type.startsWith('video/') ? '🎥 Video gönderdi' : '📸 Resim gönderdi', 'private');
+            };
+            
+            reader.onerror = function() {
+                alert('❌ Dosya okuma hatası!');
+                if (loadingMsg && loadingMsg.parentNode) {
+                    loadingMsg.remove();
+                }
             };
             
             reader.readAsDataURL(file);
@@ -4073,24 +4129,38 @@
                 return;
             }
             
+            // Video dosyası boyut kontrolü (max 50MB)
+            if (file.type.startsWith('video/') && file.size > 50 * 1024 * 1024) {
+                alert('❌ Video çok büyük! Maksimum 50MB.');
+                return;
+            }
+            
             if (await checkBlockStatus(privateChatWith)) {
                 alert('Bu kullanıcıya dosya gönderemezsiniz!');
                 return;
             }
             
+            // Kullanıcıya yükleme başladığını bildir
+            const loadingMsg = addSystemMessage('📤 Medya yükleniyor...');
+            
             const reader = new FileReader();
             
             reader.onload = async function(event) {
-                const fileData = event.target.result;
-                
-                if (file.type.startsWith('video/')) {
-                    try {
+                try {
+                    const fileData = event.target.result;
+                    const messageId = `cam_${Date.now()}_${Math.random().toString(36)}`;
+                    
+                    // Medyayı IndexedDB'ye kaydet
+                    await saveMediaToIndexedDB(fileData, messageId);
+                    
+                    if (file.type.startsWith('video/')) {
                         const messageData = {
                             sender: currentUser.name,
                             receiver: privateChatWith,
                             text: '🎥 Kameradan video çekti',
                             video: fileData,
                             videoType: file.type,
+                            mediaId: messageId,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
@@ -4098,34 +4168,41 @@
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
                         addNotification(privateChatWith, '🎥 Video çekti', 'private');
                         
-                    } catch (videoError) {
-                        console.error('Video gönderme hatası:', videoError);
-                        alert('❌ Video gönderilemedi!');
-                    }
-                } 
-                else if (file.type.startsWith('image/')) {
-                    try {
+                    } 
+                    else if (file.type.startsWith('image/')) {
                         const messageData = {
                             sender: currentUser.name,
                             receiver: privateChatWith,
                             text: '📸 Kameradan fotoğraf çekti',
                             image: fileData,
+                            mediaId: messageId,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
                         
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
                         addNotification(privateChatWith, '📸 Fotoğraf çekti', 'private');
-                        
-                    } catch (imageError) {
-                        console.error('Resim gönderme hatası:', imageError);
-                        alert('❌ Resim gönderilemedi!');
+                    }
+                    
+                    // Yükleme tamamlandı mesajını kaldır
+                    if (loadingMsg && loadingMsg.parentNode) {
+                        loadingMsg.remove();
+                    }
+                    
+                } catch (videoError) {
+                    console.error('Medya gönderme hatası:', videoError);
+                    alert('❌ Medya gönderilemedi!');
+                    if (loadingMsg && loadingMsg.parentNode) {
+                        loadingMsg.remove();
                     }
                 }
             };
             
             reader.onerror = function() {
                 alert('❌ Dosya okuma hatası!');
+                if (loadingMsg && loadingMsg.parentNode) {
+                    loadingMsg.remove();
+                }
             };
             
             reader.readAsDataURL(file);
@@ -4163,26 +4240,42 @@
                         return;
                     }
 
+                    // Kullanıcıya yükleme başladığını bildir
+                    const loadingMsg = addSystemMessage('📤 Ses kaydı yükleniyor...');
+
                     const reader = new FileReader();
                     reader.onload = async function(e) {
-                        const audioData = e.target.result;
-                        
-                        // Ses kaydını IndexedDB'ye kaydet
-                        const messageId = `audio_${Date.now()}_${Math.random().toString(36)}`;
-                        await saveMediaToIndexedDB(audioData, messageId);
+                        try {
+                            const audioData = e.target.result;
+                            
+                            // Ses kaydını IndexedDB'ye kaydet
+                            const messageId = `audio_${Date.now()}_${Math.random().toString(36)}`;
+                            await saveMediaToIndexedDB(audioData, messageId);
 
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '🎤 Sesli mesaj gönderdi',
-                            audio: audioData,
-                            mediaId: messageId,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                        };
+                            const messageData = {
+                                sender: currentUser.name,
+                                receiver: privateChatWith,
+                                text: '🎤 Sesli mesaj gönderdi',
+                                audio: audioData,
+                                mediaId: messageId,
+                                timestamp: Date.now(),
+                                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                            };
 
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '🎤 Sesli mesaj gönderdi', 'private');
+                            await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                            addNotification(privateChatWith, '🎤 Sesli mesaj gönderdi', 'private');
+                            
+                            // Yükleme tamamlandı mesajını kaldır
+                            if (loadingMsg && loadingMsg.parentNode) {
+                                loadingMsg.remove();
+                            }
+                        } catch (error) {
+                            console.error('Ses kaydı gönderme hatası:', error);
+                            alert('❌ Ses kaydı gönderilemedi!');
+                            if (loadingMsg && loadingMsg.parentNode) {
+                                loadingMsg.remove();
+                            }
+                        }
                     };
                     reader.readAsDataURL(audioBlob);
 
@@ -5490,33 +5583,68 @@
             container.scrollTop = container.scrollHeight;
         }
 
+        // DÜZELTİLMİŞ - Owner panelinden silinen mesajlar IndexedDB'den de siliniyor
         async function deleteOwnerPrivateMessage(chatId, messageId) {
             if (!isOwner) return;
             if (!confirm('Bu özel mesajı silmek istediğinize emin misiniz?')) return;
 
             try {
+                // Önce mesajı Firebase'den sil
                 await privateChatsRef.child(chatId).child(messageId).remove();
-
+                
+                // Mesaja ait medyayı IndexedDB'den sil
+                await deleteMediaFromIndexedDB(messageId);
+                
+                // Mesajı DOM'dan kaldır
                 const messageDiv = document.getElementById(`owner_msg_${messageId}`);
                 if (messageDiv) messageDiv.remove();
+                
+                // OwnerPrivateMessages objesinden de mesajı sil
+                for (const key in ownerPrivateMessages) {
+                    ownerPrivateMessages[key] = ownerPrivateMessages[key].filter(msg => msg.id !== messageId);
+                }
+                
+                // allPrivateMessages dizisinden de mesajı sil
+                allPrivateMessages = allPrivateMessages.filter(msg => msg.id !== messageId);
 
-                addSystemMessage('✅ Özel mesaj silindi!');
+                addSystemMessage('✅ Özel mesaj kalıcı olarak silindi!');
             } catch (error) {
+                console.error('Mesaj silme hatası:', error);
                 addSystemMessage('❌ Özel mesaj silinemedi!');
             }
         }
 
+        // DÜZELTİLMİŞ - Tüm özel mesajları sil (IndexedDB dahil)
         async function deleteAllPrivateMessages() {
             if (!isOwner) return;
-            if (!confirm('TÜM ÖZEL MESAJLARI silmek istediğinize emin misiniz?')) return;
+            if (!confirm('TÜM ÖZEL MESAJLARI ve medyaları silmek istediğinize emin misiniz? (Bu işlem geri alınamaz!)')) return;
 
             try {
+                // Firebase'deki tüm özel mesajları sil
                 await privateChatsRef.remove();
+                
+                // IndexedDB'den tüm medyaları sil
+                if (db) {
+                    const transaction = db.transaction(['media', 'privateMessages'], 'readwrite');
+                    const mediaStore = transaction.objectStore('media');
+                    const privateMsgStore = transaction.objectStore('privateMessages');
+                    
+                    await new Promise((resolve) => {
+                        const mediaRequest = mediaStore.clear();
+                        const msgRequest = privateMsgStore.clear();
+                        
+                        mediaRequest.onsuccess = () => {
+                            msgRequest.onsuccess = () => resolve();
+                        };
+                    });
+                }
+                
                 ownerPrivateMessages = {};
                 allPrivateMessages = [];
                 document.getElementById('ownerPrivateMessages').innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding:20px;">Tüm özel mesajlar silindi.</div>';
-                addSystemMessage('✅ Tüm özel mesajlar silindi!');
+                addSystemMessage('✅ Tüm özel mesajlar ve medyalar kalıcı olarak silindi!');
             } catch (error) {
+                console.error('Tüm mesajları silme hatası:', error);
                 addSystemMessage('❌ Özel mesajlar silinemedi!');
             }
         }
@@ -5565,20 +5693,34 @@
             });
         }
 
+        // DÜZELTİLMİŞ - Tüm sohbet mesajlarını sil (IndexedDB dahil)
         async function deleteAllChatMessages(key, event) {
             event.stopPropagation();
             if (!isOwner) return;
 
             const [user1, user2] = key.split('_');
-            if (!confirm(`"${user1} ↔ ${user2}" arasındaki TÜM mesajları silmek istediğinize emin misiniz?`)) return;
+            if (!confirm(`"${user1} ↔ ${user2}" arasındaki TÜM mesajları ve medyaları silmek istediğinize emin misiniz?`)) return;
 
             try {
                 const chatId = `chat_${user1}_${user2}`;
+                
+                // Önce tüm mesaj ID'lerini topla (medyaları silmek için)
+                const messagesSnapshot = await privateChatsRef.child(chatId).once('value');
+                const messages = messagesSnapshot.val() || {};
+                
+                // Her mesajın medyasını IndexedDB'den sil
+                for (const msgId in messages) {
+                    await deleteMediaFromIndexedDB(msgId);
+                }
+                
+                // Firebase'deki tüm mesajları sil
                 await privateChatsRef.child(chatId).remove();
+                
                 delete ownerPrivateMessages[key];
                 updateOwnerChatList();
-                addSystemMessage(`✅ ${user1} ↔ ${user2} arasındaki tüm mesajlar silindi!`);
+                addSystemMessage(`✅ ${user1} ↔ ${user2} arasındaki tüm mesajlar ve medyalar kalıcı olarak silindi!`);
             } catch (error) {
+                console.error('Sohbet silme hatası:', error);
                 addSystemMessage('❌ Sohbet silinemedi!');
             }
         }
@@ -5722,12 +5864,17 @@
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
                 const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                const messageId = `cam_photo_${Date.now()}_${Math.random().toString(36)}`;
+
+                // Medyayı IndexedDB'ye kaydet
+                await saveMediaToIndexedDB(imageData, messageId);
 
                 const messageData = {
                     sender: currentUser.name,
                     receiver: privateChatWith,
                     text: '📸 Fotoğraf çekti',
                     image: imageData,
+                    mediaId: messageId,
                     timestamp: Date.now(),
                     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                 };
@@ -5755,23 +5902,49 @@
 
                 mediaRecorder.onstop = async () => {
                     const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                    const reader = new FileReader();
-
-                    reader.onload = async function(e) {
-                        const videoData = e.target.result;
-
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '🎥 Video kaydetti',
-                            video: videoData,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                        };
-
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '🎥 Video gönderdi', 'private');
+                    
+                    if (blob.size > 50 * 1024 * 1024) {
+                        alert('❌ Video çok büyük! Maksimum 50MB.');
                         closeCameraModal();
+                        return;
+                    }
+
+                    const loadingMsg = addSystemMessage('📤 Video yükleniyor...');
+
+                    const reader = new FileReader();
+                    reader.onload = async function(e) {
+                        try {
+                            const videoData = e.target.result;
+                            const messageId = `cam_video_${Date.now()}_${Math.random().toString(36)}`;
+                            
+                            // Medyayı IndexedDB'ye kaydet
+                            await saveMediaToIndexedDB(videoData, messageId);
+
+                            const messageData = {
+                                sender: currentUser.name,
+                                receiver: privateChatWith,
+                                text: '🎥 Video kaydetti',
+                                video: videoData,
+                                mediaId: messageId,
+                                timestamp: Date.now(),
+                                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                            };
+
+                            await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                            addNotification(privateChatWith, '🎥 Video gönderdi', 'private');
+                            
+                            if (loadingMsg && loadingMsg.parentNode) {
+                                loadingMsg.remove();
+                            }
+                            
+                            closeCameraModal();
+                        } catch (error) {
+                            console.error('Video gönderme hatası:', error);
+                            alert('❌ Video gönderilemedi!');
+                            if (loadingMsg && loadingMsg.parentNode) {
+                                loadingMsg.remove();
+                            }
+                        }
                     };
                     reader.readAsDataURL(blob);
                 };
@@ -7966,17 +8139,17 @@
             help += '👑 <strong>OWNER ÖZEL:</strong><br>';
             help += '• /ozelokuma - Tüm özel mesajları görüntüle (Resim/Video/Ses dahil)<br>';
             help += '• /ozelara - Özel mesajlarda ara<br>';
-            help += '• /ozeltemizle - Tüm özel mesajları sil<br>';
+            help += '• /ozeltemizle - Tüm özel mesajları sil (IndexedDB dahil kalıcı olarak silinir)<br>';
             help += '• /komut - Yeni özel komut oluştur<br>';
             help += '• /komutlar - Tüm özel komutları listeler<br><br>';
 
             help += '📹 <strong>ÖZELLİKLER:</strong><br>';
-            help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir<br>';
+            help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir (video sorunu düzeltildi)<br>';
             help += '• Kameradan Çek: Direkt telefon kamerasını açar, fotoğraf/video çekip gönderir<br>';
             help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir (mp3 player ile açılır)<br>';
             help += '• Kanal Açma: Kayıtlı her kullanıcı 📺 ikonu ile kanal açabilir<br>';
             help += '• Kanal Gizleme: Kanal sahipleri /kanalgizle ile kanallarını gizleyebilir, sadece yetkililer görebilir ve davet edebilir<br>';
-            help += '• Owner: 🤴 /ozelokuma ile tüm özel mesajları görür (resim, video, ses dahil)<br>';
+            help += '• Owner: 🤴 /ozelokuma ile tüm özel mesajları görür (resim, video, ses dahil) ve kalıcı olarak silebilir<br>';
             help += '• Admin Paneli: ⚙️ ikonu ile sistem bilgileri, banlar, şikayetler, engellemeler<br>';
             help += '• Engelleme: Özel sohbette 🚫 ikonu ile 24 saat karşılıklı engelleme<br>';
             help += '• Şikayet: Özel sohbette ⚠️ ikonu ile kullanıcı şikayeti';
@@ -7991,6 +8164,7 @@
             messageDiv.innerHTML = text;
             container.appendChild(messageDiv);
             container.scrollTop = container.scrollHeight;
+            return messageDiv; // Return the element for potential removal
         }
 
         function addBanMessage(text) {
