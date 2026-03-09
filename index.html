@@ -2785,24 +2785,21 @@
                 display: flex;
                 flex-direction: column;
                 position: relative;
-                transition: height 0.3s ease, transform 0.2s ease;
+                transition: none; /* Kaydırma animasyonu kaldırıldı */
                 border-top: 1px solid var(--border-color);
                 touch-action: pan-y;
                 overflow: hidden;
-                cursor: grab;
-                will-change: transform;
+                cursor: default; /* İmç değişimi kaldırıldı */
+                will-change: auto; /* Will-change kaldırıldı */
             }
             
             .chat-container:active {
-                cursor: grabbing;
+                cursor: default; /* Aktifken imleç değişimi kaldırıldı */
             }
             
+            /* Sohbet gizleme sınıfı kaldırıldı, kullanılmayacak */
             .chat-container.chat-hidden {
-                height: 0 !important;
-                min-height: 0;
-                opacity: 0;
-                pointer-events: none;
-                border-top: none;
+                display: none; /* Eğer gizlenecekse tamamen gizle, ama bu özellik kullanılmayacak */
             }
             
             .chat-container.chat-expanded {
@@ -2810,7 +2807,7 @@
             }
             
             .chat-header {
-                cursor: pointer;
+                cursor: default; /* Tıklama ile açma/kapama kaldırıldı */
                 user-select: none;
                 -webkit-user-select: none;
             }
@@ -3664,125 +3661,17 @@
         let audioStream = null;
         let isAudioRecording = false;
 
-        // Mobil kaydırma için değişkenler - GELİŞTİRİLDİ
-        let touchStartY = 0;
-        let touchCurrentY = 0;
-        let isDragging = false;
-        let startHeight = 0;
+        // Mobil kaydırma değişkenleri kaldırıldı - 1. MADDE
+        // let touchStartY = 0;
+        // let touchCurrentY = 0;
+        // let isDragging = false;
+        // let startHeight = 0;
         let chatContainer = document.getElementById('chatContainer');
         let centerPanel = document.querySelector('.center-panel');
 
-        // ========== MOBİL KAYDIRMA FONKSİYONLARI - GELİŞTİRİLDİ ==========
-        function initMobileSwipe() {
-            if (window.innerWidth > 768) return; // Sadece mobilde çalışsın
-            
-            chatContainer = document.getElementById('chatContainer');
-            centerPanel = document.querySelector('.center-panel');
-            
-            if (!chatContainer || !centerPanel) return;
-            
-            // Sürükleme başlangıcı
-            chatContainer.addEventListener('touchstart', function(e) {
-                touchStartY = e.touches[0].clientY;
-                isDragging = true;
-                startHeight = getChatHeight();
-                chatContainer.style.transition = 'none'; // Anlık hareket için transition'ı kaldır
-                
-                // Sürükleme çubuğunu vurgula
-                document.querySelector('.drag-handle').style.opacity = '1';
-                document.querySelector('.drag-handle').style.background = 'var(--youtube-red)';
-            }, { passive: true });
-            
-            // Sürükleme hareketi
-            chatContainer.addEventListener('touchmove', function(e) {
-                if (!isDragging || !touchStartY) return;
-                
-                touchCurrentY = e.touches[0].clientY;
-                const deltaY = touchCurrentY - touchStartY;
-                
-                // Yeni yükseklik hesapla (75vh baz alınarak)
-                const minHeight = 0; // Tam gizli
-                const maxHeight = window.innerHeight * 0.9; // 90vh - tam ekran
-                const defaultHeight = window.innerHeight * 0.75; // 75vh - normal
-                
-                let newHeight = defaultHeight - deltaY; // Yukarı çekince deltaY negatif olur, yükseklik artar
-                
-                // Sınırları kontrol et
-                if (newHeight < minHeight) newHeight = minHeight;
-                if (newHeight > maxHeight) newHeight = maxHeight;
-                
-                // Yüksekliği uygula
-                chatContainer.style.height = newHeight + 'px';
-                
-                // Playlist drawer'ı kontrol et
-                const playlistDrawer = document.getElementById('playlistDrawer');
-                if (newHeight < 100) { // Sohbet neredeyse tam gizli
-                    playlistDrawer.classList.add('active');
-                } else {
-                    playlistDrawer.classList.remove('active');
-                }
-                
-                e.preventDefault(); // Sayfanın kaymasını engelle
-            }, { passive: false });
-            
-            // Sürükleme bitişi
-            chatContainer.addEventListener('touchend', function(e) {
-                if (!isDragging) return;
-                
-                isDragging = false;
-                chatContainer.style.transition = 'height 0.2s ease'; // Transition'ı geri ekle
-                
-                const currentHeight = getChatHeight();
-                const defaultHeight = window.innerHeight * 0.75; // 75vh
-                const expandedHeight = window.innerHeight * 0.9; // 90vh
-                
-                // Karar verme eşikleri
-                if (currentHeight < 100) {
-                    // Tam gizle
-                    chatContainer.style.height = '0px';
-                    chatContainer.classList.add('chat-hidden');
-                    document.getElementById('playlistDrawer').classList.add('active');
-                } else if (currentHeight > expandedHeight - 50) {
-                    // Tam ekran yap
-                    chatContainer.style.height = expandedHeight + 'px';
-                    chatContainer.classList.add('chat-expanded');
-                    chatContainer.classList.remove('chat-hidden');
-                    document.getElementById('playlistDrawer').classList.remove('active');
-                } else {
-                    // Normal konum
-                    chatContainer.style.height = defaultHeight + 'px';
-                    chatContainer.classList.remove('chat-expanded', 'chat-hidden');
-                    document.getElementById('playlistDrawer').classList.remove('active');
-                }
-                
-                // Sürükleme çubuğunu normale döndür
-                document.querySelector('.drag-handle').style.opacity = '0.7';
-                document.querySelector('.drag-handle').style.background = 'var(--text-muted)';
-                
-                touchStartY = 0;
-            });
-            
-            // Header'a tıklama ile toggle (geliştirildi)
-            const chatHeader = document.getElementById('chatHeader');
-            if (chatHeader) {
-                chatHeader.addEventListener('click', function() {
-                    const currentHeight = getChatHeight();
-                    const defaultHeight = window.innerHeight * 0.75;
-                    
-                    if (currentHeight < 100) {
-                        // Gizliyse göster
-                        showChat();
-                    } else if (currentHeight < defaultHeight + 50) {
-                        // Normalse tam ekran yap
-                        expandChat();
-                    } else {
-                        // Tam ekransa normale döndür
-                        collapseChat();
-                    }
-                });
-            }
-        }
-        
+        // ========== MOBİL KAYDIRMA FONKSİYONLARI KALDIRILDI - 1. MADDE ==========
+        // initMobileSwipe ve ilgili fonksiyonlar tamamen silindi.
+
         function getChatHeight() {
             if (!chatContainer) return 0;
             return chatContainer.offsetHeight;
@@ -4382,8 +4271,20 @@
             }
         }
 
+        // GÜNCELLENDİ: Kanal gizlilik kontrolü eklendi - 3. MADDE
         async function joinChannel(channelId) {
             if (!channels[channelId]) return;
+
+            const channel = channels[channelId];
+
+            // Gizli kanal kontrolü
+            if (channel.isPrivate) {
+                const canJoin = channel.owner === currentUser?.name || isAdmin || isOwner;
+                if (!canJoin) {
+                    addSystemMessage('🔒 Bu kanal gizlidir. Katılamazsınız.');
+                    return;
+                }
+            }
 
             if (messagesRef && currentChannel === null) {
                 messagesRef.off();
@@ -4396,7 +4297,7 @@
                 channelsRef.child(currentChannel.id + '/playlist').off();
             }
 
-            currentChannel = channels[channelId];
+            currentChannel = channel;
 
             document.getElementById('currentChatTitle').textContent = currentChannel.name;
             document.getElementById('channelIndicator').classList.add('active');
@@ -4820,6 +4721,7 @@
             }
         }
 
+        // GÜNCELLENDİ: Kanal listesinde gizli kanallar sadece yetkililere gösterilir - 3. MADDE
         function updateChannelList() {
             const container = document.getElementById('channelList');
             if (!container) return;
@@ -4840,6 +4742,12 @@
 
             if (channels && Object.keys(channels).length > 0) {
                 Object.values(channels).forEach(channel => {
+                    // Gizli kanalları sadece sahibi, admin veya owner görebilir
+                    if (channel.isPrivate) {
+                        const canSee = channel.owner === currentUser?.name || isAdmin || isOwner;
+                        if (!canSee) return;
+                    }
+
                     if (channel.isAdminChannel && !isAdmin && !isOwner) return;
 
                     const isActive = currentChannel && currentChannel.id === channel.id;
@@ -4849,7 +4757,7 @@
                         <div class="channel-item ${isActive ? 'active' : ''}" onclick="joinChannel('${channel.id}')">
                             <div class="channel-icon"><i class="fas fa-users"></i></div>
                             <div class="channel-info">
-                                <div class="channel-name">${channel.name}</div>
+                                <div class="channel-name">${channel.name} ${channel.isPrivate ? '<i class="fas fa-lock" style="color: var(--channel); font-size: 12px;"></i>' : ''}</div>
                                 <div class="channel-owner">${channel.isAdminChannel ? '🔐 Admin Kanalı' : 'Sahip: ' + (channel.owner || '?')}</div>
                             </div>
                             <div class="channel-actions">
@@ -6070,8 +5978,7 @@
                 }
             });
 
-            // Mobil kaydırma özelliğini başlat - GELİŞTİRİLDİ
-            initMobileSwipe();
+            // Mobil kaydırma özelliği başlatma KALDIRILDI - 1. MADDE
         }
 
         function closeAllPanelsAndModals() {
@@ -6719,6 +6626,7 @@
             document.getElementById('private-input').value = '';
         }
 
+        // GÜNCELLENDİ: Performans iyileştirmesi için child_added dinleyicisi kaldırıldı - 2. MADDE
         function loadPrivateMessages() {
             if (!currentPrivateChatId || !privateChatsRef) return;
 
@@ -6729,16 +6637,17 @@
                 updatePrivateMessages(snapshot.val());
             });
 
-            privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message && message.sender !== currentUser.name) {
-                    let msgText = message.text || '';
-                    if (message.image) msgText = '📸 Fotoğraf';
-                    else if (message.video) msgText = '🎥 Video';
-                    else if (message.audio) msgText = '🎤 Ses Kaydı';
-                    addNotification(message.sender, msgText, 'private');
-                }
-            });
+            // AŞAĞIDAKİ SATIR SİLİNDİ (Performans için):
+            // privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
+            //     const message = snapshot.val();
+            //     if (message && message.sender !== currentUser.name) {
+            //         let msgText = message.text || '';
+            //         if (message.image) msgText = '📸 Fotoğraf';
+            //         else if (message.video) msgText = '🎥 Video';
+            //         else if (message.audio) msgText = '🎤 Ses Kaydı';
+            //         addNotification(message.sender, msgText, 'private');
+            //     }
+            // });
         }
 
         // DÜZELTİLMİŞ: Özel mesaj güncelleme (video için)
@@ -7252,7 +7161,12 @@
                 if (channels && Object.keys(channels).length > 0) {
                     Object.values(channels).forEach(channel => {
                         if (channel.isAdminChannel && !isAdmin && !isOwner) return;
-                        list += `<strong>${channel.name}</strong> - Sahip: ${channel.owner || 'Sistem'}`;
+                        // Gizli kanalları sadece sahibi, admin veya owner görebilir
+                        if (channel.isPrivate) {
+                            const canSee = channel.owner === currentUser?.name || isAdmin || isOwner;
+                            if (!canSee) return;
+                        }
+                        list += `<strong>${channel.name} ${channel.isPrivate ? '🔒' : ''}</strong> - Sahip: ${channel.owner || 'Sistem'}`;
                         if (currentChannel && currentChannel.id === channel.id) {
                             list += " (aktif)";
                         }
@@ -7714,7 +7628,7 @@
             help += '📺 <strong>KANAL KOMUTLARI:</strong><br>';
             help += '• /genel - Genel kanala döner<br>';
             help += '• /kanal - Kanal panelini açar<br>';
-            help += '• /kanallar - Tüm kanalları listeler<br>';
+            help += '• /kanallar - Tüm kanalları listeler (gizli kanallar sadece yetkililere görünür)<br>';
             help += '• /kanalaç [ad] - Yeni kanal açar (Kayıtlı kullanıcılar)<br>';
             help += '• /kanaldançık - Kanaldan ayrılır<br>';
             help += '• /sabitle - Mesajı sabitler (Sahip/Operatör)<br>';
