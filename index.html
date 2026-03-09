@@ -4255,7 +4255,8 @@
                     createdAt: Date.now(),
                     operators: [],
                     pinnedMessage: null,
-                    isActive: true
+                    isActive: true,
+                    isPrivate: false // YENİ: Varsayılan olarak gizli değil
                 };
 
                 await channelsRef.child(channelId).set(channelData);
@@ -7213,6 +7214,140 @@
                 return;
             }
 
+            // YENİ: Kanal gizleme komutu
+            if (command === 'kanalgizle') {
+                if (args.length === 0) {
+                    addSystemMessage('Kullanım: /kanalgizle #kanal');
+                    return;
+                }
+                const channelName = args.join(' ');
+                let targetChannel = null;
+                Object.values(channels).forEach(ch => {
+                    if (ch.name === channelName || ch.name === channelName.replace('#', '')) {
+                        targetChannel = ch;
+                    }
+                });
+                if (!targetChannel) {
+                    addSystemMessage('❌ Kanal bulunamadı!');
+                    return;
+                }
+                if (targetChannel.owner !== currentUser?.name && !isAdmin && !isOwner) {
+                    addSystemMessage('⛔ Sadece kanal sahibi, admin veya owner kanalı gizleyebilir!');
+                    return;
+                }
+                if (targetChannel.isPrivate) {
+                    addSystemMessage('ℹ️ Kanal zaten gizli.');
+                    return;
+                }
+                await channelsRef.child(targetChannel.id).update({ isPrivate: true });
+                targetChannel.isPrivate = true;
+                updateChannelList();
+                addSystemMessage(`🔒 ${targetChannel.name} kanalı gizlendi.`);
+                return;
+            }
+
+            // YENİ: Kanal gizleme açma komutu
+            if (command === 'kanalgizleaç') {
+                if (args.length === 0) {
+                    addSystemMessage('Kullanım: /kanalgizleaç #kanal');
+                    return;
+                }
+                const channelName = args.join(' ');
+                let targetChannel = null;
+                Object.values(channels).forEach(ch => {
+                    if (ch.name === channelName || ch.name === channelName.replace('#', '')) {
+                        targetChannel = ch;
+                    }
+                });
+                if (!targetChannel) {
+                    addSystemMessage('❌ Kanal bulunamadı!');
+                    return;
+                }
+                if (targetChannel.owner !== currentUser?.name && !isAdmin && !isOwner) {
+                    addSystemMessage('⛔ Sadece kanal sahibi, admin veya owner kanalın gizliliğini açabilir!');
+                    return;
+                }
+                if (!targetChannel.isPrivate) {
+                    addSystemMessage('ℹ️ Kanal zaten gizli değil.');
+                    return;
+                }
+                await channelsRef.child(targetChannel.id).update({ isPrivate: false });
+                targetChannel.isPrivate = false;
+                updateChannelList();
+                addSystemMessage(`🔓 ${targetChannel.name} kanalının gizliliği kaldırıldı.`);
+                return;
+            }
+
+            // YENİ: Kullanıcıyı gizli kanala davet etme komutu
+            if (command === 'join') {
+                if (args.length < 2) {
+                    addSystemMessage('Kullanım: /join nick #kanal');
+                    return;
+                }
+                const username = args[0];
+                const channelName = args[1];
+                let targetChannel = null;
+                Object.values(channels).forEach(ch => {
+                    if (ch.name === channelName || ch.name === channelName.replace('#', '')) {
+                        targetChannel = ch;
+                    }
+                });
+                if (!targetChannel) {
+                    addSystemMessage('❌ Kanal bulunamadı!');
+                    return;
+                }
+                if (targetChannel.owner !== currentUser?.name && !isAdmin && !isOwner) {
+                    addSystemMessage('⛔ Sadece kanal sahibi, admin veya owner kullanıcıları kanala alabilir!');
+                    return;
+                }
+                const userSnapshot = await usersRef.child(username).once('value');
+                const userData = userSnapshot.val();
+                if (!userData) {
+                    addSystemMessage('❌ Kullanıcı bulunamadı!');
+                    return;
+                }
+                await usersRef.child(username).update({ currentChannel: targetChannel.id });
+                addSystemMessage(`✅ ${username} kullanıcısı ${targetChannel.name} kanalına alındı.`);
+                return;
+            }
+
+            // YENİ: Kullanıcıyı gizli kanaldan çıkarma komutu
+            if (command === 'joinout') {
+                if (args.length < 2) {
+                    addSystemMessage('Kullanım: /joinout nick #kanal');
+                    return;
+                }
+                const username = args[0];
+                const channelName = args[1];
+                let targetChannel = null;
+                Object.values(channels).forEach(ch => {
+                    if (ch.name === channelName || ch.name === channelName.replace('#', '')) {
+                        targetChannel = ch;
+                    }
+                });
+                if (!targetChannel) {
+                    addSystemMessage('❌ Kanal bulunamadı!');
+                    return;
+                }
+                if (targetChannel.owner !== currentUser?.name && !isAdmin && !isOwner) {
+                    addSystemMessage('⛔ Sadece kanal sahibi, admin veya owner kullanıcıları kanaldan çıkarabilir!');
+                    return;
+                }
+                const userSnapshot = await usersRef.child(username).once('value');
+                const userData = userSnapshot.val();
+                if (!userData) {
+                    addSystemMessage('❌ Kullanıcı bulunamadı!');
+                    return;
+                }
+                if (userData.currentChannel !== targetChannel.id) {
+                    addSystemMessage(`❌ ${username} kullanıcısı ${targetChannel.name} kanalında değil.`);
+                    return;
+                }
+                await usersRef.child(username).update({ currentChannel: 'general' });
+                addSystemMessage(`✅ ${username} kullanıcısı ${targetChannel.name} kanalından çıkarıldı.`);
+                return;
+            }
+
             if (command === 'op' || command === 'operator') {
                 if (!currentChannel || (currentChannel.owner !== currentUser.name && !isOwner)) {
                     addSystemMessage('⛔ Sadece kanal sahibi ve owner operatör ekleyebilir!');
@@ -7635,7 +7770,11 @@
             help += '• /sabitkaldır - Sabit mesajı kaldırır (Sahip/Operatör)<br>';
             help += '• /op [kullanıcı] - Operatör ekler (Sahip)<br>';
             help += '• /deop [kullanıcı] - Operatör siler (Sahip)<br>';
-            help += '• /oplist - Kanaldaki operatörleri listeler<br><br>';
+            help += '• /oplist - Kanaldaki operatörleri listeler<br>';
+            help += '• /kanalgizle #kanal - Kanalı gizler (Sahip/Admin/Owner)<br>';
+            help += '• /kanalgizleaç #kanal - Kanalın gizliliğini kaldırır (Sahip/Admin/Owner)<br>';
+            help += '• /join nick #kanal - Kullanıcıyı gizli kanala alır (Sahip/Admin/Owner)<br>';
+            help += '• /joinout nick #kanal - Kullanıcıyı gizli kanaldan çıkarır (Sahip/Admin/Owner)<br><br>';
 
             help += '⭐️ <strong>ADMIN KOMUTLARI:</strong><br>';
             help += '• /globalban [kullanıcı] [dakika(0=süresiz)] [sebep] - Global ban (Admin/Owner)<br>';
@@ -7676,6 +7815,7 @@
             help += '• Kameradan Çek: Direkt telefon kamerasını açar, fotoğraf/video çekip gönderir<br>';
             help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir (mp3 player ile açılır)<br>';
             help += '• Kanal Açma: Kayıtlı her kullanıcı 📺 ikonu ile kanal açabilir<br>';
+            help += '• Kanal Gizleme: Kanal sahipleri /kanalgizle ile kanallarını gizleyebilir, sadece yetkililer görebilir ve davet edebilir<br>';
             help += '• Owner: 🤴 /ozelokuma ile tüm özel mesajları görür (resim, video, ses dahil)<br>';
             help += '• Admin Paneli: ⚙️ ikonu ile sistem bilgileri, banlar, şikayetler, engellemeler<br>';
             help += '• Engelleme: Özel sohbette 🚫 ikonu ile 24 saat karşılıklı engelleme<br>';
