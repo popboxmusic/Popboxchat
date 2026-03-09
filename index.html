@@ -12,7 +12,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     
     <style>
-        /* TÜM CSS KODLARI AYNEN KALACAK (Değişiklik yapılmadı) */
+        /* TÜM CSS KODLARI AYNEN KALACAK */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -1282,7 +1282,6 @@
             box-shadow: 0 4px 12px rgba(255, 0, 0, 0.3);
         }
         
-        /* 1. MADDE: Web görünüm sohbet alanı normal (köşeli) olsun */
         .chat-container {
             width: 50%;
             background: rgba(18, 18, 18, 0.7);
@@ -2969,6 +2968,26 @@
         }
         
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        .video-download-btn {
+            background: rgba(62, 166, 255, 0.15);
+            border: 1px solid var(--camera);
+            color: var(--camera);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 5px;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .video-download-btn:hover {
+            background: rgba(62, 166, 255, 0.3);
+            transform: scale(1.02);
+        }
     </style>
 </head>
 <body>
@@ -3197,7 +3216,6 @@
                 </div>
             </div>
             
-            <!-- 4. MADDE: Mobilde bu alan gizlenecek, yerine drawer kullanılacak -->
             <div class="playlist-section" id="playlistSection">
                 <div class="playlist-header">
                     <h3><i class="fas fa-list"></i> Oynatma Listesi</h3>
@@ -3213,7 +3231,6 @@
                 <div class="playlist-items" id="playlistItemsWeb"></div>
             </div>
             
-            <!-- 4. MADDE: Mobil için playlist drawer (açılır panel) -->
             <div class="playlist-drawer" id="playlistDrawer">
                 <div class="playlist-header">
                     <h3><i class="fas fa-list"></i> Oynatma Listesi</h3>
@@ -3388,7 +3405,6 @@
             <button class="audio-record-btn" onclick="startAudioRecording()" title="Sesli Mesaj Gönder"><i class="fas fa-microphone"></i></button>
             
             <input type="file" id="galleryUpload" accept="image/*,video/*" style="display: none;" multiple>
-            
             <input type="file" id="cameraUpload" accept="image/*,video/*" capture="environment" style="display: none;">
             
             <textarea 
@@ -3683,7 +3699,7 @@
             document.getElementById('playlistDrawer').classList.remove('active');
         }
 
-        // ========== GÜNCELLENMİŞ GALERİ YÜKLEME FONKSİYONU ==========
+        // ========== GÜNCELLENMİŞ VİDEO GÖNDERME FONKSİYONU ==========
         function openGallery() {
             if (!privateChatWith) {
                 alert('❌ Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -3723,18 +3739,22 @@
                 
                 if (file.type.startsWith('video/')) {
                     try {
+                        const videoUrl = URL.createObjectURL(file);
+                        
                         const messageData = {
                             sender: currentUser.name,
                             receiver: privateChatWith,
-                            text: '🎥 Video gönderdi',
-                            video: fileData,
+                            text: '📹 Video gönderdi',
+                            videoData: fileData, // Base64 video verisi
                             videoType: file.type,
+                            videoName: file.name,
+                            videoSize: file.size,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
                         
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '🎥 Video gönderdi', 'private');
+                        addNotification(privateChatWith, '📹 Video gönderdi', 'private');
                         
                     } catch (videoError) {
                         console.error('Video gönderme hatası:', videoError);
@@ -3796,15 +3816,17 @@
                         const messageData = {
                             sender: currentUser.name,
                             receiver: privateChatWith,
-                            text: '🎥 Kameradan video çekti',
-                            video: fileData,
+                            text: '📹 Kameradan video çekti',
+                            videoData: fileData, // Base64 video verisi
                             videoType: file.type,
+                            videoName: file.name,
+                            videoSize: file.size,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
                         
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '🎥 Video çekti', 'private');
+                        addNotification(privateChatWith, '📹 Video çekti', 'private');
                         
                     } catch (videoError) {
                         console.error('Video gönderme hatası:', videoError);
@@ -3838,6 +3860,73 @@
             
             reader.readAsDataURL(file);
             e.target.value = '';
+        }
+
+        // ========== VİDEO OYNATMA FONKSİYONU (DÜZELTİLDİ) ==========
+        function playVideoMessage(videoData, videoType, videoName) {
+            const modal = document.createElement('div');
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.width = '100%';
+            modal.style.height = '100%';
+            modal.style.background = 'rgba(0,0,0,0.98)';
+            modal.style.zIndex = '5000';
+            modal.style.display = 'flex';
+            modal.style.flexDirection = 'column';
+            modal.style.justifyContent = 'center';
+            modal.style.alignItems = 'center';
+            modal.style.cursor = 'pointer';
+
+            const video = document.createElement('video');
+            video.src = videoData; // Base64 video datası
+            video.controls = true;
+            video.autoplay = true;
+            video.style.maxWidth = '90%';
+            video.style.maxHeight = '80%';
+            video.style.borderRadius = '12px';
+            
+            // Video formatını belirle
+            if (videoType) {
+                video.type = videoType;
+            }
+
+            const closeBtn = document.createElement('button');
+            closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+            closeBtn.style.position = 'absolute';
+            closeBtn.style.top = '20px';
+            closeBtn.style.right = '20px';
+            closeBtn.style.background = 'rgba(255,255,255,0.2)';
+            closeBtn.style.border = 'none';
+            closeBtn.style.color = 'white';
+            closeBtn.style.fontSize = '24px';
+            closeBtn.style.width = '50px';
+            closeBtn.style.height = '50px';
+            closeBtn.style.borderRadius = '50%';
+            closeBtn.style.cursor = 'pointer';
+            closeBtn.onclick = () => document.body.removeChild(modal);
+
+            const downloadBtn = document.createElement('a');
+            downloadBtn.href = videoData;
+            downloadBtn.download = videoName || 'video.mp4';
+            downloadBtn.innerHTML = '<i class="fas fa-download"></i> İndir';
+            downloadBtn.style.marginTop = '10px';
+            downloadBtn.style.padding = '8px 16px';
+            downloadBtn.style.background = 'rgba(62,166,255,0.2)';
+            downloadBtn.style.color = 'white';
+            downloadBtn.style.border = '1px solid var(--camera)';
+            downloadBtn.style.borderRadius = '20px';
+            downloadBtn.style.textDecoration = 'none';
+            downloadBtn.style.cursor = 'pointer';
+
+            modal.appendChild(video);
+            modal.appendChild(closeBtn);
+            modal.appendChild(downloadBtn);
+            modal.onclick = (e) => {
+                if (e.target === modal) document.body.removeChild(modal);
+            };
+
+            document.body.appendChild(modal);
         }
 
         // ========== SESLİ MESAJ GÖNDERME ==========
@@ -4424,13 +4513,66 @@
             container.scrollTop = container.scrollHeight;
         }
 
+        // ========== MESAJ GÜNCELLEME ==========
         function loadGeneralMessages() {
             if (!messagesRef) return;
 
             messagesRef.off();
-            messagesRef.limitToLast(50).on('value', (snapshot) => {
-                updateMessages(snapshot.val());
+            messagesRef.limitToLast(50).on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                if (message) {
+                    appendMessageToChat(message, snapshot.key);
+                }
             });
+        }
+
+        function appendMessageToChat(msg, messageId) {
+            const container = document.getElementById('messages');
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message-item ${msg.type || 'user'}`;
+            messageDiv.id = `msg_${messageId}`;
+
+            let deleteButton = '';
+            if (currentUser && (msg.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner)) {
+                deleteButton = `<button class="delete-btn" onclick="deleteMessage('${messageId}')"><i class="fas fa-trash"></i></button>`;
+            }
+
+            let senderName = msg.sender;
+
+            let content = msg.text || '';
+            if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
+            if (msg.videoData) {
+                content += `<br><video src="${msg.videoData}" controls class="message-video" style="max-width:100%; max-height:200px;"></video>`;
+            }
+            if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
+
+            const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
+            const avatarHtml = userAvatar ? 
+                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
+                '';
+
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-user" onclick="openPrivateChat('${msg.sender}')">
+                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
+                        ${senderName}
+                    </span>
+                    <div>
+                        <span class="message-time">${msg.time || '--:--'}</span>
+                        ${deleteButton}
+                    </div>
+                </div>
+                <div class="message-content">${content}</div>
+            `;
+
+            container.appendChild(messageDiv);
+
+            if (container.children.length > 60) {
+                container.removeChild(container.children[0]);
+            }
+
+            container.scrollTop = container.scrollHeight;
         }
 
         async function sendChannelMessage(channelId, text) {
@@ -4688,9 +4830,8 @@
 
             let html = '';
 
-            const isGeneralActive = currentChannel === null;
             html += `
-                <div class="channel-item ${isGeneralActive ? 'active' : ''}" data-channel="general" onclick="leaveChannel()">
+                <div class="channel-item ${currentChannel === null ? 'active' : ''}" data-channel="general" onclick="leaveChannel()">
                     <div class="channel-icon"><i class="fas fa-globe"></i></div>
                     <div class="channel-info">
                         <div class="channel-name">Genel Sohbet</div>
@@ -5144,7 +5285,9 @@
                     timestamp: message.timestamp || Date.now(),
                     time: message.time || new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                     image: message.image || null,
-                    video: message.video || null,
+                    videoData: message.videoData || null,
+                    videoType: message.videoType || null,
+                    videoName: message.videoName || null,
                     audio: message.audio || null,
                 };
 
@@ -5176,8 +5319,8 @@
             let content = '';
             if (message.image) {
                 content = `<img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-            } else if (message.video) {
-                content = `<video src="${message.video}" controls class="message-video"></video>`;
+            } else if (message.videoData) {
+                content = `<video src="${message.videoData}" controls class="message-video" style="max-width:100%; max-height:200px;"></video>`;
             } else if (message.audio) {
                 content = `<audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
             } else {
@@ -5253,7 +5396,7 @@
 
                     let lastMsgText = lastMessage.text || '';
                     if (lastMessage.image) lastMsgText = '📸 Fotoğraf';
-                    else if (lastMessage.video) lastMsgText = '🎥 Video';
+                    else if (lastMessage.videoData) lastMsgText = '📹 Video';
                     else if (lastMessage.audio) lastMsgText = '🎤 Ses Kaydı';
 
                     const chatDiv = document.createElement('div');
@@ -5475,7 +5618,9 @@
                             sender: currentUser.name,
                             receiver: privateChatWith,
                             text: '🎥 Video kaydetti',
-                            video: videoData,
+                            videoData: videoData,
+                            videoType: 'video/webm',
+                            videoName: 'kamera_kaydi.webm',
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
@@ -5880,9 +6025,7 @@
             }
 
             if (messagesRef && !currentChannel) {
-                messagesRef.limitToLast(50).on('value', (snapshot) => {
-                    updateMessages(snapshot.val());
-                });
+                loadGeneralMessages();
             }
 
             if (coAdminsRef) {
@@ -6456,62 +6599,6 @@
             }
         }
 
-        function updateMessages(messages) {
-            const container = document.getElementById('messages');
-            if (!messages) {
-                if (!currentChannel) {
-                    container.innerHTML = '<div class="message-item system"><i class="fas fa-fire" style="color: var(--youtube-red);"></i> cetcety Music Live\'e hoş geldiniz!</div>';
-                }
-                return;
-            }
-
-            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
-            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-
-            container.innerHTML = '';
-
-            messagesArray.slice(-100).forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message-item ${msg.type || 'user'}`;
-                messageDiv.id = `msg_${msg.id}`;
-
-                let deleteButton = '';
-                if (currentUser && (msg.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner)) {
-                    deleteButton = `<button class="delete-btn" onclick="deleteMessage('${msg.id}')"><i class="fas fa-trash"></i></button>`;
-                }
-
-                let senderName = msg.sender;
-
-                let content = msg.text;
-                if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-                if (msg.video) content += `<br><video src="${msg.video}" controls class="message-video"></video>`;
-                if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
-
-                const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
-                const avatarHtml = userAvatar ? 
-                    `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
-                    '';
-
-                messageDiv.innerHTML = `
-                    <div class="message-header">
-                        <span class="message-user" onclick="openPrivateChat('${msg.sender}')">
-                            ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
-                            ${senderName}
-                        </span>
-                        <div>
-                            <span class="message-time">${msg.time || '--:--'}</span>
-                            ${deleteButton}
-                        </div>
-                    </div>
-                    <div class="message-content">${content}</div>
-                `;
-
-                container.appendChild(messageDiv);
-            });
-
-            container.scrollTop = container.scrollHeight;
-        }
-
         async function deleteMessage(messageId) {
             if (!messagesRef || !currentUser) return;
 
@@ -6538,6 +6625,7 @@
             }
         }
 
+        // ========== ÖZEL SOHBET FONKSİYONLARI ==========
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
                 addSystemMessage('Kendinle özel sohbet başlatamazsın!');
@@ -6580,85 +6668,74 @@
             document.getElementById('private-input').value = '';
         }
 
-        // ========== PERFORMANS İYİLEŞTİRMESİ: Özel mesaj dinleyicisi değiştirildi ==========
-        // 1. MADDE: 'child_added' yerine sadece 'value' dinleyicisi kullanıldı. Aşırı yüklenmeyi önlemek için.
         function loadPrivateMessages() {
             if (!currentPrivateChatId || !privateChatsRef) return;
 
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
 
-            privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('value', (snapshot) => {
-                updatePrivateMessages(snapshot.val());
+            privateChatsRef.child(currentPrivateChatId).off();
+            privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                if (message) {
+                    appendPrivateMessage(message, snapshot.key);
+                }
             });
-
-            // 'child_added' dinleyicisi KALDIRILDI. Sadece 'value' ile tüm liste güncellenir. Performans için.
         }
 
-        function updatePrivateMessages(messages) {
+        function appendPrivateMessage(msg, messageId) {
             const container = document.getElementById('privateMessages');
 
-            if (!messages) {
-                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Henüz mesaj yok.</div>';
-                return;
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message-item private-msg';
+            messageDiv.id = `private_msg_${messageId}`;
+
+            let deleteButton = '';
+            if (currentUser && msg.sender === currentUser.name) {
+                deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${messageId}', '${currentPrivateChatId}')"><i class="fas fa-trash"></i></button>`;
             }
 
-            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
-            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+            let content = msg.text || '';
+            if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
+            else if (msg.videoData) content += `<br><video src="${msg.videoData}" controls class="message-video" style="max-width:100%; max-height:200px;"></video>`;
+            else if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
 
-            container.innerHTML = '';
+            const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
+            const avatarHtml = userAvatar ? 
+                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
+                '';
 
-            const now = Date.now();
-            messagesArray.forEach(msg => {
-                if (msg.sender !== currentUser.name && !msg.isRead) {
-                    privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
-                        isRead: true,
-                        readAt: now
-                    });
-                }
-            });
+            if (msg.sender !== currentUser.name && !msg.isRead) {
+                privateChatsRef.child(currentPrivateChatId).child(messageId).update({
+                    isRead: true,
+                    readAt: Date.now()
+                });
+            }
 
-            messagesArray.forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message-item private-msg';
-                messageDiv.id = `private_msg_${msg.id}`;
+            let readStatus = '';
+            if (msg.sender === currentUser.name) {
+                readStatus = msg.isRead ? ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
+            }
 
-                let deleteButton = '';
-                if (currentUser && msg.sender === currentUser.name) {
-                    deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${msg.id}', '${currentPrivateChatId}')"><i class="fas fa-trash"></i></button>`;
-                }
-
-                let content = msg.text || '';
-                if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-                else if (msg.video) content += `<br><video src="${msg.video}" controls class="message-video"></video>`;
-                else if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
-
-                const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
-                const avatarHtml = userAvatar ? 
-                    `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : 
-                    '';
-
-                let readStatus = '';
-                if (msg.sender === currentUser.name) {
-                    readStatus = msg.isRead ? ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
-                }
-
-                messageDiv.innerHTML = `
-                    <div class="message-header">
-                        <span class="message-user">
-                            ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
-                            ${msg.sender}
-                        </span>
-                        <div>
-                            <span class="message-time">${msg.time || '--:--'}${readStatus}</span>
-                            ${deleteButton}
-                        </div>
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-user">
+                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
+                        ${msg.sender}
+                    </span>
+                    <div>
+                        <span class="message-time">${msg.time || '--:--'}${readStatus}</span>
+                        ${deleteButton}
                     </div>
-                    <div class="message-content">${content}</div>
-                `;
+                </div>
+                <div class="message-content">${content}</div>
+            `;
 
-                container.appendChild(messageDiv);
-            });
+            container.appendChild(messageDiv);
+
+            if (container.children.length > 60) {
+                container.removeChild(container.children[0]);
+            }
 
             container.scrollTop = container.scrollHeight;
         }
