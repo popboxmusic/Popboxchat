@@ -3646,6 +3646,8 @@
         let privateMessageListener = null;
         let lastMessageCount = 0;
         let messageObserver = null;
+        // Yeni eklenen: mesaj sayfa sınırı
+        const MAX_PRIVATE_MESSAGES_PER_PAGE = 50;
 
         let chatContainer = document.getElementById('chatContainer');
         let centerPanel = document.querySelector('.center-panel');
@@ -6365,8 +6367,8 @@
 
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
 
-            // Önce mevcut mesajları yükle
-            privateChatsRef.child(currentPrivateChatId).limitToLast(50).once('value', (snapshot) => {
+            // Önce mevcut mesajları yükle (sayfalı)
+            privateChatsRef.child(currentPrivateChatId).orderByKey().limitToLast(MAX_PRIVATE_MESSAGES_PER_PAGE).once('value', (snapshot) => {
                 const messages = snapshot.val() || {};
                 privateMessageCache = Object.entries(messages)
                     .map(([id, value]) => ({ id, ...value }))
@@ -6391,8 +6393,11 @@
                     privateMessageCache.sort((a, b) => a.timestamp - b.timestamp);
                     
                     // Sadece son 50 mesajı tut
-                    if (privateMessageCache.length > 50) {
-                        privateMessageCache = privateMessageCache.slice(-50);
+                    if (privateMessageCache.length > MAX_PRIVATE_MESSAGES_PER_PAGE) {
+                        // En eski mesajı kaldır
+                        const removedMessage = privateMessageCache.shift();
+                        const removedElement = document.getElementById(`private_msg_${removedMessage.id}`);
+                        if (removedElement) removedElement.remove();
                     }
                     
                     // SADECE yeni mesajı ekle, hepsini yeniden render etme
@@ -7949,7 +7954,7 @@
             help += '• /komutlar - Tüm özel komutları listeler<br><br>';
 
             help += '📹 <strong>ÖZELLİKLER:</strong><br>';
-            help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir (videolar 720p sıkıştırılır)<br>';
+            help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir (videolar 720p sıkıştırılır ve MP4 formatında oynatılır)<br>';
             help += '• Kameradan Çek: Direkt telefon kamerasını açar, fotoğraf/video çekip gönderir<br>';
             help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir (mp3 player ile açılır)<br>';
             help += '• Kanal Açma: Kayıtlı her kullanıcı 📺 ikonu ile kanal açabilir<br>';
