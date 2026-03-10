@@ -5398,12 +5398,13 @@
             const sourceIcon = message.source === 'archive' ? '📦' : '💬';
             const sourceText = message.source === 'archive' ? 'Arşiv' : 'Güncel';
 
+            // *** DÜZELTME 3: Owner panelinde mesaj silme butonu eklendi ***
             messageDiv.innerHTML = `
                 <div class="message-header">
                     <span class="message-user"><i class="fas fa-user"></i> ${message.sender} → ${message.receiver} <span style="font-size:10px; color:var(--text-muted);">${sourceIcon} ${sourceText}</span></span>
                     <div>
                         <span class="message-time">${message.time}</span>
-                        ${message.source !== 'archive' ? `<button class="owner-delete-btn" onclick="deleteOwnerPrivateMessage('${message.chatId}', '${message.id}')"><i class="fas fa-trash"></i></button>` : ''}
+                        <button class="owner-delete-btn" onclick="deleteOwnerPrivateMessage('${message.chatId}', '${message.id}')"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
                 <div class="message-content">${content}</div>
@@ -5418,13 +5419,26 @@
             if (!confirm('Bu özel mesajı silmek istediğinize emin misiniz?')) return;
 
             try {
+                // Önce anlık sohbetten silmeyi dene
                 await privateChatsRef.child(chatId).child(messageId).remove();
+                // Sonra arşivden silmeyi dene (hata vermez)
+                const archiveSnapshot = await privateChatsArchiveRef.child(chatId).once('value');
+                const archiveMessages = archiveSnapshot.val();
+                if (archiveMessages) {
+                    for (const [archId, archMsg] of Object.entries(archiveMessages)) {
+                        if (archMsg.originalMessageId === messageId || archMsg.id === messageId) {
+                            await privateChatsArchiveRef.child(chatId).child(archId).remove();
+                            break;
+                        }
+                    }
+                }
 
                 const messageDiv = document.getElementById(`owner_msg_${messageId}`);
                 if (messageDiv) messageDiv.remove();
 
                 addSystemMessage('✅ Özel mesaj silindi!');
             } catch (error) {
+                console.error("Silme hatası:", error);
                 addSystemMessage('❌ Özel mesaj silinemedi!');
             }
         }
@@ -5523,6 +5537,11 @@
             document.getElementById('overlay').style.display = 'block';
 
             updateOwnerChatList();
+        }
+
+        function closeOwnerPrivateModal() {
+            document.getElementById('ownerPrivateModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
         }
 
         // ========== TEMEL FONKSİYONLAR ==========
@@ -6121,7 +6140,7 @@
             closePrivateChat();
             closeAdminModal();
             closeCommandModal();
-            closeOwnerPrivateModal();
+            closeOwnerPrivateModal(); // *** DÜZELTME 2: Owner paneli ESC ile kapanıyor ***
             closeCameraModal();
             closeAddOperatorModal();
             closeRemoveOperatorModal();
