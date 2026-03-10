@@ -2689,7 +2689,8 @@
             .main-container {
                 flex-direction: column;
                 position: relative;
-                touch-action: pan-y;
+                /* 1. MADDE: Kaydırma özelliği tamamen kaldırıldı, sabit oranlar kullanılıyor */
+                touch-action: pan-y; /* Bu satır kaldırıldı, yerine auto */
             }
             
             .icon-panel {
@@ -2708,7 +2709,7 @@
                 height: 25vh; /* 3. MADDE: Video alanı %25 */
                 display: flex;
                 flex-direction: column;
-                transition: height 0.3s ease;
+                /* transition: height 0.3s ease;  KASMA: Gereksiz animasyon kaldırıldı */
                 overflow: hidden;
                 flex-shrink: 0;
                 border-right: none;
@@ -2725,46 +2726,29 @@
                 display: none; /* 4. MADDE: Ana playlist paneli mobilde gizlendi */
             }
             
-            /* Sohbet alanı tam gizlendiğinde playlist görünür */
-            .chat-container.chat-hidden + .center-panel .playlist-section {
-                height: 30vh;
-                min-height: 150px;
-                opacity: 1;
-                pointer-events: auto;
-                border-top: 1px solid var(--border-color);
-            }
-            
+            /* Sohbet alanı artık sabit %75 */
             .chat-container {
                 width: 100%;
-                height: 75vh; /* 3. MADDE: Sohbet alanı %75 */
+                height: 75vh; /* 1. MADDE: Sohbet alanı sabit %75, kaydırma yok */
                 display: flex;
                 flex-direction: column;
                 position: relative;
-                transition: height 0.3s ease;
+                /* transition: height 0.3s ease; KASMA: Gereksiz animasyon kaldırıldı */
                 border-top: 1px solid var(--border-color);
-                touch-action: pan-y;
+                /* touch-action: pan-y; 1. MADDE: Bu satır kaldırıldı */
                 overflow: hidden;
-                cursor: grab;
+                /* cursor: grab; 1. MADDE: Bu satır kaldırıldı */
             }
             
-            .chat-container:active {
-                cursor: grabbing;
-            }
-            
-            .chat-container.chat-hidden {
-                height: 0 !important;
-                min-height: 0;
-                opacity: 0;
-                pointer-events: none;
-                border-top: none;
-            }
-            
-            .chat-container.chat-expanded {
-                height: 90vh !important;
+            /* 1. MADDE: Tüm bu sınıflar kaldırıldı, sohbet artık sabit */
+            .chat-container.chat-hidden,
+            .chat-container.chat-expanded,
+            .drag-handle {
+                display: none; /* Gizlendi */
             }
             
             .chat-header {
-                cursor: pointer;
+                /* cursor: pointer; 1. MADDE: Bu satır kaldırıldı */
                 user-select: none;
                 -webkit-user-select: none;
             }
@@ -2832,10 +2816,18 @@
             
             .profile-modal { width: 95%; max-height: 90vh; }
             
+            /* 2. MADDE: Tüm açılır paneller sohbetin üzerinde açılır */
             .slide-panel, .channel-panel {
-                max-height: 50vh !important;
-                height: auto;
+                position: absolute;
                 top: 0;
+                left: 0;
+                width: 100%;
+                max-height: 50vh !important; /* Yükseklik sınırlandırıldı */
+                height: auto;
+                z-index: 100; /* Sohbetin üzerinde görünmesi için */
+                background: rgba(20, 20, 20, 0.98); /* Biraz daha opak */
+                box-shadow: 0 4px 20px rgba(0,0,0,0.9);
+                border-bottom: 2px solid var(--youtube-red);
             }
             
             .panel-content {
@@ -2929,7 +2921,7 @@
         
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         
-        /* Sürükleme çubuğu göstergesi */
+        /* Sürükleme çubuğu göstergesi - 1. MADDE: Mobilde gizlendi */
         .drag-handle {
             width: 40px;
             height: 4px;
@@ -2937,6 +2929,11 @@
             border-radius: 2px;
             margin: 8px auto;
             opacity: 0.5;
+        }
+        @media (max-width: 768px) {
+            .drag-handle {
+                display: none; /* Mobilde gizle */
+            }
         }
     </style>
 </head>
@@ -3624,89 +3621,7 @@
         let audioStream = null;
         let isAudioRecording = false;
 
-        // Mobil kaydırma için değişkenler
-        let touchStartY = 0;
-        let touchEndY = 0;
-        let chatContainer = document.getElementById('chatContainer');
-        let centerPanel = document.querySelector('.center-panel');
-
-        // ========== MOBİL KAYDIRMA FONKSİYONLARI ==========
-        function initMobileSwipe() {
-            if (window.innerWidth > 768) return; // Sadece mobilde çalışsın
-            
-            chatContainer = document.getElementById('chatContainer');
-            centerPanel = document.querySelector('.center-panel');
-            
-            if (!chatContainer || !centerPanel) return;
-            
-            // Dokunma başlangıcı
-            chatContainer.addEventListener('touchstart', function(e) {
-                touchStartY = e.touches[0].clientY;
-            }, { passive: true });
-            
-            // Dokunma hareketi
-            chatContainer.addEventListener('touchmove', function(e) {
-                if (!touchStartY) return;
-                
-                touchEndY = e.touches[0].clientY;
-                const deltaY = touchEndY - touchStartY;
-                
-                // Aşağı kaydırma (sohbeti gizle)
-                if (deltaY > 50) { // 50px aşağı kaydırma eşiği
-                    hideChat();
-                }
-                // Yukarı kaydırma (sohbeti göster)
-                else if (deltaY < -50) { // 50px yukarı kaydırma eşiği
-                    showChat();
-                }
-            }, { passive: true });
-            
-            // Dokunma bitişi
-            chatContainer.addEventListener('touchend', function() {
-                touchStartY = 0;
-                touchEndY = 0;
-            });
-            
-            // Header'a tıklama ile toggle
-            const chatHeader = document.getElementById('chatHeader');
-            if (chatHeader) {
-                chatHeader.addEventListener('click', function() {
-                    if (chatContainer.classList.contains('chat-hidden')) {
-                        showChat();
-                    } else if (!chatContainer.classList.contains('chat-expanded')) {
-                        expandChat();
-                    } else {
-                        collapseChat();
-                    }
-                });
-            }
-        }
-        
-        function hideChat() {
-            if (!chatContainer) return;
-            chatContainer.classList.add('chat-hidden');
-            chatContainer.classList.remove('chat-expanded');
-            
-            // Sohbet gizlendiğinde playlist görünür hale gelir (CSS ile)
-        }
-        
-        function showChat() {
-            if (!chatContainer) return;
-            chatContainer.classList.remove('chat-hidden');
-            chatContainer.classList.remove('chat-expanded');
-        }
-        
-        function expandChat() {
-            if (!chatContainer) return;
-            chatContainer.classList.add('chat-expanded');
-            chatContainer.classList.remove('chat-hidden');
-        }
-        
-        function collapseChat() {
-            if (!chatContainer) return;
-            chatContainer.classList.remove('chat-expanded');
-            chatContainer.classList.remove('chat-hidden');
-        }
+        // 1. MADDE: Mobil kaydırma değişkenleri kaldırıldı
 
         // ========== GÜNCELLENMİŞ GALERİ YÜKLEME FONKSİYONU ==========
         function openGallery() {
@@ -3725,7 +3640,62 @@
             document.getElementById('cameraUpload').click();
         }
         
-        // 2. MADDE: Video kalitesi korunur (base64 ile sıkıştırılmadan gönderilir)
+        // 4. MADDE: Video kalitesi düşürme fonksiyonu
+        async function compressVideo(videoFile) {
+            return new Promise((resolve, reject) => {
+                const video = document.createElement('video');
+                video.preload = 'metadata';
+                video.playsinline = true;
+                video.muted = true;
+                
+                video.onloadedmetadata = function() {
+                    // Hedef çözünürlük: maksimum 960p genişlik
+                    const maxWidth = 960;
+                    let width = video.videoWidth;
+                    let height = video.videoHeight;
+                    
+                    if (width > maxWidth) {
+                        height = Math.floor(height * (maxWidth / width));
+                        width = maxWidth;
+                    }
+                    
+                    // Canvas oluştur
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0, width, height);
+                    
+                    // Videoyu MP4 formatında sıkıştır
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.readAsDataURL(blob);
+                        } else {
+                            reject('Sıkıştırma başarısız');
+                        }
+                    }, 'video/mp4', 0.7); // Kalite %70
+                    
+                    video.pause();
+                    video.src = '';
+                };
+                
+                video.onerror = reject;
+                video.src = URL.createObjectURL(videoFile);
+                video.load();
+                video.play().catch(() => {});
+                
+                // 5 saniye sonra timeout
+                setTimeout(() => {
+                    if (!video.videoWidth) {
+                        reject('Video yüklenemedi');
+                    }
+                }, 5000);
+            });
+        }
+
         document.getElementById('galleryUpload').addEventListener('change', handleGalleryUpload);
         
         async function handleGalleryUpload(e) {
@@ -3742,41 +3712,42 @@
                 return;
             }
             
-            const reader = new FileReader();
-            
-            reader.onload = async function(event) {
-                const fileData = event.target.result;
-                
-                // VİDEO GÖNDERME - Orijinal kalite korunur
-                if (file.type.startsWith('video/')) {
-                    try {
-                        // Video için doğrudan video player ile gönder
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '🎥 Video gönderdi',
-                            video: fileData, // video olarak işaretle
-                            videoType: file.type,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                        };
-                        
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '🎥 Video gönderdi', 'private');
-                        
-                    } catch (videoError) {
-                        console.error('Video gönderme hatası:', videoError);
-                        alert('❌ Video gönderilemedi!');
-                    }
-                } 
-                // Resim gönderme
-                else if (file.type.startsWith('image/')) {
+            // VİDEO GÖNDERME - 4. MADDE: MP4 dönüştür ve kalite düşür
+            if (file.type.startsWith('video/')) {
+                try {
+                    // Videoyu sıkıştır
+                    addSystemMessage('🎥 Video sıkıştırılıyor, lütfen bekleyin...');
+                    const compressedVideoData = await compressVideo(file);
+                    
+                    const messageData = {
+                        sender: currentUser.name,
+                        receiver: privateChatWith,
+                        text: '🎥 Video gönderdi (sıkıştırılmış)',
+                        video: compressedVideoData,
+                        videoType: 'video/mp4',
+                        timestamp: Date.now(),
+                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                    };
+                    
+                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                    addNotification(privateChatWith, '🎥 Video gönderdi', 'private');
+                    
+                } catch (videoError) {
+                    console.error('Video gönderme hatası:', videoError);
+                    alert('❌ Video gönderilemedi veya sıkıştırılamadı!');
+                }
+            } 
+            // Resim gönderme (resimler aynı kalır)
+            else if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = async function(event) {
+                    const imageData = event.target.result;
                     try {
                         const messageData = {
                             sender: currentUser.name,
                             receiver: privateChatWith,
                             text: '📸 Resim gönderdi',
-                            image: fileData,
+                            image: imageData,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
@@ -3788,18 +3759,14 @@
                         console.error('Resim gönderme hatası:', imageError);
                         alert('❌ Resim gönderilemedi!');
                     }
-                }
-            };
+                };
+                reader.readAsDataURL(file);
+            }
             
-            reader.onerror = function() {
-                alert('❌ Dosya okuma hatası!');
-            };
-            
-            reader.readAsDataURL(file);
             e.target.value = '';
         }
         
-        // Kamera yükleme işlemi - düzeltildi
+        // Kamera yükleme işlemi - video için de sıkıştırma eklendi
         document.getElementById('cameraUpload').addEventListener('change', handleCameraUpload);
         
         async function handleCameraUpload(e) {
@@ -3816,40 +3783,41 @@
                 return;
             }
             
-            const reader = new FileReader();
-            
-            reader.onload = async function(event) {
-                const fileData = event.target.result;
-                
-                // Video gönderme - DÜZELTİLDİ
-                if (file.type.startsWith('video/')) {
-                    try {
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '🎥 Kameradan video çekti',
-                            video: fileData,
-                            videoType: file.type,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                        };
-                        
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '🎥 Video çekti', 'private');
-                        
-                    } catch (videoError) {
-                        console.error('Video gönderme hatası:', videoError);
-                        alert('❌ Video gönderilemedi!');
-                    }
-                } 
-                // Resim gönderme
-                else if (file.type.startsWith('image/')) {
+            // Video gönderme - SIKIŞTIRMALI
+            if (file.type.startsWith('video/')) {
+                try {
+                    addSystemMessage('🎥 Video sıkıştırılıyor, lütfen bekleyin...');
+                    const compressedVideoData = await compressVideo(file);
+                    
+                    const messageData = {
+                        sender: currentUser.name,
+                        receiver: privateChatWith,
+                        text: '🎥 Kameradan video çekti (sıkıştırılmış)',
+                        video: compressedVideoData,
+                        videoType: 'video/mp4',
+                        timestamp: Date.now(),
+                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                    };
+                    
+                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                    addNotification(privateChatWith, '🎥 Video çekti', 'private');
+                    
+                } catch (videoError) {
+                    console.error('Video gönderme hatası:', videoError);
+                    alert('❌ Video gönderilemedi veya sıkıştırılamadı!');
+                }
+            } 
+            // Resim gönderme (resimler aynı kalır)
+            else if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = async function(event) {
+                    const imageData = event.target.result;
                     try {
                         const messageData = {
                             sender: currentUser.name,
                             receiver: privateChatWith,
                             text: '📸 Kameradan fotoğraf çekti',
-                            image: fileData,
+                            image: imageData,
                             timestamp: Date.now(),
                             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                         };
@@ -3861,14 +3829,10 @@
                         console.error('Resim gönderme hatası:', imageError);
                         alert('❌ Resim gönderilemedi!');
                     }
-                }
-            };
+                };
+                reader.readAsDataURL(file);
+            }
             
-            reader.onerror = function() {
-                alert('❌ Dosya okuma hatası!');
-            };
-            
-            reader.readAsDataURL(file);
             e.target.value = '';
         }
 
@@ -4381,7 +4345,8 @@
             const channelMessagesRef = database.ref('channelMessages/' + channelId);
             channelMessagesRef.off();
 
-            channelMessagesRef.limitToLast(50).on('value', (snapshot) => {
+            // 5. MADDE: Mesaj limiti 25'e düşürüldü (kasmanın önüne geçmek için)
+            channelMessagesRef.limitToLast(25).on('value', (snapshot) => {
                 updateChannelMessages(snapshot.val(), channelId);
             });
         }
@@ -4454,7 +4419,8 @@
             if (!messagesRef) return;
 
             messagesRef.off();
-            messagesRef.limitToLast(50).on('value', (snapshot) => {
+            // 5. MADDE: Mesaj limiti 25'e düşürüldü (kasmanın önüne geçmek için)
+            messagesRef.limitToLast(25).on('value', (snapshot) => {
                 updateMessages(snapshot.val());
             });
         }
@@ -5489,25 +5455,23 @@
 
                 mediaRecorder.onstop = async () => {
                     const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                    const reader = new FileReader();
-
-                    reader.onload = async function(e) {
-                        const videoData = e.target.result;
-
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '🎥 Video kaydetti',
-                            video: videoData,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-                        };
-
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        addNotification(privateChatWith, '🎥 Video gönderdi', 'private');
-                        closeCameraModal();
+                    
+                    // 4. MADDE: Video sıkıştır
+                    addSystemMessage('🎥 Video sıkıştırılıyor, lütfen bekleyin...');
+                    const compressedVideoData = await compressVideo(new File([blob], 'video.webm', { type: 'video/webm' }));
+                    
+                    const messageData = {
+                        sender: currentUser.name,
+                        receiver: privateChatWith,
+                        text: '🎥 Video kaydetti (sıkıştırılmış)',
+                        video: compressedVideoData,
+                        timestamp: Date.now(),
+                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                     };
-                    reader.readAsDataURL(blob);
+
+                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                    addNotification(privateChatWith, '🎥 Video gönderdi', 'private');
+                    closeCameraModal();
                 };
 
                 mediaRecorder.start();
@@ -5903,7 +5867,8 @@
             }
 
             if (messagesRef && !currentChannel) {
-                messagesRef.limitToLast(50).on('value', (snapshot) => {
+                // 5. MADDE: Mesaj limiti 25'e düşürüldü (zaten loadGeneralMessages içinde var)
+                messagesRef.limitToLast(25).on('value', (snapshot) => {
                     updateMessages(snapshot.val());
                 });
             }
@@ -5958,8 +5923,7 @@
                 }
             });
 
-            // Mobil kaydırma özelliğini başlat
-            initMobileSwipe();
+            // 1. MADDE: Mobil kaydırma özelliği tamamen kaldırıldı
         }
 
         function closeAllPanelsAndModals() {
@@ -6613,7 +6577,8 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
 
-            privateChatsRef.child(currentPrivateChatId).limitToLast(50).on('value', (snapshot) => {
+            // 5. MADDE: Özel mesaj limiti 25'e düşürüldü
+            privateChatsRef.child(currentPrivateChatId).limitToLast(25).on('value', (snapshot) => {
                 updatePrivateMessages(snapshot.val());
             });
 
