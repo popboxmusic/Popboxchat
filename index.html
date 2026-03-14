@@ -3839,7 +3839,7 @@
             </div>
             <div class="private-video-controls">
                 <div class="private-video-input-group" id="privateVideoInputGroup" style="display: none;">
-                    <input type="text" id="privateVideoUrl" class="private-video-input" placeholder="Video linki (YouTube, Vimeo, Instagram, Twitter, vb.)">
+                    <input type="text" id="privateVideoUrl" class="private-video-input" placeholder="Video linki (YouTube, Vimeo, Instagram, Twitter, Telegram, vb.)">
                     <div class="private-video-buttons">
                         <button class="private-video-btn" onclick="addPrivateVideo()"><i class="fas fa-plus"></i> Ekle</button>
                         <button class="private-video-btn cancel" onclick="hidePrivateVideoInput()"><i class="fas fa-times"></i> İptal</button>
@@ -4126,7 +4126,7 @@
         let currentPrivateVideoUrl = null;
         let isVideoPlaying = false;
 
-        // ========== YENİ: ÖZEL VİDEO FONKSİYONLARI ==========
+        // ========== YENİ: ÖZEL VİDEO FONKSİYONLARI (GÜNCELLENMİŞ) ==========
         function showPrivateVideoInput() {
             document.getElementById('privateVideoInputGroup').style.display = 'block';
             document.getElementById('addVideoBtn').style.display = 'none';
@@ -4230,6 +4230,17 @@
                 }
             }
             
+            // TELEGRAM (YENİ)
+            if (url.includes('t.me/')) {
+                // Telegram linkleri için özel bir işlem yapmıyoruz, direkt link olarak göster
+                return url; // Telegram linki direkt olarak eklenebilir
+            }
+            
+            // Telegram video linkleri (t.me/c/... veya t.me/s/...)
+            if (url.match(/t\.me\/(c\/)?[0-9]+\/[0-9]+/)) {
+                return url; // Telegram video linki direkt olarak eklenebilir
+            }
+            
             // Direkt video dosyası (mp4, webm, etc.)
             if (url.match(/\.(mp4|webm|ogg|mov)$/i)) {
                 return url;
@@ -4269,7 +4280,60 @@
             document.getElementById('privateVideoPlaceholder').style.display = 'none';
             
             const videoFrame = document.getElementById('private-video-frame');
-            videoFrame.src = embedUrl;
+            
+            // Eğer embedUrl, YouTube embed linki değilse, direkt link olarak yönlendir
+            if (embedUrl.includes('youtube.com/embed') || embedUrl.includes('vimeo.com') || embedUrl.includes('dailymotion.com') || embedUrl.includes('twitch.tv')) {
+                videoFrame.src = embedUrl;
+            } else {
+                // Diğer linkler için (Telegram, Instagram, Twitter, Facebook, vb.) - iframe içinde gösterilemiyorsa yeni sekmede açılması için link olarak göster
+                videoFrame.srcdoc = `
+                    <html>
+                        <head>
+                            <style>
+                                body { 
+                                    margin: 0; 
+                                    padding: 20px; 
+                                    background: #000; 
+                                    color: #fff; 
+                                    font-family: Arial, sans-serif;
+                                    display: flex;
+                                    flex-direction: column;
+                                    align-items: center;
+                                    justify-content: center;
+                                    height: 100vh;
+                                }
+                                .message { 
+                                    text-align: center; 
+                                    max-width: 80%; 
+                                    word-break: break-all;
+                                }
+                                a { 
+                                    color: #ff0000; 
+                                    text-decoration: none; 
+                                    font-weight: bold;
+                                    padding: 10px 20px;
+                                    border: 2px solid #ff0000;
+                                    border-radius: 30px;
+                                    margin-top: 20px;
+                                    display: inline-block;
+                                }
+                                a:hover {
+                                    background: #ff0000;
+                                    color: #fff;
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="message">
+                                <p>Bu bağlantı doğrudan iframe içinde gösterilemiyor.</p>
+                                <p><small>${url}</small></p>
+                                <a href="${url}" target="_blank">Bağlantıyı Yeni Sekmede Aç</a>
+                            </div>
+                        </body>
+                    </html>
+                `;
+            }
+            
             currentPrivateVideoUrl = embedUrl;
             isVideoPlaying = true;
 
@@ -4292,6 +4356,8 @@
             
             // Bildirim ekle
             addNotification(privateChatWith, '📺 Video paylaştı', 'private');
+            
+            addSystemMessage('✅ Video başarıyla eklendi!');
         }
 
         // Özel sohbet açıldığında varsa video bilgisini yükle
@@ -4306,7 +4372,58 @@
                 if (embedUrl) {
                     document.getElementById('privateVideoContainer').style.display = 'block';
                     document.getElementById('privateVideoPlaceholder').style.display = 'none';
-                    document.getElementById('private-video-frame').src = embedUrl;
+                    const videoFrame = document.getElementById('private-video-frame');
+                    
+                    if (embedUrl.includes('youtube.com/embed') || embedUrl.includes('vimeo.com') || embedUrl.includes('dailymotion.com') || embedUrl.includes('twitch.tv')) {
+                        videoFrame.src = embedUrl;
+                    } else {
+                        videoFrame.srcdoc = `
+                            <html>
+                                <head>
+                                    <style>
+                                        body { 
+                                            margin: 0; 
+                                            padding: 20px; 
+                                            background: #000; 
+                                            color: #fff; 
+                                            font-family: Arial, sans-serif;
+                                            display: flex;
+                                            flex-direction: column;
+                                            align-items: center;
+                                            justify-content: center;
+                                            height: 100vh;
+                                        }
+                                        .message { 
+                                            text-align: center; 
+                                            max-width: 80%; 
+                                            word-break: break-all;
+                                        }
+                                        a { 
+                                            color: #ff0000; 
+                                            text-decoration: none; 
+                                            font-weight: bold;
+                                            padding: 10px 20px;
+                                            border: 2px solid #ff0000;
+                                            border-radius: 30px;
+                                            margin-top: 20px;
+                                            display: inline-block;
+                                        }
+                                        a:hover {
+                                            background: #ff0000;
+                                            color: #fff;
+                                        }
+                                    </style>
+                                </head>
+                                <body>
+                                    <div class="message">
+                                        <p>Bu bağlantı doğrudan iframe içinde gösterilemiyor.</p>
+                                        <p><small>${lastVideoMessage.videoLink}</small></p>
+                                        <a href="${lastVideoMessage.videoLink}" target="_blank">Bağlantıyı Yeni Sekmede Aç</a>
+                                    </div>
+                                </body>
+                            </html>
+                        `;
+                    }
                     currentPrivateVideoUrl = embedUrl;
                     isVideoPlaying = true;
                 }
@@ -6195,7 +6312,58 @@
                         if (embedUrl) {
                             document.getElementById('privateVideoContainer').style.display = 'block';
                             document.getElementById('privateVideoPlaceholder').style.display = 'none';
-                            document.getElementById('private-video-frame').src = embedUrl;
+                            const videoFrame = document.getElementById('private-video-frame');
+                            
+                            if (embedUrl.includes('youtube.com/embed') || embedUrl.includes('vimeo.com') || embedUrl.includes('dailymotion.com') || embedUrl.includes('twitch.tv')) {
+                                videoFrame.src = embedUrl;
+                            } else {
+                                videoFrame.srcdoc = `
+                                    <html>
+                                        <head>
+                                            <style>
+                                                body { 
+                                                    margin: 0; 
+                                                    padding: 20px; 
+                                                    background: #000; 
+                                                    color: #fff; 
+                                                    font-family: Arial, sans-serif;
+                                                    display: flex;
+                                                    flex-direction: column;
+                                                    align-items: center;
+                                                    justify-content: center;
+                                                    height: 100vh;
+                                                }
+                                                .message { 
+                                                    text-align: center; 
+                                                    max-width: 80%; 
+                                                    word-break: break-all;
+                                                }
+                                                a { 
+                                                    color: #ff0000; 
+                                                    text-decoration: none; 
+                                                    font-weight: bold;
+                                                    padding: 10px 20px;
+                                                    border: 2px solid #ff0000;
+                                                    border-radius: 30px;
+                                                    margin-top: 20px;
+                                                    display: inline-block;
+                                                }
+                                                a:hover {
+                                                    background: #ff0000;
+                                                    color: #fff;
+                                                }
+                                            </style>
+                                        </head>
+                                        <body>
+                                            <div class="message">
+                                                <p>Bu bağlantı doğrudan iframe içinde gösterilemiyor.</p>
+                                                <p><small>${message.videoLink}</small></p>
+                                                <a href="${message.videoLink}" target="_blank">Bağlantıyı Yeni Sekmede Aç</a>
+                                            </div>
+                                        </body>
+                                    </html>
+                                `;
+                            }
                             currentPrivateVideoUrl = embedUrl;
                             isVideoPlaying = true;
                         }
@@ -6270,7 +6438,58 @@
                 if (embedUrl) {
                     document.getElementById('privateVideoContainer').style.display = 'block';
                     document.getElementById('privateVideoPlaceholder').style.display = 'none';
-                    document.getElementById('private-video-frame').src = embedUrl;
+                    const videoFrame = document.getElementById('private-video-frame');
+                    
+                    if (embedUrl.includes('youtube.com/embed') || embedUrl.includes('vimeo.com') || embedUrl.includes('dailymotion.com') || embedUrl.includes('twitch.tv')) {
+                        videoFrame.src = embedUrl;
+                    } else {
+                        videoFrame.srcdoc = `
+                            <html>
+                                <head>
+                                    <style>
+                                        body { 
+                                            margin: 0; 
+                                            padding: 20px; 
+                                            background: #000; 
+                                            color: #fff; 
+                                            font-family: Arial, sans-serif;
+                                            display: flex;
+                                            flex-direction: column;
+                                            align-items: center;
+                                            justify-content: center;
+                                            height: 100vh;
+                                        }
+                                        .message { 
+                                            text-align: center; 
+                                            max-width: 80%; 
+                                            word-break: break-all;
+                                        }
+                                        a { 
+                                            color: #ff0000; 
+                                            text-decoration: none; 
+                                            font-weight: bold;
+                                            padding: 10px 20px;
+                                            border: 2px solid #ff0000;
+                                            border-radius: 30px;
+                                            margin-top: 20px;
+                                            display: inline-block;
+                                        }
+                                        a:hover {
+                                            background: #ff0000;
+                                            color: #fff;
+                                        }
+                                    </style>
+                                </head>
+                                <body>
+                                    <div class="message">
+                                        <p>Bu bağlantı doğrudan iframe içinde gösterilemiyor.</p>
+                                        <p><small>${lastVideoMessage.videoLink}</small></p>
+                                        <a href="${lastVideoMessage.videoLink}" target="_blank">Bağlantıyı Yeni Sekmede Aç</a>
+                                    </div>
+                                </body>
+                            </html>
+                        `;
+                    }
                     currentPrivateVideoUrl = embedUrl;
                     isVideoPlaying = true;
                 }
@@ -8202,7 +8421,7 @@
             help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir<br>';
             help += '• Kameradan Çek: Direkt telefon kamerasını açar<br>';
             help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir<br>';
-            help += '• Özel Video: Özel sohbet penceresinde her türlü video linkini izleme (YouTube, Vimeo, Dailymotion, Instagram, Twitter, TikTok, Facebook, Twitch, vb.)<br>';
+            help += '• Özel Video: Özel sohbet penceresinde her türlü video linkini izleme (YouTube, Vimeo, Dailymotion, Instagram, Twitter, TikTok, Facebook, Twitch, TELEGRAM, vb.)<br>';
             help += '• Kanal Açma: Kayıtlı her kullanıcı 📺 ikonu ile kanal açabilir<br>';
             help += '• Yetkili Panelleri: Kendi rozetinizle kendi paneliniz (Owner/Admin/Co-Admin/Operatör)<br>';
             addSystemMessage(help);
