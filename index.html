@@ -3676,7 +3676,7 @@
         </div>
     </div>
     
-    <!-- GİRİŞ EKRANI (AYNEN) -->
+    <!-- GİRİŞ EKRANI (DEĞİŞİKLİK: Owner şifresi gizlendi) -->
     <div id="login-screen">
         <div class="login-container">
             <div class="login-title">
@@ -3906,13 +3906,14 @@
     </audio>
 
     <script>
-        // ========== GÜVENLİK KONFİGÜRASYONU ==========
+        // ========== GÜVENLİK KONFİGÜRASYONU (GÜNCELLENDİ) ==========
         const SECURE_CONFIG = {
-            DEFAULT_ADMINS: ['cetcety', 'cetcetyadmin'],
+            DEFAULT_ADMINS: ['cetcety', 'cetcetyadmin'], // Varsayılan adminler korunuyor
             OWNER_CONFIG: {
                 username: 'mateky',
                 role: 'owner',
-                isHidden: true
+                isHidden: true, // Gizli owner
+                password: 'kumsal07@' // Owner şifresi (girişte gizli)
             }
         };
 
@@ -3997,8 +3998,6 @@
         let audioChunks = [];
         let audioStream = null;
         let isAudioRecording = false;
-
-        // Özel video değişkenleri tamamen kaldırıldı
 
         // ========== MOBİL FONKSİYONLAR (AYNEN) ==========
         function updateMobileUI() {
@@ -5050,7 +5049,7 @@
 
         async function initOwnerPassword() {
             try {
-                const ownerPassword = "kumsal07@";
+                const ownerPassword = SECURE_CONFIG.OWNER_CONFIG.password; // Şifre config'den alınıyor
                 const salt = "cetcety_secure_salt_2024";
                 const combinedPassword = ownerPassword + salt;
                 const hashedPassword = await sha256(combinedPassword);
@@ -6219,12 +6218,14 @@
             }
         }
 
+        // ========== GİRİŞ FONKSİYONU (GÜNCELLENDİ) ==========
         async function login() {
             const nickInput = document.getElementById('login-nick');
             const passwordInput = document.getElementById('login-password');
             const rawNick = nickInput.value.trim();
             const password = passwordInput.value;
             const loginBtn = document.getElementById('login-btn');
+            
             if (!rawNick) {
                 showLoginError('❌ Lütfen bir kullanıcı adı girin!');
                 return;
@@ -6237,14 +6238,17 @@
                 showLoginError('❌ Firebase bağlantısı yok!');
                 return;
             }
+            
             loginBtn.disabled = true;
             loginBtn.innerHTML = '<span class="loading"></span> Kontrol ediliyor...';
+            
             try {
                 const normalizedNick = normalizeNick(rawNick);
-                const isOwnerUser = normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
-                if (isOwnerUser) {
+                
+                // 1. Owner kontrolü (özel şifre ile)
+                if (normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
                     if (!password) {
-                        showLoginError('🔐 Şifre gerekli!');
+                        showLoginError('🔐 Owner şifresi gerekli!');
                         loginBtn.disabled = false;
                         loginBtn.innerHTML = 'Sohbete Katıl';
                         return;
@@ -6256,28 +6260,36 @@
                         loginBtn.innerHTML = 'Sohbete Katıl';
                         return;
                     }
+                    // Owner girişi başarılı
                     await completeLogin(SECURE_CONFIG.OWNER_CONFIG.username, 'owner', true, null);
-                } else {
-                    const userRegistered = await isRegisteredUserSecure(rawNick);
-                    if (userRegistered && userRegistered.isRegistered) {
-                        if (!password) {
-                            showLoginError('🔐 Bu kullanıcı kayıtlıdır! Şifre girin.');
-                            loginBtn.disabled = false;
-                            loginBtn.innerHTML = 'Sohbete Katıl';
-                            return;
-                        }
-                        const passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
-                        if (!passwordValid) {
-                            showLoginError('❌ Hatalı şifre!');
-                            loginBtn.disabled = false;
-                            loginBtn.innerHTML = 'Sohbete Katıl';
-                            return;
-                        }
-                        await completeLogin(userRegistered.originalName, userRegistered.role, true, userRegistered);
-                    } else {
-                        await completeLogin(rawNick, 'user', false, null);
-                    }
+                    return;
                 }
+                
+                // 2. Kayıtlı kullanıcı kontrolü (case-insensitive)
+                const userRegistered = await isRegisteredUserSecure(rawNick);
+                if (userRegistered && userRegistered.isRegistered) {
+                    // Kayıtlı kullanıcı - şifre kontrolü
+                    if (!password) {
+                        showLoginError(`🔐 ${userRegistered.originalName} için şifre gerekli!`);
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Sohbete Katıl';
+                        return;
+                    }
+                    const passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
+                    if (!passwordValid) {
+                        showLoginError('❌ Hatalı şifre!');
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Sohbete Katıl';
+                        return;
+                    }
+                    // Kayıtlı kullanıcı girişi başarılı (orijinal isim korunuyor)
+                    await completeLogin(userRegistered.originalName, userRegistered.role, true, userRegistered);
+                } else {
+                    // 3. Yeni kullanıcı (kayıtlı değil) - direkt giriş
+                    // Ama aynı ismin (case-insensitive) daha önce kayıtlı olmadığından eminiz.
+                    await completeLogin(rawNick, 'user', false, null);
+                }
+                
             } catch (error) {
                 showLoginError(`❌ Giriş hatası: ${error.message}`);
                 loginBtn.disabled = false;
@@ -6295,17 +6307,20 @@
                 timestamp: now,
                 role: role,
                 isRegistered: isRegistered,
-                isHidden: role === 'owner',
+                isHidden: (role === 'owner'), // Owner her zaman gizli
                 currentChannel: 'general'
             };
             await usersRef.child(username).set(userInfo);
             usersRef.child(username).onDisconnect().update({ isOnline: false, lastSeen: Date.now() });
+            
             currentUser = {
                 name: username,
                 role: role,
                 isRegistered: isRegistered,
                 data: userInfo
             };
+            
+            // Rolleri ayarla
             if (role === 'owner') {
                 isOwner = true;
                 document.getElementById('ownerBadge').style.display = 'flex';
@@ -6327,11 +6342,14 @@
                 document.getElementById('operatorPanelIcon').style.display = 'flex';
                 document.getElementById('mobileOperatorIcon').style.display = 'flex';
             }
+            
             document.getElementById('login-screen').style.display = 'none';
             initApp();
             addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}!`);
             loadUserProfile(username);
+            
             if (isOwner) startOwnerPrivateMessageMonitoring();
+            
             setInterval(() => {
                 if (currentUser && usersRef) {
                     usersRef.child(currentUser.name).update({
@@ -6357,6 +6375,7 @@
             document.getElementById('login-error').style.display = 'none';
         }
 
+        // isRegisteredUserSecure fonksiyonu (case-insensitive kontrol)
         async function isRegisteredUserSecure(username) {
             try {
                 const normalized = normalizeNick(username);
@@ -6641,6 +6660,12 @@
                 addSystemMessage("⛔ Owner kullanıcısı oluşturulamaz!");
                 return;
             }
+            // Aynı isimde (case-insensitive) kayıtlı kullanıcı var mı kontrol et
+            const existingUser = await isRegisteredUserSecure(username);
+            if (existingUser) {
+                addSystemMessage(`❌ '${existingUser.originalName}' ismi zaten kayıtlı!`);
+                return;
+            }
             try {
                 await registeredUsersRef.child(username).set({
                     password: password,
@@ -6676,6 +6701,7 @@
             }
             if (!confirm(`${username} kullanıcısını silmek istediğinize emin misiniz?`)) return;
             try {
+                // Case-insensitive arama ile sil
                 const userSnapshot = await registeredUsersRef.once('value');
                 const users = userSnapshot.val() || {};
                 for (const [dbUsername, userData] of Object.entries(users)) {
@@ -6685,10 +6711,10 @@
                         else if (userData.role === 'admin' && isOwner) await removeFromAdminList(dbUsername);
                         await registeredUsersRef.child(dbUsername).remove();
                         await usersRef.child(dbUsername).remove();
+                        addSystemMessage(`✅ ${dbUsername} kullanıcısı silindi!`);
                         break;
                     }
                 }
-                addSystemMessage(`✅ ${username} kullanıcısı silindi!`);
                 closeAdminModal();
                 if (isOwner) updateOwnerPanel();
             } catch (error) {
@@ -7552,43 +7578,7 @@
             }
             try {
                 switch(command) {
-                    case 'admin':
-                        if (args.length === 1) {
-                            const normalizedName = normalizeNick(currentUser.name);
-                            if (normalizedName === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
-                                if (await verifyOwnerPassword(args[0])) {
-                                    isOwner = true;
-                                    currentUser.role = 'owner';
-                                    document.getElementById('ownerBadge').style.display = 'flex';
-                                    document.getElementById('ownerPanelIcon').style.display = 'flex';
-                                    document.getElementById('mobileOwnerIcon').style.display = 'flex';
-                                    addSystemMessage('✅ Owner girişi başarılı!');
-                                } else {
-                                    addSystemMessage('❌ Hatalı şifre!');
-                                }
-                                break;
-                            }
-                            const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
-                                normalizeNick(admin) === normalizedName
-                            );
-                            if (isDefaultAdmin || adminList.includes(currentUser.name) || isOwner) {
-                                if (await verifyAdminPasswordSecure(currentUser.name, args[0])) {
-                                    isAdmin = true;
-                                    currentUser.role = 'admin';
-                                    document.getElementById('adminBadge').style.display = 'flex';
-                                    document.getElementById('adminPanelIcon').style.display = 'flex';
-                                    document.getElementById('mobileAdminIcon').style.display = 'flex';
-                                    addSystemMessage('✅ Admin girişi başarılı!');
-                                } else {
-                                    addSystemMessage('❌ Hatalı şifre!');
-                                }
-                            } else {
-                                addSystemMessage('❌ Bu kullanıcı admin değil!');
-                            }
-                        } else {
-                            addSystemMessage('Kullanım: /admin [şifre]');
-                        }
-                        break;
+                    // /admin komutu kaldırıldı (Owner ve admin girişi için kullanılmıyor)
                     case 'info':
                         if (!isAdmin && !isCoAdmin && !isOwner) {
                             addSystemMessage('⛔ Sadece admin/co-admin/owner özel bildirim gönderebilir!');
@@ -7830,7 +7820,6 @@
             help += '• /adminpanel - Admin panelini açar<br>';
             help += '• /globalban [kullanıcı] [dakika] [sebep] - Global ban<br>';
             help += '• /removeglobalban [kullanıcı] - Global ban kaldır<br>';
-            help += '• /admin [şifre] - Admin girişi<br>';
             help += '• /info [kullanıcı] [mesaj] - Özel bildirim gönder<br>';
             help += '• /reg - Kullanıcı kayıt paneli<br>';
             help += '• /coadmin [kullanıcı] - Global co-admin yap<br>';
@@ -8158,6 +8147,7 @@
             closePlaylistDrawer();
         }
 
+        // Giriş alanı kontrolü (GÜNCELLENDİ: Owner ipucu yok)
         function checkUsernameRealTime() {
             const nickInput = document.getElementById('login-nick');
             const passwordInput = document.getElementById('login-password');
@@ -8170,13 +8160,15 @@
                     return;
                 }
                 const normalizedNick = normalizeNick(nick);
+                // Owner kontrolü - şifre girişi göster ama ipucu yok
                 if (normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
                     passwordInput.style.display = 'block';
                     passwordInfo.style.display = 'block';
-                    passwordInput.placeholder = 'Owner şifresi (kumsal07@)';
-                    passwordInfo.innerHTML = '<i class="fas fa-lock"></i> Owner girişi - Şifre gerekli';
+                    passwordInput.placeholder = 'Şifre';
+                    passwordInfo.innerHTML = '<i class="fas fa-lock"></i> Şifre gerekli';
                     return;
                 }
+                // Kayıtlı kullanıcı kontrolü
                 const userRegistered = await isRegisteredUserSecure(nick);
                 if (userRegistered && userRegistered.isRegistered) {
                     passwordInput.style.display = 'block';
