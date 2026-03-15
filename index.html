@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
-        /* Tüm stiller aynen kalacak (sadece mobil medya sorgusu değiştirildi) */
+        /* Tüm stiller aynen kalacak */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -1172,10 +1172,12 @@
             color: var(--text-primary);
             font-weight: 600;
             border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
         .ad-timer i {
             color: var(--youtube-red);
-            margin-right: 6px;
         }
 
         .ad-skip-btn {
@@ -1201,21 +1203,38 @@
             cursor: not-allowed;
         }
 
-        /* Mobil uyum */
+        /* Mobil uyum - GELİŞTİRİLDİ */
         @media (max-width: 768px) {
             .ad-container {
                 width: 95%;
+                max-width: 95%;
             }
             .ad-message {
-                font-size: 16px;
+                font-size: 14px;
+            }
+            .ad-message small {
+                font-size: 12px;
             }
             .ad-link-btn {
-                padding: 12px 20px;
-                font-size: 16px;
+                padding: 10px 16px;
+                font-size: 14px;
             }
             .ad-footer {
-                padding: 12px;
-                font-size: 13px;
+                padding: 10px 12px;
+                font-size: 12px;
+            }
+            .ad-timer {
+                padding: 4px 10px;
+                font-size: 12px;
+            }
+            .ad-skip-btn {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            /* Mobilde geri sayımın görünürlüğü artırıldı */
+            .ad-timer span {
+                font-weight: 700;
+                color: var(--youtube-red);
             }
         }
         
@@ -1876,9 +1895,6 @@
             border-radius: 12px;
             border: 1px solid var(--border-color);
         }
-        
-        /* ========== ÖZEL VİDEO STİLLERİ - KALDIRILDI ========== */
-        /* Video ile ilgili tüm stiller silindi */
         
         .private-modal {
             position: fixed;
@@ -3073,7 +3089,7 @@
         @media (max-width: 768px) {
             /* Mobilde üst ikonları ve yazıyı küçült */
             .youtube-header {
-                height: 50px; /* biraz daha düşük */
+                height: 50px;
                 background: transparent;
                 backdrop-filter: none;
                 border-bottom: none;
@@ -3092,15 +3108,15 @@
                 background: rgba(0,0,0,0.6);
                 backdrop-filter: blur(10px);
                 border-radius: 30px;
-                padding: 4px 8px;  /* daha küçük padding */
+                padding: 4px 8px;
                 border: 1px solid var(--border-color);
-                gap: 8px; /* boşluk azalt */
+                gap: 8px;
             }
             .logo span:last-child {
-                font-size: 14px; /* yazı küçüldü */
+                font-size: 14px;
             }
             .logo i {
-                font-size: 24px; /* ikon küçüldü */
+                font-size: 24px;
             }
             .icon-btn {
                 width: 36px;
@@ -3131,10 +3147,9 @@
             .icon-panel { display: none; }
             .mobile-menu-btn { display: block; background: rgba(0,0,0,0.5); backdrop-filter: blur(10px); border: 1px solid var(--border-color); }
             
-            /* Center panel: video + playlist. Video'yu biraz yukarı al ve boyutunu %5 küçült */
             .center-panel { 
                 width: 100%; 
-                height: 30vh; /* biraz daha küçük (25->30) ama video yüksekliği azalır */ 
+                height: 30vh;
                 display: flex; 
                 flex-direction: column; 
                 overflow: hidden; 
@@ -3146,14 +3161,12 @@
             .video-container { 
                 height: 100%; 
                 padding: 0; 
-                /* video'yu biraz daha yukarı almak için margin-top: -5px gibi */ 
-                margin-top: -5px; /* yukarı kaydır */
+                margin-top: -5px;
             }
             .video-wrapper {
-                /* boyutu %5 küçült: scale(0.95) */
                 transform: scale(0.95);
                 transform-origin: top center;
-                height: 105%; /* scale küçülttüğü için telafi */
+                height: 105%;
             }
             .playlist-section { display: none; }
             .chat-container { width: 100%; height: 70vh; display: flex; flex-direction: column; position: relative; border-top: 1px solid var(--border-color); overflow: hidden; z-index: 10; }
@@ -3237,6 +3250,18 @@
             }
             .playlist-title-input-small, .playlist-input-small, .playlist-add-btn-small { 
                 width: 100%; 
+            }
+            /* Reklam mobil düzeltmeleri */
+            .ad-timer {
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+            .ad-timer i {
+                font-size: 12px;
+            }
+            .ad-timer span {
+                font-size: 14px;
+                font-weight: 700;
             }
         }
         
@@ -4207,13 +4232,32 @@
         let adTimerSpan = document.getElementById('adTimerSeconds');
         let adSkipBtn = document.getElementById('adSkipBtn');
         let adLinkBtn = document.getElementById('adLinkBtn');
+        let adCycleInterval = null;
+        let currentAdIndex = 1;
+
+        // 1'den 100'e kadar reklam linkleri
+        const adLinks = Array.from({ length: 100 }, (_, i) => {
+            const num = i + 1;
+            return `https://reklamlink${num}.com`;
+        });
+
+        // Rastgele reklam linki seç
+        function getRandomAdLink() {
+            const randomIndex = Math.floor(Math.random() * adLinks.length);
+            return adLinks[randomIndex];
+        }
 
         // Reklamı göster
-        function showAd(adLink = '#', duration = 5) {
-            // Eğer zaten aktifse tekrar başlatma
-            if (adOverlay.classList.contains('active')) return;
+        function showAd(adLink = null, duration = 5) {
+            // Eğer zaten aktifse kapat ve yeniden başlat
+            if (adOverlay.classList.contains('active')) {
+                closeAd();
+            }
 
-            // Link butonunu güncelle
+            // Link butonunu güncelle (parametre gelmezse rastgele seç)
+            if (adLink === null) {
+                adLink = getRandomAdLink();
+            }
             adLinkBtn.href = adLink;
 
             adSkipTime = duration;
@@ -4247,6 +4291,21 @@
             // Butonu eski haline getir
             adSkipBtn.disabled = true;
             adTimerSpan.textContent = '5';
+        }
+
+        // 10 dakikada bir reklam göster (600.000 ms)
+        function startAdCycle() {
+            if (adCycleInterval) clearInterval(adCycleInterval);
+            
+            // İlk reklamı 10 saniye sonra göster (sayfa yüklendikten sonra)
+            setTimeout(() => {
+                showAd(null, 5);
+            }, 10000);
+            
+            // Ardından her 10 dakikada bir göster
+            adCycleInterval = setInterval(() => {
+                showAd(null, 5);
+            }, 600000); // 10 dakika = 600.000 ms
         }
 
         // Skip butonuna tıklanınca reklamı kapat
@@ -6753,6 +6812,9 @@
                     closeAllPanelsAndModals();
                 }
             });
+            
+            // Reklam döngüsünü başlat
+            startAdCycle();
         }
 
         function checkAdminStatus() {
@@ -8527,11 +8589,6 @@
                 initYouTubePlayer();
             }
             window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
-
-            // Reklam testi için örnek: 10 saniye sonra reklam göster
-            setTimeout(() => {
-                showAd('https://www.example.com', 5);
-            }, 10000);
         });
     </script>
     
