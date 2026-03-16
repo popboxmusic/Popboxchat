@@ -12,7 +12,6 @@
     
     <style>
         /* Tüm stiller aynen kalacak - Buraya stil kodlarınızın tamamını kopyalayın */
-        /* (Yer tasarrufu için burada tekrar yazılmamıştır, mevcut style etiketinizin içindeki her şey buraya gelmeli) */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -1318,6 +1317,8 @@
             .ad-footer {
                 padding: 10px 12px;
                 font-size: 12px;
+                flex-wrap: wrap;
+                gap: 10px;
             }
             .ad-timer {
                 padding: 4px 10px;
@@ -3462,7 +3463,7 @@
             .playlist-title-input-small, .playlist-input-small, .playlist-add-btn-small { 
                 width: 100%; 
             }
-            /* Reklam mobil düzeltmeleri */
+            /* Reklam mobil düzeltmeleri - GÜNCELLENDİ */
             .ad-timer {
                 padding: 4px 8px;
                 font-size: 12px;
@@ -3473,6 +3474,16 @@
             .ad-timer span {
                 font-size: 14px;
                 font-weight: 700;
+            }
+            .ad-footer {
+                padding: 10px 12px;
+                font-size: 12px;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            .ad-skip-btn {
+                padding: 6px 12px;
+                font-size: 12px;
             }
 
             /* YENİ: Mobil Takip Drawer */
@@ -3765,6 +3776,7 @@
                         placeholder="Mesaj yazın veya / komutları..."
                         rows="1"
                         oninput="autoResize(this)"
+                        onkeydown="handleEnterKey(event, 'sendMessage')"
                     ></textarea>
                     <button class="send-button" onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
                 </div>
@@ -4246,6 +4258,7 @@
                 placeholder="Özel mesaj yaz..."
                 rows="1"
                 oninput="autoResize(this)"
+                onkeydown="handleEnterKey(event, 'sendPrivateMessage')"
             ></textarea>
             <button class="send-button" onclick="sendPrivateMessage()"><i class="fas fa-paper-plane"></i></button>
         </div>
@@ -6069,6 +6082,14 @@
 
         async function joinChannel(channelId) {
             if (!channels[channelId]) return;
+            
+            // Ban kontrolü
+            const channelBanCheck = await checkChannelBan(currentUser.name, channelId);
+            if (channelBanCheck.isBanned) {
+                addSystemMessage(`🚫 Bu kanaldan banlandınız! Sebep: ${channelBanCheck.reason}. ${channelBanCheck.timeRemaining ? 'Kalan süre: ' + channelBanCheck.timeRemaining + ' dakika' : ''}`);
+                return;
+            }
+            
             if (messagesRef && currentChannel === null) {
                 messagesRef.off();
             }
@@ -7166,6 +7187,19 @@
                 return;
             }
             
+            // Ban kontrolü
+            const banCheck = await checkUserBanOnLogin(rawNick);
+            if (banCheck.isBanned) {
+                if (banCheck.type === 'global') {
+                    showLoginError(`🚫 **GLOBAL BANLI KULLANICI**\nSebep: ${banCheck.reason}\nSüre: ${banCheck.duration}`);
+                } else {
+                    showLoginError(`🚫 **BANLI KULLANICI**\nSebep: ${banCheck.reason}\nKalan süre: ${banCheck.remaining} dakika`);
+                }
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = 'Sohbete Katıl';
+                return;
+            }
+            
             loginBtn.disabled = true;
             loginBtn.innerHTML = '<span class="loading"></span> Kontrol ediliyor...';
             
@@ -7746,37 +7780,75 @@
             }
         }
 
-        function kickUserPrompt() {
-            const username = prompt('Banlanacak kullanıcı adı:');
-            if (!username) return;
-            const duration = prompt('Ban süresi (dakika):', '5');
-            if (!duration) return;
-            const reason = prompt('Ban sebebi:', 'Kural ihlali');
-            if (!reason) return;
-            kickUser(username, duration, reason);
-        }
+        // ========== BAN / KICK / GLOBAL BAN FONKSİYONLARI (GÜNCELLENDİ) ==========
 
-        async function kickUser(username, duration = 5, reason = "Kick komutu") {
-            if (!currentUser || (!isAdmin && !isCoAdmin && !isOperator && !isOwner)) {
+        // Kullanıcıyı kanaldan çıkaran ban (kanal banı)
+        async function kickUserFromChannel(username, channelId, reason = "Kanal banı") {
+            if (!currentUser || (!isAdmin && !isCoAdmin && !isOperator && !isOwner && currentChannel?.owner !== currentUser.name)) {
                 addSystemMessage("⛔ Yetkiniz yok!");
                 return;
             }
+            
+            try {
+                // Kullanıcıyı genel kanala yönlendir
+                await usersRef.child(username).update({ 
+                    currentChannel: 'general',
+                    lastKicked: Date.now(),
+                    kickReason: reason,
+                    kickedFrom: channelId
+                });
+                
+                // Kanal adını al
+                const channelName = channels[channelId]?.name || channelId;
+                
+                // Kullanıcıya özel mesaj gönder
+                const chatId = generateChatId(username, 'System');
+                await privateChatsRef.child(chatId).push({
+                    sender: 'System',
+                    text: `🚫 **${channelName}** kanalından banlandınız!\nSebep: ${reason}\nYetkili: ${currentUser.name}`,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    isNotification: true
+                });
+
+                // Admin kanalına bildirim gönder
+                await sendToAdminChannel(`🚫 **${username}** kullanıcısı **${channelName}** kanalından banlandı.\nSebep: ${reason}\nYetkili: ${currentUser.name}`);
+                
+                addSystemMessage(`🚪 ${username} kanaldan atıldı. Sebep: ${reason}`);
+            } catch (error) {
+                console.error("Kick hatası:", error);
+                addSystemMessage('❌ Kanal banı uygulanamadı!');
+            }
+        }
+
+        // Süreli ban (global veya kanal banı)
+        async function kickUser(username, duration = 5, reason = "Kick komutu") {
+            if (!currentUser || (!isAdmin && !isCoAdmin && !isOperator && !isOwner && currentChannel?.owner !== currentUser.name)) {
+                addSystemMessage("⛔ Yetkiniz yok!");
+                return;
+            }
+            
             if (!username) {
                 addSystemMessage("❌ Kullanıcı adı belirtin!");
                 return;
             }
+            
             if (username === currentUser.name) {
                 addSystemMessage("❌ Kendinizi banlayamazsınız!");
                 return;
             }
+            
             const normalizedUsername = normalizeNick(username);
             if (normalizedUsername === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
                 addSystemMessage("⛔ Owner banlanamaz!");
                 return;
             }
+
             try {
                 const durationNum = parseInt(duration) || 5;
                 const banUntil = Date.now() + (durationNum * 60000);
+                
+                // Ban bilgisini kaydet
                 await bansRef.child(username).set({
                     bannedUntil: banUntil,
                     bannedBy: currentUser.name,
@@ -7784,53 +7856,135 @@
                     timestamp: Date.now(),
                     duration: durationNum
                 });
+                
+                // Kullanıcıyı online listeden kaldır
                 await usersRef.child(username).remove();
+                
+                // Kullanıcıya özel mesaj gönder
+                const chatId = generateChatId(username, 'System');
+                await privateChatsRef.child(chatId).push({
+                    sender: 'System',
+                    text: `🚫 **${durationNum} dakika** süreyle banlandınız!\nSebep: ${reason}\nYetkili: ${currentUser.name}`,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    isNotification: true
+                });
+
+                // Admin kanalına bildirim gönder
+                await sendToAdminChannel(`🚫 **${username}** kullanıcısı **${durationNum} dakika** süreyle banlandı.\nSebep: ${reason}\nYetkili: ${currentUser.name}`);
+                
                 addBanMessage(`🚫 ${username} kullanıcısı ${durationNum} dakika banlandı! Sebep: ${reason}`);
+                
                 if (isOwner) updateOwnerPanel();
                 if (isAdmin) updateAdminPanel();
                 if (isCoAdmin) updateCoAdminPanel();
             } catch (error) {
+                console.error("Ban hatası:", error);
                 addSystemMessage("❌ Ban işlemi başarısız!");
             }
         }
 
+        // Global ban (site geneli)
+        async function globalBanUser(username, duration = 0, reason = "Global ban") {
+            if (!isAdmin && !isOwner) { 
+                addSystemMessage("⛔ Yetkiniz yok!"); 
+                return; 
+            }
+            
+            if (!username) return;
+            
+            if (normalizeNick(username) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
+                addSystemMessage("⛔ Owner global banlanamaz!");
+                return;
+            }
+
+            try {
+                const banUntil = duration > 0 ? Date.now() + (duration * 60000) : null;
+                
+                await globalBansRef.child(username).set({
+                    bannedUntil: banUntil,
+                    bannedBy: currentUser.name,
+                    reason: reason,
+                    timestamp: Date.now(),
+                    isPermanent: duration === 0
+                });
+                
+                // Kullanıcıyı online listeden kaldır
+                await usersRef.child(username).remove();
+                
+                // Kullanıcıya özel mesaj gönder
+                const chatId = generateChatId(username, 'System');
+                await privateChatsRef.child(chatId).push({
+                    sender: 'System',
+                    text: `🌍 **GLOBAL BAN** uygulandı!\nSüre: ${duration > 0 ? duration + ' dakika' : 'Süresiz'}\nSebep: ${reason}\nYetkili: ${currentUser.name}`,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    isNotification: true
+                });
+
+                // Admin kanalına bildirim gönder
+                await sendToAdminChannel(`🌍 **GLOBAL BAN**: **${username}** kullanıcısı ${duration > 0 ? duration + ' dakika' : 'süresiz'} banlandı.\nSebep: ${reason}\nYetkili: ${currentUser.name}`);
+                
+                addSystemMessage(`🚫 ${username} ${duration>0?duration+' dakika':'süresiz'} global banlandı! Sebep: ${reason}`);
+                
+                if (isOwner) updateOwnerPanel();
+            } catch (error) {
+                console.error("Global ban hatası:", error);
+                addSystemMessage("❌ Global ban uygulanamadı!");
+            }
+        }
+
+        // Ban listesini göster
         async function showBanList() {
             try {
                 const banSnapshot = await bansRef.once('value');
                 const bans = banSnapshot.val() || {};
-                if (Object.keys(bans).length === 0) {
+                const globalBanSnapshot = await globalBansRef.once('value');
+                const globalBans = globalBanSnapshot.val() || {};
+                
+                if (Object.keys(bans).length === 0 && Object.keys(globalBans).length === 0) {
                     addBanMessage("✅ Aktif banlı kullanıcı yok!");
                     return;
                 }
+                
                 let banList = "🚫 <strong>AKTİF BANLAR:</strong><br><br>";
                 const now = Date.now();
-                let activeCount = 0;
+                
+                // Normal banlar
                 Object.entries(bans).forEach(([username, banData]) => {
                     if (banData.bannedUntil > now) {
-                        activeCount++;
                         const remaining = Math.ceil((banData.bannedUntil - now) / 60000);
                         banList += `<strong>${username}</strong> - ${remaining} dakika kaldı - Sebep: ${banData.reason}<br>`;
                     }
                 });
-                if (activeCount === 0) {
-                    addBanMessage("✅ Aktif banlı kullanıcı yok!");
-                } else {
-                    addBanMessage(banList);
-                }
+                
+                // Global banlar
+                banList += "<br><strong>🌍 GLOBAL BANLAR:</strong><br>";
+                Object.entries(globalBans).forEach(([username, banData]) => {
+                    if (!banData.bannedUntil || banData.bannedUntil > now) {
+                        const remaining = banData.bannedUntil ? Math.ceil((banData.bannedUntil - now) / 60000) : 'Süresiz';
+                        banList += `<strong>${username}</strong> - ${remaining} - Sebep: ${banData.reason}<br>`;
+                    }
+                });
+                
+                addBanMessage(banList);
             } catch (error) {
                 addBanMessage("❌ Ban listesi getirilemedi!");
             }
         }
 
+        // Ban kaldır
         async function unbanUser(username) {
             if (!currentUser || (!isAdmin && !isCoAdmin && !isOperator && !isOwner)) {
                 addSystemMessage("⛔ Yetkiniz yok!");
                 return;
             }
+            
             try {
                 const bansSnapshot = await bansRef.once('value');
                 const bans = bansSnapshot.val() || {};
                 let found = false;
+                
                 for (const [bannedUser, banData] of Object.entries(bans)) {
                     if (normalizeNick(bannedUser) === normalizeNick(username)) {
                         await bansRef.child(bannedUser).remove();
@@ -7838,8 +7992,11 @@
                         break;
                     }
                 }
+                
                 if (found) {
+                    await sendToAdminChannel(`✅ **${username}** kullanıcısının banı kaldırıldı.\nYetkili: ${currentUser.name}`);
                     addSystemMessage(`✅ ${username} kullanıcısının banı kaldırıldı!`);
+                    
                     if (isOwner) updateOwnerPanel();
                     if (isAdmin) updateAdminPanel();
                     if (isCoAdmin) updateCoAdminPanel();
@@ -7851,14 +8008,102 @@
             }
         }
 
-        function muteUserPrompt() {
-            const username = prompt('Susturulacak kullanıcı adı:');
+        // Global ban kaldır
+        async function removeGlobalBan(username) {
+            if (!isAdmin && !isOwner) return;
+            
+            try {
+                await globalBansRef.child(username).remove();
+                await sendToAdminChannel(`✅ **${username}** kullanıcısının global banı kaldırıldı.\nYetkili: ${currentUser.name}`);
+                addSystemMessage(`✅ ${username} global banı kaldırıldı.`);
+                
+                if (isOwner) updateOwnerPanel();
+            } catch (error) {
+                addSystemMessage("❌ Global ban kaldırılamadı!");
+            }
+        }
+
+        // Banlı kullanıcıları kontrol et (giriş engelleme)
+        async function checkUserBanOnLogin(username) {
+            // Global ban kontrolü
+            const globalBanCheck = await checkGlobalBan(username);
+            if (globalBanCheck) {
+                const banData = (await globalBansRef.child(username).once('value')).val();
+                const durationText = banData.bannedUntil ? 'süreli' : 'süresiz';
+                return { 
+                    isBanned: true, 
+                    reason: banData.reason || 'Belirtilmemiş', 
+                    type: 'global',
+                    duration: durationText
+                };
+            }
+            
+            // Normal ban kontrolü
+            const banCheck = await checkIfBanned(username);
+            if (banCheck.isBanned) {
+                return { 
+                    isBanned: true, 
+                    reason: banCheck.banData.reason || 'Belirtilmemiş', 
+                    type: 'normal',
+                    remaining: Math.ceil((banCheck.banData.bannedUntil - Date.now()) / 60000)
+                };
+            }
+            
+            return { isBanned: false };
+        }
+
+        // Admin kanalına mesaj gönder
+        async function sendToAdminChannel(message) {
+            try {
+                const ADMIN_CHANNEL_ID = 'admin_channel_global';
+                const messageData = {
+                    sender: 'SYSTEM',
+                    text: message,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    type: 'admin-notification'
+                };
+                await database.ref('channelMessages/' + ADMIN_CHANNEL_ID).push(messageData);
+                
+                // Ayrıca sistem mesajı olarak da ekle (adminlerin genel kanalda da görmesi için)
+                addSystemMessage(message);
+            } catch (error) {
+                console.error("Admin kanalına mesaj gönderilemedi:", error);
+            }
+        }
+
+        // Banlı kanala giriş denemesi kontrolü
+        async function checkChannelBan(username, channelId) {
+            try {
+                // Kullanıcının daha önce bu kanaldan banlanıp banlanmadığını kontrol et
+                const userSnapshot = await usersRef.child(username).once('value');
+                const userData = userSnapshot.val();
+                
+                if (userData && userData.kickedFrom === channelId) {
+                    const timeSinceKick = Date.now() - (userData.lastKicked || 0);
+                    // 1 saat içinde tekrar banlanmışsa engelle (isteğe bağlı)
+                    if (timeSinceKick < 3600000) { // 1 saat
+                        return {
+                            isBanned: true,
+                            reason: userData.kickReason || 'Belirtilmemiş',
+                            timeRemaining: Math.ceil((3600000 - timeSinceKick) / 60000)
+                        };
+                    }
+                }
+                return { isBanned: false };
+            } catch (error) {
+                return { isBanned: false };
+            }
+        }
+
+        function kickUserPrompt() {
+            const username = prompt('Banlanacak kullanıcı adı:');
             if (!username) return;
-            const duration = prompt('Susturma süresi (dakika):', '10');
+            const duration = prompt('Ban süresi (dakika):', '5');
             if (!duration) return;
-            const reason = prompt('Susturma sebebi:', 'Spam');
+            const reason = prompt('Ban sebebi:', 'Kural ihlali');
             if (!reason) return;
-            muteUser(username, duration, reason);
+            kickUser(username, duration, reason);
         }
 
         async function muteUser(username, duration = 10, reason = "Mute") {
@@ -7867,17 +8112,37 @@
             }
             const until = Date.now() + duration * 60000;
             mutedUsers[username] = until;
+            
+            // Admin kanalına bildirim
+            await sendToAdminChannel(`🔇 **${username}** kullanıcısı **${duration} dakika** susturuldu.\nSebep: ${reason}\nYetkili: ${currentUser.name}`);
+            
             addSystemMessage(`🔇 ${username} ${duration} dakika susturuldu. Sebep: ${reason}`);
-        }
-
-        async function unmuteUser(username) {
-            delete mutedUsers[username];
-            addSystemMessage(`🔊 ${username} susturulması kaldırıldı.`);
         }
 
         function unmuteUserPrompt() {
             const username = prompt('Susturması kaldırılacak kullanıcı adı:');
             if (username) unmuteUser(username);
+        }
+
+        async function unmuteUser(username) {
+            delete mutedUsers[username];
+            
+            // Admin kanalına bildirim
+            await sendToAdminChannel(`🔊 **${username}** kullanıcısının susturulması kaldırıldı.\nYetkili: ${currentUser.name}`);
+            
+            addSystemMessage(`🔊 ${username} susturulması kaldırıldı.`);
+        }
+
+        // ========== YARDIMCI FONKSİYONLAR (Hepsi Aynen Kaldı) ==========
+        function handleEnterKey(event, sendFunctionName) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                if (sendFunctionName === 'sendMessage') {
+                    sendMessage();
+                } else if (sendFunctionName === 'sendPrivateMessage') {
+                    sendPrivateMessage();
+                }
+            }
         }
 
         async function updateBannedUsers() {
@@ -7930,29 +8195,6 @@
             globalBanUser(username, parseInt(duration), reason);
         }
 
-        async function globalBanUser(username, duration = 0, reason = "Global ban") {
-            if (!isAdmin && !isOwner) { addSystemMessage("⛔ Yetkiniz yok!"); return; }
-            if (!username) return;
-            const banUntil = duration > 0 ? Date.now() + (duration * 60000) : null;
-            await globalBansRef.child(username).set({
-                bannedUntil: banUntil,
-                bannedBy: currentUser.name,
-                reason: reason,
-                timestamp: Date.now(),
-                isPermanent: duration === 0
-            });
-            await usersRef.child(username).remove();
-            addSystemMessage(`🚫 ${username} ${duration>0?duration+' dakika':'süresiz'} global banlandı! Sebep: ${reason}`);
-            if (isOwner) updateOwnerPanel();
-        }
-
-        async function removeGlobalBan(username) {
-            if (!isAdmin && !isOwner) return;
-            await globalBansRef.child(username).remove();
-            addSystemMessage(`✅ ${username} global banı kaldırıldı.`);
-            if (isOwner) updateOwnerPanel();
-        }
-
         function clearAllMessagesPrompt() {
             if (confirm('Tüm mesajları silmek istediğinize emin misiniz?')) {
                 messagesRef.remove();
@@ -7960,8 +8202,36 @@
             }
         }
 
-        function openPrivateChatList() {
-            addSystemMessage('💬 Özel sohbet başlatmak için kullanıcı listesinden birine tıklayın.');
+        async function checkBlockStatus(targetUser) {
+            if (!currentUser || !blocksRef) return false;
+            try {
+                const snapshot = await blocksRef.child(currentUser.name).child(targetUser).once('value');
+                const blockData = snapshot.val();
+                if (blockData && blockData.blockedUntil > Date.now()) {
+                    return true;
+                } else if (blockData) {
+                    await blocksRef.child(currentUser.name).child(targetUser).remove();
+                }
+                return false;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        async function loadBlockedUsers() {
+            if (!currentUser || !blocksRef) return;
+            blocksRef.child(currentUser.name).on('value', (snapshot) => {
+                blockedUsers = snapshot.val() || {};
+                if (isOwner) updateOwnerBlockList();
+            });
+            blocksRef.on('child_added', (snapshot) => {
+                if (snapshot.key === currentUser?.name) return;
+                const blockData = snapshot.val();
+                if (blockData && blockData[`/${currentUser.name}`]) {
+                    blockedByUsers[snapshot.key] = blockData[`/${currentUser.name}`];
+                    if (isOwner) updateOwnerBlockList();
+                }
+            });
         }
 
         async function toggleBlockUser() {
@@ -8013,90 +8283,6 @@
                     if (isOwner) updateOwnerBlockList();
                 }
             }
-        }
-
-        async function checkBlockStatus(targetUser) {
-            if (!currentUser || !blocksRef) return false;
-            try {
-                const snapshot = await blocksRef.child(currentUser.name).child(targetUser).once('value');
-                const blockData = snapshot.val();
-                if (blockData && blockData.blockedUntil > Date.now()) {
-                    return true;
-                } else if (blockData) {
-                    await blocksRef.child(currentUser.name).child(targetUser).remove();
-                }
-                return false;
-            } catch (error) {
-                return false;
-            }
-        }
-
-        async function loadBlockedUsers() {
-            if (!currentUser || !blocksRef) return;
-            blocksRef.child(currentUser.name).on('value', (snapshot) => {
-                blockedUsers = snapshot.val() || {};
-                if (isOwner) updateOwnerBlockList();
-            });
-            blocksRef.on('child_added', (snapshot) => {
-                if (snapshot.key === currentUser?.name) return;
-                const blockData = snapshot.val();
-                if (blockData && blockData[`/${currentUser.name}`]) {
-                    blockedByUsers[snapshot.key] = blockData[`/${currentUser.name}`];
-                    if (isOwner) updateOwnerBlockList();
-                }
-            });
-        }
-
-        function openReportModal() {
-            if (!privateChatWith) return;
-            document.getElementById('reportModal').style.display = 'block';
-            document.getElementById('overlay').style.display = 'block';
-        }
-
-        function closeReportModal() {
-            document.getElementById('reportModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
-        }
-
-        async function submitReport() {
-            if (!privateChatWith || !currentUser) return;
-            const reason = document.getElementById('reportReason').value;
-            const description = document.getElementById('reportDescription').value.trim();
-            const reportData = {
-                reporter: currentUser.name,
-                reportedUser: privateChatWith,
-                reason: reason,
-                description: description,
-                timestamp: Date.now(),
-                chatId: currentPrivateChatId
-            };
-            try {
-                await reportsRef.push(reportData);
-                addSystemMessage(`✅ ${privateChatWith} kullanıcısı şikayet edildi. Adminler bilgilendirildi.`);
-                closeReportModal();
-                if (isOwner || isAdmin) {
-                    addAdminNotification(reportData);
-                    if (isOwner) updateOwnerReportList();
-                    if (isAdmin) updateAdminReportList();
-                }
-            } catch (error) {
-                addSystemMessage('❌ Şikayet gönderilemedi!');
-            }
-        }
-
-        function addAdminNotification(report) {
-            const adminMsg = `⚠️ YENİ ŞİKAYET: ${report.reportedUser} - Sebep: ${report.reason}`;
-            addSystemMessage(adminMsg);
-            notifications.unshift({
-                id: 'report_' + Date.now(),
-                sender: 'Şikayet Sistemi',
-                message: adminMsg,
-                type: 'admin',
-                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                timestamp: Date.now(),
-                read: false
-            });
-            if (notificationPanelOpen) updateNotificationPanel();
         }
 
         function toggleUserList() {
@@ -8667,19 +8853,6 @@
             }
         }
 
-        async function kickUserFromChannel(username, channelId, reason = "Kanal banı") {
-            if (!currentChannel || (currentChannel.owner !== currentUser.name && !isAdmin && !isOwner)) {
-                addSystemMessage("⛔ Yetkiniz yok!"); return;
-            }
-            await usersRef.child(username).update({ 
-                currentChannel: 'general',
-                lastKicked: Date.now(),
-                kickReason: reason,
-                kickedFrom: channelId
-            });
-            addSystemMessage(`🚪 ${username} kanaldan atıldı. Sebep: ${reason}`);
-        }
-
         async function showReports() {
             if (!isAdmin && !isOwner) return;
             try {
@@ -9074,10 +9247,9 @@
             document.getElementById('mobileMenu').classList.remove('active');
             closeChannelDrawer();
             closePlaylistDrawer();
-            closeFollowDrawer(); // YENİ
+            closeFollowDrawer();
         }
 
-        // Giriş alanı kontrolü (GÜNCELLENDİ: Owner ipucu yok)
         function checkUsernameRealTime() {
             const nickInput = document.getElementById('login-nick');
             const passwordInput = document.getElementById('login-password');
@@ -9090,7 +9262,6 @@
                     return;
                 }
                 const normalizedNick = normalizeNick(nick);
-                // Owner kontrolü - şifre girişi göster ama ipucu yok
                 if (normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
                     passwordInput.style.display = 'block';
                     passwordInfo.style.display = 'block';
@@ -9098,7 +9269,6 @@
                     passwordInfo.innerHTML = '<i class="fas fa-lock"></i> Şifre gerekli';
                     return;
                 }
-                // Kayıtlı kullanıcı kontrolü
                 const userRegistered = await isRegisteredUserSecure(nick);
                 if (userRegistered && userRegistered.isRegistered) {
                     passwordInput.style.display = 'block';
