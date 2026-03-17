@@ -3210,7 +3210,7 @@
                 white-space: nowrap;
             }
 
-            /* MOBİLDE TAKİPÇİ/TAKİP EDİLEN/ARAMA DRAWER'LARI DÜZGÜN AÇILSIN */
+            /* MOBİLDE TAKİPÇİ/TAKİP EDİLEN/ARAMA DRAWER'LARI DÜZGÜN AÇILSIN - DÜZELTİLDİ */
             .follow-drawer, .search-drawer {
                 left: 0 !important;
                 top: 60px;
@@ -5948,6 +5948,10 @@
 
         function appendMessageToUI(message) {
             const container = document.getElementById('messages');
+            
+            // DÜZELTME: Aynı mesaj ID'si varsa ekleme
+            if (document.getElementById(`msg_${message.id}`)) return;
+            
             const messageDiv = document.createElement('div');
             messageDiv.className = `message-item ${message.type || 'user'}`;
             messageDiv.id = `msg_${message.id}`;
@@ -6109,6 +6113,7 @@
             });
             
             // SONRA YENİ EKLENENLERİ DİNLE
+            privateChatsRef.child(currentPrivateChatId).off('child_added'); // ÖNCE TEMİZLE
             privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
                 const message = snapshot.val();
                 if (message) {
@@ -6187,7 +6192,9 @@
             const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
             messagesArray.sort((a, b) => a.timestamp - b.timestamp);
             
+            // ÖNCE MEVCUT MESAJLARI TEMİZLE (YENİDEN YÜKLEMEDE ÇİFTLİĞİ ENGELLER)
             container.innerHTML = '';
+            
             const now = Date.now();
             
             messagesArray.forEach(msg => {
@@ -6771,8 +6778,13 @@
                 setTimeout(initYouTubePlayer, 1000);
             }
             if (messagesRef) {
-                messagesRef.limitToLast(MESSAGE_LIMIT).on('value', (snapshot) => {
-                    updateMessages(snapshot.val());
+                messagesRef.limitToLast(MESSAGE_LIMIT).off('child_added'); // ÖNCE TEMİZLE
+                messagesRef.limitToLast(MESSAGE_LIMIT).on('child_added', (snapshot) => {
+                    const newMessage = { id: snapshot.key, ...snapshot.val() };
+                    // DÜZELTME: Aynı mesaj zaten varsa ekleme
+                    if (!document.getElementById(`msg_${snapshot.key}`)) {
+                        appendMessageToUI(newMessage);
+                    }
                 });
             }
             if (coAdminsRef) {
