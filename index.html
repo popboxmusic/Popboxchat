@@ -3236,10 +3236,12 @@
                 font-size: 12px;
                 flex-wrap: wrap;
                 gap: 10px;
+                justify-content: center; /* Mobilde daha merkezi */
             }
             .ad-skip-btn {
                 padding: 6px 12px;
                 font-size: 12px;
+                white-space: nowrap; /* Yazının taşmasını engelle */
             }
 
             .follow-drawer, .search-drawer {
@@ -3600,6 +3602,8 @@
             <button class="role-tab" onclick="switchOwnerTab('moderation')"><i class="fas fa-gavel"></i> Moderasyon</button>
             <button class="role-tab" onclick="switchOwnerTab('reports')"><i class="fas fa-exclamation-triangle"></i> Şikayetler</button>
             <button class="role-tab" onclick="switchOwnerTab('blocks')"><i class="fas fa-ban"></i> Engellemeler</button>
+            <!-- YENİ SEKMELER -->
+            <button class="role-tab" onclick="switchOwnerTab('ads')"><i class="fas fa-ad"></i> Reklamlar</button>
         </div>
         
         <div class="role-panel-content">
@@ -3689,6 +3693,29 @@
                 <div class="role-section">
                     <div class="role-section-title owner"><i class="fas fa-ban"></i> Aktif Engellemeler</div>
                     <div id="ownerBlockList" class="role-list"></div>
+                </div>
+            </div>
+
+            <!-- YENİ: REKLAM KONTROL TAB'I -->
+            <div class="role-tab-content" id="ownerAdsTab">
+                <div class="role-section">
+                    <div class="role-section-title owner"><i class="fas fa-play-circle"></i> Reklam Durumu</div>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <button class="role-action-btn" onclick="showAdManually()" style="flex:1;"><i class="fas fa-play"></i> Reklamı Şimdi Göster</button>
+                        <button class="role-action-btn" onclick="toggleAdCycle()" id="adCycleBtn" style="flex:1;"><i class="fas fa-sync-alt"></i> Döngüyü Durdur</button>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <span class="role-stat-label">Durum:</span>
+                        <span id="adStatusText" class="role-stat-value" style="font-size:14px;">Aktif (10 dk)</span>
+                    </div>
+                </div>
+                <div class="role-section">
+                    <div class="role-section-title owner"><i class="fas fa-link"></i> Reklam Linkleri Yönetimi</div>
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                        <input type="url" id="newAdLinkInput" class="modal-input" placeholder="https://... (yeni link)" style="margin:0;">
+                        <button class="role-action-btn" onclick="addAdLink()" style="width: auto; padding: 12px 20px;"><i class="fas fa-plus"></i> Ekle</button>
+                    </div>
+                    <div class="role-list" id="adLinksList" style="max-height: 300px;"></div>
                 </div>
             </div>
         </div>
@@ -4154,6 +4181,7 @@
         let globalBansRef;
         let followingRef;
         let followersRef;
+        let adLinksRef; // YENİ: Reklam linkleri için referans
 
         // OPTİMİZASYON: Veri önbellekleme
         let cachedOnlineUsers = {};
@@ -4163,6 +4191,7 @@
         let cachedBlocks = {};
         let cachedFollowingStatus = {};
         let cachedRegisteredUsers = {};
+        let cachedAdLinks = []; // YENİ: Reklam linkleri önbelleği
 
         let isFirebaseConnected = false;
         
@@ -4222,15 +4251,23 @@
         let adSkipBtn = document.getElementById('adSkipBtn');
         let adLinkBtn = document.getElementById('adLinkBtn');
         let adCycleInterval = null;
+        let adCycleActive = true; // Varsayılan olarak aktif
 
-        const adLinks = Array.from({ length: 100 }, (_, i) => {
-            const num = i + 1;
-            return `https://reklamlink${num}.com`;
-        });
+        // Varsayılan reklam linkleri (Firebase boşsa kullanılacak)
+        const DEFAULT_AD_LINKS = [
+            'https://reklamlink1.com',
+            'https://reklamlink2.com',
+            'https://reklamlink3.com'
+        ];
 
         function getRandomAdLink() {
-            const randomIndex = Math.floor(Math.random() * adLinks.length);
-            return adLinks[randomIndex];
+            if (cachedAdLinks.length > 0) {
+                const randomIndex = Math.floor(Math.random() * cachedAdLinks.length);
+                return cachedAdLinks[randomIndex];
+            }
+            // Eğer önbellek boşsa varsayılanlardan rastgele seç
+            const randomIndex = Math.floor(Math.random() * DEFAULT_AD_LINKS.length);
+            return DEFAULT_AD_LINKS[randomIndex];
         }
 
         function showAd(adLink = null, duration = 5) {
@@ -4270,15 +4307,98 @@
 
         function startAdCycle() {
             if (adCycleInterval) clearInterval(adCycleInterval);
+            // İlk reklam 10 saniye sonra
             setTimeout(() => {
-                showAd(null, 5);
+                if (adCycleActive) showAd(null, 5);
             }, 10000);
+            // Sonra her 10 dakikada bir
             adCycleInterval = setInterval(() => {
-                showAd(null, 5);
+                if (adCycleActive) showAd(null, 5);
             }, 600000);
         }
 
+        function toggleAdCycle() {
+            adCycleActive = !adCycleActive;
+            const btn = document.getElementById('adCycleBtn');
+            const statusText = document.getElementById('adStatusText');
+            if (adCycleActive) {
+                btn.innerHTML = '<i class="fas fa-stop"></i> Döngüyü Durdur';
+                statusText.textContent = 'Aktif (10 dk)';
+                startAdCycle();
+            } else {
+                btn.innerHTML = '<i class="fas fa-play"></i> Döngüyü Başlat';
+                statusText.textContent = 'Durduruldu';
+                if (adCycleInterval) {
+                    clearInterval(adCycleInterval);
+                    adCycleInterval = null;
+                }
+            }
+        }
+
+        function showAdManually() {
+            showAd(null, 5);
+        }
+
         adSkipBtn.addEventListener('click', closeAd);
+
+        // YENİ: Reklam linklerini yükleme ve listeleme
+        function loadAdLinks() {
+            if (!adLinksRef) return;
+            adLinksRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    // Firebase'de array olarak saklanıyor
+                    cachedAdLinks = Object.values(data);
+                } else {
+                    // Firebase boşsa varsayılanları kullan ve Firebase'e kaydet
+                    cachedAdLinks = [...DEFAULT_AD_LINKS];
+                    adLinksRef.set(DEFAULT_AD_LINKS);
+                }
+                if (isOwner) updateAdLinksList();
+            });
+        }
+
+        function updateAdLinksList() {
+            const container = document.getElementById('adLinksList');
+            if (!container) return;
+            if (cachedAdLinks.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-muted); text-align:center;">Hiç reklam linki yok.</div>';
+                return;
+            }
+            let html = '';
+            cachedAdLinks.forEach((link, index) => {
+                html += `
+                    <div class="role-list-item">
+                        <div class="role-list-info" style="flex:1; overflow:hidden;">
+                            <span class="role-list-name" style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${link}</span>
+                        </div>
+                        <div class="role-list-actions">
+                            <button class="role-list-btn danger" onclick="deleteAdLink(${index})"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        function addAdLink() {
+            const newLink = document.getElementById('newAdLinkInput').value.trim();
+            if (!newLink) return;
+            if (!newLink.startsWith('http')) {
+                alert('Lütfen geçerli bir URL girin (http://... ile başlamalı)');
+                return;
+            }
+            cachedAdLinks.push(newLink);
+            adLinksRef.set(cachedAdLinks);
+            document.getElementById('newAdLinkInput').value = '';
+        }
+
+        function deleteAdLink(index) {
+            if (index >= 0 && index < cachedAdLinks.length) {
+                cachedAdLinks.splice(index, 1);
+                adLinksRef.set(cachedAdLinks);
+            }
+        }
 
         // ========== MOBİL FONKSİYONLAR ==========
         function updateMobileUI() {
@@ -4696,6 +4816,7 @@
             document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
             document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
             if (tabName === 'follows') updateOwnerFollowList();
+            if (tabName === 'ads') updateAdLinksList(); // Reklam sekmesi açıldığında listeyi güncelle
         }
         
         function switchAdminTab(tabName) {
@@ -5377,6 +5498,7 @@
                         reportsRef = database.ref('reports');
                         followingRef = database.ref('following');
                         followersRef = database.ref('followers');
+                        adLinksRef = database.ref('adLinks'); // YENİ: Reklam linkleri
 
                         initOwnerPassword();
                         loadCustomCommands();
@@ -5386,6 +5508,7 @@
 
                         loadGeneralPlaylist();
                         loadGeneralMessages();
+                        loadAdLinks(); // YENİ: Reklam linklerini yükle
 
                         // OPTİMİZASYON: Verimli dinleyiciler
                         setupEfficientListeners();
