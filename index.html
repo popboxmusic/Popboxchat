@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
-        /* TÜM STILLER AYNEN KALDI */
+        /* TÜM STILLER AYNEN KALDI (SADECE REKLAMLA İLGİLİ OLANLAR GÜNCELLENDİ) */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -909,6 +909,7 @@
         .video-placeholder-text { font-size: 18px; font-weight: 500; margin-bottom: 8px; }
         .video-placeholder-sub { font-size: 14px; color: var(--text-muted); }
         
+        /* ========== GÜNCELLENMİŞ REKLAM STİLLERİ ========== */
         .ad-overlay {
             position: absolute;
             top: 0;
@@ -3206,9 +3207,9 @@
                 white-space: nowrap;
             }
 
-            /* ===== DÜZELTME 1: Mobilde Takipçi/Takip Edilen/Arama Panelleri ===== */
+            /* MOBİLDE TAKİPÇİ/TAKİP EDİLEN/ARAMA DRAWER'LARI DÜZGÜN AÇILSIN */
             .follow-drawer, .search-drawer {
-                left: 0 !important; /* Soldan 70px değil, 0 olsun */
+                left: 0 !important;
                 top: 60px;
                 width: 100%;
                 height: calc(100vh - 60px);
@@ -3402,7 +3403,7 @@
                 <div class="video-wrapper">
                     <div id="youtube-player"></div>
                     
-                    <!-- REKLAM OVERLAY -->
+                    <!-- ========== GÜNCELLENMİŞ REKLAM OVERLAY ========== -->
                     <div class="ad-overlay" id="adOverlay">
                         <div class="ad-container">
                             <div class="ad-header">
@@ -3643,7 +3644,7 @@
                 </div>
             </div>
 
-            <!-- REKLAM KONTROL TAB'I -->
+            <!-- ========== GÜNCELLENMİŞ REKLAM KONTROL TAB'I ========== -->
             <div class="role-tab-content" id="ownerAdsTab">
                 <div class="role-section">
                     <div class="role-section-title owner"><i class="fas fa-play-circle"></i> Reklam Durumu</div>
@@ -4204,7 +4205,6 @@
         const ONLINE_THRESHOLD = 60000;
         const CACHE_SIZE_LIMIT = 5 * 1024 * 1024;
         
-        // Yazma sayacı
         let dailyWriteCount = 0;
         let lastWriteReset = Date.now();
         
@@ -4214,7 +4214,6 @@
                 dailyWriteCount = 0;
                 lastWriteReset = now;
             }
-            
             if (dailyWriteCount > 16000) {
                 console.warn(`⚠️ Günlük yazma limitinin %80'ine ulaşıldı: ${dailyWriteCount}/20000`);
                 if (dailyWriteCount > 19000 && isOwner) {
@@ -5763,13 +5762,11 @@
             renderUserList(users);
         }
 
-        // ===== DÜZELTME 2: Online Kullanıcı Listesi Sıralama =====
         function renderUserList(users) {
             const container = document.getElementById('userList');
             const now = Date.now();
             const activeUsers = [];
 
-            // Aktif kullanıcıları topla
             Object.entries(users).forEach(([username, userData]) => {
                 if (!userData) return;
                 if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
@@ -5778,36 +5775,30 @@
                 }
                 const timeDiff = now - (userData.lastSeen || 0);
                 if (timeDiff < ONLINE_THRESHOLD) {
-                    // Rolü belirle
-                    let role = 'user';
-                    if (username === SECURE_CONFIG.OWNER_CONFIG.username) role = 'owner';
-                    else if (adminList.includes(username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(username)) role = 'admin';
-                    else if (coAdminList.includes(username)) role = 'coadmin';
-                    else if (operatorList.includes(username)) role = 'operator';
-                    
-                    activeUsers.push({ 
-                        username, 
-                        ...userData, 
-                        secondsAgo: Math.floor(timeDiff / 1000),
-                        role: role,
-                        rolePriority: role === 'owner' ? 0 : role === 'admin' ? 1 : role === 'coadmin' ? 2 : role === 'operator' ? 3 : 4
-                    });
+                    activeUsers.push({ username, ...userData, secondsAgo: Math.floor(timeDiff / 1000) });
                 }
+            });
+
+            // YETKİ SIRASINA GÖRE SIRALA (owner > admin > coadmin > operator > user)
+            activeUsers.sort((a, b) => {
+                const getRolePriority = (user) => {
+                    if (user.username === SECURE_CONFIG.OWNER_CONFIG.username) return 1;
+                    if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) return 2;
+                    if (coAdminList.includes(user.username)) return 3;
+                    if (operatorList.includes(user.username)) return 4;
+                    return 5;
+                };
+                const priorityA = getRolePriority(a);
+                const priorityB = getRolePriority(b);
+                if (priorityA !== priorityB) return priorityA - priorityB;
+                // Aynı roldeyse en aktif olana göre sırala
+                return a.secondsAgo - b.secondsAgo;
             });
 
             if (activeUsers.length === 0) {
                 container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Çevrimiçi kimse yok</div>';
                 return;
             }
-            
-            // Sıralama: rolePriority (0-4) ve ardından username (alfabetik)
-            activeUsers.sort((a, b) => {
-                if (a.rolePriority !== b.rolePriority) {
-                    return a.rolePriority - b.rolePriority;
-                }
-                return a.username.localeCompare(b.username);
-            });
-
             let html = '';
             activeUsers.forEach(user => {
                 const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
@@ -6091,6 +6082,11 @@
             
             await updatePrivateFollowButton();
             
+            // Önceki dinleyicileri temizle (çift mesaj göndermeyi engellemek için)
+            if (privateChatsRef) {
+                privateChatsRef.child(currentPrivateChatId).off();
+            }
+            
             loadPrivateMessages();
         }
 
@@ -6102,6 +6098,12 @@
             if (isAudioRecording) {
                 stopAudioRecording();
             }
+            
+            // Dinleyicileri temizle
+            if (privateChatsRef && currentPrivateChatId) {
+                privateChatsRef.child(currentPrivateChatId).off();
+            }
+            
             privateChatWith = null;
             currentPrivateChatId = null;
             document.getElementById('privateModal').style.display = 'none';
@@ -6109,19 +6111,84 @@
             document.getElementById('private-input').value = '';
         }
 
-        // ===== DÜZELTME 3: Özel Mesajları Yükleme (çift mesaj sorunu çözüldü) =====
         function loadPrivateMessages() {
             if (!currentPrivateChatId || !privateChatsRef) return;
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
             
-            // Sadece value dinleyicisi kullan, child_added KULLANMA!
-            privateChatsRef.child(currentPrivateChatId).limitToLast(10).on('value', (snapshot) => {
+            // Tek seferlik değer al (çift mesaj engelleme)
+            privateChatsRef.child(currentPrivateChatId).limitToLast(10).once('value', (snapshot) => {
                 updatePrivateMessages(snapshot.val());
             });
             
-            // AŞAĞIDAKİ SATIR KALDIRILDI (çift mesaj sorununa neden oluyordu)
-            // privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => { ... });
+            // Sonra yeni eklenenleri dinle
+            privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                if (message) {
+                    // Mesaj zaten varsa ekleme (çift gönderme kontrolü)
+                    const existingMsg = document.getElementById(`private_msg_${snapshot.key}`);
+                    if (!existingMsg) {
+                        if (message.sender !== currentUser.name) {
+                            let msgText = message.text || '';
+                            if (message.image) msgText = '📸 Fotoğraf';
+                            else if (message.video) msgText = '🎥 Video';
+                            else if (message.audio) msgText = '🎤 Ses Kaydı';
+                            addNotification(message.sender, msgText, 'private');
+                        }
+                        // updatePrivateMessages'i tekrar çağırmak yerine direkt ekle
+                        appendPrivateMessageToUI({ id: snapshot.key, ...message });
+                    }
+                }
+            });
+        }
+
+        function appendPrivateMessageToUI(message) {
+            const container = document.getElementById('privateMessages');
+            
+            // Aynı ID'li mesaj varsa ekleme
+            if (document.getElementById(`private_msg_${message.id}`)) return;
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message-item private-msg';
+            messageDiv.id = `private_msg_${message.id}`;
+            
+            let deleteButton = '';
+            if (currentUser && message.sender === currentUser.name) {
+                deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${message.id}', '${currentPrivateChatId}')"><i class="fas fa-trash"></i></button>`;
+            }
+            
+            let content = message.text || '';
+            if (message.image) content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
+            else if (message.video) {
+                content += `<br><video src="${message.video}" controls class="message-video"></video>`;
+            }
+            else if (message.audio) content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
+            
+            const userAvatar = message.avatar || (userProfiles[message.sender]?.avatar || null);
+            const avatarHtml = userAvatar ? 
+                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
+            
+            let readStatus = '';
+            if (message.sender === currentUser.name) {
+                readStatus = message.isRead ? ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
+            }
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-user">
+                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
+                        ${message.sender}
+                    </span>
+                    <div>
+                        <span class="message-time">${message.time || '--:--'}${readStatus}</span>
+                        ${deleteButton}
+                    </div>
+                </div>
+                <div class="message-content">${content}</div>
+            `;
+            
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
         }
 
         function updatePrivateMessages(messages) {
@@ -6130,10 +6197,13 @@
                 container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Henüz mesaj yok.</div>';
                 return;
             }
+            
             const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
             messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+            
             container.innerHTML = '';
             const now = Date.now();
+            
             messagesArray.forEach(msg => {
                 if (msg.sender !== currentUser.name && !msg.isRead) {
                     privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
@@ -6141,44 +6211,8 @@
                         readAt: now
                     });
                 }
+                appendPrivateMessageToUI(msg);
             });
-            messagesArray.forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message-item private-msg';
-                messageDiv.id = `private_msg_${msg.id}`;
-                let deleteButton = '';
-                if (currentUser && msg.sender === currentUser.name) {
-                    deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${msg.id}', '${currentPrivateChatId}')"><i class="fas fa-trash"></i></button>`;
-                }
-                let content = msg.text || '';
-                if (msg.image) content += `<br><img src="${msg.image}" class="message-image" onclick="showImageModal('${msg.image}')">`;
-                else if (msg.video) {
-                    content += `<br><video src="${msg.video}" controls class="message-video"></video>`;
-                }
-                else if (msg.audio) content += `<br><audio src="${msg.audio}" controls style="max-width: 200px;"></audio>`;
-                const userAvatar = msg.avatar || (userProfiles[msg.sender]?.avatar || null);
-                const avatarHtml = userAvatar ? 
-                    `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
-                let readStatus = '';
-                if (msg.sender === currentUser.name) {
-                    readStatus = msg.isRead ? ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
-                }
-                messageDiv.innerHTML = `
-                    <div class="message-header">
-                        <span class="message-user">
-                            ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
-                            ${msg.sender}
-                        </span>
-                        <div>
-                            <span class="message-time">${msg.time || '--:--'}${readStatus}</span>
-                            ${deleteButton}
-                        </div>
-                    </div>
-                    <div class="message-content">${content}</div>
-                `;
-                container.appendChild(messageDiv);
-            });
-            container.scrollTop = container.scrollHeight;
         }
 
         async function sendPrivateMessage() {
@@ -6201,6 +6235,7 @@
             const input = document.getElementById('private-input');
             const text = input.value.trim();
             if (!text) return;
+            
             const messageData = {
                 sender: currentUser.name,
                 receiver: privateChatWith,
@@ -6210,12 +6245,16 @@
                 avatar: currentProfileAvatar || null,
                 isRead: false
             };
+            
             try {
                 await privateChatsRef.child(currentPrivateChatId).push(messageData);
                 incrementWriteCount();
                 input.value = '';
                 autoResize(input);
+                
+                // Bildirim ekle (karşı tarafa)
                 addNotification(privateChatWith, text.length > 30 ? text.substring(0, 30) + '...' : text, 'private');
+                
                 if (usersRef) {
                     usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
                 }
@@ -6307,7 +6346,8 @@
                         video: videoData,
                         videoType: file.type,
                         timestamp: Date.now(),
-                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                        isRead: false
                     };
                     try {
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
@@ -6332,7 +6372,8 @@
                             text: '📸 Resim gönderdi',
                             image: imageData,
                             timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                            isRead: false
                         };
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
                         incrementWriteCount();
@@ -6378,7 +6419,8 @@
                         video: videoData,
                         videoType: file.type,
                         timestamp: Date.now(),
-                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                        isRead: false
                     };
                     try {
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
@@ -6403,7 +6445,8 @@
                             text: '📸 Kameradan fotoğraf çekti',
                             image: imageData,
                             timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                            isRead: false
                         };
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
                         incrementWriteCount();
@@ -6454,7 +6497,8 @@
                             text: '🎤 Sesli mesaj gönderdi',
                             audio: audioData,
                             timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                            isRead: false
                         };
                         await privateChatsRef.child(currentPrivateChatId).push(messageData);
                         incrementWriteCount();
