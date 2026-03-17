@@ -3691,7 +3691,7 @@
                 </div>
             </div>
 
-            <!-- YENİ: REKLAM KONTROL TAB'I -->
+            <!-- YENİ: REKLAM KONTROL TAB'I - DÜZELTİLDİ -->
             <div class="role-tab-content" id="ownerAdsTab">
                 <div class="role-section">
                     <div class="role-section-title owner"><i class="fas fa-play-circle"></i> Reklam Durumu</div>
@@ -4245,13 +4245,13 @@
 
         // Varsayılan reklam linkleri
         const DEFAULT_AD_LINKS = [
-            'https://reklamlink1.com',
-            'https://reklamlink2.com',
-            'https://reklamlink3.com'
+            'https://www.google.com',
+            'https://www.youtube.com',
+            'https://www.github.com'
         ];
 
         function getRandomAdLink() {
-            if (cachedAdLinks.length > 0) {
+            if (cachedAdLinks && cachedAdLinks.length > 0) {
                 const randomIndex = Math.floor(Math.random() * cachedAdLinks.length);
                 return cachedAdLinks[randomIndex];
             }
@@ -4296,9 +4296,11 @@
 
         function startAdCycle() {
             if (adCycleInterval) clearInterval(adCycleInterval);
+            // İlk reklamı 10 saniye sonra göster
             setTimeout(() => {
                 if (adCycleActive) showAd(null, 5);
             }, 10000);
+            // Sonra her 10 dakikada bir göster
             adCycleInterval = setInterval(() => {
                 if (adCycleActive) showAd(null, 5);
             }, 600000);
@@ -4328,16 +4330,30 @@
 
         adSkipBtn.addEventListener('click', closeAd);
 
-        // YENİ: Reklam linklerini yükleme
+        // YENİ: Reklam linklerini yükleme - DÜZELTİLDİ
         function loadAdLinks() {
             if (!adLinksRef) return;
             adLinksRef.on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (data) {
-                    cachedAdLinks = Object.values(data);
+                    // Firebase'den gelen veriyi diziye dönüştür
+                    cachedAdLinks = [];
+                    // Veri yapısına göre işleme
+                    if (Array.isArray(data)) {
+                        cachedAdLinks = data;
+                    } else if (typeof data === 'object') {
+                        // Obje olarak gelmişse değerlerini al
+                        cachedAdLinks = Object.values(data);
+                    }
                 } else {
+                    // Veri yoksa varsayılan linkleri kullan ve Firebase'e kaydet
                     cachedAdLinks = [...DEFAULT_AD_LINKS];
-                    adLinksRef.set(DEFAULT_AD_LINKS);
+                    // Firebase'e kaydet (obje olarak)
+                    const adLinksObj = {};
+                    DEFAULT_AD_LINKS.forEach((link, index) => {
+                        adLinksObj[index.toString()] = link;
+                    });
+                    adLinksRef.set(adLinksObj);
                 }
                 if (isOwner) updateAdLinksList();
             });
@@ -4346,7 +4362,7 @@
         function updateAdLinksList() {
             const container = document.getElementById('adLinksList');
             if (!container) return;
-            if (cachedAdLinks.length === 0) {
+            if (!cachedAdLinks || cachedAdLinks.length === 0) {
                 container.innerHTML = '<div style="color:var(--text-muted); text-align:center;">Hiç reklam linki yok.</div>';
                 return;
             }
@@ -4368,20 +4384,34 @@
 
         function addAdLink() {
             const newLink = document.getElementById('newAdLinkInput').value.trim();
-            if (!newLink) return;
+            if (!newLink) {
+                alert('Lütfen bir link girin!');
+                return;
+            }
             if (!newLink.startsWith('http')) {
                 alert('Lütfen geçerli bir URL girin (http://... ile başlamalı)');
                 return;
             }
             cachedAdLinks.push(newLink);
-            adLinksRef.set(cachedAdLinks);
+            // Firebase'e kaydet (obje olarak)
+            const adLinksObj = {};
+            cachedAdLinks.forEach((link, index) => {
+                adLinksObj[index.toString()] = link;
+            });
+            adLinksRef.set(adLinksObj);
             document.getElementById('newAdLinkInput').value = '';
+            updateAdLinksList();
         }
 
         function deleteAdLink(index) {
             if (index >= 0 && index < cachedAdLinks.length) {
                 cachedAdLinks.splice(index, 1);
-                adLinksRef.set(cachedAdLinks);
+                // Firebase'e güncel halini kaydet
+                const adLinksObj = {};
+                cachedAdLinks.forEach((link, idx) => {
+                    adLinksObj[idx.toString()] = link;
+                });
+                adLinksRef.set(adLinksObj);
             }
         }
 
@@ -4758,6 +4788,10 @@
                 if (!ownerPrivateListenerActive) {
                     startOwnerPrivateMessageMonitoring();
                     ownerPrivateListenerActive = true;
+                }
+                // Reklam sekmesi açıksa listeyi güncelle
+                if (document.querySelector('#ownerAdsTab').classList.contains('active')) {
+                    updateAdLinksList();
                 }
             } else {
                 if (ownerPrivateListenerActive) {
@@ -7276,6 +7310,8 @@
                 if (confirm(`${privateChatWith} kullanıcısının engelini kaldırmak istiyor musunuz?`)) {
                     await blocksRef.child(currentUser.name).child(privateChatWith).remove();
                     await blocksRef.child(privateChatWith).child(currentUser.name).remove();
+                    delete cachedBlocks[blocker]?.[blocked];
+                    delete cachedBlocks[blocked]?.[blocker];
                     addSystemMessage(`✅ ${privateChatWith} kullanıcısının engeli kaldırıldı.`);
                     const blockBtn = document.getElementById('blockUserBtn');
                     blockBtn.innerHTML = '<i class="fas fa-ban"></i>';
