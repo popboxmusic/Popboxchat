@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
-        /* TÜM STILLER AYNEN KALDI (SADECE REKLAMLA İLGİLİ OLANLAR GÜNCELLENDİ) */
+        /* TÜM STILLER AYNEN KALDI */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -909,7 +909,6 @@
         .video-placeholder-text { font-size: 18px; font-weight: 500; margin-bottom: 8px; }
         .video-placeholder-sub { font-size: 14px; color: var(--text-muted); }
         
-        /* ========== GÜNCELLENMİŞ REKLAM STİLLERİ ========== */
         .ad-overlay {
             position: absolute;
             top: 0;
@@ -1068,7 +1067,8 @@
                 white-space: nowrap;
             }
             .ad-timer span {
-                font-weight: 500;
+                font-size: 14px;
+                font-weight: 700;
                 color: var(--youtube-red);
             }
         }
@@ -1885,6 +1885,8 @@
             display: flex;
             align-items: center;
             gap: 12px;
+            cursor: pointer;
+            flex: 1;
         }
         .search-result-item .follow-btn {
             background: transparent;
@@ -1895,6 +1897,7 @@
             cursor: pointer;
             font-size: 12px;
             transition: all 0.2s;
+            flex-shrink: 0;
         }
         .search-result-item .follow-btn.following {
             background: var(--unfollow-bg);
@@ -3213,6 +3216,7 @@
                 top: 60px;
                 width: 100%;
                 height: calc(100vh - 60px);
+                z-index: 2500;
             }
         }
         
@@ -3403,7 +3407,7 @@
                 <div class="video-wrapper">
                     <div id="youtube-player"></div>
                     
-                    <!-- ========== GÜNCELLENMİŞ REKLAM OVERLAY ========== -->
+                    <!-- REKLAM OVERLAY -->
                     <div class="ad-overlay" id="adOverlay">
                         <div class="ad-container">
                             <div class="ad-header">
@@ -3644,7 +3648,7 @@
                 </div>
             </div>
 
-            <!-- ========== GÜNCELLENMİŞ REKLAM KONTROL TAB'I ========== -->
+            <!-- REKLAM KONTROL TAB'I -->
             <div class="role-tab-content" id="ownerAdsTab">
                 <div class="role-section">
                     <div class="role-section-title owner"><i class="fas fa-play-circle"></i> Reklam Durumu</div>
@@ -4818,6 +4822,7 @@
             loadFollowersList();
         }
 
+        // Kaydı sil fonksiyonu
         async function deleteAccount() {
             if (!currentUser) return;
             if (!confirm('⚠️ TÜM HESABINIZI SİLMEK ÜZERESİNİZ!\n\nBu işlem geri alınamaz. Tüm mesajlarınız, profiliniz, takipçileriniz ve kaydınız kalıcı olarak silinecektir.\n\nDevam etmek istediğinize emin misiniz?')) return;
@@ -5791,7 +5796,6 @@
                 const priorityA = getRolePriority(a);
                 const priorityB = getRolePriority(b);
                 if (priorityA !== priorityB) return priorityA - priorityB;
-                // Aynı roldeyse en aktif olana göre sırala
                 return a.secondsAgo - b.secondsAgo;
             });
 
@@ -6056,6 +6060,7 @@
             }
         }
 
+        // ========== DÜZELTİLMİŞ ÖZEL SOHBET FONKSİYONLARI ==========
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
                 addSystemMessage('Kendinle özel sohbet başlatamazsın!');
@@ -6070,11 +6075,18 @@
                 addSystemMessage(`⛔ ${username} kullanıcısı sizi engellemiş veya siz engellemişsiniz.`);
                 return;
             }
+            
+            // ÖNCEKİ DİNLEYİCİYİ TEMİZLE (ÇİFT MESAJI ENGELLER)
+            if (privateChatWith && currentPrivateChatId && privateChatsRef) {
+                privateChatsRef.child(currentPrivateChatId).off();
+            }
+            
             privateChatWith = username;
             currentPrivateChatId = generateChatId(currentUser.name, username);
             document.getElementById('privateWith').innerHTML = `<i class="fas fa-lock"></i> ${username} ile özel sohbet`;
             document.getElementById('privateModal').style.display = 'flex';
             document.getElementById('overlay').style.display = 'block';
+            
             const isBlocked = await checkBlockStatus(username);
             const blockBtn = document.getElementById('blockUserBtn');
             blockBtn.innerHTML = isBlocked ? '<i class="fas fa-ban" style="color: var(--online);"></i>' : '<i class="fas fa-ban"></i>';
@@ -6082,33 +6094,7 @@
             
             await updatePrivateFollowButton();
             
-            // Önceki dinleyicileri temizle (çift mesaj göndermeyi engellemek için)
-            if (privateChatsRef) {
-                privateChatsRef.child(currentPrivateChatId).off();
-            }
-            
             loadPrivateMessages();
-        }
-
-        function closePrivateChat() {
-            if (cameraStream) {
-                cameraStream.getTracks().forEach(track => track.stop());
-                cameraStream = null;
-            }
-            if (isAudioRecording) {
-                stopAudioRecording();
-            }
-            
-            // Dinleyicileri temizle
-            if (privateChatsRef && currentPrivateChatId) {
-                privateChatsRef.child(currentPrivateChatId).off();
-            }
-            
-            privateChatWith = null;
-            currentPrivateChatId = null;
-            document.getElementById('privateModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
-            document.getElementById('private-input').value = '';
         }
 
         function loadPrivateMessages() {
@@ -6116,16 +6102,17 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
             
-            // Tek seferlik değer al (çift mesaj engelleme)
+            // ÖNCE TEK SEFERLİK VERİ AL
             privateChatsRef.child(currentPrivateChatId).limitToLast(10).once('value', (snapshot) => {
-                updatePrivateMessages(snapshot.val());
+                const messages = snapshot.val();
+                updatePrivateMessages(messages);
             });
             
-            // Sonra yeni eklenenleri dinle
+            // SONRA YENİ EKLENENLERİ DİNLE
             privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
                 const message = snapshot.val();
                 if (message) {
-                    // Mesaj zaten varsa ekleme (çift gönderme kontrolü)
+                    // Bu mesaj zaten eklenmiş mi kontrol et
                     const existingMsg = document.getElementById(`private_msg_${snapshot.key}`);
                     if (!existingMsg) {
                         if (message.sender !== currentUser.name) {
@@ -6135,7 +6122,6 @@
                             else if (message.audio) msgText = '🎤 Ses Kaydı';
                             addNotification(message.sender, msgText, 'private');
                         }
-                        // updatePrivateMessages'i tekrar çağırmak yerine direkt ekle
                         appendPrivateMessageToUI({ id: snapshot.key, ...message });
                     }
                 }
@@ -6252,7 +6238,6 @@
                 input.value = '';
                 autoResize(input);
                 
-                // Bildirim ekle (karşı tarafa)
                 addNotification(privateChatWith, text.length > 30 ? text.substring(0, 30) + '...' : text, 'private');
                 
                 if (usersRef) {
@@ -6262,6 +6247,27 @@
             } catch (error) {
                 console.error('Mesaj gönderme hatası:', error);
             }
+        }
+
+        function closePrivateChat() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            if (isAudioRecording) {
+                stopAudioRecording();
+            }
+            
+            // Dinleyicileri temizle
+            if (privateChatsRef && currentPrivateChatId) {
+                privateChatsRef.child(currentPrivateChatId).off();
+            }
+            
+            privateChatWith = null;
+            currentPrivateChatId = null;
+            document.getElementById('privateModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('private-input').value = '';
         }
 
         async function archiveAndTrimPrivateChat(chatId) {
