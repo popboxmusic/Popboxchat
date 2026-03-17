@@ -5795,15 +5795,30 @@
             const now = Date.now();
             const activeUsers = [];
 
+            // Aktif kullanıcıları topla
             Object.entries(users).forEach(([username, userData]) => {
                 if (!userData) return;
+                // Owner gizliyse ve gizliyse, sadece kendisi görebilsin
                 if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
                     (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
                     return;
                 }
                 const timeDiff = now - (userData.lastSeen || 0);
                 if (timeDiff < ONLINE_THRESHOLD) {
-                    activeUsers.push({ username, ...userData, secondsAgo: Math.floor(timeDiff / 1000) });
+                    // Rolü belirle: owner, admin, coadmin, operator, user
+                    let role = 'user';
+                    if (username === SECURE_CONFIG.OWNER_CONFIG.username) role = 'owner';
+                    else if (adminList.includes(username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(username)) role = 'admin';
+                    else if (coAdminList.includes(username)) role = 'coadmin';
+                    else if (operatorList.includes(username)) role = 'operator';
+                    
+                    activeUsers.push({ 
+                        username, 
+                        ...userData, 
+                        secondsAgo: Math.floor(timeDiff / 1000),
+                        role: role,
+                        rolePriority: role === 'owner' ? 0 : role === 'admin' ? 1 : role === 'coadmin' ? 2 : role === 'operator' ? 3 : 4
+                    });
                 }
             });
 
@@ -5811,7 +5826,16 @@
                 container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Çevrimiçi kimse yok</div>';
                 return;
             }
-            activeUsers.sort((a, b) => a.secondsAgo - b.secondsAgo);
+            
+            // Sıralama: rolePriority (0-4) ve ardından username (alfabetik)
+            activeUsers.sort((a, b) => {
+                if (a.rolePriority !== b.rolePriority) {
+                    return a.rolePriority - b.rolePriority;
+                }
+                // Aynı rolde ise alfabetik
+                return a.username.localeCompare(b.username);
+            });
+
             let html = '';
             activeUsers.forEach(user => {
                 const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
@@ -6123,16 +6147,8 @@
                 updatePrivateMessages(snapshot.val());
             });
             
-            privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message && message.sender !== currentUser.name) {
-                    let msgText = message.text || '';
-                    if (message.image) msgText = '📸 Fotoğraf';
-                    else if (message.video) msgText = '🎥 Video';
-                    else if (message.audio) msgText = '🎤 Ses Kaydı';
-                    addNotification(message.sender, msgText, 'private');
-                }
-            });
+            // NOT: Bu dinleyici mesajların iki kere gösterilmesine neden oluyordu. Kaldırıldı.
+            // privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => { ... });
         }
 
         function updatePrivateMessages(messages) {
