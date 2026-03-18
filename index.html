@@ -3197,6 +3197,7 @@
             .ad-timer span {
                 font-size: 14px;
                 font-weight: 700;
+                color: var(--youtube-red);
             }
             .ad-footer {
                 padding: 10px 12px;
@@ -5711,7 +5712,10 @@
                 if (cachedMessages.length > MESSAGE_LIMIT) {
                     cachedMessages.shift();
                 }
-                appendMessageToUI(newMessage);
+                // DÜZELTME: Aynı mesaj ID'si varsa ekleme
+                if (!document.getElementById(`msg_${snapshot.key}`)) {
+                    appendMessageToUI(newMessage);
+                }
             });
 
             bansRef.on('child_added', (snapshot) => { cachedBans[snapshot.key] = snapshot.val(); });
@@ -6741,18 +6745,13 @@
         }
 
         function initApp() {
-            document.getElementById('message-input').addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            });
-            document.getElementById('private-input').addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendPrivateMessage();
-                }
-            });
+            // DÜZELTME: Tekrar eklenen event listener'ları temizle
+            document.getElementById('message-input').removeEventListener('keydown', handleMessageKeyDown);
+            document.getElementById('message-input').addEventListener('keydown', handleMessageKeyDown);
+            
+            document.getElementById('private-input').removeEventListener('keydown', handlePrivateKeyDown);
+            document.getElementById('private-input').addEventListener('keydown', handlePrivateKeyDown);
+            
             document.getElementById('overlay').addEventListener('click', function(e) {
                 if (e.target === this) {
                     closePrivateChat();
@@ -6773,21 +6772,23 @@
                     document.getElementById('operatorPanel').classList.remove('active');
                 }
             });
+            
             if (typeof YT !== 'undefined') {
                 initYouTubePlayer();
             } else {
                 setTimeout(initYouTubePlayer, 1000);
             }
+            
             if (messagesRef) {
-                messagesRef.limitToLast(MESSAGE_LIMIT).off('child_added'); // ÖNCE TEMİZLE
+                messagesRef.limitToLast(MESSAGE_LIMIT).off('child_added');
                 messagesRef.limitToLast(MESSAGE_LIMIT).on('child_added', (snapshot) => {
                     const newMessage = { id: snapshot.key, ...snapshot.val() };
-                    // DÜZELTME: Aynı mesaj zaten varsa ekleme
                     if (!document.getElementById(`msg_${snapshot.key}`)) {
                         appendMessageToUI(newMessage);
                     }
                 });
             }
+            
             if (coAdminsRef) {
                 coAdminsRef.on('value', (snapshot) => {
                     coAdminList = snapshot.val() || [];
@@ -6795,6 +6796,7 @@
                     if (isOwner) updateOwnerCoAdminListFromCache();
                 });
             }
+            
             if (operatorsRef) {
                 operatorsRef.on('value', (snapshot) => {
                     operatorList = snapshot.val() || [];
@@ -6802,6 +6804,7 @@
                     if (isOwner) updateOwnerOperatorListFromCache();
                 });
             }
+            
             if (adminListRef) {
                 adminListRef.on('value', (snapshot) => {
                     adminList = snapshot.val() || [];
@@ -6809,10 +6812,12 @@
                     if (isOwner) updateOwnerAdminListFromCache();
                 });
             }
+            
             loadRegisteredUsers();
             loadOperators();
             loadAdminList();
             loadCustomCommands();
+            
             setInterval(() => {
                 if (currentUser && usersRef) {
                     usersRef.child(currentUser.name).update({
@@ -6821,6 +6826,7 @@
                     });
                 }
             }, PING_INTERVAL);
+            
             window.addEventListener('beforeunload', function() {
                 if (currentUser && usersRef) {
                     usersRef.child(currentUser.name).update({ isOnline: false, lastSeen: Date.now() });
@@ -6828,6 +6834,7 @@
                 if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
                 if (audioStream) audioStream.getTracks().forEach(track => track.stop());
             });
+            
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') {
                     closeAllPanelsAndModals();
@@ -6835,6 +6842,23 @@
             });
             
             startAdCycle();
+        }
+
+        // DÜZELTME: Ayrı event handler fonksiyonları
+        function handleMessageKeyDown(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                sendMessage();
+            }
+        }
+
+        function handlePrivateKeyDown(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                sendPrivateMessage();
+            }
         }
 
         function checkAdminStatus() {
@@ -7448,17 +7472,6 @@
             await sendToAdminChannel(`🔊 **${username}** kullanıcısının susturulması kaldırıldı.\nYetkili: ${currentUser.name}`);
             
             addSystemMessage(`🔊 ${username} susturulması kaldırıldı.`);
-        }
-
-        function handleEnterKey(event, sendFunctionName) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                if (sendFunctionName === 'sendMessage') {
-                    sendMessage();
-                } else if (sendFunctionName === 'sendPrivateMessage') {
-                    sendPrivateMessage();
-                }
-            }
         }
 
         async function updateBannedUsers() {
