@@ -3117,8 +3117,7 @@
             
             .playlist-drawer.active,
             .drawer-panel.active {
-                height: 100% !important;
-                max-height: 100% !important;
+                height: 100%;
                 z-index: 2500;
             }
             .playlist-drawer .playlist-items,
@@ -5774,6 +5773,7 @@
                 if (cachedMessages.length > MESSAGE_LIMIT) {
                     cachedMessages.shift();
                 }
+                // DÜZELTME: Aynı mesaj ID'si varsa ekleme
                 if (!document.getElementById(`msg_${snapshot.key}`)) {
                     appendMessageToUI(newMessage);
                 }
@@ -5850,6 +5850,7 @@
                 }
             });
 
+            // YETKİ SIRASINA GÖRE SIRALA (owner > admin > coadmin > operator > user)
             activeUsers.sort((a, b) => {
                 const getRolePriority = (user) => {
                     if (user.username === SECURE_CONFIG.OWNER_CONFIG.username) return 1;
@@ -6014,6 +6015,7 @@
         function appendMessageToUI(message) {
             const container = document.getElementById('messages');
             
+            // DÜZELTME: Aynı mesaj ID'si varsa ekleme
             if (document.getElementById(`msg_${message.id}`)) return;
             
             const messageDiv = document.createElement('div');
@@ -6134,15 +6136,17 @@
                 addSystemMessage('Kendinle özel sohbet başlatamazsın!');
                 return;
             }
-            
-            // TAKİP ETME ŞARTI KALDIRILDI - ARTIK HERKES ÖZEL MESAJ GÖNDEREBİLİR
-            
+            const following = await isFollowing(username);
+            if (!following && !isOwner && !isAdmin) {
+                addSystemMessage(`❌ ${username} ile mesajlaşmak için önce onu takip etmelisiniz.`);
+                return;
+            }
             if (await checkBlockStatus(username)) {
                 addSystemMessage(`⛔ ${username} kullanıcısı sizi engellemiş veya siz engellemişsiniz.`);
                 return;
             }
             
-            // ÖNCEKİ DİNLEYİCİYİ TEMİZLE
+            // ÖNCEKİ DİNLEYİCİYİ TEMİZLE (ÇİFT MESAJI ENGELLER)
             if (privateChatWith && currentPrivateChatId && privateChatsRef) {
                 privateChatsRef.child(currentPrivateChatId).off();
             }
@@ -6175,10 +6179,11 @@
             });
             
             // SONRA YENİ EKLENENLERİ DİNLE
-            privateChatsRef.child(currentPrivateChatId).off('child_added');
+            privateChatsRef.child(currentPrivateChatId).off('child_added'); // ÖNCE TEMİZLE
             privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
                 const message = snapshot.val();
                 if (message) {
+                    // Bu mesaj zaten eklenmiş mi kontrol et
                     const existingMsg = document.getElementById(`private_msg_${snapshot.key}`);
                     if (!existingMsg) {
                         if (message.sender !== currentUser.name) {
@@ -6197,6 +6202,7 @@
         function appendPrivateMessageToUI(message) {
             const container = document.getElementById('privateMessages');
             
+            // Aynı ID'li mesaj varsa ekleme
             if (document.getElementById(`private_msg_${message.id}`)) return;
             
             const messageDiv = document.createElement('div');
@@ -6252,6 +6258,7 @@
             const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
             messagesArray.sort((a, b) => a.timestamp - b.timestamp);
             
+            // ÖNCE MEVCUT MESAJLARI TEMİZLE (YENİDEN YÜKLEMEDE ÇİFTLİĞİ ENGELLER)
             container.innerHTML = '';
             
             const now = Date.now();
@@ -6324,6 +6331,7 @@
                 stopAudioRecording();
             }
             
+            // Dinleyicileri temizle
             if (privateChatsRef && currentPrivateChatId) {
                 privateChatsRef.child(currentPrivateChatId).off();
             }
@@ -6799,6 +6807,7 @@
         }
 
         function initApp() {
+            // DÜZELTME: Tekrar eklenen event listener'ları temizle
             document.getElementById('message-input').removeEventListener('keydown', handleMessageKeyDown);
             document.getElementById('message-input').addEventListener('keydown', handleMessageKeyDown);
             
@@ -6897,6 +6906,7 @@
             startAdCycle();
         }
 
+        // DÜZELTME: Ayrı event handler fonksiyonları
         function handleMessageKeyDown(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -8710,7 +8720,7 @@
                     (!playlistBtn || !playlistBtn.contains(e.target))) {
                     playlistDrawer.classList.remove('active');
                 }
-                // Takipçi/Takip edilen/Arama drawer'ları için kapanma kontrolü
+                // Takipçi/Takip edilen/Arama drawer'ları için kapanma kontrolü (aynı playlist gibi)
                 const followersDrawer = document.getElementById('followersDrawer');
                 const followersBtn = document.querySelector('.follow-icon-btn.followers');
                 if (followersDrawer.classList.contains('active') && 
