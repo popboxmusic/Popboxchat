@@ -4225,7 +4225,7 @@
         const PING_INTERVAL = 30000;
         const MESSAGE_LIMIT = 15;
         const ONLINE_THRESHOLD = 60000;
-        const CACHE_SIZE_LIMIT = 5 * 1024 * 1024;
+        const CACHE_SIZE_LIMIT = 5 * 1024 * 1025; // Biraz artırıldı.
         
         let dailyWriteCount = 0;
         let lastWriteReset = Date.now();
@@ -5718,11 +5718,13 @@
         }
 
         function setupEfficientListeners() {
+            // PERF: Sadece child_added dinleyerek gereksiz yükü azalt.
+            messagesRef.limitToLast(MESSAGE_LIMIT).off('child_added'); // Önceki listener'ları temizle
             messagesRef.limitToLast(MESSAGE_LIMIT).on('child_added', (snapshot) => {
                 const newMessage = { id: snapshot.key, ...snapshot.val() };
                 cachedMessages.push(newMessage);
                 if (cachedMessages.length > MESSAGE_LIMIT) {
-                    cachedMessages.shift();
+                    const removed = cachedMessages.shift();
                 }
                 if (!document.getElementById(`msg_${snapshot.key}`)) {
                     appendMessageToUI(newMessage);
@@ -8613,6 +8615,18 @@
                 incrementWriteCount();
                 const msgDiv = document.getElementById(`private_msg_${messageId}`);
                 if (msgDiv) msgDiv.remove();
+            }
+        }
+
+        // PERF: handleEnterKey fonksiyonu eklendi (HTML'de onkeydown'dan çağrılıyor)
+        function handleEnterKey(event, action) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                if (action === 'sendMessage') {
+                    sendMessage();
+                } else if (action === 'sendPrivateMessage') {
+                    sendPrivateMessage();
+                }
             }
         }
 
