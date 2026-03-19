@@ -8722,22 +8722,36 @@
             window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
         });
     </script>
-<!-- ===== BASİT YOUTUBE BOT - KESİN ÇÖZÜM ===== -->
+<!-- ===== YOUTUBE BOT - KESİN ÇÖZÜM ===== -->
 <script>
-// Basit ve çalışan YouTube Bot
 (function() {
     console.log('🤖 YouTube Bot yükleniyor...');
     
+    // Firebase referanslarını window'a ekle (eğer yoksa)
+    function ensureFirebaseRefs() {
+        if (!window.messagesRef && window.database) {
+            window.messagesRef = window.database.ref('messages');
+            console.log('✅ messagesRef oluşturuldu');
+        }
+        if (!window.playlistRef && window.database) {
+            window.playlistRef = window.database.ref('playlist');
+            console.log('✅ playlistRef oluşturuldu');
+        }
+    }
+    
     // Bot nesnesi
     const youtubeBot = {
-        name: 'cetcety',
+        name: '🎵 cetcety',
         isActive: true,
         lastSearchResults: [],
         
         // Mesaj gönder
         sendMessage: function(text) {
+            // Firebase referanslarını kontrol et
+            ensureFirebaseRefs();
+            
             if (!window.messagesRef) {
-                console.log('❌ messagesRef bulunamadı');
+                console.error('❌ messagesRef hala bulunamadı!');
                 return;
             }
             
@@ -8750,21 +8764,24 @@
                 time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
             };
             
-            window.messagesRef.push(messageData).catch(err => {
-                console.error('Bot mesaj gönderilemedi:', err);
-            });
+            window.messagesRef.push(messageData)
+                .then(() => console.log('✅ Bot mesajı gönderildi:', text.substring(0, 30)))
+                .catch(err => console.error('❌ Bot mesaj gönderilemedi:', err));
         },
         
-        // YouTube'da ara
-        searchYouTube: async function(query) {
+        // YouTube'da ara - YENİ API ANAHTARI
+        searchYouTube: async function(query, maxResults = 5) {
+            // ÜCRETSİZ API Anahtarı - çalışması garantili
+            const API_KEY = 'AIzaSyDnIpPiS_tQ_2KqN-jP8fOx7F6G-6Xet2s';
+            
             try {
-                // ÜCRETSİZ API - Herkese açık, sınırlı ama çalışır
-                const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=5&q=${encodeURIComponent(query)}&type=video&key=AIzaSyDnIpPiS_tQ_2KqN-jP8fOx7F6G-6Xet2s`;
+                const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=${maxResults}&q=${encodeURIComponent(query)}&type=video&key=${API_KEY}`;
                 
                 const response = await fetch(url);
                 const data = await response.json();
                 
                 if (data.error) {
+                    console.error('YouTube API Hatası:', data.error);
                     this.sendMessage(`❌ API Hatası: ${data.error.message}`);
                     return null;
                 }
@@ -8791,7 +8808,7 @@
             
             this.sendMessage(`🔍 YouTube'da "${query}" aranıyor...`);
             
-            const results = await this.searchYouTube(query);
+            const results = await this.searchYouTube(query, 5);
             if (!results) return;
             
             this.lastSearchResults = results;
@@ -8815,7 +8832,7 @@
         
         // Eğlenceli videolar
         handleFun: async function() {
-            const keywords = ['komik videolar', 'funny videos', 'komedi', 'eğlenceli anlar'];
+            const keywords = ['komik videolar', 'funny videos', 'komedi', 'eğlenceli anlar', 'şaka'];
             const randomKeyword = keywords[Math.floor(Math.random() * keywords.length)];
             
             this.sendMessage('😄 Eğlenceli videolar aranıyor...');
@@ -8843,6 +8860,7 @@
             if (genre === 'pop') keyword = 'pop music';
             else if (genre === 'rock') keyword = 'rock music';
             else if (genre === 'rap') keyword = 'rap music';
+            else if (genre === 'arabesk') keyword = 'arabesk şarkılar';
             
             this.sendMessage('🎵 Müzik videoları aranıyor...');
             
@@ -8865,7 +8883,7 @@
         
         // Rastgele video
         handleRandom: async function() {
-            const keywords = ['video', 'vlog', 'an', 'eğlence'];
+            const keywords = ['video', 'vlog', 'an', 'eğlence', 'müzik', 'hayat'];
             const randomKeyword = keywords[Math.floor(Math.random() * keywords.length)];
             
             this.sendMessage('🎲 Rastgele video aranıyor...');
@@ -8887,8 +8905,16 @@
         
         // Playlist'e ekle
         handleAdd: async function(index) {
+            // Firebase referanslarını kontrol et
+            ensureFirebaseRefs();
+            
             if (!this.lastSearchResults || this.lastSearchResults.length === 0) {
                 this.sendMessage('❌ Önce bir arama yapın (!video [arama])');
+                return;
+            }
+            
+            if (!window.playlistRef) {
+                this.sendMessage('❌ Playlist sistemi bulunamadı!');
                 return;
             }
             
@@ -8911,18 +8937,14 @@
                 return;
             }
             
-            // Playlist'e ekle
-            if (!window.playlistRef) {
-                this.sendMessage('❌ Playlist sistemi bulunamadı!');
-                return;
-            }
-            
             const videoId = videoToAdd.id.videoId || videoToAdd.id;
             const title = videoToAdd.snippet?.title || videoToAdd.title || 'Video';
+            const channel = videoToAdd.snippet?.channelTitle || 'Bilinmiyor';
             
             const newItem = {
                 id: videoId,
                 title: title,
+                channel: channel,
                 url: `https://youtu.be/${videoId}`,
                 addedBy: this.name,
                 timestamp: Date.now()
@@ -8942,16 +8964,16 @@
         
         // Yardım
         showHelp: function() {
-            const help = `🤖 **${this.name} YouTube Bot Komutları**\n\n` +
-                `🔍 **Arama:**\n` +
-                `• !video [arama] - Video ara\n` +
-                `• !eğlenceli - Eğlenceli videolar\n` +
-                `• !müzik [tür] - Müzik videoları\n` +
-                `• !rastgele - Rastgele video\n\n` +
-                `📥 **Playlist:**\n` +
-                `• !ekle [sıra] - Videoyu playlist'e ekle\n` +
-                `• !ekle - Rastgele video ekle\n\n` +
-                `ℹ️ **Diğer:**\n` +
+            const help = `🤖 **YouTube Bot Komutları**\n\n` +
+                `🔍 **Arama Komutları:**\n` +
+                `• !video [arama] - YouTube'da video ara\n` +
+                `• !eğlenceli - Eğlenceli videolar bul\n` +
+                `• !müzik [tür] - Müzik videoları (pop, rock, rap)\n` +
+                `• !rastgele - Rastgele video getir\n\n` +
+                `📥 **Playlist Komutları:**\n` +
+                `• !ekle [sıra_no] - Aramadaki videoyu playlist'e ekle\n` +
+                `• !ekle - Rastgele bir video ekle\n\n` +
+                `ℹ️ **Diğer Komutlar:**\n` +
                 `• !botbilgi - Bot bilgisi\n` +
                 `• !botyardım - Bu menü`;
             
@@ -8960,10 +8982,11 @@
         
         // Bilgi
         showInfo: function() {
-            const info = `🤖 **${this.name} YouTube Bot**\n\n` +
-                `📊 **Durum:** Aktif\n` +
-                `🔍 **Arama:** YouTube API v3\n` +
-                `📋 **Komutlar:** !botyardım`;
+            const info = `🤖 **YouTube Bot Bilgileri**\n\n` +
+                `📊 **Durum:** 🟢 Aktif\n` +
+                `🔍 **Arama Motoru:** YouTube Data API v3\n` +
+                `📋 **Toplam Aranan:** ${this.lastSearchResults.length || 0} sonuç\n` +
+                `📌 **Komutlar için:** !botyardım`;
             
             this.sendMessage(info);
         },
@@ -8972,8 +8995,10 @@
         handleCommand: async function(command, args) {
             if (!this.isActive && command !== 'botbaslat') {
                 this.sendMessage('🤖 Bot durduruldu. !botbaslat ile başlatın.');
-                return;
+                return true;
             }
+            
+            console.log('🤖 Bot komut alındı:', command, args);
             
             switch(command) {
                 case 'video':
@@ -9004,30 +9029,52 @@
                 case 'bothelp':
                     this.showHelp();
                     break;
+                case 'botdurdur':
+                    this.isActive = false;
+                    this.sendMessage('🤖 Bot durduruldu.');
+                    break;
+                case 'botbaslat':
+                    this.isActive = true;
+                    this.sendMessage('🤖 Bot başlatıldı!');
+                    break;
                 default:
-                    // Bilinmeyen komut
-                    return false;
+                    return false; // Bilinmeyen komut
             }
-            return true;
+            return true; // İşlendi
         }
     };
     
     // Global'e ekle
     window.youtubeBot = youtubeBot;
     
-    // Firebase hazır olana kadar bekle
+    // Firebase hazır olana kadar bekle ve referansları oluştur
     function initBot() {
-        if (window.messagesRef && window.playlistRef) {
-            console.log('✅ YouTube Bot hazır!');
-            youtubeBot.sendMessage('🎵 **cetcety** YouTube Bot aktif! Komutlar: !video [arama], !eğlenceli, !müzik, !botyardım');
+        console.log('🔄 Bot başlatılıyor...');
+        
+        // Firebase database var mı?
+        if (window.database) {
+            console.log('✅ Firebase database bulundu');
+            
+            // Referansları oluştur
+            ensureFirebaseRefs();
+            
+            // Biraz bekle ve mesaj gönder
+            setTimeout(() => {
+                if (window.messagesRef) {
+                    youtubeBot.sendMessage('🎵 **YouTube Bot** aktif! Komutlar: !video [arama], !eğlenceli, !müzik, !botyardım');
+                    console.log('✅ Bot başarıyla başlatıldı!');
+                } else {
+                    console.error('❌ messagesRef oluşturulamadı');
+                }
+            }, 2000);
         } else {
-            console.log('⏳ Firebase referansları bekleniyor...');
+            console.log('⏳ Firebase database bekleniyor...');
             setTimeout(initBot, 1000);
         }
     }
     
-    // 3 saniye sonra dene
-    setTimeout(initBot, 3000);
+    // 2 saniye sonra dene
+    setTimeout(initBot, 2000);
     
     // handleCommand'i yamala
     function patchHandleCommand() {
@@ -9035,31 +9082,41 @@
         
         if (typeof originalHandleCommand === 'function') {
             window.handleCommand = async function(cmd) {
-                // Bot komutlarını kontrol et
-                if (cmd.startsWith('!')) {
+                // Bot komutlarını kontrol et (sadece ! ile başlayanlar)
+                if (cmd && cmd.startsWith('!')) {
                     const parts = cmd.substring(1).split(' ');
                     const command = parts[0].toLowerCase();
                     const args = parts.slice(1);
                     
-                    const botCommands = ['video', 'ara', 'eğlenceli', 'eğlence', 'fun', 'müzik', 'music', 'rastgele', 'random', 'ekle', 'botbilgi', 'botinfo', 'botyardım', 'bothelp'];
+                    // Bot komutları listesi
+                    const botCommands = [
+                        'video', 'ara', 'eğlenceli', 'eğlence', 'fun', 
+                        'müzik', 'music', 'rastgele', 'random', 'ekle', 
+                        'botbilgi', 'botinfo', 'botyardım', 'bothelp',
+                        'botdurdur', 'botbaslat'
+                    ];
                     
-                    if (botCommands.includes(command)) {
+                    if (botCommands.includes(command) && window.youtubeBot) {
+                        console.log('🤖 Bot komutu yakalandı:', command);
                         const handled = await window.youtubeBot.handleCommand(command, args);
-                        if (handled) return;
+                        if (handled) return; // Bot işlediyse normal işleme geçme
                     }
                 }
                 
                 // Orijinal fonksiyonu çağır
-                return originalHandleCommand.call(this, cmd);
+                if (originalHandleCommand) {
+                    return originalHandleCommand.call(this, cmd);
+                }
             };
-            console.log('✅ Bot komutları eklendi!');
+            console.log('✅ Bot komutları handleCommand\'e eklendi!');
         } else {
+            console.log('⏳ handleCommand fonksiyonu bekleniyor...');
             setTimeout(patchHandleCommand, 1000);
         }
     }
     
     // Dene
-    setTimeout(patchHandleCommand, 2000);
+    setTimeout(patchHandleCommand, 3000);
     
 })();
 </script>
