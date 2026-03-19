@@ -997,6 +997,7 @@
             width: 100%;
             height: 100%;
             border: none;
+            pointer-events: auto; /* Tıklanabilir olması için */
         }
 
         .ad-footer {
@@ -1148,6 +1149,12 @@
             transform: scale(1.05);
             box-shadow: 0 4px 12px rgba(255, 0, 0, 0.3);
         }
+
+        .playlist-add-btn-small:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
         
         .playlist-items {
             display: flex;
@@ -1245,8 +1252,8 @@
             height: 60px;
             padding: 0 20px;
             display: flex;
-            align-items: center;
-            justify-content: space-between;
+            flex-direction: column;
+            justify-content: center;
             border-bottom: none;
             flex-shrink: 0;
             background: rgba(33, 33, 33, 0.3);
@@ -1265,6 +1272,12 @@
             align-items: center;
             gap: 8px;
         }
+
+        .chat-subtitle {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
         
         .online-count {
             background: rgba(33, 33, 33, 0.3);
@@ -1274,6 +1287,9 @@
             border: 1px solid var(--border-color);
             color: var(--text-secondary);
             backdrop-filter: blur(5px);
+            position: absolute;
+            top: 15px;
+            right: 20px;
         }
         
         .messages-area {
@@ -1928,7 +1944,7 @@
         }
         
         .private-header {
-            height: 60px;
+            height: 70px;
             padding: 0 20px;
             display: flex;
             align-items: center;
@@ -1946,8 +1962,15 @@
             color: var(--private);
             font-size: 16px;
             display: flex;
-            align-items: center;
-            gap: 12px;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .private-typing-indicator {
+            font-size: 11px;
+            color: var(--online);
+            font-weight: 400;
+            margin-left: 12px;
         }
         
         .private-actions {
@@ -3428,7 +3451,7 @@
                             </div>
                             <div class="ad-footer">
                                 <div class="ad-timer" id="adTimer">
-                                    <i class="fas fa-hourglass-half"></i> <span id="adTimerSeconds">60</span>sn
+                                    <i class="fas fa-hourglass-half"></i> <span id="adTimerSeconds">30</span>sn
                                 </div>
                                 <button class="ad-skip-btn" id="adSkipBtn" disabled>
                                     <i class="fas fa-forward"></i> Reklamı Atla
@@ -3455,7 +3478,7 @@
                 <div class="playlist-add-form">
                     <input type="text" id="playlistVideoTitleWeb" class="playlist-title-input-small" placeholder="Başlık">
                     <input type="text" id="playlistUrlWeb" class="playlist-input-small" placeholder="YouTube linki...">
-                    <button class="playlist-add-btn-small" onclick="addToPlaylistFromWeb()"><i class="fas fa-plus"></i> Ekle</button>
+                    <button class="playlist-add-btn-small" id="addVideoBtnWeb" onclick="addToPlaylistFromWeb()"><i class="fas fa-plus"></i> Ekle</button>
                 </div>
                 <div class="playlist-items" id="playlistItemsWeb"></div>
             </div>
@@ -3468,6 +3491,7 @@
                 <div class="chat-title">
                     <span id="currentChatTitle">Genel Sohbet</span>
                 </div>
+                <div class="chat-subtitle" id="typingIndicator" style="display: none;">birisi yazıyor...</div>
                 <div class="online-count">
                     <span id="chatOnlineCount">0</span> kişi
                 </div>
@@ -3511,7 +3535,7 @@
         <div class="playlist-add-form" style="padding: 0 16px 16px 16px;">
             <input type="text" id="playlistVideoTitleMobile" class="playlist-title-input-small" placeholder="Başlık">
             <input type="text" id="playlistUrlMobile" class="playlist-input-small" placeholder="YouTube linki...">
-            <button class="playlist-add-btn-small" onclick="addToPlaylistFromMobile()"><i class="fas fa-plus"></i> Ekle</button>
+            <button class="playlist-add-btn-small" id="addVideoBtnMobile" onclick="addToPlaylistFromMobile()"><i class="fas fa-plus"></i> Ekle</button>
         </div>
         <div class="playlist-items" id="playlistDrawerItems"></div>
     </div>
@@ -4131,26 +4155,13 @@
         
         // ========== GLOBAL DEĞİŞKENLER ==========
         let database;
-        let usersRef;
-        let messagesRef;
-        let privateChatsRef;
-        let privateChatsArchiveRef;
-        let coAdminsRef;
-        let bansRef;
-        let registeredUsersRef;
-        let operatorsRef;
-        let userLocksRef;
-        let adminPasswordsRef;
-        let customCommandsRef;
-        let adminListRef;
-        let playlistRef;
-        let profilesRef;
-        let blocksRef;
-        let reportsRef;
-        let globalBansRef;
-        let followingRef;
-        let followersRef;
-        let adLinksRef;
+        // AYRI FIREBASE REFERANSLARI (Madde 6)
+        let usersRef, messagesRef, privateChatsRef, privateChatsArchiveRef;
+        let coAdminsRef, bansRef, globalBansRef, registeredUsersRef, operatorsRef;
+        let userLocksRef, adminPasswordsRef, customCommandsRef, adminListRef;
+        let playlistRef, profilesRef, blocksRef, reportsRef;
+        let followingRef, followersRef, adLinksRef;
+        let typingRef; // "Yazıyor..." durumu için
 
         // OPTİMİZASYON: Veri önbellekleme
         let cachedOnlineUsers = {};
@@ -4212,6 +4223,10 @@
 
         let ownerPrivateListenerActive = false;
 
+        // "Yazıyor..." değişkenleri
+        let typingTimeout = {};
+        const TYPING_TIMEOUT_DURATION = 3000; // 3 saniye
+
         // ========== GÜNLÜK LİMİT OPTİMİZASYONLARI ==========
         const PING_INTERVAL = 30000;
         const MESSAGE_LIMIT = 15;
@@ -4242,7 +4257,7 @@
 
         // ========== REKLAM OVERLAY FONKSİYONLARI ==========
         let adTimerInterval = null;
-        let adSkipTime = 60;
+        let adSkipTime = 30; // 30 saniye
         let adOverlay = document.getElementById('adOverlay');
         let adTimerSpan = document.getElementById('adTimerSeconds');
         let adSkipBtn = document.getElementById('adSkipBtn');
@@ -4293,7 +4308,7 @@
             return DEFAULT_AD_CONTENTS[randomIndex];
         }
 
-        function showAd(adContent = null, duration = 60) {
+        function showAd(adContent = null, duration = 30) {
             if (adOverlay.classList.contains('active')) {
                 closeAd();
             }
@@ -4330,16 +4345,16 @@
             }
             adOverlay.classList.remove('active');
             adSkipBtn.disabled = true;
-            adTimerSpan.textContent = '60';
+            adTimerSpan.textContent = '30';
         }
 
         function startAdCycle() {
             if (adCycleInterval) clearInterval(adCycleInterval);
             setTimeout(() => {
-                if (adCycleActive) showAd(null, 60);
+                if (adCycleActive) showAd(null, 30);
             }, 10000);
             adCycleInterval = setInterval(() => {
-                if (adCycleActive) showAd(null, 60);
+                if (adCycleActive) showAd(null, 30);
             }, 600000);
         }
 
@@ -4362,7 +4377,7 @@
         }
 
         function showAdManually() {
-            showAd(null, 60);
+            showAd(null, 30);
         }
 
         adSkipBtn.addEventListener('click', closeAd);
@@ -4528,6 +4543,10 @@
         window.addEventListener('load', updateMobileUI);
 
         function addToPlaylistFromMobile() {
+            if (!isOwner && !isAdmin) {
+                alert('Bu işlem için yetkiniz yok!');
+                return;
+            }
             const url = document.getElementById('playlistUrlMobile').value.trim();
             const customTitle = document.getElementById('playlistVideoTitleMobile').value.trim();
             if (!url) return;
@@ -4603,6 +4622,10 @@
             const snapshot = await followingRef.child(currentUser.name).once('value');
             const data = snapshot.val() || {};
             followingList = Object.keys(data).filter(username => data[username] === true);
+            // Drawer açıksa güncelle
+            if (document.getElementById('followingDrawer').classList.contains('active')) {
+                openFollowingDrawer();
+            }
         }
 
         async function loadFollowersList() {
@@ -4610,6 +4633,10 @@
             const snapshot = await followersRef.child(currentUser.name).once('value');
             const data = snapshot.val() || {};
             followersList = Object.keys(data).filter(username => data[username] === true);
+            // Drawer açıksa güncelle
+            if (document.getElementById('followersDrawer').classList.contains('active')) {
+                openFollowersDrawer();
+            }
         }
 
         async function followUser(username) {
@@ -5594,6 +5621,7 @@
                     if (snap.val() === true) {
                         isFirebaseConnected = true;
 
+                        // AYRI REFERANSLAR (Madde 6)
                         usersRef = database.ref('onlineUsers');
                         messagesRef = database.ref('messages');
                         privateChatsRef = database.ref('privateChats');
@@ -5614,6 +5642,7 @@
                         followingRef = database.ref('following');
                         followersRef = database.ref('followers');
                         adLinksRef = database.ref('adLinks');
+                        typingRef = database.ref('typing'); // "Yazıyor..." durumu için
 
                         initOwnerPassword();
                         loadCustomCommands();
@@ -5659,33 +5688,35 @@
                             startOwnerPrivateMessageMonitoring();
                         }
 
+                        // AYRI LİSTENERS (Madde 6)
                         usersRef.on('value', (snapshot) => {
-                            updateOnlineCount(snapshot.val());
+                            cachedOnlineUsers = snapshot.val() || {};
+                            updateOnlineCount(cachedOnlineUsers);
                             if (isOwner) updateOwnerPanelFromCache();
                             if (isAdmin) updateAdminPanelFromCache();
                             if (isCoAdmin) updateCoAdminPanelFromCache();
                             if (isOperator) updateOperatorPanelFromCache();
                         });
 
-                        bansRef.on('value', () => { if (isOwner) updateOwnerPanelFromCache(); if (isAdmin) updateAdminPanelFromCache(); if (isCoAdmin) updateCoAdminPanelFromCache(); });
-                        reportsRef.on('value', () => { if (isOwner) updateOwnerReportListFromCache(); if (isAdmin) updateAdminReportListFromCache(); });
-                        blocksRef.on('value', () => { if (isOwner) updateOwnerBlockListFromCache(); });
-                        registeredUsersRef.on('value', () => { if (isOwner) updateOwnerPanelFromCache(); });
-                        customCommandsRef.on('value', () => { if (isOwner) updateOwnerCommandsList(); });
+                        bansRef.on('value', (snapshot) => { cachedBans = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); if (isAdmin) updateAdminPanelFromCache(); if (isCoAdmin) updateCoAdminPanelFromCache(); });
+                        reportsRef.on('value', (snapshot) => { cachedReports = snapshot.val() || {}; if (isOwner) updateOwnerReportListFromCache(); if (isAdmin) updateAdminReportListFromCache(); });
+                        blocksRef.on('value', (snapshot) => { cachedBlocks = snapshot.val() || {}; if (isOwner) updateOwnerBlockListFromCache(); });
+                        registeredUsersRef.on('value', (snapshot) => { cachedRegisteredUsers = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); });
+                        customCommandsRef.on('value', (snapshot) => { customCommands = snapshot.val() || {}; if (isOwner) updateOwnerCommandsList(); });
 
+                        // Takipleşme dinleyicileri (anlık güncelleme için)
                         if (currentUser) {
                             followingRef.child(currentUser.name).on('value', () => {
-                                loadFollowingList();
-                                if (document.getElementById('followingDrawer').classList.contains('active')) {
-                                    openFollowingDrawer();
-                                }
+                                loadFollowingList(); // Listeyi yeniden yükle ve drawer'ı güncelle
                             });
                             followersRef.child(currentUser.name).on('value', () => {
-                                loadFollowersList();
-                                if (document.getElementById('followersDrawer').classList.contains('active')) {
-                                    openFollowersDrawer();
-                                }
+                                loadFollowersList(); // Listeyi yeniden yükle ve drawer'ı güncelle
                             });
+                        }
+
+                        // "Yazıyor..." durumu için dinleyici (Madde 4)
+                        if (currentUser && privateChatWith) {
+                            listenForTyping();
                         }
                     }
                 });
@@ -5695,66 +5726,17 @@
         }
 
         function setupEfficientListeners() {
-            usersRef.on('child_changed', (snapshot) => {
-                const username = snapshot.key;
-                const userData = snapshot.val();
-                cachedOnlineUsers[username] = userData;
-                updateOnlineCount(cachedOnlineUsers);
-            });
-
-            usersRef.on('child_removed', (snapshot) => {
-                const username = snapshot.key;
-                delete cachedOnlineUsers[username];
-                updateOnlineCount(cachedOnlineUsers);
-            });
-
-            usersRef.once('value', (snapshot) => {
-                cachedOnlineUsers = snapshot.val() || {};
-                updateOnlineCount(cachedOnlineUsers);
-            });
-
+            // Sadece son 15 mesajı dinle
             messagesRef.limitToLast(MESSAGE_LIMIT).on('child_added', (snapshot) => {
                 const newMessage = { id: snapshot.key, ...snapshot.val() };
                 cachedMessages.push(newMessage);
                 if (cachedMessages.length > MESSAGE_LIMIT) {
                     cachedMessages.shift();
                 }
-                // DÜZELTME: Aynı mesaj ID'si varsa ekleme
                 if (!document.getElementById(`msg_${snapshot.key}`)) {
                     appendMessageToUI(newMessage);
                 }
             });
-
-            bansRef.on('child_added', (snapshot) => { cachedBans[snapshot.key] = snapshot.val(); });
-            bansRef.on('child_changed', (snapshot) => { cachedBans[snapshot.key] = snapshot.val(); });
-            bansRef.on('child_removed', (snapshot) => { delete cachedBans[snapshot.key]; });
-
-            reportsRef.on('child_added', (snapshot) => { cachedReports[snapshot.key] = snapshot.val(); });
-            reportsRef.on('child_changed', (snapshot) => { cachedReports[snapshot.key] = snapshot.val(); });
-            reportsRef.on('child_removed', (snapshot) => { delete cachedReports[snapshot.key]; });
-
-            blocksRef.on('child_added', (snapshot) => { 
-                if (!cachedBlocks[snapshot.key]) cachedBlocks[snapshot.key] = {};
-                cachedBlocks[snapshot.key] = { ...cachedBlocks[snapshot.key], ...snapshot.val() };
-            });
-            blocksRef.on('child_changed', (snapshot) => {
-                if (!cachedBlocks[snapshot.key]) cachedBlocks[snapshot.key] = {};
-                cachedBlocks[snapshot.key] = { ...cachedBlocks[snapshot.key], ...snapshot.val() };
-            });
-            blocksRef.on('child_removed', (snapshot) => { delete cachedBlocks[snapshot.key]; });
-
-            registeredUsersRef.on('value', (snapshot) => {
-                cachedRegisteredUsers = snapshot.val() || {};
-            });
-
-            if (currentUser) {
-                followingRef.child(currentUser.name).on('child_added', (snapshot) => {
-                    cachedFollowingStatus[snapshot.key] = true;
-                });
-                followingRef.child(currentUser.name).on('child_removed', (snapshot) => {
-                    delete cachedFollowingStatus[snapshot.key];
-                });
-            }
         }
 
         function updateOnlineCount(users) {
@@ -5908,6 +5890,10 @@
         }
 
         function addToPlaylistFromWeb() {
+            if (!isOwner && !isAdmin) {
+                alert('Bu işlem için yetkiniz yok!');
+                return;
+            }
             const url = document.getElementById('playlistUrlWeb').value.trim();
             const customTitle = document.getElementById('playlistVideoTitleWeb').value.trim();
             if (!url) return;
@@ -6095,11 +6081,15 @@
             // ÖNCEKİ DİNLEYİCİYİ TEMİZLE (ÇİFT MESAJI ENGELLER)
             if (privateChatWith && currentPrivateChatId && privateChatsRef) {
                 privateChatsRef.child(currentPrivateChatId).off();
+                // "Yazıyor..." dinleyicisini de temizle
+                if (typingRef) {
+                    typingRef.child(currentPrivateChatId).off();
+                }
             }
             
             privateChatWith = username;
             currentPrivateChatId = generateChatId(currentUser.name, username);
-            document.getElementById('privateWith').innerHTML = `<i class="fas fa-lock"></i> ${username} ile özel sohbet`;
+            document.getElementById('privateWith').innerHTML = `<i class="fas fa-lock"></i> ${username}`;
             document.getElementById('privateModal').style.display = 'flex';
             document.getElementById('overlay').style.display = 'block';
             
@@ -6111,6 +6101,54 @@
             await updatePrivateFollowButton();
             
             loadPrivateMessages();
+            listenForTyping(); // "Yazıyor..." dinleyicisini başlat
+        }
+
+        // "Yazıyor..." durumunu gönderme (Madde 4)
+        function emitTyping() {
+            if (!currentPrivateChatId || !privateChatWith || !typingRef) return;
+            
+            // Mevcut timeout'u temizle
+            if (typingTimeout[currentPrivateChatId]) {
+                clearTimeout(typingTimeout[currentPrivateChatId]);
+            }
+            
+            // "Yazıyor..." durumunu true yap
+            typingRef.child(currentPrivateChatId).child(currentUser.name).set(true);
+            
+            // 3 saniye sonra durumu false yap
+            typingTimeout[currentPrivateChatId] = setTimeout(() => {
+                typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+            }, TYPING_TIMEOUT_DURATION);
+        }
+
+        // Karşı tarafın "Yazıyor..." durumunu dinleme (Madde 4)
+        function listenForTyping() {
+            if (!currentPrivateChatId || !typingRef) return;
+            
+            const typingIndicator = document.getElementById('typingIndicator'); // Genel sohbet için eklenen eleman
+            const privateTypingIndicator = document.querySelector('.private-typing-indicator'); // Özel sohbet için
+
+            typingRef.child(currentPrivateChatId).on('value', (snapshot) => {
+                const typingUsers = snapshot.val() || {};
+                const isOtherTyping = Object.keys(typingUsers).some(user => user !== currentUser.name);
+                
+                // Özel sohbet başlığına "yazıyor..." ekleme/çıkarma
+                if (privateChatWith) {
+                    const privateWithDiv = document.getElementById('privateWith');
+                    if (isOtherTyping) {
+                        if (!privateWithDiv.querySelector('.private-typing-indicator')) {
+                            const typingSpan = document.createElement('span');
+                            typingSpan.className = 'private-typing-indicator';
+                            typingSpan.textContent = 'yazıyor...';
+                            privateWithDiv.appendChild(typingSpan);
+                        }
+                    } else {
+                        const existing = privateWithDiv.querySelector('.private-typing-indicator');
+                        if (existing) existing.remove();
+                    }
+                }
+            });
         }
 
         function loadPrivateMessages() {
@@ -6173,7 +6211,10 @@
             
             let readStatus = '';
             if (message.sender === currentUser.name) {
-                readStatus = message.isRead ? ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
+                // Okundu durumunu anlık olarak göster (Madde 3)
+                readStatus = message.isRead ? 
+                    ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : 
+                    ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
             }
             
             messageDiv.innerHTML = `
@@ -6208,16 +6249,24 @@
             container.innerHTML = '';
             
             const now = Date.now();
+            const readUpdates = [];
             
             messagesArray.forEach(msg => {
                 if (msg.sender !== currentUser.name && !msg.isRead) {
-                    privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
+                    // Okundu bilgisini güncelle ve UI'da hemen göster (Madde 3)
+                    readUpdates.push(privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
                         isRead: true,
                         readAt: now
-                    });
+                    }));
+                    msg.isRead = true; // UI için hemen işaretle
                 }
                 appendPrivateMessageToUI(msg);
             });
+
+            // Tüm okundu güncellemelerini beklemeden devam et (hız için)
+            if (readUpdates.length > 0) {
+                Promise.all(readUpdates).catch(err => console.warn("Okundu güncellenemedi:", err));
+            }
         }
 
         async function sendPrivateMessage() {
@@ -6257,6 +6306,14 @@
                 input.value = '';
                 autoResize(input);
                 
+                // "Yazıyor..." durumunu temizle (mesaj gönderildi)
+                if (typingTimeout[currentPrivateChatId]) {
+                    clearTimeout(typingTimeout[currentPrivateChatId]);
+                }
+                if (typingRef) {
+                    typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+                }
+                
                 addNotification(privateChatWith, text.length > 30 ? text.substring(0, 30) + '...' : text, 'private');
                 
                 if (usersRef) {
@@ -6280,6 +6337,14 @@
             // Dinleyicileri temizle
             if (privateChatsRef && currentPrivateChatId) {
                 privateChatsRef.child(currentPrivateChatId).off();
+            }
+            // "Yazıyor..." dinleyicisini temizle
+            if (typingRef && currentPrivateChatId) {
+                typingRef.child(currentPrivateChatId).off();
+            }
+            if (typingTimeout[currentPrivateChatId]) {
+                clearTimeout(typingTimeout[currentPrivateChatId]);
+                delete typingTimeout[currentPrivateChatId];
             }
             
             privateChatWith = null;
@@ -6696,6 +6761,15 @@
             addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}!`);
             loadUserProfile(username);
             
+            // Video ekleme butonlarının yetkisini ayarla (Madde 5)
+            if (!isOwner && !isAdmin) {
+                document.getElementById('addVideoBtnWeb').disabled = true;
+                document.getElementById('addVideoBtnMobile').disabled = true;
+            } else {
+                document.getElementById('addVideoBtnWeb').disabled = false;
+                document.getElementById('addVideoBtnMobile').disabled = false;
+            }
+            
             if (isOwner) startOwnerPrivateMessageMonitoring();
             
             setInterval(() => {
@@ -6758,6 +6832,8 @@
             
             document.getElementById('private-input').removeEventListener('keydown', handlePrivateKeyDown);
             document.getElementById('private-input').addEventListener('keydown', handlePrivateKeyDown);
+            document.getElementById('private-input').removeEventListener('input', handlePrivateInput);
+            document.getElementById('private-input').addEventListener('input', handlePrivateInput);
             
             document.getElementById('overlay').addEventListener('click', function(e) {
                 if (e.target === this) {
@@ -6866,6 +6942,10 @@
                 e.stopPropagation();
                 sendPrivateMessage();
             }
+        }
+
+        function handlePrivateInput(e) {
+            emitTyping();
         }
 
         function checkAdminStatus() {
