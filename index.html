@@ -3493,7 +3493,7 @@
                         placeholder="Mesaj yazın veya / komutları..."
                         rows="1"
                         oninput="autoResize(this)"
-                        onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }"
+                        onkeydown="handleEnterKey(event, 'sendMessage')"
                     ></textarea>
                     <button class="send-button" onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
                 </div>
@@ -3958,7 +3958,7 @@
                 placeholder="Özel mesaj yaz..."
                 rows="1"
                 oninput="autoResize(this); emitTyping();"
-                onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendPrivateMessage(); }"
+                onkeydown="handleEnterKey(event, 'sendPrivateMessage')"
             ></textarea>
             <button class="send-button" onclick="sendPrivateMessage()"><i class="fas fa-paper-plane"></i></button>
         </div>
@@ -5988,6 +5988,29 @@
             }
         }
 
+        // Yeni yardımcı fonksiyon - Enter tuşu işlemeyi tek bir noktadan yönetir
+        function handleEnterKey(event, functionName) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                event.stopPropagation();
+                
+                // Fonksiyonu çağır
+                if (functionName === 'sendMessage') {
+                    sendMessage();
+                } else if (functionName === 'sendPrivateMessage') {
+                    sendPrivateMessage();
+                }
+                
+                // Birden fazla çağrıyı engellemek için kısa bir süre bekle
+                // Bu, event'in birden fazla kez tetiklenmesini engeller
+                const target = event.target;
+                target.disabled = true;
+                setTimeout(() => {
+                    target.disabled = false;
+                }, 500);
+            }
+        }
+
         async function sendMessage() {
             if (!isFirebaseConnected) {
                 addSystemMessage('❌ Firebase bağlantısı yok!');
@@ -6789,12 +6812,22 @@
         }
 
         function initApp() {
-            // Remove all existing listeners first to avoid duplicates
-            document.getElementById('message-input').removeEventListener('keydown', handleMessageKeyDown);
-            document.getElementById('message-input').addEventListener('keydown', handleMessageKeyDown);
+            // Tüm mevcut event listener'ları temizle - çift tetiklemeyi önlemek için
+            const messageInput = document.getElementById('message-input');
+            const privateInput = document.getElementById('private-input');
             
-            document.getElementById('private-input').removeEventListener('keydown', handlePrivateKeyDown);
-            document.getElementById('private-input').addEventListener('keydown', handlePrivateKeyDown);
+            // Eski event listener'ları kaldır
+            messageInput.removeEventListener('keydown', handleMessageKeyDown);
+            privateInput.removeEventListener('keydown', handlePrivateKeyDown);
+            
+            // Yeni event listener'ları ekle - doğrudan handleEnterKey kullanarak
+            messageInput.addEventListener('keydown', function(event) {
+                handleEnterKey(event, 'sendMessage');
+            });
+            
+            privateInput.addEventListener('keydown', function(event) {
+                handleEnterKey(event, 'sendPrivateMessage');
+            });
             
             document.getElementById('overlay').addEventListener('click', function(e) {
                 if (e.target === this) {
@@ -6888,20 +6921,13 @@
             startAdCycle();
         }
 
+        // Bu fonksiyonlar artık kullanılmıyor, ancak kod bütünlüğü için bırakıldı
         function handleMessageKeyDown(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                e.stopPropagation();
-                sendMessage();
-            }
+            // Boş - handleEnterKey kullanılıyor
         }
 
         function handlePrivateKeyDown(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                e.stopPropagation();
-                sendPrivateMessage();
-            }
+            // Boş - handleEnterKey kullanılıyor
         }
 
         function checkAdminStatus() {
