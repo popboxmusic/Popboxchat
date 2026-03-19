@@ -8722,52 +8722,346 @@
             window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
         });
     </script>
-    <!-- YouTube Bot JS -->
-<script src="youtube-bot.js"></script>
+<!-- ===== BASİT YOUTUBE BOT - KESİN ÇÖZÜM ===== -->
 <script>
-    // Bot'u başlat
-    window.addEventListener('load', function() {
-        setTimeout(function() {
-            if (window.database && window.playlistRef && window.messagesRef) {
-                console.log('🤖 YouTube Bot başlatılıyor...');
-                initYoutubeBot(window.database, window.playlistRef, window.messagesRef, window.currentUser);
+// Basit ve çalışan YouTube Bot
+(function() {
+    console.log('🤖 YouTube Bot yükleniyor...');
+    
+    // Bot nesnesi
+    const youtubeBot = {
+        name: 'cetcety',
+        isActive: true,
+        lastSearchResults: [],
+        
+        // Mesaj gönder
+        sendMessage: function(text) {
+            if (!window.messagesRef) {
+                console.log('❌ messagesRef bulunamadı');
+                return;
             }
-        }, 3000);
-    });
-
-    // Mevcut handleCommand fonksiyonunu bul ve bot komutlarını ekle
+            
+            const messageData = {
+                sender: this.name,
+                text: text,
+                type: 'system',
+                bot: true,
+                timestamp: Date.now(),
+                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+            };
+            
+            window.messagesRef.push(messageData).catch(err => {
+                console.error('Bot mesaj gönderilemedi:', err);
+            });
+        },
+        
+        // YouTube'da ara
+        searchYouTube: async function(query) {
+            try {
+                // ÜCRETSİZ API - Herkese açık, sınırlı ama çalışır
+                const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=5&q=${encodeURIComponent(query)}&type=video&key=AIzaSyDnIpPiS_tQ_2KqN-jP8fOx7F6G-6Xet2s`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.error) {
+                    this.sendMessage(`❌ API Hatası: ${data.error.message}`);
+                    return null;
+                }
+                
+                if (!data.items || data.items.length === 0) {
+                    this.sendMessage('❌ Sonuç bulunamadı.');
+                    return null;
+                }
+                
+                return data.items;
+            } catch (error) {
+                console.error('Arama hatası:', error);
+                this.sendMessage('❌ Arama sırasında hata oluştu.');
+                return null;
+            }
+        },
+        
+        // Video ara
+        handleVideo: async function(query) {
+            if (!query) {
+                this.sendMessage('❌ Lütfen bir arama terimi girin. Örnek: !video komik kedi');
+                return;
+            }
+            
+            this.sendMessage(`🔍 YouTube'da "${query}" aranıyor...`);
+            
+            const results = await this.searchYouTube(query);
+            if (!results) return;
+            
+            this.lastSearchResults = results;
+            
+            let message = `🎬 **"${query}" için sonuçlar:**\n\n`;
+            
+            for (let i = 0; i < Math.min(results.length, 5); i++) {
+                const item = results[i];
+                const title = item.snippet.title;
+                const channel = item.snippet.channelTitle;
+                const videoId = item.id.videoId;
+                
+                message += `${i+1}. **${title}**\n`;
+                message += `   📺 ${channel}\n`;
+                message += `   🔗 https://youtu.be/${videoId}\n\n`;
+            }
+            
+            message += `📥 Eklemek için: !ekle [sıra_no]`;
+            this.sendMessage(message);
+        },
+        
+        // Eğlenceli videolar
+        handleFun: async function() {
+            const keywords = ['komik videolar', 'funny videos', 'komedi', 'eğlenceli anlar'];
+            const randomKeyword = keywords[Math.floor(Math.random() * keywords.length)];
+            
+            this.sendMessage('😄 Eğlenceli videolar aranıyor...');
+            
+            const results = await this.searchYouTube(randomKeyword, 3);
+            if (!results) return;
+            
+            this.lastSearchResults = results;
+            
+            let message = `🎉 **Eğlenceli videolar bulundu!**\n\n`;
+            
+            for (let i = 0; i < Math.min(results.length, 3); i++) {
+                const item = results[i];
+                message += `${i+1}. **${item.snippet.title}**\n`;
+                message += `   📺 ${item.snippet.channelTitle}\n\n`;
+            }
+            
+            message += `📥 Eklemek için: !ekle [sıra_no]`;
+            this.sendMessage(message);
+        },
+        
+        // Müzik videoları
+        handleMusic: async function(genre) {
+            let keyword = 'müzik video';
+            if (genre === 'pop') keyword = 'pop music';
+            else if (genre === 'rock') keyword = 'rock music';
+            else if (genre === 'rap') keyword = 'rap music';
+            
+            this.sendMessage('🎵 Müzik videoları aranıyor...');
+            
+            const results = await this.searchYouTube(keyword, 2);
+            if (!results) return;
+            
+            this.lastSearchResults = results;
+            
+            let message = `🎧 **Müzik videoları**\n\n`;
+            
+            for (let i = 0; i < results.length; i++) {
+                const item = results[i];
+                message += `${i+1}. **${item.snippet.title}**\n`;
+                message += `   📺 ${item.snippet.channelTitle}\n\n`;
+            }
+            
+            message += `📥 Eklemek için: !ekle [sıra_no]`;
+            this.sendMessage(message);
+        },
+        
+        // Rastgele video
+        handleRandom: async function() {
+            const keywords = ['video', 'vlog', 'an', 'eğlence'];
+            const randomKeyword = keywords[Math.floor(Math.random() * keywords.length)];
+            
+            this.sendMessage('🎲 Rastgele video aranıyor...');
+            
+            const results = await this.searchYouTube(randomKeyword, 1);
+            if (!results || results.length === 0) return;
+            
+            const item = results[0];
+            this.lastSearchResults = [item];
+            
+            const message = `🎲 **Rastgele Video:**\n\n` +
+                `**${item.snippet.title}**\n` +
+                `📺 ${item.snippet.channelTitle}\n` +
+                `🔗 https://youtu.be/${item.id.videoId}\n\n` +
+                `📥 Eklemek için: !ekle`;
+            
+            this.sendMessage(message);
+        },
+        
+        // Playlist'e ekle
+        handleAdd: async function(index) {
+            if (!this.lastSearchResults || this.lastSearchResults.length === 0) {
+                this.sendMessage('❌ Önce bir arama yapın (!video [arama])');
+                return;
+            }
+            
+            let videoToAdd;
+            
+            if (index === undefined) {
+                // Rastgele seç
+                videoToAdd = this.lastSearchResults[Math.floor(Math.random() * this.lastSearchResults.length)];
+            } else {
+                const idx = parseInt(index) - 1;
+                if (isNaN(idx) || idx < 0 || idx >= this.lastSearchResults.length) {
+                    this.sendMessage(`❌ Geçersiz sıra. 1-${this.lastSearchResults.length} arası girin.`);
+                    return;
+                }
+                videoToAdd = this.lastSearchResults[idx];
+            }
+            
+            if (!videoToAdd) {
+                this.sendMessage('❌ Video bulunamadı.');
+                return;
+            }
+            
+            // Playlist'e ekle
+            if (!window.playlistRef) {
+                this.sendMessage('❌ Playlist sistemi bulunamadı!');
+                return;
+            }
+            
+            const videoId = videoToAdd.id.videoId || videoToAdd.id;
+            const title = videoToAdd.snippet?.title || videoToAdd.title || 'Video';
+            
+            const newItem = {
+                id: videoId,
+                title: title,
+                url: `https://youtu.be/${videoId}`,
+                addedBy: this.name,
+                timestamp: Date.now()
+            };
+            
+            this.sendMessage(`📥 **${title}** playlist'e ekleniyor...`);
+            
+            window.playlistRef.push(newItem)
+                .then(() => {
+                    this.sendMessage(`✅ **${title}** playlist'e eklendi!`);
+                })
+                .catch(err => {
+                    console.error('Ekleme hatası:', err);
+                    this.sendMessage('❌ Playlist\'e eklenemedi!');
+                });
+        },
+        
+        // Yardım
+        showHelp: function() {
+            const help = `🤖 **${this.name} YouTube Bot Komutları**\n\n` +
+                `🔍 **Arama:**\n` +
+                `• !video [arama] - Video ara\n` +
+                `• !eğlenceli - Eğlenceli videolar\n` +
+                `• !müzik [tür] - Müzik videoları\n` +
+                `• !rastgele - Rastgele video\n\n` +
+                `📥 **Playlist:**\n` +
+                `• !ekle [sıra] - Videoyu playlist'e ekle\n` +
+                `• !ekle - Rastgele video ekle\n\n` +
+                `ℹ️ **Diğer:**\n` +
+                `• !botbilgi - Bot bilgisi\n` +
+                `• !botyardım - Bu menü`;
+            
+            this.sendMessage(help);
+        },
+        
+        // Bilgi
+        showInfo: function() {
+            const info = `🤖 **${this.name} YouTube Bot**\n\n` +
+                `📊 **Durum:** Aktif\n` +
+                `🔍 **Arama:** YouTube API v3\n` +
+                `📋 **Komutlar:** !botyardım`;
+            
+            this.sendMessage(info);
+        },
+        
+        // Komut işle
+        handleCommand: async function(command, args) {
+            if (!this.isActive && command !== 'botbaslat') {
+                this.sendMessage('🤖 Bot durduruldu. !botbaslat ile başlatın.');
+                return;
+            }
+            
+            switch(command) {
+                case 'video':
+                case 'ara':
+                    await this.handleVideo(args.join(' '));
+                    break;
+                case 'eğlenceli':
+                case 'eğlence':
+                case 'fun':
+                    await this.handleFun();
+                    break;
+                case 'müzik':
+                case 'music':
+                    await this.handleMusic(args[0]);
+                    break;
+                case 'rastgele':
+                case 'random':
+                    await this.handleRandom();
+                    break;
+                case 'ekle':
+                    await this.handleAdd(args[0]);
+                    break;
+                case 'botbilgi':
+                case 'botinfo':
+                    this.showInfo();
+                    break;
+                case 'botyardım':
+                case 'bothelp':
+                    this.showHelp();
+                    break;
+                default:
+                    // Bilinmeyen komut
+                    return false;
+            }
+            return true;
+        }
+    };
+    
+    // Global'e ekle
+    window.youtubeBot = youtubeBot;
+    
+    // Firebase hazır olana kadar bekle
+    function initBot() {
+        if (window.messagesRef && window.playlistRef) {
+            console.log('✅ YouTube Bot hazır!');
+            youtubeBot.sendMessage('🎵 **cetcety** YouTube Bot aktif! Komutlar: !video [arama], !eğlenceli, !müzik, !botyardım');
+        } else {
+            console.log('⏳ Firebase referansları bekleniyor...');
+            setTimeout(initBot, 1000);
+        }
+    }
+    
+    // 3 saniye sonra dene
+    setTimeout(initBot, 3000);
+    
+    // handleCommand'i yamala
     function patchHandleCommand() {
-        // Orijinal handleCommand'i sakla
         const originalHandleCommand = window.handleCommand;
         
         if (typeof originalHandleCommand === 'function') {
             window.handleCommand = async function(cmd) {
                 // Bot komutlarını kontrol et
-                if (youtubeBot && cmd.startsWith('!')) {
+                if (cmd.startsWith('!')) {
                     const parts = cmd.substring(1).split(' ');
                     const command = parts[0].toLowerCase();
                     const args = parts.slice(1);
                     
-                    const botCommands = ['video', 'ara', 'eğlenceli', 'eğlence', 'fun', 'müzik', 'music', 'trend', 'popüler', 'rastgele', 'random', 'ekle', 'botbilgi', 'botinfo', 'botyardım', 'bothelp', 'botdurdur', 'botbaslat'];
+                    const botCommands = ['video', 'ara', 'eğlenceli', 'eğlence', 'fun', 'müzik', 'music', 'rastgele', 'random', 'ekle', 'botbilgi', 'botinfo', 'botyardım', 'bothelp'];
                     
                     if (botCommands.includes(command)) {
-                        await youtubeBot.handleCommand(command, args, window.currentUser);
-                        return;
+                        const handled = await window.youtubeBot.handleCommand(command, args);
+                        if (handled) return;
                     }
                 }
                 
-                // Orijinal handleCommand'i çağır
+                // Orijinal fonksiyonu çağır
                 return originalHandleCommand.call(this, cmd);
             };
-            console.log('✅ Bot komutları başarıyla eklendi!');
+            console.log('✅ Bot komutları eklendi!');
         } else {
-            console.log('⏳ handleCommand fonksiyonu bulunamadı, 1 saniye sonra tekrar deneniyor...');
             setTimeout(patchHandleCommand, 1000);
         }
     }
-
-    // handleCommand'i yamala
+    
+    // Dene
     setTimeout(patchHandleCommand, 2000);
+    
+})();
 </script>
     <!-- YouTube IFrame API -->
     <script src="https://www.youtube.com/iframe_api"></script>
