@@ -4176,34 +4176,196 @@
             dailyWriteCount++;
         }
 
-        /* ========== DÜZELTİLMİŞ KISIM: handleEnterKey ========== */
+        /* ========== DÜZELTİLMİŞ KISIM: handleEnterKey - TEKRAR GÖNDERİM SORUNU ÇÖZÜLDÜ ========== */
         function handleEnterKey(event, functionName) {
+            // Enter tuşuna basıldığında ve shift tuşuna basılmadığında
             if (event.key === 'Enter' && !event.shiftKey) {
+                // Varsayılan davranışı engelle (satır atlama)
                 event.preventDefault();
                 event.stopPropagation();
-
+                
+                // Aynı event'in birden fazla kez tetiklenmesini engelle
+                if (event.repeat) return;
+                
+                // İlgili butonu bul ve geçici olarak devre dışı bırak
                 let button = null;
                 if (functionName === 'sendMessage') {
                     button = document.querySelector('.chat-input-area .send-button');
                 } else if (functionName === 'sendPrivateMessage') {
                     button = document.querySelector('#privateModal .send-button');
                 }
-
-                if (button) {
+                
+                // Buton varsa geçici olarak devre dışı bırak
+                if (button && !button.disabled) {
                     button.disabled = true;
-                }
-
-                if (functionName === 'sendMessage') {
-                    sendMessage();
-                } else if (functionName === 'sendPrivateMessage') {
-                    sendPrivateMessage();
-                }
-
-                setTimeout(() => {
-                    if (button) {
-                        button.disabled = false;
+                    
+                    // İlgili fonksiyonu çağır
+                    if (functionName === 'sendMessage') {
+                        sendMessage();
+                    } else if (functionName === 'sendPrivateMessage') {
+                        sendPrivateMessage();
                     }
-                }, 500);
+                    
+                    // 500ms sonra butonu tekrar aktif et
+                    setTimeout(() => {
+                        button.disabled = false;
+                    }, 500);
+                } else if (button) {
+                    // Buton zaten devre dışıysa fonksiyonu çağırma
+                    return;
+                }
+            }
+        }
+
+        // ========== DÜZELTİLMİŞ KISIM: sendMessage - TEKRAR GÖNDERİM KORUMALI ==========
+        let isSendingMessage = false; // Gönderim kilidi
+
+        async function sendMessage() {
+            // Eğer zaten gönderim yapılıyorsa, tekrar gönderimi engelle
+            if (isSendingMessage) {
+                console.log('Zaten mesaj gönderiliyor, tekrar engellendi');
+                return;
+            }
+            
+            // Gönderim kilidini aktif et
+            isSendingMessage = true;
+            
+            try {
+                if (!isFirebaseConnected) {
+                    addSystemMessage('❌ Firebase bağlantısı yok!');
+                    return;
+                }
+                
+                if (!checkWriteLimit()) {
+                    addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı! Yarın tekrar dene.');
+                    return;
+                }
+                
+                const canSend = await checkBanBeforeMessage();
+                if (!canSend) return;
+                if (await checkGlobalBan(currentUser.name)) {
+                    addSystemMessage('🚫 Global banlandınız! Mesaj gönderemezsiniz.'); 
+                    return;
+                }
+                if (isMuted(currentUser.name)) {
+                    addSystemMessage('🔇 Susturuldunuz!'); 
+                    return;
+                }
+                
+                const input = document.getElementById('message-input');
+                const text = input.value.trim();
+                if (!text) return;
+                
+                if (text.startsWith('/')) {
+                    handleCommand(text);
+                    input.value = '';
+                    autoResize(input);
+                    return;
+                }
+                
+                const messageData = {
+                    sender: currentUser.name,
+                    text: text,
+                    type: 'user',
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    avatar: currentProfileAvatar || null
+                };
+                if (isOwner) messageData.type = 'owner';
+                else if (isAdmin) messageData.type = 'admin';
+                else if (isCoAdmin) messageData.type = 'coadmin';
+                else if (isOperator) messageData.type = 'operator';
+                
+                try {
+                    await messagesRef.push(messageData);
+                    incrementWriteCount();
+                    input.value = '';
+                    autoResize(input);
+                    if (usersRef) {
+                        usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
+                    }
+                } catch (error) {
+                    addSystemMessage('❌ Mesaj gönderilemedi!');
+                }
+            } finally {
+                // Gönderim tamamlandıktan sonra kilidi kaldır (biraz gecikmeli)
+                setTimeout(() => {
+                    isSendingMessage = false;
+                }, 300);
+            }
+        }
+
+        // ========== DÜZELTİLMİŞ KISIM: sendPrivateMessage - TEKRAR GÖNDERİM KORUMALI ==========
+        let isSendingPrivateMessage = false; // Özel mesaj gönderim kilidi
+
+        async function sendPrivateMessage() {
+            // Eğer zaten gönderim yapılıyorsa, tekrar gönderimi engelle
+            if (isSendingPrivateMessage) {
+                console.log('Zaten özel mesaj gönderiliyor, tekrar engellendi');
+                return;
+            }
+            
+            // Gönderim kilidini aktif et
+            isSendingPrivateMessage = true;
+            
+            try {
+                if (!privateChatWith || !currentPrivateChatId || !privateChatsRef) {
+                    alert('❌ Önce bir kullanıcı seçin!');
+                    return;
+                }
+                
+                if (!checkWriteLimit()) {
+                    addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı! Yarın tekrar dene.');
+                    return;
+                }
+                
+                if (await checkBlockStatus(privateChatWith)) {
+                    alert('Bu kullanıcıya mesaj gönderemezsiniz!');
+                    return;
+                }
+                const canSend = await checkBanBeforeMessage();
+                if (!canSend) return;
+                const input = document.getElementById('private-input');
+                const text = input.value.trim();
+                if (!text) return;
+                
+                const messageData = {
+                    sender: currentUser.name,
+                    receiver: privateChatWith,
+                    text: text,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    avatar: currentProfileAvatar || null,
+                    isRead: false
+                };
+                
+                try {
+                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                    incrementWriteCount();
+                    input.value = '';
+                    autoResize(input);
+                    
+                    if (typingTimeout[currentPrivateChatId]) {
+                        clearTimeout(typingTimeout[currentPrivateChatId]);
+                    }
+                    if (typingRef) {
+                        typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+                    }
+                    
+                    addNotification(privateChatWith, text.length > 30 ? text.substring(0, 30) + '...' : text, 'private');
+                    
+                    if (usersRef) {
+                        usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
+                    }
+                    await archiveAndTrimPrivateChat(currentPrivateChatId);
+                } catch (error) {
+                    console.error('Mesaj gönderme hatası:', error);
+                }
+            } finally {
+                // Gönderim tamamlandıktan sonra kilidi kaldır (biraz gecikmeli)
+                setTimeout(() => {
+                    isSendingPrivateMessage = false;
+                }, 300);
             }
         }
 
@@ -5951,66 +6113,7 @@
             }
         }
 
-        /* ========== DÜZELTİLMİŞ KISIM: sendMessage ========== */
-        async function sendMessage() {
-            if (!isFirebaseConnected) {
-                addSystemMessage('❌ Firebase bağlantısı yok!');
-                return;
-            }
-            
-            if (!checkWriteLimit()) {
-                addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı! Yarın tekrar dene.');
-                return;
-            }
-            
-            const canSend = await checkBanBeforeMessage();
-            if (!canSend) return;
-            if (await checkGlobalBan(currentUser.name)) {
-                addSystemMessage('🚫 Global banlandınız! Mesaj gönderemezsiniz.'); 
-                return;
-            }
-            if (isMuted(currentUser.name)) {
-                addSystemMessage('🔇 Susturuldunuz!'); 
-                return;
-            }
-            const input = document.getElementById('message-input');
-            const text = input.value.trim();
-            if (!text) return;
-            
-            if (text.startsWith('/')) {
-                handleCommand(text);
-                input.value = '';
-                autoResize(input);
-                return;
-            }
-            
-            const messageData = {
-                sender: currentUser.name,
-                text: text,
-                type: 'user',
-                timestamp: Date.now(),
-                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                avatar: currentProfileAvatar || null
-            };
-            if (isOwner) messageData.type = 'owner';
-            else if (isAdmin) messageData.type = 'admin';
-            else if (isCoAdmin) messageData.type = 'coadmin';
-            else if (isOperator) messageData.type = 'operator';
-            
-            try {
-                await messagesRef.push(messageData);
-                incrementWriteCount();
-                input.value = '';
-                autoResize(input);
-                if (usersRef) {
-                    usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
-                }
-            } catch (error) {
-                addSystemMessage('❌ Mesaj gönderilemedi!');
-            }
-        }
-
-        // ========== DÜZELTİLMİŞ ÖZEL SOHBET FONKSİYONLARI ==========
+        // ========== ÖZEL SOHBET FONKSİYONLARI ==========
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
                 addSystemMessage('Kendinle özel sohbet başlatamazsın!');
@@ -6196,62 +6299,6 @@
 
             if (readUpdates.length > 0) {
                 Promise.all(readUpdates).catch(err => console.warn("Okundu güncellenemedi:", err));
-            }
-        }
-
-        /* ========== DÜZELTİLMİŞ KISIM: sendPrivateMessage ========== */
-        async function sendPrivateMessage() {
-            if (!privateChatWith || !currentPrivateChatId || !privateChatsRef) {
-                alert('❌ Önce bir kullanıcı seçin!');
-                return;
-            }
-            
-            if (!checkWriteLimit()) {
-                addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı! Yarın tekrar dene.');
-                return;
-            }
-            
-            if (await checkBlockStatus(privateChatWith)) {
-                alert('Bu kullanıcıya mesaj gönderemezsiniz!');
-                return;
-            }
-            const canSend = await checkBanBeforeMessage();
-            if (!canSend) return;
-            const input = document.getElementById('private-input');
-            const text = input.value.trim();
-            if (!text) return;
-            
-            const messageData = {
-                sender: currentUser.name,
-                receiver: privateChatWith,
-                text: text,
-                timestamp: Date.now(),
-                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                avatar: currentProfileAvatar || null,
-                isRead: false
-            };
-            
-            try {
-                await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                incrementWriteCount();
-                input.value = '';
-                autoResize(input);
-                
-                if (typingTimeout[currentPrivateChatId]) {
-                    clearTimeout(typingTimeout[currentPrivateChatId]);
-                }
-                if (typingRef) {
-                    typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
-                }
-                
-                addNotification(privateChatWith, text.length > 30 ? text.substring(0, 30) + '...' : text, 'private');
-                
-                if (usersRef) {
-                    usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
-                }
-                await archiveAndTrimPrivateChat(currentPrivateChatId);
-            } catch (error) {
-                console.error('Mesaj gönderme hatası:', error);
             }
         }
 
@@ -6757,19 +6804,19 @@
             const messageInput = document.getElementById('message-input');
             const privateInput = document.getElementById('private-input');
             
-            messageInput.replaceWith(messageInput.cloneNode(true));
-            privateInput.replaceWith(privateInput.cloneNode(true));
-
-            const newMessageInput = document.getElementById('message-input');
-            const newPrivateInput = document.getElementById('private-input');
+            // Event listener'ları yeniden ata (tekrarları önlemek için)
+            messageInput.removeEventListener('keydown', window.messageInputHandler);
+            privateInput.removeEventListener('keydown', window.privateInputHandler);
             
-            newMessageInput.addEventListener('keydown', function(event) {
+            window.messageInputHandler = function(event) {
                 handleEnterKey(event, 'sendMessage');
-            });
-            
-            newPrivateInput.addEventListener('keydown', function(event) {
+            };
+            window.privateInputHandler = function(event) {
                 handleEnterKey(event, 'sendPrivateMessage');
-            });
+            };
+            
+            messageInput.addEventListener('keydown', window.messageInputHandler);
+            privateInput.addEventListener('keydown', window.privateInputHandler);
             
             document.getElementById('overlay').addEventListener('click', function(e) {
                 if (e.target === this) {
