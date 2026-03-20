@@ -1657,10 +1657,14 @@
             filter: drop-shadow(0 4px 8px rgba(255, 0, 0, 0.3));
         }
         
+        .password-input-wrapper {
+            position: relative;
+            margin-bottom: 16px;
+        }
+        
         .login-input {
             width: 100%;
             padding: 14px 20px;
-            margin-bottom: 16px;
             background: var(--input-bg);
             backdrop-filter: blur(5px);
             border: 1px solid var(--border-color);
@@ -1674,6 +1678,23 @@
         .login-input:focus {
             border-color: var(--youtube-red);
             box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.2);
+        }
+        
+        .toggle-password {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 18px;
+            transition: color 0.2s ease;
+        }
+        
+        .toggle-password:hover {
+            color: var(--youtube-red);
         }
         
         .login-button {
@@ -3836,7 +3857,7 @@
         </div>
     </div>
     
-    <!-- GİRİŞ EKRANI -->
+    <!-- GİRİŞ EKRANI (Şifre zorunlu) -->
     <div id="login-screen">
         <div class="login-container">
             <div class="login-title">
@@ -3850,19 +3871,23 @@
                 placeholder="Kullanıcı adı"
                 autocomplete="off"
             >
-            <input 
-                type="password" 
-                id="login-password" 
-                class="login-input" 
-                placeholder="Şifre (kayıtlı kullanıcılar)"
-                autocomplete="off"
-                style="display: none;"
-            >
-            <div id="password-info" style="color: var(--text-secondary); font-size: 14px; margin-bottom: 12px; display: none;">
-                <i class="fas fa-lock"></i> Şifre gerekli
+            <div class="password-input-wrapper">
+                <input 
+                    type="password" 
+                    id="login-password" 
+                    class="login-input" 
+                    placeholder="Şifre"
+                    autocomplete="off"
+                >
+                <button type="button" class="toggle-password" onclick="togglePasswordVisibility('login-password', this)">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </div>
+            <div id="password-info" style="color: var(--text-secondary); font-size: 14px; margin-bottom: 12px; display: block;">
+                <i class="fas fa-lock"></i> Giriş için şifre zorunludur.
             </div>
             <button class="login-button" onclick="login()" id="login-btn">
-                Sohbete Katıl
+                Giriş Yap
             </button>
             <div id="login-error" class="error-message"></div>
             <div id="login-success" class="success-message"></div>
@@ -4217,7 +4242,7 @@
             }
         }
 
-        // ========== DÜZELTİLMİŞ KISIM: sendMessage - TEKRAR GÖNDERİM KORUMALI ==========
+        // ========== DÜZELTİLMİŞ KISIM: sendMessage - TEKRAR GÖNDERİM KORUMALI (Sayfa yenileme sorunu çözüldü) ==========
         let isSendingMessage = false; // Gönderim kilidi
 
         async function sendMessage() {
@@ -4366,6 +4391,18 @@
                 setTimeout(() => {
                     isSendingPrivateMessage = false;
                 }, 300);
+            }
+        }
+
+        // Şifre görünürlüğünü değiştiren fonksiyon
+        function togglePasswordVisibility(inputId, button) {
+            const input = document.getElementById(inputId);
+            if (input.type === 'password') {
+                input.type = 'text';
+                button.innerHTML = '<i class="fas fa-eye-slash"></i>';
+            } else {
+                input.type = 'password';
+                button.innerHTML = '<i class="fas fa-eye"></i>';
             }
         }
 
@@ -6618,6 +6655,10 @@
                 showLoginError('❌ Kullanıcı adı 2-20 karakter arasında olmalı!');
                 return;
             }
+            if (!password) {
+                showLoginError('🔐 Giriş için şifre zorunludur!');
+                return;
+            }
             if (!isFirebaseConnected) {
                 showLoginError('❌ Firebase bağlantısı yok!');
                 return;
@@ -6631,7 +6672,7 @@
                     showLoginError(`🚫 **BANLI KULLANICI**\nSebep: ${banCheck.reason}\nKalan süre: ${banCheck.remaining} dakika`);
                 }
                 loginBtn.disabled = false;
-                loginBtn.innerHTML = 'Sohbete Katıl';
+                loginBtn.innerHTML = 'Giriş Yap';
                 return;
             }
             
@@ -6642,17 +6683,11 @@
                 const normalizedNick = normalizeNick(rawNick);
                 
                 if (normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
-                    if (!password) {
-                        showLoginError('🔐 Owner şifresi gerekli!');
-                        loginBtn.disabled = false;
-                        loginBtn.innerHTML = 'Sohbete Katıl';
-                        return;
-                    }
                     const passwordValid = await verifyOwnerPassword(password);
                     if (!passwordValid) {
                         showLoginError('❌ Hatalı şifre!');
                         loginBtn.disabled = false;
-                        loginBtn.innerHTML = 'Sohbete Katıl';
+                        loginBtn.innerHTML = 'Giriş Yap';
                         return;
                     }
                     await completeLogin(SECURE_CONFIG.OWNER_CONFIG.username, 'owner', true, null);
@@ -6661,28 +6696,25 @@
                 
                 const userRegistered = await isRegisteredUserSecure(rawNick);
                 if (userRegistered && userRegistered.isRegistered) {
-                    if (!password) {
-                        showLoginError(`🔐 ${userRegistered.originalName} için şifre gerekli!`);
-                        loginBtn.disabled = false;
-                        loginBtn.innerHTML = 'Sohbete Katıl';
-                        return;
-                    }
                     const passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
                     if (!passwordValid) {
                         showLoginError('❌ Hatalı şifre!');
                         loginBtn.disabled = false;
-                        loginBtn.innerHTML = 'Sohbete Katıl';
+                        loginBtn.innerHTML = 'Giriş Yap';
                         return;
                     }
                     await completeLogin(userRegistered.originalName, userRegistered.role, true, userRegistered);
                 } else {
-                    await completeLogin(rawNick, 'user', false, null);
+                    showLoginError('❌ Kayıtlı kullanıcı bulunamadı!');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Giriş Yap';
+                    return;
                 }
                 
             } catch (error) {
                 showLoginError(`❌ Giriş hatası: ${error.message}`);
                 loginBtn.disabled = false;
-                loginBtn.innerHTML = 'Sohbete Katıl';
+                loginBtn.innerHTML = 'Giriş Yap';
             }
         }
 
@@ -8511,38 +8543,6 @@
             closePlaylistDrawer();
         }
 
-        function checkUsernameRealTime() {
-            const nickInput = document.getElementById('login-nick');
-            const passwordInput = document.getElementById('login-password');
-            const passwordInfo = document.getElementById('password-info');
-            nickInput.addEventListener('input', async function() {
-                const nick = this.value.trim();
-                if (nick.length < 2) {
-                    passwordInput.style.display = 'none';
-                    passwordInfo.style.display = 'none';
-                    return;
-                }
-                const normalizedNick = normalizeNick(nick);
-                if (normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
-                    passwordInput.style.display = 'block';
-                    passwordInfo.style.display = 'block';
-                    passwordInput.placeholder = 'Şifre';
-                    passwordInfo.innerHTML = '<i class="fas fa-lock"></i> Şifre gerekli';
-                    return;
-                }
-                const userRegistered = await isRegisteredUserSecure(nick);
-                if (userRegistered && userRegistered.isRegistered) {
-                    passwordInput.style.display = 'block';
-                    passwordInfo.style.display = 'block';
-                    passwordInput.placeholder = 'Şifre';
-                    passwordInfo.innerHTML = `<i class="fas fa-lock"></i> ${userRegistered.originalName} için şifre gerekli`;
-                } else {
-                    passwordInput.style.display = 'none';
-                    passwordInfo.style.display = 'none';
-                }
-            });
-        }
-
         function closeAddOperatorModal() {
             document.getElementById('addOperatorModal').style.display = 'none';
             document.getElementById('overlay').style.display = 'none';
@@ -8625,7 +8625,6 @@
                 }, 500);
             }
             initializeFirebase();
-            checkUsernameRealTime();
             updateMobileUI();
             document.getElementById('login-nick').focus();
             document.getElementById('login-nick').addEventListener('keypress', (e) => {
