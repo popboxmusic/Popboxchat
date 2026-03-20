@@ -4203,16 +4203,11 @@
 
         /* ========== DÜZELTİLMİŞ KISIM: handleEnterKey - TEKRAR GÖNDERİM SORUNU ÇÖZÜLDÜ ========== */
         function handleEnterKey(event, functionName) {
-            // Enter tuşuna basıldığında ve shift tuşuna basılmadığında
             if (event.key === 'Enter' && !event.shiftKey) {
-                // Varsayılan davranışı engelle (satır atlama)
                 event.preventDefault();
                 event.stopPropagation();
-                
-                // Aynı event'in birden fazla kez tetiklenmesini engelle
                 if (event.repeat) return;
                 
-                // İlgili butonu bul ve geçici olarak devre dışı bırak
                 let button = null;
                 if (functionName === 'sendMessage') {
                     button = document.querySelector('.chat-input-area .send-button');
@@ -4220,39 +4215,28 @@
                     button = document.querySelector('#privateModal .send-button');
                 }
                 
-                // Buton varsa geçici olarak devre dışı bırak
                 if (button && !button.disabled) {
                     button.disabled = true;
-                    
-                    // İlgili fonksiyonu çağır
                     if (functionName === 'sendMessage') {
                         sendMessage();
                     } else if (functionName === 'sendPrivateMessage') {
                         sendPrivateMessage();
                     }
-                    
-                    // 500ms sonra butonu tekrar aktif et
                     setTimeout(() => {
                         button.disabled = false;
                     }, 500);
-                } else if (button) {
-                    // Buton zaten devre dışıysa fonksiyonu çağırma
-                    return;
                 }
             }
         }
 
-        // ========== DÜZELTİLMİŞ KISIM: sendMessage - TEKRAR GÖNDERİM KORUMALI (Sayfa yenileme sorunu çözüldü) ==========
-        let isSendingMessage = false; // Gönderim kilidi
+        // ========== DÜZELTİLMİŞ KISIM: sendMessage ==========
+        let isSendingMessage = false;
 
         async function sendMessage() {
-            // Eğer zaten gönderim yapılıyorsa, tekrar gönderimi engelle
             if (isSendingMessage) {
                 console.log('Zaten mesaj gönderiliyor, tekrar engellendi');
                 return;
             }
-            
-            // Gönderim kilidini aktif et
             isSendingMessage = true;
             
             try {
@@ -4313,83 +4297,8 @@
                     addSystemMessage('❌ Mesaj gönderilemedi!');
                 }
             } finally {
-                // Gönderim tamamlandıktan sonra kilidi kaldır (biraz gecikmeli)
                 setTimeout(() => {
                     isSendingMessage = false;
-                }, 300);
-            }
-        }
-
-        // ========== DÜZELTİLMİŞ KISIM: sendPrivateMessage - TEKRAR GÖNDERİM KORUMALI ==========
-        let isSendingPrivateMessage = false; // Özel mesaj gönderim kilidi
-
-        async function sendPrivateMessage() {
-            // Eğer zaten gönderim yapılıyorsa, tekrar gönderimi engelle
-            if (isSendingPrivateMessage) {
-                console.log('Zaten özel mesaj gönderiliyor, tekrar engellendi');
-                return;
-            }
-            
-            // Gönderim kilidini aktif et
-            isSendingPrivateMessage = true;
-            
-            try {
-                if (!privateChatWith || !currentPrivateChatId || !privateChatsRef) {
-                    alert('❌ Önce bir kullanıcı seçin!');
-                    return;
-                }
-                
-                if (!checkWriteLimit()) {
-                    addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı! Yarın tekrar dene.');
-                    return;
-                }
-                
-                if (await checkBlockStatus(privateChatWith)) {
-                    alert('Bu kullanıcıya mesaj gönderemezsiniz!');
-                    return;
-                }
-                const canSend = await checkBanBeforeMessage();
-                if (!canSend) return;
-                const input = document.getElementById('private-input');
-                const text = input.value.trim();
-                if (!text) return;
-                
-                const messageData = {
-                    sender: currentUser.name,
-                    receiver: privateChatWith,
-                    text: text,
-                    timestamp: Date.now(),
-                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                    avatar: currentProfileAvatar || null,
-                    isRead: false
-                };
-                
-                try {
-                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                    incrementWriteCount();
-                    input.value = '';
-                    autoResize(input);
-                    
-                    if (typingTimeout[currentPrivateChatId]) {
-                        clearTimeout(typingTimeout[currentPrivateChatId]);
-                    }
-                    if (typingRef) {
-                        typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
-                    }
-                    
-                    addNotification(privateChatWith, text.length > 30 ? text.substring(0, 30) + '...' : text, 'private');
-                    
-                    if (usersRef) {
-                        usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
-                    }
-                    await archiveAndTrimPrivateChat(currentPrivateChatId);
-                } catch (error) {
-                    console.error('Mesaj gönderme hatası:', error);
-                }
-            } finally {
-                // Gönderim tamamlandıktan sonra kilidi kaldır (biraz gecikmeli)
-                setTimeout(() => {
-                    isSendingPrivateMessage = false;
                 }, 300);
             }
         }
@@ -6150,7 +6059,8 @@
             }
         }
 
-        // ========== ÖZEL SOHBET FONKSİYONLARI ==========
+        // ========== OPTİMİZE EDİLMİŞ ÖZEL SOHBET FONKSİYONLARI ==========
+        
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
                 addSystemMessage('Kendinle özel sohbet başlatamazsın!');
@@ -6166,11 +6076,11 @@
                 return;
             }
             
+            // Önceki dinleyicileri temizle
             if (privateChatWith && currentPrivateChatId && privateChatsRef) {
-                privateChatsRef.child(currentPrivateChatId).off();
-                if (typingRef) {
-                    typingRef.child(currentPrivateChatId).off();
-                }
+                privateChatsRef.child(currentPrivateChatId).off('child_added');
+                if (typingRef) typingRef.child(currentPrivateChatId).off('value');
+                if (typingTimeout[currentPrivateChatId]) clearTimeout(typingTimeout[currentPrivateChatId]);
             }
             
             privateChatWith = username;
@@ -6186,47 +6096,9 @@
             
             await updatePrivateFollowButton();
             
+            // Mesajları yükle ve dinlemeye başla
             loadPrivateMessages();
             listenForTyping();
-        }
-
-        function emitTyping() {
-            if (!currentPrivateChatId || !privateChatWith || !typingRef) return;
-            
-            if (typingTimeout[currentPrivateChatId]) {
-                clearTimeout(typingTimeout[currentPrivateChatId]);
-            }
-            
-            typingRef.child(currentPrivateChatId).child(currentUser.name).set(true);
-            
-            typingTimeout[currentPrivateChatId] = setTimeout(() => {
-                typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
-            }, TYPING_TIMEOUT_DURATION);
-        }
-
-        function listenForTyping() {
-            if (!currentPrivateChatId || !typingRef) return;
-            
-            const privateWithDiv = document.getElementById('privateWith');
-
-            typingRef.child(currentPrivateChatId).on('value', (snapshot) => {
-                const typingUsers = snapshot.val() || {};
-                const isOtherTyping = Object.keys(typingUsers).some(user => user !== currentUser.name);
-                
-                if (privateChatWith) {
-                    const existing = privateWithDiv.querySelector('.private-typing-indicator');
-                    if (isOtherTyping) {
-                        if (!existing) {
-                            const typingSpan = document.createElement('span');
-                            typingSpan.className = 'private-typing-indicator';
-                            typingSpan.innerHTML = '<i class="fas fa-ellipsis-h"></i> yazıyor...';
-                            privateWithDiv.appendChild(typingSpan);
-                        }
-                    } else {
-                        if (existing) existing.remove();
-                    }
-                }
-            });
         }
 
         function loadPrivateMessages() {
@@ -6234,17 +6106,30 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
             
-            privateChatsRef.child(currentPrivateChatId).limitToLast(10).once('value', (snapshot) => {
+            // Son 50 mesajı getir
+            privateChatsRef.child(currentPrivateChatId).limitToLast(50).once('value', (snapshot) => {
                 const messages = snapshot.val();
                 updatePrivateMessages(messages);
             });
             
-            privateChatsRef.child(currentPrivateChatId).off('child_added');
+            // Yeni mesajları dinle (child_added)
+            privateChatsRef.child(currentPrivateChatId).off('child_added'); // Eski listener'ı kaldır
             privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
                 const message = snapshot.val();
                 if (message) {
-                    const existingMsg = document.getElementById(`private_msg_${snapshot.key}`);
-                    if (!existingMsg) {
+                    // Mesaj zaten eklenmiş mi kontrol et (tekrar eklenmesini engelle)
+                    if (!document.getElementById(`private_msg_${snapshot.key}`)) {
+                        // Okundu bilgisini güncelle (eğer alıcı ise)
+                        if (message.sender !== currentUser.name && !message.isRead) {
+                            privateChatsRef.child(currentPrivateChatId).child(snapshot.key).update({
+                                isRead: true,
+                                readAt: Date.now()
+                            });
+                            message.isRead = true; // Güncel veriyi UI için işaretle
+                        }
+                        appendPrivateMessageToUI({ id: snapshot.key, ...message });
+                        
+                        // Bildirim gönder (eğer gelen mesaj ise)
                         if (message.sender !== currentUser.name) {
                             let msgText = message.text || '';
                             if (message.image) msgText = '📸 Fotoğraf';
@@ -6252,10 +6137,42 @@
                             else if (message.audio) msgText = '🎤 Ses Kaydı';
                             addNotification(message.sender, msgText, 'private');
                         }
-                        appendPrivateMessageToUI({ id: snapshot.key, ...message });
                     }
                 }
             });
+        }
+
+        function updatePrivateMessages(messages) {
+            const container = document.getElementById('privateMessages');
+            if (!messages) {
+                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Henüz mesaj yok.</div>';
+                return;
+            }
+            
+            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
+            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+            
+            container.innerHTML = '';
+            
+            const now = Date.now();
+            const readUpdates = [];
+            
+            messagesArray.forEach(msg => {
+                // Alıcı tarafından okunmamış mesajları tespit et ve toplu güncelleme için hazırla
+                if (msg.sender !== currentUser.name && !msg.isRead) {
+                    readUpdates.push(privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
+                        isRead: true,
+                        readAt: now
+                    }));
+                    msg.isRead = true; // UI için işaretle
+                }
+                appendPrivateMessageToUI(msg);
+            });
+            
+            // Okundu bilgilerini arka planda güncelle
+            if (readUpdates.length > 0) {
+                Promise.all(readUpdates).catch(err => console.warn("Okundu güncelleme hatası:", err));
+            }
         }
 
         function appendPrivateMessageToUI(message) {
@@ -6273,21 +6190,27 @@
             }
             
             let content = message.text || '';
-            if (message.image) content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-            else if (message.video) {
+            if (message.image) {
+                content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
+            } else if (message.video) {
                 content += `<br><video src="${message.video}" controls class="message-video"></video>`;
+            } else if (message.audio) {
+                content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
             }
-            else if (message.audio) content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
             
             const userAvatar = message.avatar || (userProfiles[message.sender]?.avatar || null);
             const avatarHtml = userAvatar ? 
                 `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
             
+            // Okundu bilgisi (mavi tik) için kontrol
             let readStatus = '';
             if (message.sender === currentUser.name) {
-                readStatus = message.isRead ? 
-                    ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : 
-                    ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
+                // Gönderdiğim mesajlar: okunduysa çift mavi tik, değilse tek tik
+                if (message.isRead) {
+                    readStatus = ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>';
+                } else {
+                    readStatus = ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
+                }
             }
             
             messageDiv.innerHTML = `
@@ -6308,35 +6231,112 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        function updatePrivateMessages(messages) {
-            const container = document.getElementById('privateMessages');
-            if (!messages) {
-                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Henüz mesaj yok.</div>';
+        let isSendingPrivateMessage = false;
+        async function sendPrivateMessage() {
+            if (isSendingPrivateMessage) {
+                console.log('Zaten özel mesaj gönderiliyor');
                 return;
             }
+            isSendingPrivateMessage = true;
             
-            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
-            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-            
-            container.innerHTML = '';
-            
-            const now = Date.now();
-            const readUpdates = [];
-            
-            messagesArray.forEach(msg => {
-                if (msg.sender !== currentUser.name && !msg.isRead) {
-                    readUpdates.push(privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
-                        isRead: true,
-                        readAt: now
-                    }));
-                    msg.isRead = true;
+            try {
+                if (!privateChatWith || !currentPrivateChatId || !privateChatsRef) {
+                    alert('❌ Önce bir kullanıcı seçin!');
+                    return;
                 }
-                appendPrivateMessageToUI(msg);
-            });
-
-            if (readUpdates.length > 0) {
-                Promise.all(readUpdates).catch(err => console.warn("Okundu güncellenemedi:", err));
+                
+                if (!checkWriteLimit()) {
+                    addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı!');
+                    return;
+                }
+                
+                if (await checkBlockStatus(privateChatWith)) {
+                    alert('Bu kullanıcıya mesaj gönderemezsiniz!');
+                    return;
+                }
+                
+                const canSend = await checkBanBeforeMessage();
+                if (!canSend) return;
+                
+                const input = document.getElementById('private-input');
+                const text = input.value.trim();
+                if (!text) return;
+                
+                const messageData = {
+                    sender: currentUser.name,
+                    receiver: privateChatWith,
+                    text: text,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    avatar: currentProfileAvatar || null,
+                    isRead: false
+                };
+                
+                await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                incrementWriteCount();
+                input.value = '';
+                autoResize(input);
+                
+                // Yazıyor göstergesini temizle
+                if (typingTimeout[currentPrivateChatId]) {
+                    clearTimeout(typingTimeout[currentPrivateChatId]);
+                }
+                if (typingRef) {
+                    typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+                }
+                
+                // Kullanıcı son görülme zamanını güncelle
+                if (usersRef) {
+                    usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
+                }
+                
+                // Arşivleme (mesaj sayısını sınırla)
+                await archiveAndTrimPrivateChat(currentPrivateChatId);
+            } catch (error) {
+                console.error('Mesaj gönderme hatası:', error);
+                addSystemMessage('❌ Mesaj gönderilemedi!');
+            } finally {
+                setTimeout(() => { isSendingPrivateMessage = false; }, 300);
             }
+        }
+
+        function emitTyping() {
+            if (!currentPrivateChatId || !privateChatWith || !typingRef) return;
+            
+            if (typingTimeout[currentPrivateChatId]) {
+                clearTimeout(typingTimeout[currentPrivateChatId]);
+            }
+            
+            typingRef.child(currentPrivateChatId).child(currentUser.name).set(true);
+            
+            typingTimeout[currentPrivateChatId] = setTimeout(() => {
+                typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+            }, TYPING_TIMEOUT_DURATION);
+        }
+
+        function listenForTyping() {
+            if (!currentPrivateChatId || !typingRef) return;
+            
+            const privateWithDiv = document.getElementById('privateWith');
+            // Eski listener'ı kaldır
+            typingRef.child(currentPrivateChatId).off('value');
+            
+            typingRef.child(currentPrivateChatId).on('value', (snapshot) => {
+                const typingUsers = snapshot.val() || {};
+                const isOtherTyping = Object.keys(typingUsers).some(user => user !== currentUser.name);
+                
+                const existing = privateWithDiv.querySelector('.private-typing-indicator');
+                if (isOtherTyping) {
+                    if (!existing) {
+                        const typingSpan = document.createElement('span');
+                        typingSpan.className = 'private-typing-indicator';
+                        typingSpan.innerHTML = '<i class="fas fa-ellipsis-h"></i> yazıyor...';
+                        privateWithDiv.appendChild(typingSpan);
+                    }
+                } else {
+                    if (existing) existing.remove();
+                }
+            });
         }
 
         function closePrivateChat() {
@@ -6344,15 +6344,13 @@
                 cameraStream.getTracks().forEach(track => track.stop());
                 cameraStream = null;
             }
-            if (isAudioRecording) {
-                stopAudioRecording();
-            }
+            if (isAudioRecording) stopAudioRecording();
             
             if (privateChatsRef && currentPrivateChatId) {
-                privateChatsRef.child(currentPrivateChatId).off();
+                privateChatsRef.child(currentPrivateChatId).off('child_added');
             }
             if (typingRef && currentPrivateChatId) {
-                typingRef.child(currentPrivateChatId).off();
+                typingRef.child(currentPrivateChatId).off('value');
             }
             if (typingTimeout[currentPrivateChatId]) {
                 clearTimeout(typingTimeout[currentPrivateChatId]);
@@ -6374,8 +6372,9 @@
                 if (!messages) return;
                 const messageArray = Object.entries(messages).map(([id, data]) => ({ id, ...data, timestamp: data.timestamp || Date.now() }));
                 messageArray.sort((a, b) => a.timestamp - b.timestamp);
-                if (messageArray.length > 10) {
-                    const messagesToArchive = messageArray.slice(0, messageArray.length - 10);
+                // Son 100 mesajı tut, öncekileri arşivle
+                if (messageArray.length > 100) {
+                    const messagesToArchive = messageArray.slice(0, messageArray.length - 100);
                     for (const oldMessage of messagesToArchive) {
                         try {
                             await privateChatsArchiveRef.child(chatId).push({
@@ -6386,7 +6385,7 @@
                                 video: oldMessage.video || null,
                                 audio: oldMessage.audio || null,
                                 timestamp: oldMessage.timestamp,
-                                time: oldMessage.time || new Date(oldMessage.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                                time: oldMessage.time,
                                 archivedAt: Date.now(),
                                 originalMessageId: oldMessage.id
                             });
@@ -6831,7 +6830,6 @@
             }
         }
 
-        /* ========== DÜZELTİLMİŞ KISIM: initApp ========== */
         function initApp() {
             const messageInput = document.getElementById('message-input');
             const privateInput = document.getElementById('private-input');
