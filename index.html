@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
-        /* TÜM STILLER AYNEN KALDI - YENİ EKLENEN FAVORİ STİLLERİ */
+        /* TÜM STILLER AYNEN KALDI - FAVORİ VE OKUNDU İYİLEŞTİRMELERİ EKLENDİ */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -4433,11 +4433,10 @@
             const snapshot = await favoritesRef.child(currentUser.name).once('value');
             const data = snapshot.val() || {};
             favoritesList = Object.keys(data).filter(username => data[username] === true);
-            // Favori listesi sekmesi aktifse güncelle
             if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
                 updateUserListUI();
             } else if (document.getElementById('usersSidebar').classList.contains('active')) {
-                updateUserListUI(); // Tüm liste görünüyorsa favori rozetleri için güncelle
+                updateUserListUI();
             }
         }
 
@@ -4445,7 +4444,6 @@
             if (!currentUser || username === currentUser.name) return false;
             await favoritesRef.child(currentUser.name).child(username).set(true);
             await loadFavoritesList();
-            // Gerçek zamanlı güncelleme - favori listesi aktifse güncelle
             if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
                 updateUserListUI();
             }
@@ -4456,7 +4454,6 @@
             if (!currentUser) return false;
             await favoritesRef.child(currentUser.name).child(username).remove();
             await loadFavoritesList();
-            // Gerçek zamanlı güncelleme
             if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
                 updateUserListUI();
             } else if (document.getElementById('usersSidebar').classList.contains('active')) {
@@ -4503,10 +4500,8 @@
         function toggleFavoriteList() {
             const sidebar = document.getElementById('usersSidebar');
             if (sidebar.classList.contains('active')) {
-                // Zaten açıksa sadece sekmeyi değiştir
                 switchUserListTab('favorites');
             } else {
-                // Açık değilse aç ve favori sekmesine geç
                 sidebar.classList.add('active');
                 switchUserListTab('favorites');
             }
@@ -5577,7 +5572,7 @@
             }
         }
 
-        // ========== OPTİMİZE EDİLMİŞ ÖZEL SOHBET FONKSİYONLARI ==========
+        // ========== OPTİMİZE EDİLMİŞ ÖZEL SOHBET FONKSİYONLARI (ANLIK OKUNDU BİLDİRİMİ İLE) ==========
         
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
@@ -5639,10 +5634,20 @@
                 const message = snapshot.val();
                 if (message) {
                     if (!document.getElementById(`private_msg_${snapshot.key}`)) {
+                        // YENİ: Anlık okundu bildirimi - mesaj gönderildiğinde hemen okundu işaretleme
                         if (message.sender !== currentUser.name && !message.isRead) {
                             privateChatsRef.child(currentPrivateChatId).child(snapshot.key).update({
                                 isRead: true,
                                 readAt: Date.now()
+                            }).then(() => {
+                                // Okundu bilgisi UI'da güncelle
+                                const msgDiv = document.getElementById(`private_msg_${snapshot.key}`);
+                                if (msgDiv) {
+                                    const timeSpan = msgDiv.querySelector('.message-time');
+                                    if (timeSpan && !timeSpan.innerHTML.includes('fa-check-double')) {
+                                        timeSpan.innerHTML = timeSpan.innerHTML.replace('<i class="fas fa-check"></i>', '<i class="fas fa-check-double" style="color: var(--online);"></i>');
+                                    }
+                                }
                             });
                             message.isRead = true;
                         }
