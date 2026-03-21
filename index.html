@@ -1434,12 +1434,13 @@
         
         // ========== GLOBAL DEĞİŞKENLER ==========
         let database;
-        let usersRef, messagesRef, privateChatsRef, privateChatsArchiveRef;
+        let usersRef, messagesRef, privateChatsRef, privateChatsArchiveRef, chatArchiveRef;
         let coAdminsRef, bansRef, globalBansRef, registeredUsersRef, operatorsRef;
         let userLocksRef, adminPasswordsRef, customCommandsRef, adminListRef;
         let playlistRef, profilesRef, blocksRef, reportsRef;
         let favoritesRef, adLinksRef;
         let typingRef;
+        let messagesReadRef; // YENİ: Okundu bilgisi için
 
         let cachedOnlineUsers = {};
         let cachedMessages = [];
@@ -1501,7 +1502,7 @@
         const TYPING_TIMEOUT_DURATION = 3000;
 
         const PING_INTERVAL = 30000;
-        const MESSAGE_LIMIT = 15;
+        const MESSAGE_LIMIT = 15; // Mesaj sayısı bu limiti aşarsa arşivlenecek
         const ONLINE_THRESHOLD = 60000;
         
         let dailyWriteCount = 0;
@@ -1554,6 +1555,92 @@
         }
 
         let isSendingMessage = false;
+
+        // ========== YENİ: OKUNDU BİLGİSİ GÜNCELLEME ==========
+        async function markMessageAsRead(messageId) {
+            if (!currentUser || !messagesReadRef) return;
+            // Kendi mesajını okumuş olarak işaretleme
+            const msgSnapshot = await messagesRef.child(messageId).once('value');
+            const msg = msgSnapshot.val();
+            if (!msg || msg.sender === currentUser.name) return;
+            
+            await messagesReadRef.child(messageId).child(currentUser.name).set(true);
+            incrementWriteCount();
+        }
+
+        async function updateReadReceipt(messageElement, messageId) {
+            if (!messagesReadRef || !currentUser) return;
+            const snapshot = await messagesReadRef.child(messageId).once('value');
+            const readers = snapshot.val() || {};
+            const isRead = Object.keys(readers).length > 0;
+            const readIcon = messageElement.querySelector('.message-read-receipt');
+            if (readIcon) {
+                if (isRead) {
+                    readIcon.innerHTML = '<i class="fas fa-check-circle" style="color: var(--online);"></i>';
+                    readIcon.title = `Okundu: ${Object.keys(readers).join(', ')}`;
+                } else {
+                    readIcon.innerHTML = '<i class="fas fa-check-circle" style="color: var(--text-muted);"></i>';
+                    readIcon.title = 'Henüz okunmadı';
+                }
+            }
+        }
+
+        // ========== YENİ: ARŞİVLEME FONKSİYONU ==========
+        async function archiveAndTrimChat() {
+            if (!messagesRef || !chatArchiveRef) return;
+            try {
+                const snapshot = await messagesRef.orderByKey().once('value');
+                const messages = snapshot.val();
+                if (!messages) return;
+                
+                const messageArray = Object.entries(messages).map(([id, data]) => ({ id, ...data, timestamp: data.timestamp || Date.now() }));
+                messageArray.sort((a, b) => a.timestamp - b.timestamp);
+                
+                if (messageArray.length > MESSAGE_LIMIT) {
+                    const messagesToArchive = messageArray.slice(0, messageArray.length - MESSAGE_LIMIT);
+                    for (const oldMessage of messagesToArchive) {
+                        // Arşive ekle
+                        await chatArchiveRef.child(oldMessage.id).set({
+                            sender: oldMessage.sender,
+                            text: oldMessage.text,
+                            type: oldMessage.type,
+                            timestamp: oldMessage.timestamp,
+                            time: oldMessage.time,
+                            avatar: oldMessage.avatar,
+                            archivedAt: Date.now()
+                        });
+                        // Ana sohbetten sil
+                        await messagesRef.child(oldMessage.id).remove();
+                        incrementWriteCount();
+                    }
+                    addSystemMessage(`📦 Eski mesajlar arşivlendi. Sohbet temizlendi.`);
+                }
+            } catch (error) {
+                console.error("Arşivleme hatası:", error);
+            }
+        }
+
+        // Owner için arşivlenmiş mesajları da gösterecek fonksiyon
+        async function loadAllArchivedMessagesForOwner() {
+            if (!isOwner) return;
+            const container = document.getElementById('messages');
+            if (!container) return;
+            
+            // Ana mesajları getir
+            const mainSnapshot = await messagesRef.orderByKey().once('value');
+            const mainMessages = mainSnapshot.val() || {};
+            const archiveSnapshot = await chatArchiveRef.orderByKey().once('value');
+            const archiveMessages = archiveSnapshot.val() || {};
+            
+            let allMessages = [
+                ...Object.entries(mainMessages).map(([id, data]) => ({ id, ...data, source: 'main' })),
+                ...Object.entries(archiveMessages).map(([id, data]) => ({ id, ...data, source: 'archive' }))
+            ];
+            allMessages.sort((a, b) => a.timestamp - b.timestamp);
+            
+            container.innerHTML = '';
+            allMessages.slice(-MESSAGE_LIMIT * 2).forEach(msg => appendMessageToUI(msg, true));
+        }
 
         async function sendMessage() {
             if (isSendingMessage) {
@@ -1616,6 +1703,8 @@
                     if (usersRef) {
                         usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
                     }
+                    // Mesaj gönderildikten sonra arşivleme kontrolü
+                    setTimeout(() => archiveAndTrimChat(), 500);
                 } catch (error) {
                     addSystemMessage('❌ Mesaj gönderilemedi!');
                 }
@@ -1637,7 +1726,7 @@
             }
         }
 
-        // ========== REKLAM OVERLAY FONKSİYONLARI ==========
+        // ========== REKLAM OVERLAY FONKSİYONLARI (Aynen kaldı) ==========
         let adTimerInterval = null;
         let adSkipTime = 30;
         let adOverlay = document.getElementById('adOverlay');
@@ -1998,7 +2087,7 @@
             }, 50);
         }
 
-        // ========== FAVORİ SİSTEMİ FONKSİYONLARI ==========
+        // ========== FAVORİ SİSTEMİ FONKSİYONLARI (Aynen kaldı) ==========
         async function loadFavoritesList() {
             if (!currentUser || !favoritesRef) return;
             const snapshot = await favoritesRef.child(currentUser.name).once('value');
@@ -2007,7 +2096,6 @@
             if (document.getElementById('favoritesDrawer').classList.contains('active')) {
                 openFavoritesDrawer();
             }
-            // Özel pencere favori butonunu güncelle
             if (privateChatWith) {
                 updatePrivateFavoriteButton();
             }
@@ -2101,13 +2189,12 @@
         function closeFavoritesDrawer() {
             const drawer = document.getElementById('favoritesDrawer');
             drawer.classList.remove('active');
-            // Mobilde transform ile açıldığı için style'ı sıfırla
             if (window.innerWidth <= 768) {
                 drawer.style.transform = '';
             }
         }
 
-        // ========== Arama Drawer ==========
+        // ========== Arama Drawer (Aynen kaldı) ==========
         function openSearchDrawer() {
             if (!currentUser) return;
             document.getElementById('searchDrawer').classList.add('active');
@@ -2194,7 +2281,7 @@
             await loadFavoritesList();
         }
 
-        // Kaydı sil fonksiyonu
+        // Kaydı sil fonksiyonu (Aynen kaldı)
         async function deleteAccount() {
             if (!currentUser) return;
             if (!confirm('⚠️ TÜM HESABINIZI SİLMEK ÜZERESİNİZ!\n\nBu işlem geri alınamaz. Tüm mesajlarınız, profiliniz, takipçileriniz ve kaydınız kalıcı olarak silinecektir.\n\nDevam etmek istediğinize emin misiniz?')) return;
@@ -2226,7 +2313,7 @@
             }
         }
 
-        // ========== PANEL FONKSİYONLARI ==========
+        // ========== PANEL FONKSİYONLARI (Aynen kaldı) ==========
         function toggleOwnerPanel() {
             const panel = document.getElementById('ownerPanel');
             panel.classList.toggle('active');
@@ -2869,6 +2956,7 @@
                         messagesRef = database.ref('messages');
                         privateChatsRef = database.ref('privateChats');
                         privateChatsArchiveRef = database.ref('privateChatsArchive');
+                        chatArchiveRef = database.ref('chatArchive'); // YENİ: Ana sohbet arşivi
                         coAdminsRef = database.ref('coAdmins');
                         bansRef = database.ref('bans');
                         globalBansRef = database.ref('globalBans');
@@ -2885,6 +2973,7 @@
                         favoritesRef = database.ref('favorites');
                         adLinksRef = database.ref('adLinks');
                         typingRef = database.ref('typing');
+                        messagesReadRef = database.ref('messagesRead'); // YENİ: Okundu bilgisi için
 
                         initOwnerPassword();
                         loadCustomCommands();
@@ -2964,6 +3053,8 @@
                 }
                 if (!document.getElementById(`msg_${snapshot.key}`)) {
                     appendMessageToUI(newMessage);
+                    // Okundu bilgisini güncelle
+                    markMessageAsRead(newMessage.id);
                 }
             });
         }
@@ -3172,7 +3263,7 @@
             messagesArray.slice(-MESSAGE_LIMIT).forEach(msg => appendMessageToUI(msg));
         }
 
-        function appendMessageToUI(message) {
+        function appendMessageToUI(message, fromArchive = false) {
             const container = document.getElementById('messages');
             
             if (document.getElementById(`msg_${message.id}`)) return;
@@ -3196,6 +3287,9 @@
             const avatarHtml = userAvatar ? 
                 `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
             
+            // Okundu ikonu için placeholder
+            let readReceiptHtml = `<span class="message-read-receipt" style="margin-left: 6px; font-size: 12px;"><i class="fas fa-check-circle" style="color: var(--text-muted);"></i></span>`;
+            
             messageDiv.innerHTML = `
                 <div class="message-header">
                     <span class="message-user" onclick="openPrivateChat('${message.sender}')">
@@ -3205,12 +3299,19 @@
                     <div>
                         <span class="message-time">${message.time || '--:--'}</span>
                         ${deleteButton}
+                        ${readReceiptHtml}
                     </div>
                 </div>
                 <div class="message-content">${content}</div>
             `;
             container.appendChild(messageDiv);
             container.scrollTop = container.scrollHeight;
+            
+            // Okundu durumunu güncelle
+            updateReadReceipt(messageDiv, message.id);
+            if (!fromArchive && currentUser && message.sender !== currentUser.name) {
+                markMessageAsRead(message.id);
+            }
         }
 
         async function deleteMessage(messageId) {
@@ -3225,6 +3326,8 @@
                 }
                 if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
                     await messagesRef.child(messageId).remove();
+                    // Arşivden de sil
+                    if (chatArchiveRef) await chatArchiveRef.child(messageId).remove();
                     const messageDiv = document.getElementById(`msg_${messageId}`);
                     if (messageDiv) messageDiv.remove();
                     incrementWriteCount();
@@ -3234,7 +3337,7 @@
             }
         }
 
-        // ========== ÖZEL SOHBET FONKSİYONLARI ==========
+        // ========== ÖZEL SOHBET FONKSİYONLARI (Aynen kaldı) ==========
         
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
@@ -3247,7 +3350,6 @@
                 return;
             }
             
-            // Önceki dinleyicileri temizle
             if (privateChatWith && currentPrivateChatId && privateChatsRef) {
                 privateChatsRef.child(currentPrivateChatId).off('child_added');
                 if (typingRef) typingRef.child(currentPrivateChatId).off('value');
@@ -3265,10 +3367,8 @@
             blockBtn.innerHTML = isBlocked ? '<i class="fas fa-ban" style="color: var(--online);"></i>' : '<i class="fas fa-ban"></i>';
             blockBtn.title = isBlocked ? 'Engeli Kaldır' : 'Engelle';
             
-            // Favori butonunu güncelle
             await updatePrivateFavoriteButton();
             
-            // Mesajları yükle ve dinlemeye başla
             loadPrivateMessages();
             listenForTyping();
         }
@@ -3278,13 +3378,11 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
             
-            // Son 50 mesajı getir
             privateChatsRef.child(currentPrivateChatId).limitToLast(50).once('value', (snapshot) => {
                 const messages = snapshot.val();
                 updatePrivateMessages(messages);
             });
             
-            // Yeni mesajları dinle (child_added)
             privateChatsRef.child(currentPrivateChatId).off('child_added');
             privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
                 const message = snapshot.val();
@@ -3292,7 +3390,6 @@
                     if (!document.getElementById(`private_msg_${snapshot.key}`)) {
                         appendPrivateMessageToUI({ id: snapshot.key, ...message });
                         
-                        // Bildirim gönder (eğer gelen mesaj ise)
                         if (message.sender !== currentUser.name) {
                             let msgText = message.text || '';
                             if (message.image) msgText = '📸 Fotoğraf';
@@ -3412,7 +3509,6 @@
                 input.value = '';
                 autoResize(input);
                 
-                // Yazıyor göstergesini temizle
                 if (typingTimeout[currentPrivateChatId]) {
                     clearTimeout(typingTimeout[currentPrivateChatId]);
                 }
@@ -3420,12 +3516,10 @@
                     typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
                 }
                 
-                // Kullanıcı son görülme zamanını güncelle
                 if (usersRef) {
                     usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
                 }
                 
-                // Arşivleme (mesaj sayısını sınırla)
                 await archiveAndTrimPrivateChat(currentPrivateChatId);
             } catch (error) {
                 console.error('Mesaj gönderme hatası:', error);
@@ -3453,7 +3547,6 @@
             if (!currentPrivateChatId || !typingRef) return;
             
             const privateWithDiv = document.getElementById('privateWith');
-            // Eski listener'ı kaldır
             typingRef.child(currentPrivateChatId).off('value');
             
             typingRef.child(currentPrivateChatId).on('value', (snapshot) => {
@@ -3507,7 +3600,6 @@
                 if (!messages) return;
                 const messageArray = Object.entries(messages).map(([id, data]) => ({ id, ...data, timestamp: data.timestamp || Date.now() }));
                 messageArray.sort((a, b) => a.timestamp - b.timestamp);
-                // Son 100 mesajı tut, öncekileri arşivle
                 if (messageArray.length > 100) {
                     const messagesToArchive = messageArray.slice(0, messageArray.length - 100);
                     for (const oldMessage of messagesToArchive) {
@@ -3964,7 +4056,6 @@
             const messageInput = document.getElementById('message-input');
             const privateInput = document.getElementById('private-input');
             
-            // Event listener'ları yeniden ata (tekrarları önlemek için)
             messageInput.removeEventListener('keydown', window.messageInputHandler);
             privateInput.removeEventListener('keydown', window.privateInputHandler);
             
@@ -4010,6 +4101,7 @@
                     const newMessage = { id: snapshot.key, ...snapshot.val() };
                     if (!document.getElementById(`msg_${snapshot.key}`)) {
                         appendMessageToUI(newMessage);
+                        markMessageAsRead(newMessage.id);
                     }
                 });
             }
