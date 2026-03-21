@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
-        /* TÜM STILLER AYNEN KALDI - SADECE FAVORİ MOBİL DÜZELTMESİ EKLENDİ */
+        /* TÜM STILLER AYNEN KALDI */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -306,7 +306,6 @@
             }
         }
         
-        /* diğer stiller aynen devam... */
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body { height: 100%; width: 100%; overflow: hidden; position: fixed; background: var(--bg-primary); }
         body { font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'YouTube Sans', sans-serif; color: var(--text-primary); display: flex; flex-direction: column; overflow: hidden; }
@@ -416,7 +415,7 @@
         .ad-skip-btn { background: rgba(33, 33, 33, 0.8); color: var(--text-secondary); border: 1px solid rgba(255,255,255,0.2); padding: 8px 24px; border-radius: 30px; cursor: pointer; font-weight: 600; transition: all 0.2s ease; display: flex; align-items: center; gap: 8px; backdrop-filter: blur(5px); opacity: 0.7; }
         .ad-skip-btn:hover:not(:disabled) { background: var(--youtube-red); color: white; border-color: var(--youtube-red); opacity: 1; transform: scale(1.02); }
         .ad-skip-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        @media (max-width: 950px) { .ad-container { width: 95%; max-width: 95%; } .ad-timer { padding: 4px 10px; font-size: 12px; } .ad-skip-btn { padding: 6px 16px; font-size: 12px; white-space: nowrap; } .ad-timer span { font-size: 14px; font-weight: 700; color: var(--youtube-red); } }
+        @media (max-width: 950px) { .ad-container { width: 95%; max-width: 95%; } .ad-timer { padding: 4px 10px; font-size: 12px; } .ad-skip-btn { padding: 6px 12px; font-size: 12px; white-space: nowrap; } .ad-timer span { font-size: 14px; font-weight: 700; color: var(--youtube-red); } }
         .playlist-section { height: 250px; display: flex; flex-direction: column; border-top: 1px solid var(--border-color); background: rgba(0, 0, 0, 0.3); padding: 12px; }
         .playlist-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
         .playlist-header h3 { font-size: 16px; color: var(--text-primary); }
@@ -674,6 +673,20 @@
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .drag-handle { width: 40px; height: 4px; background: var(--text-muted); border-radius: 2px; margin: 8px auto; opacity: 0.5; }
         @media (max-width: 768px) { .drag-handle { display: none; } }
+        
+        /* YENİ: Okundu ikonu stili */
+        .message-read-receipt {
+            margin-left: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            display: inline-block;
+        }
+        .message-read-receipt i {
+            transition: color 0.2s ease;
+        }
+        .message-read-receipt i:hover {
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
@@ -916,6 +929,7 @@
             <button class="role-tab" onclick="switchOwnerTab('reports')"><i class="fas fa-exclamation-triangle"></i> Şikayetler</button>
             <button class="role-tab" onclick="switchOwnerTab('blocks')"><i class="fas fa-ban"></i> Engellemeler</button>
             <button class="role-tab" onclick="switchOwnerTab('ads')"><i class="fas fa-ad"></i> Reklamlar</button>
+            <button class="role-tab" onclick="switchOwnerTab('archive')"><i class="fas fa-archive"></i> Arşiv</button>
         </div>
         <div class="role-panel-content">
             <div class="role-tab-content active" id="ownerDashboardTab">
@@ -934,6 +948,7 @@
                     <button class="role-action-btn" onclick="showAllPrivateChats()"><i class="fas fa-envelope"></i> Tüm Özel Mesajları Göster</button>
                     <button class="role-action-btn" onclick="searchPrivateMessagesPrompt()"><i class="fas fa-search"></i> Özel Mesajlarda Ara</button>
                     <button class="role-action-btn danger" onclick="deleteAllPrivateMessages()"><i class="fas fa-trash"></i> Tüm Özel Mesajları Sil</button>
+                    <button class="role-action-btn" onclick="loadAllArchivedMessagesForOwner()"><i class="fas fa-archive"></i> Tüm Arşivli Mesajları Göster</button>
                 </div>
             </div>
             <div class="role-tab-content" id="ownerUsersTab">
@@ -1019,6 +1034,12 @@
                     <button class="role-action-btn" onclick="saveAdContentOrder()" style="margin-top: 10px; background: var(--youtube-red); color: white;">
                         <i class="fas fa-save"></i> Sırayı Kaydet
                     </button>
+                </div>
+            </div>
+            <div class="role-tab-content" id="ownerArchiveTab">
+                <div class="role-section">
+                    <div class="role-section-title owner"><i class="fas fa-archive"></i> Arşivlenmiş Mesajlar</div>
+                    <button class="role-action-btn" onclick="loadAllArchivedMessagesForOwner()"><i class="fas fa-folder-open"></i> Arşivlenmiş Mesajları Göster</button>
                 </div>
             </div>
         </div>
@@ -1434,13 +1455,16 @@
         
         // ========== GLOBAL DEĞİŞKENLER ==========
         let database;
-        let usersRef, messagesRef, privateChatsRef, privateChatsArchiveRef, chatArchiveRef;
+        let usersRef, messagesRef, privateChatsRef, privateChatsArchiveRef;
         let coAdminsRef, bansRef, globalBansRef, registeredUsersRef, operatorsRef;
         let userLocksRef, adminPasswordsRef, customCommandsRef, adminListRef;
         let playlistRef, profilesRef, blocksRef, reportsRef;
         let favoritesRef, adLinksRef;
         let typingRef;
-        let messagesReadRef; // YENİ: Okundu bilgisi için
+        
+        // YENİ REFERANSLAR
+        let messagesReadRef;      // Okundu bilgisi için
+        let chatArchiveRef;       // Ana sohbet arşivi için (ikincil veritabanı)
 
         let cachedOnlineUsers = {};
         let cachedMessages = [];
@@ -1502,7 +1526,7 @@
         const TYPING_TIMEOUT_DURATION = 3000;
 
         const PING_INTERVAL = 30000;
-        const MESSAGE_LIMIT = 15; // Mesaj sayısı bu limiti aşarsa arşivlenecek
+        const MESSAGE_LIMIT = 10;  // 10 mesajdan sonra arşivleme başlar
         const ONLINE_THRESHOLD = 60000;
         
         let dailyWriteCount = 0;
@@ -1556,16 +1580,22 @@
 
         let isSendingMessage = false;
 
-        // ========== YENİ: OKUNDU BİLGİSİ GÜNCELLEME ==========
+        // ========== YENİ: OKUNDU BİLGİSİ FONKSİYONLARI ==========
         async function markMessageAsRead(messageId) {
             if (!currentUser || !messagesReadRef) return;
-            // Kendi mesajını okumuş olarak işaretleme
+            // Kendi mesajını okuma olarak işaretleme
             const msgSnapshot = await messagesRef.child(messageId).once('value');
             const msg = msgSnapshot.val();
             if (!msg || msg.sender === currentUser.name) return;
             
             await messagesReadRef.child(messageId).child(currentUser.name).set(true);
             incrementWriteCount();
+            
+            // UI'ı güncelle
+            const msgElement = document.getElementById(`msg_${messageId}`);
+            if (msgElement) {
+                updateReadReceipt(msgElement, messageId);
+            }
         }
 
         async function updateReadReceipt(messageElement, messageId) {
@@ -1596,6 +1626,7 @@
                 const messageArray = Object.entries(messages).map(([id, data]) => ({ id, ...data, timestamp: data.timestamp || Date.now() }));
                 messageArray.sort((a, b) => a.timestamp - b.timestamp);
                 
+                // 10 mesajdan sonra eski mesajları arşivle ve sil
                 if (messageArray.length > MESSAGE_LIMIT) {
                     const messagesToArchive = messageArray.slice(0, messageArray.length - MESSAGE_LIMIT);
                     for (const oldMessage of messagesToArchive) {
@@ -1613,33 +1644,46 @@
                         await messagesRef.child(oldMessage.id).remove();
                         incrementWriteCount();
                     }
-                    addSystemMessage(`📦 Eski mesajlar arşivlendi. Sohbet temizlendi.`);
+                    console.log(`📦 ${messagesToArchive.length} eski mesaj arşivlendi ve ana sohbetten silindi.`);
                 }
             } catch (error) {
                 console.error("Arşivleme hatası:", error);
             }
         }
 
-        // Owner için arşivlenmiş mesajları da gösterecek fonksiyon
+        // Owner için arşivlenmiş mesajları da göster
         async function loadAllArchivedMessagesForOwner() {
             if (!isOwner) return;
             const container = document.getElementById('messages');
             if (!container) return;
             
-            // Ana mesajları getir
-            const mainSnapshot = await messagesRef.orderByKey().once('value');
-            const mainMessages = mainSnapshot.val() || {};
-            const archiveSnapshot = await chatArchiveRef.orderByKey().once('value');
-            const archiveMessages = archiveSnapshot.val() || {};
+            container.innerHTML = '<div style="text-align:center; padding:20px;">Arşiv yükleniyor...</div>';
             
-            let allMessages = [
-                ...Object.entries(mainMessages).map(([id, data]) => ({ id, ...data, source: 'main' })),
-                ...Object.entries(archiveMessages).map(([id, data]) => ({ id, ...data, source: 'archive' }))
-            ];
-            allMessages.sort((a, b) => a.timestamp - b.timestamp);
-            
-            container.innerHTML = '';
-            allMessages.slice(-MESSAGE_LIMIT * 2).forEach(msg => appendMessageToUI(msg, true));
+            try {
+                // Ana mesajları getir
+                const mainSnapshot = await messagesRef.orderByKey().once('value');
+                const mainMessages = mainSnapshot.val() || {};
+                // Arşiv mesajlarını getir
+                const archiveSnapshot = await chatArchiveRef.orderByKey().once('value');
+                const archiveMessages = archiveSnapshot.val() || {};
+                
+                let allMessages = [
+                    ...Object.entries(mainMessages).map(([id, data]) => ({ id, ...data, source: 'main' })),
+                    ...Object.entries(archiveMessages).map(([id, data]) => ({ id, ...data, source: 'archive' }))
+                ];
+                allMessages.sort((a, b) => a.timestamp - b.timestamp);
+                
+                container.innerHTML = '';
+                allMessages.slice(-MESSAGE_LIMIT * 3).forEach(msg => {
+                    const isArchived = msg.source === 'archive';
+                    appendMessageToUI(msg, isArchived);
+                });
+                
+                addSystemMessage(`📦 Toplam ${allMessages.length} mesaj yüklendi (${archiveMessages ? Object.keys(archiveMessages).length : 0} arşivlenmiş).`);
+            } catch (error) {
+                console.error("Arşiv yükleme hatası:", error);
+                container.innerHTML = '<div class="message-item system">❌ Arşiv yüklenemedi!</div>';
+            }
         }
 
         async function sendMessage() {
@@ -2087,7 +2131,7 @@
             }, 50);
         }
 
-        // ========== FAVORİ SİSTEMİ FONKSİYONLARI (Aynen kaldı) ==========
+        // ========== FAVORİ SİSTEMİ FONKSİYONLARI ==========
         async function loadFavoritesList() {
             if (!currentUser || !favoritesRef) return;
             const snapshot = await favoritesRef.child(currentUser.name).once('value');
@@ -2194,7 +2238,7 @@
             }
         }
 
-        // ========== Arama Drawer (Aynen kaldı) ==========
+        // ========== Arama Drawer ==========
         function openSearchDrawer() {
             if (!currentUser) return;
             document.getElementById('searchDrawer').classList.add('active');
@@ -2281,7 +2325,6 @@
             await loadFavoritesList();
         }
 
-        // Kaydı sil fonksiyonu (Aynen kaldı)
         async function deleteAccount() {
             if (!currentUser) return;
             if (!confirm('⚠️ TÜM HESABINIZI SİLMEK ÜZERESİNİZ!\n\nBu işlem geri alınamaz. Tüm mesajlarınız, profiliniz, takipçileriniz ve kaydınız kalıcı olarak silinecektir.\n\nDevam etmek istediğinize emin misiniz?')) return;
@@ -2292,13 +2335,8 @@
                 if (profilesRef) await profilesRef.child(username).remove();
                 if (registeredUsersRef) await registeredUsersRef.child(username).remove();
                 if (favoritesRef) await favoritesRef.child(username).remove();
-                
-                if (blocksRef) {
-                    await blocksRef.child(username).remove();
-                }
-                
+                if (blocksRef) await blocksRef.child(username).remove();
                 if (usersRef) await usersRef.child(username).remove();
-                
                 if (bansRef) await bansRef.child(username).remove();
                 if (globalBansRef) await globalBansRef.child(username).remove();
                 
@@ -2313,7 +2351,15 @@
             }
         }
 
-        // ========== PANEL FONKSİYONLARI (Aynen kaldı) ==========
+        // ========== PANEL FONKSİYONLARI ==========
+        function switchOwnerTab(tabName) {
+            document.querySelectorAll('#ownerPanel .role-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('#ownerPanel .role-tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
+            document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+            if (tabName === 'ads') updateAdContentsList();
+        }
+        
         function toggleOwnerPanel() {
             const panel = document.getElementById('ownerPanel');
             panel.classList.toggle('active');
@@ -2350,14 +2396,6 @@
             const panel = document.getElementById('operatorPanel');
             panel.classList.toggle('active');
             if (panel.classList.contains('active')) updateOperatorPanelFromCache();
-        }
-        
-        function switchOwnerTab(tabName) {
-            document.querySelectorAll('#ownerPanel .role-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('#ownerPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-            document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
-            if (tabName === 'ads') updateAdContentsList();
         }
         
         function switchAdminTab(tabName) {
@@ -2956,7 +2994,6 @@
                         messagesRef = database.ref('messages');
                         privateChatsRef = database.ref('privateChats');
                         privateChatsArchiveRef = database.ref('privateChatsArchive');
-                        chatArchiveRef = database.ref('chatArchive'); // YENİ: Ana sohbet arşivi
                         coAdminsRef = database.ref('coAdmins');
                         bansRef = database.ref('bans');
                         globalBansRef = database.ref('globalBans');
@@ -2973,7 +3010,10 @@
                         favoritesRef = database.ref('favorites');
                         adLinksRef = database.ref('adLinks');
                         typingRef = database.ref('typing');
-                        messagesReadRef = database.ref('messagesRead'); // YENİ: Okundu bilgisi için
+                        
+                        // YENİ REFERANSLAR
+                        messagesReadRef = database.ref('messagesRead');
+                        chatArchiveRef = database.ref('chatArchive');
 
                         initOwnerPassword();
                         loadCustomCommands();
@@ -3287,7 +3327,7 @@
             const avatarHtml = userAvatar ? 
                 `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
             
-            // Okundu ikonu için placeholder
+            // YENİ: Okundu ikonu
             let readReceiptHtml = `<span class="message-read-receipt" style="margin-left: 6px; font-size: 12px;"><i class="fas fa-check-circle" style="color: var(--text-muted);"></i></span>`;
             
             messageDiv.innerHTML = `
@@ -3307,7 +3347,7 @@
             container.appendChild(messageDiv);
             container.scrollTop = container.scrollHeight;
             
-            // Okundu durumunu güncelle
+            // Okundu durumunu güncelle (eğer mesaj arşivden gelmiyorsa)
             updateReadReceipt(messageDiv, message.id);
             if (!fromArchive && currentUser && message.sender !== currentUser.name) {
                 markMessageAsRead(message.id);
@@ -5208,6 +5248,14 @@
                 toggleOperatorPanel();
                 return;
             }
+            if (command === 'arsiv') {
+                if (!isOwner) {
+                    addSystemMessage("⛔ Sadece Owner arşivi görebilir!");
+                    return;
+                }
+                loadAllArchivedMessagesForOwner();
+                return;
+            }
             try {
                 switch(command) {
                     case 'info':
@@ -5418,6 +5466,7 @@
             let help = '🔥 <strong>TÜM KOMUTLAR:</strong><br><br>';
             help += '👑 <strong>OWNER PANELİ KOMUTLARI:</strong><br>';
             help += '• /ownerpanel - Owner panelini açar<br>';
+            help += '• /arsiv - Arşivlenmiş mesajları gösterir<br>';
             help += '⭐️ <strong>ADMIN PANELİ KOMUTLARI:</strong><br>';
             help += '• /adminpanel - Admin panelini açar<br>';
             help += '• /globalban [kullanıcı] [dakika] [sebep] - Global ban<br>';
@@ -5447,6 +5496,8 @@
             help += '• /ping - Bağlantı testi<br>';
             help += '• /çıkış - Çıkış yap<br><br>';
             help += '📹 <strong>ÖZELLİKLER:</strong><br>';
+            help += '• Mavi Tik: Mesajınız karşı taraf okuduğunda mavi tık görünür<br>';
+            help += '• Otomatik Arşiv: 10 mesajdan sonra eski mesajlar arşivlenir, ana sohbet temizlenir<br>';
             help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir<br>';
             help += '• Kameradan Çek: Direkt telefon kamerasını açar<br>';
             help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir<br>';
