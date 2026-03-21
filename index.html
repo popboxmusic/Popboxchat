@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
-        /* TÜM STILLER AYNEN KALDI - YENİ EKLENEN FAVORİ STİLLERİ */
+        /* TÜM STILLER AYNEN KALDI */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -4427,41 +4427,38 @@
             }, 50);
         }
 
-        // ========== FAVORİ SİSTEMİ FONKSİYONLARI (Geliştirilmiş - Gerçek Zamanlı) ==========
+        // ========== FAVORİ SİSTEMİ FONKSİYONLARI (GERÇEK ZAMANLI - ANLIK) ==========
+        
+        // Favori listesini yükle ve anlık dinleme başlat
         async function loadFavoritesList() {
             if (!currentUser || !favoritesRef) return;
-            const snapshot = await favoritesRef.child(currentUser.name).once('value');
-            const data = snapshot.val() || {};
-            favoritesList = Object.keys(data).filter(username => data[username] === true);
-            // Favori listesi sekmesi aktifse güncelle
-            if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
+            
+            // Firebase'den anlık dinleme - her değişiklikte UI güncellenir
+            favoritesRef.child(currentUser.name).on('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                favoritesList = Object.keys(data).filter(username => data[username] === true);
+                
+                // UI'ı anında güncelle - sidebar açık veya kapalı fark etmez
                 updateUserListUI();
-            } else if (document.getElementById('usersSidebar').classList.contains('active')) {
-                updateUserListUI(); // Tüm liste görünüyorsa favori rozetleri için güncelle
-            }
+                
+                // Özel sohbet açıksa favori butonunu güncelle
+                if (privateChatWith) {
+                    updatePrivateFavoriteButton();
+                }
+            });
         }
 
         async function addFavorite(username) {
             if (!currentUser || username === currentUser.name) return false;
             await favoritesRef.child(currentUser.name).child(username).set(true);
-            await loadFavoritesList();
-            // Gerçek zamanlı güncelleme - favori listesi aktifse güncelle
-            if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
-                updateUserListUI();
-            }
+            // UI güncellemesi dinleyici tarafından yapılacak
             return true;
         }
 
         async function removeFavorite(username) {
             if (!currentUser) return false;
             await favoritesRef.child(currentUser.name).child(username).remove();
-            await loadFavoritesList();
-            // Gerçek zamanlı güncelleme
-            if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
-                updateUserListUI();
-            } else if (document.getElementById('usersSidebar').classList.contains('active')) {
-                updateUserListUI();
-            }
+            // UI güncellemesi dinleyici tarafından yapılacak
             return true;
         }
 
@@ -4499,7 +4496,7 @@
             updatePrivateFavoriteButton();
         }
 
-        // Favori listesi gösterme fonksiyonu - DÜZELTİLDİ: Panel açılıyor ve sekme favorilere geçiyor
+        // Favori listesini göster - butona tıklayınca açılır ve favori sekmesine geçer
         function toggleFavoriteList() {
             const sidebar = document.getElementById('usersSidebar');
             if (sidebar.classList.contains('active')) {
@@ -4644,7 +4641,7 @@
             }
         }
 
-        // ========== PANEL FONKSİYONLARI (Kısa tutmak için özet) ==========
+        // ========== PANEL FONKSİYONLARI ==========
         function toggleOwnerPanel() {
             const panel = document.getElementById('ownerPanel');
             panel.classList.toggle('active');
@@ -5305,7 +5302,7 @@
                         if (currentUser) {
                             loadUserProfile(currentUser.name);
                             loadBlockedUsers();
-                            loadFavoritesList();
+                            loadFavoritesList(); // Favori dinleyicisini başlat
 
                             if (isOwner) {
                                 document.getElementById('ownerPanelIcon').style.display = 'flex';
@@ -5348,12 +5345,6 @@
                         blocksRef.on('value', (snapshot) => { cachedBlocks = snapshot.val() || {}; if (isOwner) updateOwnerBlockListFromCache(); });
                         registeredUsersRef.on('value', (snapshot) => { cachedRegisteredUsers = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); });
                         customCommandsRef.on('value', (snapshot) => { customCommands = snapshot.val() || {}; if (isOwner) updateOwnerCommandsList(); });
-
-                        if (currentUser) {
-                            favoritesRef.child(currentUser.name).on('value', () => {
-                                loadFavoritesList();
-                            });
-                        }
 
                         if (currentUser && privateChatWith) {
                             listenForTyping();
