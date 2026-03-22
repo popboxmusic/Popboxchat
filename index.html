@@ -5572,7 +5572,7 @@
             }
         }
 
-        // ========== OPTİMİZE EDİLMİŞ ÖZEL SOHBET FONKSİYONLARI ==========
+        // ========== OPTİMİZE EDİLMİŞ ÖZEL SOHBET FONKSİYONLARI (10 Mesaj Limiti ve Okundu Bilgisi) ==========
         
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
@@ -5624,7 +5624,8 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
             
-            privateChatsRef.child(currentPrivateChatId).limitToLast(50).once('value', (snapshot) => {
+            // Sadece son 10 mesajı al
+            privateChatsRef.child(currentPrivateChatId).limitToLast(10).once('value', (snapshot) => {
                 const messages = snapshot.val();
                 updatePrivateMessages(messages);
             });
@@ -5634,6 +5635,7 @@
                 const message = snapshot.val();
                 if (message) {
                     if (!document.getElementById(`private_msg_${snapshot.key}`)) {
+                        // Alıcıysa ve mesaj okunmamışsa okundu olarak işaretle
                         if (message.sender !== currentUser.name && !message.isRead) {
                             privateChatsRef.child(currentPrivateChatId).child(snapshot.key).update({
                                 isRead: true,
@@ -5642,6 +5644,11 @@
                             message.isRead = true;
                         }
                         appendPrivateMessageToUI({ id: snapshot.key, ...message });
+                        
+                        // Yeni mesaj geldiğinde, limiti aşan eski mesajları arşivle ve sil
+                        setTimeout(() => {
+                            archiveAndTrimPrivateChat(currentPrivateChatId);
+                        }, 100);
                         
                         if (message.sender !== currentUser.name) {
                             let msgText = message.text || '';
@@ -5671,6 +5678,7 @@
             const readUpdates = [];
             
             messagesArray.forEach(msg => {
+                // Alıcıysa ve mesaj okunmamışsa okundu olarak işaretle
                 if (msg.sender !== currentUser.name && !msg.isRead) {
                     readUpdates.push(privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
                         isRead: true,
@@ -5803,7 +5811,10 @@
                     usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
                 }
                 
-                await archiveAndTrimPrivateChat(currentPrivateChatId);
+                // Mesaj gönderildikten sonra arşivleme işlemini tetikle
+                setTimeout(() => {
+                    archiveAndTrimPrivateChat(currentPrivateChatId);
+                }, 500);
             } catch (error) {
                 console.error('Mesaj gönderme hatası:', error);
                 addSystemMessage('❌ Mesaj gönderilemedi!');
@@ -5883,8 +5894,10 @@
                 if (!messages) return;
                 const messageArray = Object.entries(messages).map(([id, data]) => ({ id, ...data, timestamp: data.timestamp || Date.now() }));
                 messageArray.sort((a, b) => a.timestamp - b.timestamp);
-                if (messageArray.length > 100) {
-                    const messagesToArchive = messageArray.slice(0, messageArray.length - 100);
+                
+                // Sadece son 10 mesajı koru, eski mesajları arşivle
+                if (messageArray.length > 10) {
+                    const messagesToArchive = messageArray.slice(0, messageArray.length - 10);
                     for (const oldMessage of messagesToArchive) {
                         try {
                             await privateChatsArchiveRef.child(chatId).push({
@@ -5900,10 +5913,15 @@
                                 originalMessageId: oldMessage.id
                             });
                             await privateChatsRef.child(chatId).child(oldMessage.id).remove();
-                        } catch (archiveError) {}
+                            incrementWriteCount();
+                        } catch (archiveError) {
+                            console.warn("Arşivleme hatası:", archiveError);
+                        }
                     }
                 }
-            } catch (error) {}
+            } catch (error) {
+                console.warn("Arşivleme işlemi sırasında hata:", error);
+            }
         }
 
         function generateChatId(user1, user2) {
