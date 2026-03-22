@@ -4529,13 +4529,15 @@
             updateUserListUI();
         }
 
+        // GÜNCELLENMİŞ: Favorilerim sekmesi tüm favori kullanıcıları (çevrimdışı dahil) gösterir.
         function updateUserListUI() {
             const container = document.getElementById('userListContainer');
             if (!container) return;
             
             const now = Date.now();
-            let usersArray = [];
-            
+            let usersToDisplay = []; // { username, userData, isOnline, secondsAgo, rolePriority }
+
+            // Önce çevrimiçi kullanıcıları al
             Object.entries(cachedOnlineUsers).forEach(([username, userData]) => {
                 if (!userData) return;
                 if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
@@ -4543,30 +4545,54 @@
                     return;
                 }
                 const timeDiff = now - (userData.lastSeen || 0);
-                if (timeDiff < ONLINE_THRESHOLD) {
-                    usersArray.push({ username, ...userData, secondsAgo: Math.floor(timeDiff / 1000) });
-                }
+                const isOnline = timeDiff < ONLINE_THRESHOLD;
+                usersToDisplay.push({
+                    username,
+                    userData,
+                    isOnline,
+                    secondsAgo: Math.floor(timeDiff / 1000),
+                    rolePriority: getRolePriority(username)
+                });
             });
             
             if (currentUserListTab === 'favorites') {
-                usersArray = usersArray.filter(user => favoritesList.includes(user.username));
+                // FAVORİLERİM SEKMESİ: favorilerList'teki tüm kullanıcıları göster
+                // Önce favori listesindeki kullanıcıları topla
+                const favoriteUsers = new Set(favoritesList);
+                
+                // Şu anki listede olmayan ama favori listesinde olanları ekle (çevrimdışı olanlar)
+                const existingUsernames = new Set(usersToDisplay.map(u => u.username));
+                for (const favUsername of favoritesList) {
+                    if (!existingUsernames.has(favUsername)) {
+                        // Çevrimdışı favori kullanıcıyı ekle
+                        usersToDisplay.push({
+                            username: favUsername,
+                            userData: { lastSeen: 0 }, // dummy data
+                            isOnline: false,
+                            secondsAgo: 9999,
+                            rolePriority: getRolePriority(favUsername),
+                            isOfflineFavorite: true
+                        });
+                    }
+                }
+                
+                // Sadece favori listesindeki kullanıcıları filtrele
+                usersToDisplay = usersToDisplay.filter(user => favoriteUsers.has(user.username));
             }
             
-            usersArray.sort((a, b) => {
-                const getRolePriority = (user) => {
-                    if (user.username === SECURE_CONFIG.OWNER_CONFIG.username) return 1;
-                    if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) return 2;
-                    if (coAdminList.includes(user.username)) return 3;
-                    if (operatorList.includes(user.username)) return 4;
-                    return 5;
-                };
-                const priorityA = getRolePriority(a);
-                const priorityB = getRolePriority(b);
-                if (priorityA !== priorityB) return priorityA - priorityB;
+            // Sıralama: Rol > Çevrimiçi/Çevrimdışı > Son görülme
+            usersToDisplay.sort((a, b) => {
+                if (a.rolePriority !== b.rolePriority) return a.rolePriority - b.rolePriority;
+                if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+                if (!a.isOnline && !b.isOnline) {
+                    // Çevrimdışı ise favori olanlar önde olabilir (isteğe bağlı)
+                    if (a.isOfflineFavorite && !b.isOfflineFavorite) return -1;
+                    if (!a.isOfflineFavorite && b.isOfflineFavorite) return 1;
+                }
                 return a.secondsAgo - b.secondsAgo;
             });
             
-            if (usersArray.length === 0) {
+            if (usersToDisplay.length === 0) {
                 container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">' + 
                     (currentUserListTab === 'favorites' ? 'Henüz favori kullanıcı yok.' : 'Çevrimiçi kimse yok.') + 
                     '</div>';
@@ -4574,7 +4600,7 @@
             }
             
             let html = '';
-            usersArray.forEach(user => {
+            usersToDisplay.forEach(user => {
                 const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
                 let badgeHtml = '';
                 if (isOwnerUser) badgeHtml = '<span class="badge owner" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-crown"></i></span>';
@@ -4588,10 +4614,25 @@
                 const userAvatar = userProfiles[user.username]?.avatar || null;
                 const avatarHtml = userAvatar ? 
                     `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">` : '';
+                
+                // Çevrimdışı ise durum mesajı
+                let statusText = '';
+                let statusClass = '';
+                if (!user.isOnline) {
+                    statusText = ' (Çevrimdışı)';
+                    statusClass = 'idle';
+                } else if (user.secondsAgo > 10) {
+                    statusText = ` (${user.secondsAgo}sn)`;
+                    statusClass = 'idle';
+                } else {
+                    statusText = ' (Şimdi)';
+                    statusClass = '';
+                }
+                
                 html += `
-                    <div class="user-item ${user.secondsAgo > 10 ? 'idle' : ''}" onclick="openPrivateChat('${user.username}')">
+                    <div class="user-item ${statusClass}" onclick="openPrivateChat('${user.username}')">
                         <div class="user-status">
-                            <span class="status-dot ${user.secondsAgo > 10 ? 'status-idle' : 'status-online'}"></span>
+                            <span class="status-dot ${user.isOnline ? 'status-online' : 'status-idle'}"></span>
                             <div class="user-avatar-sidebar">
                                 ${avatarHtml ? avatarHtml : '<i class="fas fa-user"></i>'}
                             </div>
@@ -4602,12 +4643,21 @@
                             </strong>
                         </div>
                         <div style="font-size: 12px; color: var(--text-muted);">
-                            ${user.secondsAgo < 5 ? 'Şimdi' : user.secondsAgo + 'sn'}
+                            ${statusText}
                         </div>
                     </div>
                 `;
             });
             container.innerHTML = html;
+        }
+
+        // Yardımcı: Rol önceliği (sayısal)
+        function getRolePriority(username) {
+            if (username === SECURE_CONFIG.OWNER_CONFIG.username) return 1;
+            if (adminList.includes(username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(username)) return 2;
+            if (coAdminList.includes(username)) return 3;
+            if (operatorList.includes(username)) return 4;
+            return 5;
         }
 
         async function deleteAccount() {
