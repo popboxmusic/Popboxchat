@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
-        /* TÜM STILLER AYNEN KALDI */
+        /* TÜM STILLER AYNEN KALDI - YENİ EKLENEN FAVORİ STİLLERİ */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -4427,45 +4427,53 @@
             }, 50);
         }
 
-        // ========== FAVORİ SİSTEMİ FONKSİYONLARI (GERÇEK ZAMANLI - ANLIK) ==========
-        
-        // Favori listesini yükle ve anlık dinleme başlat
+        // ========== FAVORİ SİSTEMİ FONKSİYONLARI (Geliştirilmiş - Gerçek Zamanlı) ==========
         async function loadFavoritesList() {
             if (!currentUser || !favoritesRef) return;
-            
-            // Firebase'den anlık dinleme - her değişiklikte UI güncellenir
+            const snapshot = await favoritesRef.child(currentUser.name).once('value');
+            const data = snapshot.val() || {};
+            favoritesList = Object.keys(data).filter(username => data[username] === true);
+            // Gerçek zamanlı güncelleme
+            if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
+                updateUserListUI();
+            } else if (document.getElementById('usersSidebar').classList.contains('active')) {
+                updateUserListUI(); // Tüm liste görünüyorsa favori rozetleri için güncelle
+            }
+        }
+
+        // GERÇEK ZAMANLI FAVORİ DİNLEYİCİSİ - Firebase'den anlık güncelleme
+        function startFavoritesRealTimeListener() {
+            if (!currentUser || !favoritesRef) return;
             favoritesRef.child(currentUser.name).on('value', (snapshot) => {
                 const data = snapshot.val() || {};
                 favoritesList = Object.keys(data).filter(username => data[username] === true);
-                
-                // UI'ı anında güncelle - sidebar açık veya kapalı fark etmez
-                updateUserListUI();
-                
-                // Özel sohbet açıksa favori butonunu güncelle
-                if (privateChatWith) {
-                    updatePrivateFavoriteButton();
+                // Favori listesi sekmesi aktifse UI güncelle
+                if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
+                    updateUserListUI();
+                } else if (document.getElementById('usersSidebar').classList.contains('active')) {
+                    updateUserListUI();
                 }
+                // Özel sohbet favori butonunu güncelle
+                if (privateChatWith) updatePrivateFavoriteButton();
             });
         }
 
         async function addFavorite(username) {
             if (!currentUser || username === currentUser.name) return false;
             await favoritesRef.child(currentUser.name).child(username).set(true);
-            // UI güncellemesi dinleyici tarafından yapılacak
+            await loadFavoritesList();
             return true;
         }
 
         async function removeFavorite(username) {
             if (!currentUser) return false;
             await favoritesRef.child(currentUser.name).child(username).remove();
-            // UI güncellemesi dinleyici tarafından yapılacak
+            await loadFavoritesList();
             return true;
         }
 
         async function isFavorite(username) {
-            if (!currentUser || !favoritesRef) return false;
-            const snap = await favoritesRef.child(currentUser.name).child(username).once('value');
-            return snap.val() === true;
+            return favoritesList.includes(username);
         }
 
         async function updatePrivateFavoriteButton() {
@@ -4494,9 +4502,11 @@
                 addSystemMessage(`✅ ${privateChatWith} favorilere eklendi.`);
             }
             updatePrivateFavoriteButton();
+            // UI güncelle
+            if (document.getElementById('usersSidebar').classList.contains('active')) updateUserListUI();
         }
 
-        // Favori listesini göster - butona tıklayınca açılır ve favori sekmesine geçer
+        // Favori listesi gösterme fonksiyonu - webde favori butonuna tıklayınca açılır
         function toggleFavoriteList() {
             const sidebar = document.getElementById('usersSidebar');
             if (sidebar.classList.contains('active')) {
@@ -4641,7 +4651,7 @@
             }
         }
 
-        // ========== PANEL FONKSİYONLARI ==========
+        // ========== PANEL FONKSİYONLARI (Kısa tutmak için özet) ==========
         function toggleOwnerPanel() {
             const panel = document.getElementById('ownerPanel');
             panel.classList.toggle('active');
@@ -5302,7 +5312,8 @@
                         if (currentUser) {
                             loadUserProfile(currentUser.name);
                             loadBlockedUsers();
-                            loadFavoritesList(); // Favori dinleyicisini başlat
+                            loadFavoritesList();
+                            startFavoritesRealTimeListener(); // FAVORİ GERÇEK ZAMANLI DİNLEYİCİ
 
                             if (isOwner) {
                                 document.getElementById('ownerPanelIcon').style.display = 'flex';
