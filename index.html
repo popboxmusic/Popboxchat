@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
-        /* TÜM STILLER AYNEN KALDI - YENİ EKLENEN FAVORİ STİLLERİ */
+        /* TÜM STILLER AYNEN KALDI */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -82,8 +82,10 @@
             --video-border: #ff0000;
             --video-controls: #2a2a2a;
 
-            --favorite: #ff66cc;
-            --favorite-bg: rgba(255, 102, 204, 0.15);
+            --follow: #3ea6ff;
+            --follow-bg: rgba(62, 166, 255, 0.15);
+            --unfollow: #ff4444;
+            --unfollow-bg: rgba(255, 68, 68, 0.15);
         }
         
         * { 
@@ -701,6 +703,51 @@
         }
         .profile-icon-btn.has-image i { display: none; }
         .profile-icon-btn.has-image img { display: block; }
+        
+        .follow-icon-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: transparent;
+            border: 1.5px solid var(--border-color);
+            color: var(--text-primary);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            position: relative;
+        }
+        .follow-icon-btn::after {
+            content: attr(title);
+            position: absolute;
+            left: 110%;
+            background: rgba(33, 33, 33, 0.98);
+            backdrop-filter: blur(10px);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: nowrap;
+            border: 1px solid var(--border-color);
+            display: none;
+            z-index: 1000;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        .follow-icon-btn:hover::after { display: block; }
+        .follow-icon-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(1.1);
+            border-color: var(--follow);
+            box-shadow: 0 0 15px rgba(62, 166, 255, 0.3);
+        }
+        .follow-icon-btn.followers { border-color: var(--follow); color: var(--follow); }
+        .follow-icon-btn.following { border-color: var(--unfollow); color: var(--unfollow); }
+        .follow-icon-btn.search { border-color: var(--report); color: var(--report); }
         
         .mobile-menu {
             position: fixed;
@@ -1503,37 +1550,6 @@
             transform: scale(1.1);
         }
         
-        .users-tabs {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 8px;
-        }
-        .users-tab-btn {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            padding: 6px 12px;
-            cursor: pointer;
-            border-radius: 20px;
-            font-size: 13px;
-            transition: all 0.2s ease;
-        }
-        .users-tab-btn.active {
-            background: var(--youtube-red);
-            color: white;
-        }
-        .user-list-container {
-            flex: 1;
-            overflow-y: auto;
-        }
-        .favorite-badge {
-            color: var(--favorite);
-            margin-left: 4px;
-            font-size: 11px;
-        }
-        
         .user-item {
             display: flex;
             align-items: center;
@@ -1641,14 +1657,10 @@
             filter: drop-shadow(0 4px 8px rgba(255, 0, 0, 0.3));
         }
         
-        .password-input-wrapper {
-            position: relative;
-            margin-bottom: 16px;
-        }
-        
         .login-input {
             width: 100%;
             padding: 14px 20px;
+            margin-bottom: 16px;
             background: var(--input-bg);
             backdrop-filter: blur(5px);
             border: 1px solid var(--border-color);
@@ -1662,23 +1674,6 @@
         .login-input:focus {
             border-color: var(--youtube-red);
             box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.2);
-        }
-        
-        .toggle-password {
-            position: absolute;
-            right: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            font-size: 18px;
-            transition: color 0.2s ease;
-        }
-        
-        .toggle-password:hover {
-            color: var(--youtube-red);
         }
         
         .login-button {
@@ -1731,6 +1726,201 @@
             border: 1px solid var(--border-color);
         }
 
+        /* TAKİPÇİ/TAKİP EDİLEN/ARAMA DRAWER'LARI */
+        .follow-drawer, .search-drawer {
+            position: fixed;
+            top: 60px;
+            left: 70px;
+            width: 300px;
+            height: calc(100vh - 60px);
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--border-color);
+            z-index: 2000;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
+            animation: slideInLeft 0.3s ease;
+        }
+        .follow-drawer.active, .search-drawer.active { display: flex; }
+        @keyframes slideInLeft {
+            from { transform: translateX(-100%); }
+            to { transform: translateX(0); }
+        }
+        .drawer-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(33, 33, 33, 0.98);
+            flex-shrink: 0;
+        }
+        .drawer-header h3 {
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .drawer-close-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .drawer-close-btn:hover {
+            border-color: var(--follow);
+            color: var(--follow);
+        }
+        .drawer-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .drawer-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: rgba(33, 33, 33, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .drawer-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--follow);
+            transform: translateX(2px);
+        }
+        .drawer-item .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--input-bg);
+            border: 2px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .drawer-item .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .drawer-item .info {
+            flex: 1;
+        }
+        .drawer-item .info .name {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .drawer-item .info .status {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .status-dot-small {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 4px;
+        }
+        .online-dot { background: var(--online); }
+        .offline-dot { background: var(--text-muted); }
+        
+        .search-drawer .drawer-header h3 { color: var(--report); }
+        .search-input-area {
+            padding: 16px;
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .search-input-area input {
+            flex: 1;
+            padding: 12px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            color: var(--text-primary);
+            outline: none;
+        }
+        .search-input-area input:focus {
+            border-color: var(--report);
+        }
+        .search-input-area button {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--report-bg);
+            border: 1px solid var(--report);
+            color: var(--report);
+            cursor: pointer;
+        }
+        .search-input-area button:hover {
+            background: var(--report);
+            color: white;
+        }
+        .search-results {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        .search-result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: rgba(33, 33, 33, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-bottom: 8px;
+        }
+        .search-result-item .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            flex: 1;
+        }
+        .search-result-item .follow-btn {
+            background: transparent;
+            border: 1px solid var(--follow);
+            color: var(--follow);
+            padding: 6px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .search-result-item .follow-btn.following {
+            background: var(--unfollow-bg);
+            border-color: var(--unfollow);
+            color: var(--unfollow);
+        }
+        .search-result-item .follow-btn:hover {
+            background: var(--follow);
+            color: white;
+        }
+        .search-result-item .follow-btn.following:hover {
+            background: var(--unfollow);
+            color: white;
+        }
+        
         .private-modal {
             position: fixed;
             top: 0;
@@ -1802,20 +1992,8 @@
             border-color: var(--ban);
             color: var(--ban);
         }
-        
-        .private-action-btn.favorite {
-            color: var(--text-muted);
-        }
-        .private-action-btn.favorite.active {
-            color: var(--favorite);
-            border-color: var(--favorite);
-            background: var(--favorite-bg);
-        }
-        .private-action-btn.favorite:hover {
-            border-color: var(--favorite);
-            color: var(--favorite);
-        }
 
+        /* "Yazıyor..." göstergesi için stil */
         .private-typing-indicator {
             font-size: 12px;
             color: var(--online);
@@ -2904,6 +3082,11 @@
                 width: 32px;
                 height: 32px;
             }
+            .follow-icon-btn {
+                width: 32px;
+                height: 32px;
+                font-size: 14px;
+            }
             .role-icon-btn {
                 width: 32px !important;
                 height: 32px !important;
@@ -3053,6 +3236,15 @@
                 font-size: 12px;
                 white-space: nowrap;
             }
+
+            /* MOBİLDE TAKİPÇİ/TAKİP EDİLEN/ARAMA DRAWER'LARI DÜZGÜN AÇILSIN */
+            .follow-drawer, .search-drawer {
+                left: 0 !important;
+                top: 60px;
+                width: 100%;
+                height: calc(100vh - 60px);
+                z-index: 2500;
+            }
         }
         
         @media (min-width: 769px) {
@@ -3124,6 +3316,15 @@
             </div>
         </div>
         <div class="header-right">
+            <button class="follow-icon-btn followers" onclick="openFollowersDrawer()" title="Takipçilerim">
+                <i class="fas fa-user-friends"></i>
+            </button>
+            <button class="follow-icon-btn following" onclick="openFollowingDrawer()" title="Takip Ettiklerim">
+                <i class="fas fa-user-check"></i>
+            </button>
+            <button class="follow-icon-btn search" onclick="openSearchDrawer()" title="Kullanıcı Ara">
+                <i class="fas fa-search"></i>
+            </button>
             <button class="icon-btn mobile-playlist-btn" onclick="togglePlaylistDrawer()" title="Oynatma Listesi" style="display: none;">
                 <i class="fas fa-list"></i>
             </button>
@@ -3164,10 +3365,6 @@
             <div class="menu-icon"><i class="fas fa-list"></i></div>
             <div class="menu-text">Oynatma Listesi</div>
         </div>
-        <div class="mobile-menu-item" id="mobileFavIcon" onclick="toggleFavoriteListFromMenu()">
-            <div class="menu-icon" style="color: var(--favorite);"><i class="fas fa-heart"></i></div>
-            <div class="menu-text">Favorilerim</div>
-        </div>
         <div class="mobile-menu-item" id="mobileOwnerIcon" style="display:none;" onclick="toggleOwnerPanelFromMenu()">
             <div class="menu-icon" style="color:var(--owner);"><i class="fas fa-crown"></i></div>
             <div class="menu-text">Owner Paneli</div>
@@ -3193,9 +3390,6 @@
             <button class="profile-icon-btn" onclick="openProfileModal()" title="Profil" id="profileIcon">
                 <i class="fas fa-user"></i>
                 <div id="profileAvatarPreview"></div>
-            </button>
-            <button class="icon-btn" onclick="toggleFavoriteList()" title="Favori Listesi" id="favoriteListIcon">
-                <i class="fas fa-heart" style="color: var(--favorite);"></i>
             </button>
             <button class="role-icon-btn owner" onclick="toggleOwnerPanel()" title="Owner Paneli" id="ownerPanelIcon" style="display:none;">
                 <i class="fas fa-crown"></i>
@@ -3294,11 +3488,7 @@
                 <span>Katılımcılar</span>
                 <button class="close-sidebar" onclick="toggleUserList()"><i class="fas fa-times"></i></button>
             </div>
-            <div class="users-tabs">
-                <button class="users-tab-btn active" onclick="switchUserListTab('all')">Tümü</button>
-                <button class="users-tab-btn" onclick="switchUserListTab('favorites')">Favorilerim</button>
-            </div>
-            <div id="userListContainer" class="user-list-container"></div>
+            <div id="userList"></div>
         </div>
     </div>
     
@@ -3316,6 +3506,35 @@
         <div class="playlist-items" id="playlistDrawerItems"></div>
     </div>
 
+    <!-- Takipçi/Takip edilen drawer'ları -->
+    <div class="follow-drawer" id="followersDrawer">
+        <div class="drawer-header">
+            <h3><i class="fas fa-user-friends" style="color: var(--follow);"></i> Takipçilerim</h3>
+            <button class="drawer-close-btn" onclick="closeFollowersDrawer()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="drawer-list" id="followersList"></div>
+    </div>
+
+    <div class="follow-drawer" id="followingDrawer">
+        <div class="drawer-header">
+            <h3><i class="fas fa-user-check" style="color: var(--unfollow);"></i> Takip Ettiklerim</h3>
+            <button class="drawer-close-btn" onclick="closeFollowingDrawer()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="drawer-list" id="followingList"></div>
+    </div>
+
+    <div class="search-drawer" id="searchDrawer">
+        <div class="drawer-header">
+            <h3><i class="fas fa-search" style="color: var(--report);"></i> Kullanıcı Ara</h3>
+            <button class="drawer-close-btn" onclick="closeSearchDrawer()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="search-input-area">
+            <input type="text" id="searchUserInput" placeholder="Kullanıcı adı ara...">
+            <button onclick="searchUserFromDrawer()"><i class="fas fa-search"></i></button>
+        </div>
+        <div class="search-results" id="searchResults"></div>
+    </div>
+
     <!-- OWNER PANELİ -->
     <div class="role-panel" id="ownerPanel">
         <div class="role-panel-header">
@@ -3329,6 +3548,7 @@
             <button class="role-tab active" onclick="switchOwnerTab('dashboard')"><i class="fas fa-chart-bar"></i> Genel</button>
             <button class="role-tab" onclick="switchOwnerTab('users')"><i class="fas fa-users"></i> Kullanıcılar</button>
             <button class="role-tab" onclick="switchOwnerTab('private')"><i class="fas fa-lock"></i> Özel Mesajlar</button>
+            <button class="role-tab" onclick="switchOwnerTab('follows')"><i class="fas fa-user-friends"></i> Takipleşmeler</button>
             <button class="role-tab" onclick="switchOwnerTab('commands')"><i class="fas fa-terminal"></i> Komutlar</button>
             <button class="role-tab" onclick="switchOwnerTab('moderation')"><i class="fas fa-gavel"></i> Moderasyon</button>
             <button class="role-tab" onclick="switchOwnerTab('reports')"><i class="fas fa-exclamation-triangle"></i> Şikayetler</button>
@@ -3379,6 +3599,12 @@
                     <button class="role-action-btn" onclick="showAllPrivateChats()"><i class="fas fa-envelope"></i> Tüm Sohbetleri Göster</button>
                     <button class="role-action-btn" onclick="searchPrivateMessagesPrompt()"><i class="fas fa-search"></i> Mesajlarda Ara</button>
                     <button class="role-action-btn danger" onclick="deleteAllPrivateMessages()"><i class="fas fa-trash"></i> Tümünü Sil</button>
+                </div>
+            </div>
+            <div class="role-tab-content" id="ownerFollowsTab">
+                <div class="role-section">
+                    <div class="role-section-title owner"><i class="fas fa-user-friends"></i> Tüm Takipleşmeler</div>
+                    <div id="ownerFollowList" class="role-list"></div>
                 </div>
             </div>
             <div class="role-tab-content" id="ownerCommandsTab">
@@ -3455,6 +3681,7 @@
             <button class="role-tab active" onclick="switchAdminTab('dashboard')"><i class="fas fa-chart-bar"></i> Genel</button>
             <button class="role-tab" onclick="switchAdminTab('users')"><i class="fas fa-users"></i> Kullanıcılar</button>
             <button class="role-tab" onclick="switchAdminTab('moderation')"><i class="fas fa-gavel"></i> Moderasyon</button>
+            <button class="role-tab" onclick="switchAdminTab('follows')"><i class="fas fa-user-friends"></i> Takipleşmeler</button>
             <button class="role-tab" onclick="switchAdminTab('reports')"><i class="fas fa-exclamation-triangle"></i> Şikayetler</button>
         </div>
         <div class="role-panel-content">
@@ -3488,6 +3715,12 @@
                 <div class="role-section">
                     <div class="role-section-title admin"><i class="fas fa-trash"></i> Sohbet Temizleme</div>
                     <button class="role-action-btn" onclick="clearAllMessagesPrompt()"><i class="fas fa-trash-alt"></i> Tüm Mesajları Temizle</button>
+                </div>
+            </div>
+            <div class="role-tab-content" id="adminFollowsTab">
+                <div class="role-section">
+                    <div class="role-section-title admin"><i class="fas fa-user-friends"></i> Takipleşmeler</div>
+                    <div id="adminFollowList" class="role-list"></div>
                 </div>
             </div>
             <div class="role-tab-content" id="adminReportsTab">
@@ -3617,23 +3850,19 @@
                 placeholder="Kullanıcı adı"
                 autocomplete="off"
             >
-            <div class="password-input-wrapper">
-                <input 
-                    type="password" 
-                    id="login-password" 
-                    class="login-input" 
-                    placeholder="Şifre"
-                    autocomplete="off"
-                >
-                <button type="button" class="toggle-password" onclick="togglePasswordVisibility('login-password', this)">
-                    <i class="fas fa-eye"></i>
-                </button>
-            </div>
-            <div id="password-info" style="color: var(--text-secondary); font-size: 14px; margin-bottom: 12px; display: block;">
-                <i class="fas fa-lock"></i> Giriş için şifre zorunludur.
+            <input 
+                type="password" 
+                id="login-password" 
+                class="login-input" 
+                placeholder="Şifre (kayıtlı kullanıcılar)"
+                autocomplete="off"
+                style="display: none;"
+            >
+            <div id="password-info" style="color: var(--text-secondary); font-size: 14px; margin-bottom: 12px; display: none;">
+                <i class="fas fa-lock"></i> Şifre gerekli
             </div>
             <button class="login-button" onclick="login()" id="login-btn">
-                Giriş Yap
+                Sohbete Katıl
             </button>
             <div id="login-error" class="error-message"></div>
             <div id="login-success" class="success-message"></div>
@@ -3645,7 +3874,7 @@
         <div class="private-header">
             <div id="privateWith"><i class="fas fa-lock"></i> Özel Sohbet</div>
             <div class="private-actions">
-                <button class="private-action-btn favorite" onclick="toggleFavoriteUser()" id="privateFavoriteBtn" title="Favorilere Ekle/Çıkar"><i class="fas fa-heart"></i></button>
+                <button class="private-action-btn" onclick="toggleFollowInPrivateChat()" id="privateFollowBtn" title="Takip Et"><i class="fas fa-user-plus"></i></button>
                 <button class="private-action-btn report" onclick="openReportModal()" title="Şikayet Et"><i class="fas fa-exclamation-triangle"></i></button>
                 <button class="private-action-btn block" onclick="toggleBlockUser()" id="blockUserBtn" title="Engelle"><i class="fas fa-ban"></i></button>
                 <button class="private-action-btn" onclick="closePrivateChat()" title="Kapat"><i class="fas fa-times"></i></button>
@@ -3856,7 +4085,7 @@
         let coAdminsRef, bansRef, globalBansRef, registeredUsersRef, operatorsRef;
         let userLocksRef, adminPasswordsRef, customCommandsRef, adminListRef;
         let playlistRef, profilesRef, blocksRef, reportsRef;
-        let favoritesRef, adLinksRef;
+        let followingRef, followersRef, adLinksRef;
         let typingRef;
 
         let cachedOnlineUsers = {};
@@ -3864,9 +4093,9 @@
         let cachedBans = {};
         let cachedReports = {};
         let cachedBlocks = {};
+        let cachedFollowingStatus = {};
         let cachedRegisteredUsers = {};
         let cachedAdContents = [];
-        let cachedFavorites = {};
 
         let isFirebaseConnected = false;
         
@@ -3892,7 +4121,8 @@
         let userProfiles = {};
         let blockedUsers = {};
         let blockedByUsers = {};
-        let favoritesList = [];
+        let followingList = [];
+        let followersList = [];
         
         let playlist = [];
         let currentVideoId = 'i75BZYOAPl4';
@@ -3927,8 +4157,6 @@
         let dailyWriteCount = 0;
         let lastWriteReset = Date.now();
         
-        let currentUserListTab = 'all';
-        
         function checkWriteLimit() {
             const now = Date.now();
             if (now - lastWriteReset > 24 * 60 * 60 * 1000) {
@@ -3948,12 +4176,18 @@
             dailyWriteCount++;
         }
 
+        /* ========== DÜZELTİLMİŞ KISIM: handleEnterKey - TEKRAR GÖNDERİM SORUNU ÇÖZÜLDÜ ========== */
         function handleEnterKey(event, functionName) {
+            // Enter tuşuna basıldığında ve shift tuşuna basılmadığında
             if (event.key === 'Enter' && !event.shiftKey) {
+                // Varsayılan davranışı engelle (satır atlama)
                 event.preventDefault();
                 event.stopPropagation();
+                
+                // Aynı event'in birden fazla kez tetiklenmesini engelle
                 if (event.repeat) return;
                 
+                // İlgili butonu bul ve geçici olarak devre dışı bırak
                 let button = null;
                 if (functionName === 'sendMessage') {
                     button = document.querySelector('.chat-input-area .send-button');
@@ -3961,27 +4195,39 @@
                     button = document.querySelector('#privateModal .send-button');
                 }
                 
+                // Buton varsa geçici olarak devre dışı bırak
                 if (button && !button.disabled) {
                     button.disabled = true;
+                    
+                    // İlgili fonksiyonu çağır
                     if (functionName === 'sendMessage') {
                         sendMessage();
                     } else if (functionName === 'sendPrivateMessage') {
                         sendPrivateMessage();
                     }
+                    
+                    // 500ms sonra butonu tekrar aktif et
                     setTimeout(() => {
                         button.disabled = false;
                     }, 500);
+                } else if (button) {
+                    // Buton zaten devre dışıysa fonksiyonu çağırma
+                    return;
                 }
             }
         }
 
-        let isSendingMessage = false;
+        // ========== DÜZELTİLMİŞ KISIM: sendMessage - TEKRAR GÖNDERİM KORUMALI ==========
+        let isSendingMessage = false; // Gönderim kilidi
 
         async function sendMessage() {
+            // Eğer zaten gönderim yapılıyorsa, tekrar gönderimi engelle
             if (isSendingMessage) {
                 console.log('Zaten mesaj gönderiliyor, tekrar engellendi');
                 return;
             }
+            
+            // Gönderim kilidini aktif et
             isSendingMessage = true;
             
             try {
@@ -4042,20 +4288,84 @@
                     addSystemMessage('❌ Mesaj gönderilemedi!');
                 }
             } finally {
+                // Gönderim tamamlandıktan sonra kilidi kaldır (biraz gecikmeli)
                 setTimeout(() => {
                     isSendingMessage = false;
                 }, 300);
             }
         }
 
-        function togglePasswordVisibility(inputId, button) {
-            const input = document.getElementById(inputId);
-            if (input.type === 'password') {
-                input.type = 'text';
-                button.innerHTML = '<i class="fas fa-eye-slash"></i>';
-            } else {
-                input.type = 'password';
-                button.innerHTML = '<i class="fas fa-eye"></i>';
+        // ========== DÜZELTİLMİŞ KISIM: sendPrivateMessage - TEKRAR GÖNDERİM KORUMALI ==========
+        let isSendingPrivateMessage = false; // Özel mesaj gönderim kilidi
+
+        async function sendPrivateMessage() {
+            // Eğer zaten gönderim yapılıyorsa, tekrar gönderimi engelle
+            if (isSendingPrivateMessage) {
+                console.log('Zaten özel mesaj gönderiliyor, tekrar engellendi');
+                return;
+            }
+            
+            // Gönderim kilidini aktif et
+            isSendingPrivateMessage = true;
+            
+            try {
+                if (!privateChatWith || !currentPrivateChatId || !privateChatsRef) {
+                    alert('❌ Önce bir kullanıcı seçin!');
+                    return;
+                }
+                
+                if (!checkWriteLimit()) {
+                    addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı! Yarın tekrar dene.');
+                    return;
+                }
+                
+                if (await checkBlockStatus(privateChatWith)) {
+                    alert('Bu kullanıcıya mesaj gönderemezsiniz!');
+                    return;
+                }
+                const canSend = await checkBanBeforeMessage();
+                if (!canSend) return;
+                const input = document.getElementById('private-input');
+                const text = input.value.trim();
+                if (!text) return;
+                
+                const messageData = {
+                    sender: currentUser.name,
+                    receiver: privateChatWith,
+                    text: text,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    avatar: currentProfileAvatar || null,
+                    isRead: false
+                };
+                
+                try {
+                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                    incrementWriteCount();
+                    input.value = '';
+                    autoResize(input);
+                    
+                    if (typingTimeout[currentPrivateChatId]) {
+                        clearTimeout(typingTimeout[currentPrivateChatId]);
+                    }
+                    if (typingRef) {
+                        typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+                    }
+                    
+                    addNotification(privateChatWith, text.length > 30 ? text.substring(0, 30) + '...' : text, 'private');
+                    
+                    if (usersRef) {
+                        usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
+                    }
+                    await archiveAndTrimPrivateChat(currentPrivateChatId);
+                } catch (error) {
+                    console.error('Mesaj gönderme hatası:', error);
+                }
+            } finally {
+                // Gönderim tamamlandıktan sonra kilidi kaldır (biraz gecikmeli)
+                setTimeout(() => {
+                    isSendingPrivateMessage = false;
+                }, 300);
             }
         }
 
@@ -4392,13 +4702,6 @@
             }, 50);
         }
 
-        function toggleFavoriteListFromMenu() {
-            toggleMobileMenu();
-            setTimeout(() => {
-                toggleFavoriteList();
-            }, 50);
-        }
-
         function toggleOwnerPanelFromMenu() {
             toggleMobileMenu();
             setTimeout(() => {
@@ -4427,191 +4730,247 @@
             }, 50);
         }
 
-        // ========== FAVORİ SİSTEMİ FONKSİYONLARI (Geliştirilmiş - Gerçek Zamanlı) ==========
-        async function loadFavoritesList() {
-            if (!currentUser || !favoritesRef) return;
-            const snapshot = await favoritesRef.child(currentUser.name).once('value');
+        // ========== TAKİP SİSTEMİ FONKSİYONLARI ==========
+        async function loadFollowingList() {
+            if (!currentUser || !followingRef) return;
+            const snapshot = await followingRef.child(currentUser.name).once('value');
             const data = snapshot.val() || {};
-            favoritesList = Object.keys(data).filter(username => data[username] === true);
-            // Gerçek zamanlı güncelleme
-            if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
-                updateUserListUI();
-            } else if (document.getElementById('usersSidebar').classList.contains('active')) {
-                updateUserListUI(); // Tüm liste görünüyorsa favori rozetleri için güncelle
+            followingList = Object.keys(data).filter(username => data[username] === true);
+            if (document.getElementById('followingDrawer').classList.contains('active')) {
+                openFollowingDrawer();
             }
         }
 
-        // GERÇEK ZAMANLI FAVORİ DİNLEYİCİSİ - Firebase'den anlık güncelleme
-        function startFavoritesRealTimeListener() {
-            if (!currentUser || !favoritesRef) return;
-            favoritesRef.child(currentUser.name).on('value', (snapshot) => {
-                const data = snapshot.val() || {};
-                favoritesList = Object.keys(data).filter(username => data[username] === true);
-                // Favori listesi sekmesi aktifse UI güncelle
-                if (currentUserListTab === 'favorites' && document.getElementById('usersSidebar').classList.contains('active')) {
-                    updateUserListUI();
-                } else if (document.getElementById('usersSidebar').classList.contains('active')) {
-                    updateUserListUI();
-                }
-                // Özel sohbet favori butonunu güncelle
-                if (privateChatWith) updatePrivateFavoriteButton();
-            });
+        async function loadFollowersList() {
+            if (!currentUser || !followersRef) return;
+            const snapshot = await followersRef.child(currentUser.name).once('value');
+            const data = snapshot.val() || {};
+            followersList = Object.keys(data).filter(username => data[username] === true);
+            if (document.getElementById('followersDrawer').classList.contains('active')) {
+                openFollowersDrawer();
+            }
         }
 
-        async function addFavorite(username) {
+        async function followUser(username) {
             if (!currentUser || username === currentUser.name) return false;
-            await favoritesRef.child(currentUser.name).child(username).set(true);
-            await loadFavoritesList();
+            await followingRef.child(currentUser.name).child(username).set(true);
+            await followersRef.child(username).child(currentUser.name).set(true);
+            await loadFollowingList();
+            await loadFollowersList();
+            addNotification(username, `${currentUser.name} seni takip etmeye başladı!`, 'follow');
+            incrementWriteCount();
             return true;
         }
 
-        async function removeFavorite(username) {
+        async function unfollowUser(username) {
             if (!currentUser) return false;
-            await favoritesRef.child(currentUser.name).child(username).remove();
-            await loadFavoritesList();
+            await followingRef.child(currentUser.name).child(username).remove();
+            await followersRef.child(username).child(currentUser.name).remove();
+            await loadFollowingList();
+            await loadFollowersList();
+            addNotification(username, `${currentUser.name} seni takipten çıktı.`, 'follow');
+            incrementWriteCount();
             return true;
         }
 
-        async function isFavorite(username) {
-            return favoritesList.includes(username);
+        async function isFollowing(username) {
+            if (!currentUser || !followingRef) return false;
+            const snap = await followingRef.child(currentUser.name).child(username).once('value');
+            return snap.val() === true;
         }
 
-        async function updatePrivateFavoriteButton() {
+        async function updatePrivateFollowButton() {
             if (!privateChatWith || !currentUser) return;
-            const isFav = await isFavorite(privateChatWith);
-            const favBtn = document.getElementById('privateFavoriteBtn');
-            if (isFav) {
-                favBtn.innerHTML = '<i class="fas fa-heart" style="color: var(--favorite);"></i>';
-                favBtn.title = 'Favorilerden Çıkar';
-                favBtn.classList.add('active');
+            const following = await isFollowing(privateChatWith);
+            const followBtn = document.getElementById('privateFollowBtn');
+            if (following) {
+                followBtn.innerHTML = '<i class="fas fa-user-check" style="color: var(--online);"></i>';
+                followBtn.title = 'Takipten Çık';
             } else {
-                favBtn.innerHTML = '<i class="fas fa-heart"></i>';
-                favBtn.title = 'Favorilere Ekle';
-                favBtn.classList.remove('active');
+                followBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+                followBtn.title = 'Takip Et';
             }
         }
 
-        async function toggleFavoriteUser() {
+        async function toggleFollowInPrivateChat() {
             if (!privateChatWith) return;
-            const isFav = await isFavorite(privateChatWith);
-            if (isFav) {
-                await removeFavorite(privateChatWith);
-                addSystemMessage(`✅ ${privateChatWith} favorilerden çıkarıldı.`);
+            const following = await isFollowing(privateChatWith);
+            if (following) {
+                await unfollowUser(privateChatWith);
+                addSystemMessage(`✅ ${privateChatWith} takipten çıkarıldı.`);
             } else {
-                await addFavorite(privateChatWith);
-                addSystemMessage(`✅ ${privateChatWith} favorilere eklendi.`);
+                await followUser(privateChatWith);
+                addSystemMessage(`✅ ${privateChatWith} takip ediliyor.`);
             }
-            updatePrivateFavoriteButton();
-            // UI güncelle
-            if (document.getElementById('usersSidebar').classList.contains('active')) updateUserListUI();
+            updatePrivateFollowButton();
         }
 
-        // Favori listesi gösterme fonksiyonu - webde favori butonuna tıklayınca açılır
-        function toggleFavoriteList() {
-            const sidebar = document.getElementById('usersSidebar');
-            if (sidebar.classList.contains('active')) {
-                // Zaten açıksa sadece sekmeyi değiştir
-                switchUserListTab('favorites');
-            } else {
-                // Açık değilse aç ve favori sekmesine geç
-                sidebar.classList.add('active');
-                switchUserListTab('favorites');
-            }
-        }
-
-        function switchUserListTab(tab) {
-            currentUserListTab = tab;
-            document.querySelectorAll('.users-tab-btn').forEach(btn => {
-                if ((tab === 'all' && btn.textContent === 'Tümü') || (tab === 'favorites' && btn.textContent === 'Favorilerim')) {
-                    btn.classList.add('active');
-                } else {
-                    btn.classList.remove('active');
-                }
-            });
-            updateUserListUI();
-        }
-
-        function updateUserListUI() {
-            const container = document.getElementById('userListContainer');
-            if (!container) return;
+        function openFollowersDrawer() {
+            if (!currentUser) return;
+            const drawer = document.getElementById('followersDrawer');
+            const list = document.getElementById('followersList');
+            drawer.classList.add('active');
             
-            const now = Date.now();
-            let usersArray = [];
-            
-            Object.entries(cachedOnlineUsers).forEach(([username, userData]) => {
-                if (!userData) return;
-                if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
-                    (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
-                    return;
-                }
-                const timeDiff = now - (userData.lastSeen || 0);
-                if (timeDiff < ONLINE_THRESHOLD) {
-                    usersArray.push({ username, ...userData, secondsAgo: Math.floor(timeDiff / 1000) });
-                }
-            });
-            
-            if (currentUserListTab === 'favorites') {
-                usersArray = usersArray.filter(user => favoritesList.includes(user.username));
-            }
-            
-            usersArray.sort((a, b) => {
-                const getRolePriority = (user) => {
-                    if (user.username === SECURE_CONFIG.OWNER_CONFIG.username) return 1;
-                    if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) return 2;
-                    if (coAdminList.includes(user.username)) return 3;
-                    if (operatorList.includes(user.username)) return 4;
-                    return 5;
-                };
-                const priorityA = getRolePriority(a);
-                const priorityB = getRolePriority(b);
-                if (priorityA !== priorityB) return priorityA - priorityB;
-                return a.secondsAgo - b.secondsAgo;
-            });
-            
-            if (usersArray.length === 0) {
-                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">' + 
-                    (currentUserListTab === 'favorites' ? 'Henüz favori kullanıcı yok.' : 'Çevrimiçi kimse yok.') + 
-                    '</div>';
+            if (followersList.length === 0) {
+                list.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Henüz takipçiniz yok.</div>';
                 return;
             }
             
             let html = '';
-            usersArray.forEach(user => {
-                const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
-                let badgeHtml = '';
-                if (isOwnerUser) badgeHtml = '<span class="badge owner" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-crown"></i></span>';
-                else if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) badgeHtml = '<span class="badge admin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-shield-alt"></i></span>';
-                else if (coAdminList.includes(user.username)) badgeHtml = '<span class="badge coadmin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-users"></i></span>';
-                else if (operatorList.includes(user.username)) badgeHtml = '<span class="badge operator" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-bolt"></i></span>';
-                
-                const isFav = favoritesList.includes(user.username);
-                const favBadge = isFav ? '<span class="favorite-badge"><i class="fas fa-heart"></i></span>' : '';
-                
-                const userAvatar = userProfiles[user.username]?.avatar || null;
-                const avatarHtml = userAvatar ? 
-                    `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">` : '';
+            const now = Date.now();
+            followersList.forEach(username => {
+                const userData = cachedOnlineUsers[username];
+                const isOnline = userData && userData.lastSeen && (now - userData.lastSeen) < ONLINE_THRESHOLD;
+                const profile = userProfiles[username] || {};
+                const avatar = profile.avatar || null;
+                const avatarHtml = avatar ? `<img src="${avatar}">` : '<i class="fas fa-user"></i>';
                 html += `
-                    <div class="user-item ${user.secondsAgo > 10 ? 'idle' : ''}" onclick="openPrivateChat('${user.username}')">
-                        <div class="user-status">
-                            <span class="status-dot ${user.secondsAgo > 10 ? 'status-idle' : 'status-online'}"></span>
-                            <div class="user-avatar-sidebar">
-                                ${avatarHtml ? avatarHtml : '<i class="fas fa-user"></i>'}
+                    <div class="drawer-item" onclick="openPrivateChat('${username}')">
+                        <div class="avatar">${avatarHtml}</div>
+                        <div class="info">
+                            <div class="name">
+                                ${username}
+                                <span class="status-dot-small ${isOnline ? 'online-dot' : 'offline-dot'}"></span>
                             </div>
-                            <strong style="display:flex; align-items:center; gap:4px;">
-                                ${badgeHtml}
-                                ${user.username}
-                                ${favBadge}
-                            </strong>
-                        </div>
-                        <div style="font-size: 12px; color: var(--text-muted);">
-                            ${user.secondsAgo < 5 ? 'Şimdi' : user.secondsAgo + 'sn'}
+                            <div class="status">${isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}</div>
                         </div>
                     </div>
                 `;
             });
-            container.innerHTML = html;
+            list.innerHTML = html;
         }
 
+        function closeFollowersDrawer() {
+            document.getElementById('followersDrawer').classList.remove('active');
+        }
+
+        function openFollowingDrawer() {
+            if (!currentUser) return;
+            const drawer = document.getElementById('followingDrawer');
+            const list = document.getElementById('followingList');
+            drawer.classList.add('active');
+            
+            if (followingList.length === 0) {
+                list.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">Henüz kimseyi takip etmiyorsunuz.</div>';
+                return;
+            }
+            
+            let html = '';
+            const now = Date.now();
+            followingList.forEach(username => {
+                const userData = cachedOnlineUsers[username];
+                const isOnline = userData && userData.lastSeen && (now - userData.lastSeen) < ONLINE_THRESHOLD;
+                const profile = userProfiles[username] || {};
+                const avatar = profile.avatar || null;
+                const avatarHtml = avatar ? `<img src="${avatar}">` : '<i class="fas fa-user"></i>';
+                html += `
+                    <div class="drawer-item" onclick="openPrivateChat('${username}')">
+                        <div class="avatar">${avatarHtml}</div>
+                        <div class="info">
+                            <div class="name">
+                                ${username}
+                                <span class="status-dot-small ${isOnline ? 'online-dot' : 'offline-dot'}"></span>
+                            </div>
+                            <div class="status">${isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            list.innerHTML = html;
+        }
+
+        function closeFollowingDrawer() {
+            document.getElementById('followingDrawer').classList.remove('active');
+        }
+
+        function openSearchDrawer() {
+            if (!currentUser) return;
+            document.getElementById('searchDrawer').classList.add('active');
+            document.getElementById('searchUserInput').value = '';
+            document.getElementById('searchResults').innerHTML = '';
+        }
+
+        function closeSearchDrawer() {
+            document.getElementById('searchDrawer').classList.remove('active');
+        }
+
+        async function searchUserFromDrawer() {
+            const searchTerm = document.getElementById('searchUserInput').value.trim().toLowerCase();
+            if (!searchTerm || searchTerm.length < 2) {
+                document.getElementById('searchResults').innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">En az 2 karakter girin.</div>';
+                return;
+            }
+
+            const resultsDiv = document.getElementById('searchResults');
+            resultsDiv.innerHTML = '<div class="loading" style="margin:0 auto;"></div>';
+
+            const foundUsers = new Set();
+
+            Object.keys(cachedRegisteredUsers).forEach(username => {
+                if (username.toLowerCase().includes(searchTerm) && username !== currentUser.name) {
+                    foundUsers.add(username);
+                }
+            });
+
+            Object.keys(cachedOnlineUsers).forEach(username => {
+                if (username.toLowerCase().includes(searchTerm) && username !== currentUser.name) {
+                    foundUsers.add(username);
+                }
+            });
+
+            if (foundUsers.size === 0) {
+                resultsDiv.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Kullanıcı bulunamadı.</div>';
+                return;
+            }
+
+            let html = '';
+            const now = Date.now();
+            for (const username of foundUsers) {
+                const following = await isFollowing(username);
+                const userData = cachedOnlineUsers[username];
+                const isOnline = userData && userData.lastSeen && (now - userData.lastSeen) < ONLINE_THRESHOLD;
+                const profile = userProfiles[username] || {};
+                const avatar = profile.avatar || null;
+                const avatarHtml = avatar ? `<img src="${avatar}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">` : '<i class="fas fa-user"></i>';
+                
+                html += `
+                    <div class="search-result-item">
+                        <div class="user-info" onclick="openPrivateChat('${username}')">
+                            <div class="avatar">${avatarHtml}</div>
+                            <div>
+                                <strong>${username}</strong>
+                                <div style="font-size:11px; color:var(--text-muted);">
+                                    ${isOnline ? 'Çevrimiçi' : 'Çevrimdışı'}
+                                </div>
+                            </div>
+                        </div>
+                        <button class="follow-btn ${following ? 'following' : ''}" onclick="toggleFollowFromSearch('${username}', this)">
+                            ${following ? 'Takipten Çık' : 'Takip Et'}
+                        </button>
+                    </div>
+                `;
+            }
+            resultsDiv.innerHTML = html;
+        }
+
+        async function toggleFollowFromSearch(username, btn) {
+            const following = await isFollowing(username);
+            if (following) {
+                await unfollowUser(username);
+                btn.textContent = 'Takip Et';
+                btn.classList.remove('following');
+                addSystemMessage(`✅ ${username} takipten çıkarıldı.`);
+            } else {
+                await followUser(username);
+                btn.textContent = 'Takipten Çık';
+                btn.classList.add('following');
+                addSystemMessage(`✅ ${username} takip ediliyor.`);
+            }
+            loadFollowingList();
+            loadFollowersList();
+        }
+
+        // Kaydı sil fonksiyonu
         async function deleteAccount() {
             if (!currentUser) return;
             if (!confirm('⚠️ TÜM HESABINIZI SİLMEK ÜZERESİNİZ!\n\nBu işlem geri alınamaz. Tüm mesajlarınız, profiliniz, takipçileriniz ve kaydınız kalıcı olarak silinecektir.\n\nDevam etmek istediğinize emin misiniz?')) return;
@@ -4622,13 +4981,22 @@
                 if (profilesRef) await profilesRef.child(username).remove();
                 if (registeredUsersRef) await registeredUsersRef.child(username).remove();
                 
-                if (favoritesRef) {
-                    const favoritesSnap = await favoritesRef.child(username).once('value');
-                    const favorites = favoritesSnap.val() || {};
-                    for (const fav of Object.keys(favorites)) {
-                        await favoritesRef.child(fav).child(username).remove();
+                if (followingRef) {
+                    const followingSnap = await followingRef.child(username).once('value');
+                    const following = followingSnap.val() || {};
+                    for (const followed of Object.keys(following)) {
+                        await followersRef.child(followed).child(username).remove();
                     }
-                    await favoritesRef.child(username).remove();
+                    await followingRef.child(username).remove();
+                }
+                
+                if (followersRef) {
+                    const followersSnap = await followersRef.child(username).once('value');
+                    const followers = followersSnap.val() || {};
+                    for (const follower of Object.keys(followers)) {
+                        await followingRef.child(follower).child(username).remove();
+                    }
+                    await followersRef.child(username).remove();
                 }
                 
                 if (blocksRef) {
@@ -4651,7 +5019,7 @@
             }
         }
 
-        // ========== PANEL FONKSİYONLARI (Kısa tutmak için özet) ==========
+        // ========== PANEL FONKSİYONLARI ==========
         function toggleOwnerPanel() {
             const panel = document.getElementById('ownerPanel');
             panel.classList.toggle('active');
@@ -4695,6 +5063,7 @@
             document.querySelectorAll('#ownerPanel .role-tab-content').forEach(c => c.classList.remove('active'));
             document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
             document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+            if (tabName === 'follows') updateOwnerFollowList();
             if (tabName === 'ads') updateAdContentsList();
         }
         
@@ -4703,6 +5072,7 @@
             document.querySelectorAll('#adminPanel .role-tab-content').forEach(c => c.classList.remove('active'));
             document.querySelector(`#adminPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
             document.getElementById('admin' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+            if (tabName === 'follows') updateAdminFollowList();
         }
         
         function switchCoAdminTab(tabName) {
@@ -4721,17 +5091,21 @@
         
         function updateOwnerPanelFromCache() {
             if (!isOwner) return;
+            
             const now = Date.now();
             let onlineCount = 0;
             Object.values(cachedOnlineUsers).forEach(user => {
                 if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
             });
+            
             const registeredCount = Object.keys(cachedRegisteredUsers).length;
+            
             document.getElementById('ownerTotalUsers').textContent = Object.keys(cachedOnlineUsers).length;
             document.getElementById('ownerOnlineUsers').textContent = onlineCount;
             document.getElementById('ownerRegisteredUsers').textContent = registeredCount;
             document.getElementById('ownerMessages').textContent = cachedMessages.length;
             document.getElementById('ownerCommands').textContent = Object.keys(customCommands).length;
+            
             updateOwnerAdminListFromCache();
             updateOwnerCoAdminListFromCache();
             updateOwnerOperatorListFromCache();
@@ -4742,33 +5116,40 @@
 
         function updateAdminPanelFromCache() {
             if (!isAdmin && !isOwner) return;
+            
             const now = Date.now();
             let onlineCount = 0;
             Object.values(cachedOnlineUsers).forEach(user => {
                 if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
             });
+            
             let activeBans = 0;
             Object.values(cachedBans).forEach(ban => {
                 if (ban.bannedUntil > now) activeBans++;
             });
+            
             document.getElementById('adminTotalUsers').textContent = Object.keys(cachedOnlineUsers).length;
             document.getElementById('adminOnlineUsers').textContent = onlineCount;
             document.getElementById('adminMessages').textContent = cachedMessages.length;
             document.getElementById('adminBans').textContent = activeBans;
+            
             updateAdminReportListFromCache();
         }
 
         function updateCoAdminPanelFromCache() {
             if (!isCoAdmin && !isOwner) return;
+            
             const now = Date.now();
             let onlineCount = 0;
             Object.values(cachedOnlineUsers).forEach(user => {
                 if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
             });
+            
             let activeBans = 0;
             Object.values(cachedBans).forEach(ban => {
                 if (ban.bannedUntil > now) activeBans++;
             });
+            
             document.getElementById('coadminOnline').textContent = onlineCount;
             document.getElementById('coadminBans').textContent = activeBans;
         }
@@ -4915,6 +5296,79 @@
             container.innerHTML = html;
         }
 
+        async function updateOwnerFollowList() {
+            const container = document.getElementById('ownerFollowList');
+            if (!container) return;
+            try {
+                const followingSnapshot = await followingRef.once('value');
+                const followingData = followingSnapshot.val() || {};
+                const followersSnapshot = await followersRef.once('value');
+                const followersData = followersSnapshot.val() || {};
+
+                let html = '';
+                Object.entries(followingData).forEach(([follower, followedUsers]) => {
+                    Object.keys(followedUsers).forEach(followed => {
+                        html += `
+                            <div class="role-list-item">
+                                <div class="role-list-info">
+                                    <div class="role-list-avatar"><i class="fas fa-user-friends"></i></div>
+                                    <div class="role-list-details">
+                                        <span class="role-list-name">${follower} → ${followed}</span>
+                                        <span class="role-list-role">Takip Ediyor</span>
+                                    </div>
+                                </div>
+                                <div class="role-list-actions">
+                                    <button class="role-list-btn danger" onclick="adminRemoveFollow('${follower}', '${followed}')"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                });
+
+                if (html === '') html = '<div style="color:var(--text-muted);">Takipleşme yok</div>';
+                container.innerHTML = html;
+            } catch (error) {}
+        }
+
+        async function updateAdminFollowList() {
+            const container = document.getElementById('adminFollowList');
+            if (!container) return;
+            try {
+                const followingSnapshot = await followingRef.once('value');
+                const followingData = followingSnapshot.val() || {};
+
+                let html = '';
+                Object.entries(followingData).forEach(([follower, followedUsers]) => {
+                    Object.keys(followedUsers).forEach(followed => {
+                        html += `
+                            <div class="role-list-item">
+                                <div class="role-list-info">
+                                    <div class="role-list-avatar"><i class="fas fa-user-friends"></i></div>
+                                    <div class="role-list-details">
+                                        <span class="role-list-name">${follower} → ${followed}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                });
+
+                if (html === '') html = '<div style="color:var(--text-muted);">Takipleşme yok</div>';
+                container.innerHTML = html;
+            } catch (error) {}
+        }
+
+        async function adminRemoveFollow(follower, followed) {
+            if (!isOwner && !isAdmin) return;
+            if (confirm(`${follower} - ${followed} takip ilişkisini silmek istiyor musunuz?`)) {
+                await followingRef.child(follower).child(followed).remove();
+                await followersRef.child(followed).child(follower).remove();
+                updateOwnerFollowList();
+                updateAdminFollowList();
+                addSystemMessage('✅ Takip ilişkisi silindi.');
+            }
+        }
+
         function updateAdminReportListFromCache() {
             const container = document.getElementById('adminReportList');
             if (!container) return;
@@ -4969,14 +5423,17 @@
 
         async function removeAdmin(username) {
             if (!confirm(`${username} adminliğini kaldırmak istediğinize emin misiniz?`)) return;
+            
             const normalized = normalizeNick(username);
             const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
                 normalizeNick(admin) === normalized
             );
+            
             if (isDefaultAdmin) {
                 addSystemMessage('⛔ Varsayılan adminler silinemez!');
                 return;
             }
+            
             const list = adminList.filter(a => a !== username);
             await adminListRef.set(list);
             adminList = list;
@@ -5293,7 +5750,8 @@
                         profilesRef = database.ref('profiles');
                         blocksRef = database.ref('blocks');
                         reportsRef = database.ref('reports');
-                        favoritesRef = database.ref('favorites');
+                        followingRef = database.ref('following');
+                        followersRef = database.ref('followers');
                         adLinksRef = database.ref('adLinks');
                         typingRef = database.ref('typing');
 
@@ -5312,8 +5770,8 @@
                         if (currentUser) {
                             loadUserProfile(currentUser.name);
                             loadBlockedUsers();
-                            loadFavoritesList();
-                            startFavoritesRealTimeListener(); // FAVORİ GERÇEK ZAMANLI DİNLEYİCİ
+                            loadFollowingList();
+                            loadFollowersList();
 
                             if (isOwner) {
                                 document.getElementById('ownerPanelIcon').style.display = 'flex';
@@ -5348,7 +5806,6 @@
                             if (isAdmin) updateAdminPanelFromCache();
                             if (isCoAdmin) updateCoAdminPanelFromCache();
                             if (isOperator) updateOperatorPanelFromCache();
-                            updateUserListUI();
                         });
 
                         bansRef.on('value', (snapshot) => { cachedBans = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); if (isAdmin) updateAdminPanelFromCache(); if (isCoAdmin) updateCoAdminPanelFromCache(); });
@@ -5356,6 +5813,15 @@
                         blocksRef.on('value', (snapshot) => { cachedBlocks = snapshot.val() || {}; if (isOwner) updateOwnerBlockListFromCache(); });
                         registeredUsersRef.on('value', (snapshot) => { cachedRegisteredUsers = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); });
                         customCommandsRef.on('value', (snapshot) => { customCommands = snapshot.val() || {}; if (isOwner) updateOwnerCommandsList(); });
+
+                        if (currentUser) {
+                            followingRef.child(currentUser.name).on('value', () => {
+                                loadFollowingList();
+                            });
+                            followersRef.child(currentUser.name).on('value', () => {
+                                loadFollowersList();
+                            });
+                        }
 
                         if (currentUser && privateChatWith) {
                             listenForTyping();
@@ -5400,6 +5866,74 @@
 
             document.getElementById('onlineCount').textContent = onlineCount;
             document.getElementById('chatOnlineCount').textContent = onlineCount;
+            renderUserList(users);
+        }
+
+        function renderUserList(users) {
+            const container = document.getElementById('userList');
+            const now = Date.now();
+            const activeUsers = [];
+
+            Object.entries(users).forEach(([username, userData]) => {
+                if (!userData) return;
+                if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
+                    (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
+                    return;
+                }
+                const timeDiff = now - (userData.lastSeen || 0);
+                if (timeDiff < ONLINE_THRESHOLD) {
+                    activeUsers.push({ username, ...userData, secondsAgo: Math.floor(timeDiff / 1000) });
+                }
+            });
+
+            activeUsers.sort((a, b) => {
+                const getRolePriority = (user) => {
+                    if (user.username === SECURE_CONFIG.OWNER_CONFIG.username) return 1;
+                    if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) return 2;
+                    if (coAdminList.includes(user.username)) return 3;
+                    if (operatorList.includes(user.username)) return 4;
+                    return 5;
+                };
+                const priorityA = getRolePriority(a);
+                const priorityB = getRolePriority(b);
+                if (priorityA !== priorityB) return priorityA - priorityB;
+                return a.secondsAgo - b.secondsAgo;
+            });
+
+            if (activeUsers.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Çevrimiçi kimse yok</div>';
+                return;
+            }
+            let html = '';
+            activeUsers.forEach(user => {
+                const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
+                let badgeHtml = '';
+                if (isOwnerUser) badgeHtml = '<span class="badge owner" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-crown"></i></span>';
+                else if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) badgeHtml = '<span class="badge admin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-shield-alt"></i></span>';
+                else if (coAdminList.includes(user.username)) badgeHtml = '<span class="badge coadmin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-users"></i></span>';
+                else if (operatorList.includes(user.username)) badgeHtml = '<span class="badge operator" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-bolt"></i></span>';
+                const userAvatar = userProfiles[user.username]?.avatar || null;
+                const avatarHtml = userAvatar ? 
+                    `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">` : '';
+                html += `
+                    <div class="user-item ${user.secondsAgo > 10 ? 'idle' : ''}" onclick="openPrivateChat('${user.username}')">
+                        <div class="user-status">
+                            <span class="status-dot ${user.secondsAgo > 10 ? 'status-idle' : 'status-online'}"></span>
+                            <div class="user-avatar-sidebar">
+                                ${avatarHtml ? avatarHtml : '<i class="fas fa-user"></i>'}
+                            </div>
+                            <strong style="display:flex; align-items:center; gap:4px;">
+                                ${badgeHtml}
+                                ${user.username}
+                            </strong>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted);">
+                            ${user.secondsAgo < 5 ? 'Şimdi' : user.secondsAgo + 'sn'}
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
         }
 
         async function initOwnerPassword() {
@@ -5579,16 +6113,15 @@
             }
         }
 
-        // ========== OPTİMİZE EDİLMİŞ ÖZEL SOHBET FONKSİYONLARI ==========
-        
+        // ========== ÖZEL SOHBET FONKSİYONLARI ==========
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
                 addSystemMessage('Kendinle özel sohbet başlatamazsın!');
                 return;
             }
-            const isFav = await isFavorite(username);
-            if (!isFav && !isOwner && !isAdmin) {
-                addSystemMessage(`❌ ${username} ile mesajlaşmak için önce onu favorilere eklemelisiniz.`);
+            const following = await isFollowing(username);
+            if (!following && !isOwner && !isAdmin) {
+                addSystemMessage(`❌ ${username} ile mesajlaşmak için önce onu takip etmelisiniz.`);
                 return;
             }
             if (await checkBlockStatus(username)) {
@@ -5596,17 +6129,11 @@
                 return;
             }
             
-            if (!isFav && !isOwner && !isAdmin) {
-                await addFavorite(username);
-                addSystemMessage(`✅ ${username} otomatik olarak favorilere eklendi.`);
-            } else if (!isFav) {
-                await addFavorite(username);
-            }
-            
             if (privateChatWith && currentPrivateChatId && privateChatsRef) {
-                privateChatsRef.child(currentPrivateChatId).off('child_added');
-                if (typingRef) typingRef.child(currentPrivateChatId).off('value');
-                if (typingTimeout[currentPrivateChatId]) clearTimeout(typingTimeout[currentPrivateChatId]);
+                privateChatsRef.child(currentPrivateChatId).off();
+                if (typingRef) {
+                    typingRef.child(currentPrivateChatId).off();
+                }
             }
             
             privateChatWith = username;
@@ -5620,10 +6147,49 @@
             blockBtn.innerHTML = isBlocked ? '<i class="fas fa-ban" style="color: var(--online);"></i>' : '<i class="fas fa-ban"></i>';
             blockBtn.title = isBlocked ? 'Engeli Kaldır' : 'Engelle';
             
-            await updatePrivateFavoriteButton();
+            await updatePrivateFollowButton();
             
             loadPrivateMessages();
             listenForTyping();
+        }
+
+        function emitTyping() {
+            if (!currentPrivateChatId || !privateChatWith || !typingRef) return;
+            
+            if (typingTimeout[currentPrivateChatId]) {
+                clearTimeout(typingTimeout[currentPrivateChatId]);
+            }
+            
+            typingRef.child(currentPrivateChatId).child(currentUser.name).set(true);
+            
+            typingTimeout[currentPrivateChatId] = setTimeout(() => {
+                typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+            }, TYPING_TIMEOUT_DURATION);
+        }
+
+        function listenForTyping() {
+            if (!currentPrivateChatId || !typingRef) return;
+            
+            const privateWithDiv = document.getElementById('privateWith');
+
+            typingRef.child(currentPrivateChatId).on('value', (snapshot) => {
+                const typingUsers = snapshot.val() || {};
+                const isOtherTyping = Object.keys(typingUsers).some(user => user !== currentUser.name);
+                
+                if (privateChatWith) {
+                    const existing = privateWithDiv.querySelector('.private-typing-indicator');
+                    if (isOtherTyping) {
+                        if (!existing) {
+                            const typingSpan = document.createElement('span');
+                            typingSpan.className = 'private-typing-indicator';
+                            typingSpan.innerHTML = '<i class="fas fa-ellipsis-h"></i> yazıyor...';
+                            privateWithDiv.appendChild(typingSpan);
+                        }
+                    } else {
+                        if (existing) existing.remove();
+                    }
+                }
+            });
         }
 
         function loadPrivateMessages() {
@@ -5631,7 +6197,7 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
             
-            privateChatsRef.child(currentPrivateChatId).limitToLast(50).once('value', (snapshot) => {
+            privateChatsRef.child(currentPrivateChatId).limitToLast(10).once('value', (snapshot) => {
                 const messages = snapshot.val();
                 updatePrivateMessages(messages);
             });
@@ -5640,16 +6206,8 @@
             privateChatsRef.child(currentPrivateChatId).on('child_added', (snapshot) => {
                 const message = snapshot.val();
                 if (message) {
-                    if (!document.getElementById(`private_msg_${snapshot.key}`)) {
-                        if (message.sender !== currentUser.name && !message.isRead) {
-                            privateChatsRef.child(currentPrivateChatId).child(snapshot.key).update({
-                                isRead: true,
-                                readAt: Date.now()
-                            });
-                            message.isRead = true;
-                        }
-                        appendPrivateMessageToUI({ id: snapshot.key, ...message });
-                        
+                    const existingMsg = document.getElementById(`private_msg_${snapshot.key}`);
+                    if (!existingMsg) {
                         if (message.sender !== currentUser.name) {
                             let msgText = message.text || '';
                             if (message.image) msgText = '📸 Fotoğraf';
@@ -5657,9 +6215,60 @@
                             else if (message.audio) msgText = '🎤 Ses Kaydı';
                             addNotification(message.sender, msgText, 'private');
                         }
+                        appendPrivateMessageToUI({ id: snapshot.key, ...message });
                     }
                 }
             });
+        }
+
+        function appendPrivateMessageToUI(message) {
+            const container = document.getElementById('privateMessages');
+            
+            if (document.getElementById(`private_msg_${message.id}`)) return;
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message-item private-msg';
+            messageDiv.id = `private_msg_${message.id}`;
+            
+            let deleteButton = '';
+            if (currentUser && message.sender === currentUser.name) {
+                deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${message.id}', '${currentPrivateChatId}')"><i class="fas fa-trash"></i></button>`;
+            }
+            
+            let content = message.text || '';
+            if (message.image) content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
+            else if (message.video) {
+                content += `<br><video src="${message.video}" controls class="message-video"></video>`;
+            }
+            else if (message.audio) content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
+            
+            const userAvatar = message.avatar || (userProfiles[message.sender]?.avatar || null);
+            const avatarHtml = userAvatar ? 
+                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
+            
+            let readStatus = '';
+            if (message.sender === currentUser.name) {
+                readStatus = message.isRead ? 
+                    ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>' : 
+                    ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
+            }
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-user">
+                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
+                        ${message.sender}
+                    </span>
+                    <div>
+                        <span class="message-time">${message.time || '--:--'}${readStatus}</span>
+                        ${deleteButton}
+                    </div>
+                </div>
+                <div class="message-content">${content}</div>
+            `;
+            
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
         }
 
         function updatePrivateMessages(messages) {
@@ -5687,174 +6296,10 @@
                 }
                 appendPrivateMessageToUI(msg);
             });
-            
+
             if (readUpdates.length > 0) {
-                Promise.all(readUpdates).catch(err => console.warn("Okundu güncelleme hatası:", err));
+                Promise.all(readUpdates).catch(err => console.warn("Okundu güncellenemedi:", err));
             }
-        }
-
-        function appendPrivateMessageToUI(message) {
-            const container = document.getElementById('privateMessages');
-            
-            if (document.getElementById(`private_msg_${message.id}`)) return;
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message-item private-msg';
-            messageDiv.id = `private_msg_${message.id}`;
-            
-            let deleteButton = '';
-            if (currentUser && message.sender === currentUser.name) {
-                deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${message.id}', '${currentPrivateChatId}')"><i class="fas fa-trash"></i></button>`;
-            }
-            
-            let content = message.text || '';
-            if (message.image) {
-                content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-            } else if (message.video) {
-                content += `<br><video src="${message.video}" controls class="message-video"></video>`;
-            } else if (message.audio) {
-                content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
-            }
-            
-            const userAvatar = message.avatar || (userProfiles[message.sender]?.avatar || null);
-            const avatarHtml = userAvatar ? 
-                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
-            
-            let readStatus = '';
-            if (message.sender === currentUser.name) {
-                if (message.isRead) {
-                    readStatus = ' <span style="color: var(--online); margin-left: 4px;"><i class="fas fa-check-double"></i></span>';
-                } else {
-                    readStatus = ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
-                }
-            }
-            
-            messageDiv.innerHTML = `
-                <div class="message-header">
-                    <span class="message-user">
-                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
-                        ${message.sender}
-                    </span>
-                    <div>
-                        <span class="message-time">${message.time || '--:--'}${readStatus}</span>
-                        ${deleteButton}
-                    </div>
-                </div>
-                <div class="message-content">${content}</div>
-            `;
-            
-            container.appendChild(messageDiv);
-            container.scrollTop = container.scrollHeight;
-        }
-
-        let isSendingPrivateMessage = false;
-        async function sendPrivateMessage() {
-            if (isSendingPrivateMessage) {
-                console.log('Zaten özel mesaj gönderiliyor');
-                return;
-            }
-            isSendingPrivateMessage = true;
-            
-            try {
-                if (!privateChatWith || !currentPrivateChatId || !privateChatsRef) {
-                    alert('❌ Önce bir kullanıcı seçin!');
-                    return;
-                }
-                
-                if (!checkWriteLimit()) {
-                    addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı!');
-                    return;
-                }
-                
-                if (await checkBlockStatus(privateChatWith)) {
-                    alert('Bu kullanıcıya mesaj gönderemezsiniz!');
-                    return;
-                }
-                
-                const isFav = await isFavorite(privateChatWith);
-                if (!isFav && !isOwner && !isAdmin) {
-                    alert(`❌ ${privateChatWith} ile mesajlaşmak için favorilere eklemelisiniz.`);
-                    return;
-                }
-                
-                const canSend = await checkBanBeforeMessage();
-                if (!canSend) return;
-                
-                const input = document.getElementById('private-input');
-                const text = input.value.trim();
-                if (!text) return;
-                
-                const messageData = {
-                    sender: currentUser.name,
-                    receiver: privateChatWith,
-                    text: text,
-                    timestamp: Date.now(),
-                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                    avatar: currentProfileAvatar || null,
-                    isRead: false
-                };
-                
-                await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                incrementWriteCount();
-                input.value = '';
-                autoResize(input);
-                
-                if (typingTimeout[currentPrivateChatId]) {
-                    clearTimeout(typingTimeout[currentPrivateChatId]);
-                }
-                if (typingRef) {
-                    typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
-                }
-                
-                if (usersRef) {
-                    usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
-                }
-                
-                await archiveAndTrimPrivateChat(currentPrivateChatId);
-            } catch (error) {
-                console.error('Mesaj gönderme hatası:', error);
-                addSystemMessage('❌ Mesaj gönderilemedi!');
-            } finally {
-                setTimeout(() => { isSendingPrivateMessage = false; }, 300);
-            }
-        }
-
-        function emitTyping() {
-            if (!currentPrivateChatId || !privateChatWith || !typingRef) return;
-            
-            if (typingTimeout[currentPrivateChatId]) {
-                clearTimeout(typingTimeout[currentPrivateChatId]);
-            }
-            
-            typingRef.child(currentPrivateChatId).child(currentUser.name).set(true);
-            
-            typingTimeout[currentPrivateChatId] = setTimeout(() => {
-                typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
-            }, TYPING_TIMEOUT_DURATION);
-        }
-
-        function listenForTyping() {
-            if (!currentPrivateChatId || !typingRef) return;
-            
-            const privateWithDiv = document.getElementById('privateWith');
-            typingRef.child(currentPrivateChatId).off('value');
-            
-            typingRef.child(currentPrivateChatId).on('value', (snapshot) => {
-                const typingUsers = snapshot.val() || {};
-                const isOtherTyping = Object.keys(typingUsers).some(user => user !== currentUser.name);
-                
-                const existing = privateWithDiv.querySelector('.private-typing-indicator');
-                if (isOtherTyping) {
-                    if (!existing) {
-                        const typingSpan = document.createElement('span');
-                        typingSpan.className = 'private-typing-indicator';
-                        typingSpan.innerHTML = '<i class="fas fa-ellipsis-h"></i> yazıyor...';
-                        privateWithDiv.appendChild(typingSpan);
-                    }
-                } else {
-                    if (existing) existing.remove();
-                }
-            });
         }
 
         function closePrivateChat() {
@@ -5862,13 +6307,15 @@
                 cameraStream.getTracks().forEach(track => track.stop());
                 cameraStream = null;
             }
-            if (isAudioRecording) stopAudioRecording();
+            if (isAudioRecording) {
+                stopAudioRecording();
+            }
             
             if (privateChatsRef && currentPrivateChatId) {
-                privateChatsRef.child(currentPrivateChatId).off('child_added');
+                privateChatsRef.child(currentPrivateChatId).off();
             }
             if (typingRef && currentPrivateChatId) {
-                typingRef.child(currentPrivateChatId).off('value');
+                typingRef.child(currentPrivateChatId).off();
             }
             if (typingTimeout[currentPrivateChatId]) {
                 clearTimeout(typingTimeout[currentPrivateChatId]);
@@ -5890,8 +6337,8 @@
                 if (!messages) return;
                 const messageArray = Object.entries(messages).map(([id, data]) => ({ id, ...data, timestamp: data.timestamp || Date.now() }));
                 messageArray.sort((a, b) => a.timestamp - b.timestamp);
-                if (messageArray.length > 100) {
-                    const messagesToArchive = messageArray.slice(0, messageArray.length - 100);
+                if (messageArray.length > 10) {
+                    const messagesToArchive = messageArray.slice(0, messageArray.length - 10);
                     for (const oldMessage of messagesToArchive) {
                         try {
                             await privateChatsArchiveRef.child(chatId).push({
@@ -5902,7 +6349,7 @@
                                 video: oldMessage.video || null,
                                 audio: oldMessage.audio || null,
                                 timestamp: oldMessage.timestamp,
-                                time: oldMessage.time,
+                                time: oldMessage.time || new Date(oldMessage.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                                 archivedAt: Date.now(),
                                 originalMessageId: oldMessage.id
                             });
@@ -6171,10 +6618,6 @@
                 showLoginError('❌ Kullanıcı adı 2-20 karakter arasında olmalı!');
                 return;
             }
-            if (!password) {
-                showLoginError('🔐 Giriş için şifre zorunludur!');
-                return;
-            }
             if (!isFirebaseConnected) {
                 showLoginError('❌ Firebase bağlantısı yok!');
                 return;
@@ -6188,7 +6631,7 @@
                     showLoginError(`🚫 **BANLI KULLANICI**\nSebep: ${banCheck.reason}\nKalan süre: ${banCheck.remaining} dakika`);
                 }
                 loginBtn.disabled = false;
-                loginBtn.innerHTML = 'Giriş Yap';
+                loginBtn.innerHTML = 'Sohbete Katıl';
                 return;
             }
             
@@ -6199,11 +6642,17 @@
                 const normalizedNick = normalizeNick(rawNick);
                 
                 if (normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
+                    if (!password) {
+                        showLoginError('🔐 Owner şifresi gerekli!');
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Sohbete Katıl';
+                        return;
+                    }
                     const passwordValid = await verifyOwnerPassword(password);
                     if (!passwordValid) {
                         showLoginError('❌ Hatalı şifre!');
                         loginBtn.disabled = false;
-                        loginBtn.innerHTML = 'Giriş Yap';
+                        loginBtn.innerHTML = 'Sohbete Katıl';
                         return;
                     }
                     await completeLogin(SECURE_CONFIG.OWNER_CONFIG.username, 'owner', true, null);
@@ -6212,25 +6661,28 @@
                 
                 const userRegistered = await isRegisteredUserSecure(rawNick);
                 if (userRegistered && userRegistered.isRegistered) {
+                    if (!password) {
+                        showLoginError(`🔐 ${userRegistered.originalName} için şifre gerekli!`);
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Sohbete Katıl';
+                        return;
+                    }
                     const passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
                     if (!passwordValid) {
                         showLoginError('❌ Hatalı şifre!');
                         loginBtn.disabled = false;
-                        loginBtn.innerHTML = 'Giriş Yap';
+                        loginBtn.innerHTML = 'Sohbete Katıl';
                         return;
                     }
                     await completeLogin(userRegistered.originalName, userRegistered.role, true, userRegistered);
                 } else {
-                    showLoginError('❌ Kayıtlı kullanıcı bulunamadı!');
-                    loginBtn.disabled = false;
-                    loginBtn.innerHTML = 'Giriş Yap';
-                    return;
+                    await completeLogin(rawNick, 'user', false, null);
                 }
                 
             } catch (error) {
                 showLoginError(`❌ Giriş hatası: ${error.message}`);
                 loginBtn.disabled = false;
-                loginBtn.innerHTML = 'Giriş Yap';
+                loginBtn.innerHTML = 'Sohbete Katıl';
             }
         }
 
@@ -6347,10 +6799,12 @@
             }
         }
 
+        /* ========== DÜZELTİLMİŞ KISIM: initApp ========== */
         function initApp() {
             const messageInput = document.getElementById('message-input');
             const privateInput = document.getElementById('private-input');
             
+            // Event listener'ları yeniden ata (tekrarları önlemek için)
             messageInput.removeEventListener('keydown', window.messageInputHandler);
             privateInput.removeEventListener('keydown', window.privateInputHandler);
             
@@ -6375,6 +6829,9 @@
                     closeRemoveOperatorModal();
                     closeReportModal();
                     closeProfileModal();
+                    closeFollowersDrawer();
+                    closeFollowingDrawer();
+                    closeSearchDrawer();
                     document.getElementById('ownerPanel').classList.remove('active');
                     document.getElementById('adminPanel').classList.remove('active');
                     document.getElementById('coadminPanel').classList.remove('active');
@@ -7215,9 +7672,6 @@
         function toggleUserList() {
             const sidebar = document.getElementById('usersSidebar');
             sidebar.classList.toggle('active');
-            if (sidebar.classList.contains('active')) {
-                updateUserListUI();
-            }
         }
 
         function autoResize(textarea) {
@@ -7745,7 +8199,7 @@
             help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir<br>';
             help += '• Kameradan Çek: Direkt telefon kamerasını açar<br>';
             help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir<br>';
-            help += '• Favori Ekleme: Bir kullanıcıyı favorilere ekleyip offline olsa bile mesaj gönderebilirsiniz.<br>';
+            help += '• Takipleşme: Üst panelden takipçi/takip edilen listelerinizi görüntüleyip DM gönderebilirsiniz.<br>';
             addSystemMessage(help);
         }
 
@@ -8041,6 +8495,9 @@
             closeRemoveOperatorModal();
             closeProfileModal();
             closeReportModal();
+            closeFollowersDrawer();
+            closeFollowingDrawer();
+            closeSearchDrawer();
             document.getElementById('ownerPanel').classList.remove('active');
             document.getElementById('adminPanel').classList.remove('active');
             document.getElementById('coadminPanel').classList.remove('active');
@@ -8052,6 +8509,38 @@
             document.getElementById('notificationPanel').classList.remove('active');
             document.getElementById('mobileMenu').classList.remove('active');
             closePlaylistDrawer();
+        }
+
+        function checkUsernameRealTime() {
+            const nickInput = document.getElementById('login-nick');
+            const passwordInput = document.getElementById('login-password');
+            const passwordInfo = document.getElementById('password-info');
+            nickInput.addEventListener('input', async function() {
+                const nick = this.value.trim();
+                if (nick.length < 2) {
+                    passwordInput.style.display = 'none';
+                    passwordInfo.style.display = 'none';
+                    return;
+                }
+                const normalizedNick = normalizeNick(nick);
+                if (normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
+                    passwordInput.style.display = 'block';
+                    passwordInfo.style.display = 'block';
+                    passwordInput.placeholder = 'Şifre';
+                    passwordInfo.innerHTML = '<i class="fas fa-lock"></i> Şifre gerekli';
+                    return;
+                }
+                const userRegistered = await isRegisteredUserSecure(nick);
+                if (userRegistered && userRegistered.isRegistered) {
+                    passwordInput.style.display = 'block';
+                    passwordInfo.style.display = 'block';
+                    passwordInput.placeholder = 'Şifre';
+                    passwordInfo.innerHTML = `<i class="fas fa-lock"></i> ${userRegistered.originalName} için şifre gerekli`;
+                } else {
+                    passwordInput.style.display = 'none';
+                    passwordInfo.style.display = 'none';
+                }
+            });
         }
 
         function closeAddOperatorModal() {
@@ -8136,6 +8625,7 @@
                 }, 500);
             }
             initializeFirebase();
+            checkUsernameRealTime();
             updateMobileUI();
             document.getElementById('login-nick').focus();
             document.getElementById('login-nick').addEventListener('keypress', (e) => {
@@ -8203,6 +8693,27 @@
                     !playlistDrawer.contains(e.target) && 
                     (!playlistBtn || !playlistBtn.contains(e.target))) {
                     playlistDrawer.classList.remove('active');
+                }
+                const followersDrawer = document.getElementById('followersDrawer');
+                const followersBtn = document.querySelector('.follow-icon-btn.followers');
+                if (followersDrawer.classList.contains('active') && 
+                    !followersDrawer.contains(e.target) && 
+                    (!followersBtn || !followersBtn.contains(e.target))) {
+                    followersDrawer.classList.remove('active');
+                }
+                const followingDrawer = document.getElementById('followingDrawer');
+                const followingBtn = document.querySelector('.follow-icon-btn.following');
+                if (followingDrawer.classList.contains('active') && 
+                    !followingDrawer.contains(e.target) && 
+                    (!followingBtn || !followingBtn.contains(e.target))) {
+                    followingDrawer.classList.remove('active');
+                }
+                const searchDrawer = document.getElementById('searchDrawer');
+                const searchBtn = document.querySelector('.follow-icon-btn.search');
+                if (searchDrawer.classList.contains('active') && 
+                    !searchDrawer.contains(e.target) && 
+                    (!searchBtn || !searchBtn.contains(e.target))) {
+                    searchDrawer.classList.remove('active');
                 }
             });
             function onYouTubeIframeAPIReady() {
