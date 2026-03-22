@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
-        /* TÜM STILLER AYNEN KALDI */
+        /* TÜM STILLER AYNEN KALDI - Değişiklik yok */
         :root {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
@@ -3892,7 +3892,7 @@
         let userProfiles = {};
         let blockedUsers = {};
         let blockedByUsers = {};
-        let favoritesList = [];
+        let favoritesList = [];  // KALICI FAVORİ LİSTESİ - FIREBASE'DE SABİT KALACAK
         
         let playlist = [];
         let currentVideoId = 'i75BZYOAPl4';
@@ -4427,7 +4427,7 @@
             }, 50);
         }
 
-        // ========== FAVORİ SİSTEMİ FONKSİYONLARI (Geliştirilmiş - Gerçek Zamanlı ve Kalıcı) ==========
+        // ========== FAVORİ SİSTEMİ (KALICI - FIREBASE'DE SABİT) ==========
         
         // Favori listesini yükle (gerçek zamanlı dinleme ile)
         function loadFavoritesList() {
@@ -4436,6 +4436,7 @@
             // Gerçek zamanlı dinleme - her değişiklikte anında güncellenir
             favoritesRef.child(currentUser.name).on('value', (snapshot) => {
                 const data = snapshot.val() || {};
+                // favoriler listesini güncelle - Favori eklediğim kullanıcılar sabit kalacak
                 favoritesList = Object.keys(data).filter(username => data[username] === true);
                 
                 // Favori listesi aktifse UI'yı güncelle
@@ -4448,10 +4449,11 @@
                     updatePrivateFavoriteButton();
                 }
                 
-                console.log('Favori listesi güncellendi:', favoritesList);
+                console.log('Favori listesi güncellendi (kalıcı):', favoritesList);
             });
         }
 
+        // Favori ekle - Favoriler kalıcı olarak Firebase'de saklanır
         async function addFavorite(username) {
             if (!currentUser || username === currentUser.name) return false;
             await favoritesRef.child(currentUser.name).child(username).set(true);
@@ -4459,6 +4461,7 @@
             return true;
         }
 
+        // Favori kaldır
         async function removeFavorite(username) {
             if (!currentUser) return false;
             await favoritesRef.child(currentUser.name).child(username).remove();
@@ -4466,6 +4469,7 @@
             return true;
         }
 
+        // Favori kontrolü
         async function isFavorite(username) {
             if (!currentUser || !favoritesRef) return false;
             const snap = await favoritesRef.child(currentUser.name).child(username).once('value');
@@ -5306,7 +5310,7 @@
                         if (currentUser) {
                             loadUserProfile(currentUser.name);
                             loadBlockedUsers();
-                            loadFavoritesList(); // Gerçek zamanlı favori dinleyicisini başlat
+                            loadFavoritesList(); // Gerçek zamanlı favori dinleyicisini başlat - FAVORİLER KALICI OLARAK FIREBASE'DE SAKLANIR
 
                             if (isOwner) {
                                 document.getElementById('ownerPanelIcon').style.display = 'flex';
@@ -5572,7 +5576,7 @@
             }
         }
 
-        // ========== OPTİMİZE EDİLMİŞ ÖZEL SOHBET FONKSİYONLARI (10 Mesaj Limiti ve Okundu Bilgisi) ==========
+        // ========== OPTİMİZE EDİLMİŞ ÖZEL SOHBET FONKSİYONLARI ==========
         
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
@@ -5624,7 +5628,6 @@
             const container = document.getElementById('privateMessages');
             container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Yükleniyor...</div>';
             
-            // Sadece son 10 mesajı al
             privateChatsRef.child(currentPrivateChatId).limitToLast(10).once('value', (snapshot) => {
                 const messages = snapshot.val();
                 updatePrivateMessages(messages);
@@ -5635,7 +5638,6 @@
                 const message = snapshot.val();
                 if (message) {
                     if (!document.getElementById(`private_msg_${snapshot.key}`)) {
-                        // Alıcıysa ve mesaj okunmamışsa okundu olarak işaretle
                         if (message.sender !== currentUser.name && !message.isRead) {
                             privateChatsRef.child(currentPrivateChatId).child(snapshot.key).update({
                                 isRead: true,
@@ -5645,7 +5647,6 @@
                         }
                         appendPrivateMessageToUI({ id: snapshot.key, ...message });
                         
-                        // Yeni mesaj geldiğinde, limiti aşan eski mesajları arşivle ve sil
                         setTimeout(() => {
                             archiveAndTrimPrivateChat(currentPrivateChatId);
                         }, 100);
@@ -5678,7 +5679,6 @@
             const readUpdates = [];
             
             messagesArray.forEach(msg => {
-                // Alıcıysa ve mesaj okunmamışsa okundu olarak işaretle
                 if (msg.sender !== currentUser.name && !msg.isRead) {
                     readUpdates.push(privateChatsRef.child(currentPrivateChatId).child(msg.id).update({
                         isRead: true,
@@ -5811,7 +5811,6 @@
                     usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
                 }
                 
-                // Mesaj gönderildikten sonra arşivleme işlemini tetikle
                 setTimeout(() => {
                     archiveAndTrimPrivateChat(currentPrivateChatId);
                 }, 500);
@@ -5895,7 +5894,6 @@
                 const messageArray = Object.entries(messages).map(([id, data]) => ({ id, ...data, timestamp: data.timestamp || Date.now() }));
                 messageArray.sort((a, b) => a.timestamp - b.timestamp);
                 
-                // Sadece son 10 mesajı koru, eski mesajları arşivle
                 if (messageArray.length > 10) {
                     const messagesToArchive = messageArray.slice(0, messageArray.length - 10);
                     for (const oldMessage of messagesToArchive) {
