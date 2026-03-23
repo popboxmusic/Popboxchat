@@ -1644,6 +1644,7 @@
         .password-input-wrapper {
             position: relative;
             margin-bottom: 16px;
+            display: none;
         }
         
         .login-input {
@@ -1744,7 +1745,6 @@
             animation: fadeIn 0.3s ease;
         }
         
-        /* Arka plan resmi için ayrı katman - KESİN ÇÖZÜM */
         .private-modal::before {
             content: '';
             position: absolute;
@@ -1822,16 +1822,7 @@
         }
         
         .private-action-btn.favorite {
-            color: var(--text-muted);
-        }
-        .private-action-btn.favorite.active {
-            color: var(--favorite);
-            border-color: var(--favorite);
-            background: var(--favorite-bg);
-        }
-        .private-action-btn.favorite:hover {
-            border-color: var(--favorite);
-            color: var(--favorite);
+            display: none;
         }
 
         .private-typing-indicator {
@@ -3182,10 +3173,6 @@
             <div class="menu-icon"><i class="fas fa-list"></i></div>
             <div class="menu-text">Oynatma Listesi</div>
         </div>
-        <div class="mobile-menu-item" id="mobileFavIcon" onclick="toggleFavoriteListFromMenu()">
-            <div class="menu-icon" style="color: var(--favorite);"><i class="fas fa-heart"></i></div>
-            <div class="menu-text">Favorilerim</div>
-        </div>
         <div class="mobile-menu-item" id="mobileOwnerIcon" style="display:none;" onclick="toggleOwnerPanelFromMenu()">
             <div class="menu-icon" style="color:var(--owner);"><i class="fas fa-crown"></i></div>
             <div class="menu-text">Owner Paneli</div>
@@ -3211,9 +3198,6 @@
             <button class="profile-icon-btn" onclick="openProfileModal()" title="Profil" id="profileIcon">
                 <i class="fas fa-user"></i>
                 <div id="profileAvatarPreview"></div>
-            </button>
-            <button class="icon-btn" onclick="toggleFavoriteList()" title="Favori Listesi" id="favoriteListIcon">
-                <i class="fas fa-heart" style="color: var(--favorite);"></i>
             </button>
             <button class="role-icon-btn owner" onclick="toggleOwnerPanel()" title="Owner Paneli" id="ownerPanelIcon" style="display:none;">
                 <i class="fas fa-crown"></i>
@@ -3635,12 +3619,12 @@
                 placeholder="Kullanıcı adı"
                 autocomplete="off"
             >
-            <div class="password-input-wrapper">
+            <div class="password-input-wrapper" id="passwordWrapper">
                 <input 
                     type="password" 
                     id="login-password" 
                     class="login-input" 
-                    placeholder="Şifre"
+                    placeholder="Şifre (Sadece kayıtlı kullanıcılar için)"
                     autocomplete="off"
                 >
                 <button type="button" class="toggle-password" onclick="togglePasswordVisibility('login-password', this)">
@@ -3648,7 +3632,7 @@
                 </button>
             </div>
             <div id="password-info" style="color: var(--text-secondary); font-size: 14px; margin-bottom: 12px; display: block;">
-                <i class="fas fa-lock"></i> Giriş için şifre zorunludur.
+                <i class="fas fa-info-circle"></i> Kayıtlı kullanıcılar şifre girmelidir. Kayıtlı değilseniz şifre bırakın.
             </div>
             <button class="login-button" onclick="login()" id="login-btn">
                 Giriş Yap
@@ -3663,7 +3647,6 @@
         <div class="private-header">
             <div id="privateWith"><i class="fas fa-lock"></i> Özel Sohbet</div>
             <div class="private-actions">
-                <button class="private-action-btn favorite" onclick="toggleFavoriteUser()" id="privateFavoriteBtn" title="Favorilere Ekle/Çıkar"><i class="fas fa-heart"></i></button>
                 <button class="private-action-btn report" onclick="openReportModal()" title="Şikayet Et"><i class="fas fa-exclamation-triangle"></i></button>
                 <button class="private-action-btn block" onclick="toggleBlockUser()" id="blockUserBtn" title="Engelle"><i class="fas fa-ban"></i></button>
                 <button class="private-action-btn" onclick="closePrivateChat()" title="Kapat"><i class="fas fa-times"></i></button>
@@ -3683,8 +3666,8 @@
                 </div>
             </div>
             <button class="audio-record-btn" onclick="startAudioRecording()" title="Sesli Mesaj Gönder"><i class="fas fa-microphone"></i></button>
-            <input type="file" id="galleryUpload" accept="image/*,video/*" style="display: none;" multiple>
-            <input type="file" id="cameraUpload" accept="image/*,video/*" capture="environment" style="display: none;">
+            <input type="file" id="galleryUpload" accept="image/*" style="display: none;" multiple>
+            <input type="file" id="cameraUpload" accept="image/*" capture="environment" style="display: none;">
             <textarea 
                 id="private-input" 
                 placeholder="Özel mesaj yaz..."
@@ -3910,7 +3893,6 @@
         let userProfiles = {};
         let blockedUsers = {};
         let blockedByUsers = {};
-        let favoritesList = [];  // KALICI FAVORİ LİSTESİ - FIREBASE'DE SABİT KALACAK
         
         let playlist = [];
         let currentVideoId = 'i75BZYOAPl4';
@@ -4410,13 +4392,6 @@
             }, 50);
         }
 
-        function toggleFavoriteListFromMenu() {
-            toggleMobileMenu();
-            setTimeout(() => {
-                toggleFavoriteList();
-            }, 50);
-        }
-
         function toggleOwnerPanelFromMenu() {
             toggleMobileMenu();
             setTimeout(() => {
@@ -4445,1200 +4420,15 @@
             }, 50);
         }
 
-        // ========== FAVORİ SİSTEMİ (KALICI - TAKİPLEŞME SİSTEMİ) ==========
-        
-        // Favori listesini yükle (gerçek zamanlı dinleme ile)
-        function loadFavoritesList() {
-            if (!currentUser || !favoritesRef) return;
-            
-            // Gerçek zamanlı dinleme - her değişiklikte anında güncellenir
-            favoritesRef.child(currentUser.name).on('value', (snapshot) => {
-                const data = snapshot.val() || {};
-                // favoriler listesini güncelle - Favori eklediğim kullanıcılar sabit kalacak
-                favoritesList = Object.keys(data).filter(username => data[username] === true);
-                
-                // Favori listesi aktifse UI'yı güncelle
-                if (document.getElementById('usersSidebar').classList.contains('active') && currentUserListTab === 'favorites') {
-                    updateUserListUI();
-                }
-                
-                // Özel sohbet açıksa favori butonunu güncelle
-                if (privateChatWith) {
-                    updatePrivateFavoriteButton();
-                }
-                
-                console.log('Favori listesi güncellendi (takipleşme sistemi):', favoritesList);
-            });
-        }
-
-        // Favori ekle - Takipleşme sistemi: favori eklenen kişi her zaman görünür ve mesaj gönderilebilir
-        async function addFavorite(username) {
-            if (!currentUser || username === currentUser.name) return false;
-            await favoritesRef.child(currentUser.name).child(username).set(true);
-            return true;
-        }
-
-        // Favori kaldır
-        async function removeFavorite(username) {
-            if (!currentUser) return false;
-            await favoritesRef.child(currentUser.name).child(username).remove();
-            return true;
-        }
-
-        // Favori kontrolü
-        async function isFavorite(username) {
-            if (!currentUser || !favoritesRef) return false;
-            const snap = await favoritesRef.child(currentUser.name).child(username).once('value');
-            return snap.val() === true;
-        }
-
-        async function updatePrivateFavoriteButton() {
-            if (!privateChatWith || !currentUser) return;
-            const isFav = await isFavorite(privateChatWith);
-            const favBtn = document.getElementById('privateFavoriteBtn');
-            if (isFav) {
-                favBtn.innerHTML = '<i class="fas fa-heart" style="color: var(--favorite);"></i>';
-                favBtn.title = 'Favorilerden Çıkar';
-                favBtn.classList.add('active');
-            } else {
-                favBtn.innerHTML = '<i class="fas fa-heart"></i>';
-                favBtn.title = 'Favorilere Ekle';
-                favBtn.classList.remove('active');
-            }
-        }
-
-        async function toggleFavoriteUser() {
-            if (!privateChatWith) return;
-            const isFav = await isFavorite(privateChatWith);
-            if (isFav) {
-                await removeFavorite(privateChatWith);
-                addSystemMessage(`✅ ${privateChatWith} favorilerden çıkarıldı. Artık onunla mesajlaşamazsınız.`);
-            } else {
-                await addFavorite(privateChatWith);
-                addSystemMessage(`✅ ${privateChatWith} favorilere eklendi. Artık her zaman mesajlaşabilirsiniz.`);
-            }
-        }
-
-        // Favori listesi gösterme fonksiyonu - SADECE FAVORİ EKLENEN KİŞİLERİ GÖSTERİR
-        function toggleFavoriteList() {
-            const sidebar = document.getElementById('usersSidebar');
-            if (sidebar.classList.contains('active')) {
-                switchUserListTab('favorites');
-            } else {
-                sidebar.classList.add('active');
-                switchUserListTab('favorites');
-            }
-        }
-
-        function switchUserListTab(tab) {
-            currentUserListTab = tab;
-            document.querySelectorAll('.users-tab-btn').forEach(btn => {
-                if ((tab === 'all' && btn.textContent === 'Tümü') || (tab === 'favorites' && btn.textContent === 'Favorilerim')) {
-                    btn.classList.add('active');
-                } else {
-                    btn.classList.remove('active');
-                }
-            });
-            updateUserListUI();
-        }
-
-        // GÜNCELLENMİŞ: Favorilerim sekmesi SADECE favori listesindeki kişileri gösterir (çevrimdışı olanlar da gösterilir)
-        // Tümü sekmesi ise çevrimiçi olan herkesi gösterir
-        function updateUserListUI() {
-            const container = document.getElementById('userListContainer');
-            if (!container) return;
-            
-            const now = Date.now();
-            let usersToDisplay = [];
-            
-            if (currentUserListTab === 'all') {
-                // TÜMÜ SEKMESİ: Sadece çevrimiçi kullanıcıları göster
-                Object.entries(cachedOnlineUsers).forEach(([username, userData]) => {
-                    if (!userData) return;
-                    if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
-                        (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
-                        return;
-                    }
-                    const timeDiff = now - (userData.lastSeen || 0);
-                    if (timeDiff < ONLINE_THRESHOLD) {
-                        usersToDisplay.push({
-                            username,
-                            userData,
-                            isOnline: true,
-                            secondsAgo: Math.floor(timeDiff / 1000),
-                            rolePriority: getRolePriority(username)
-                        });
-                    }
-                });
-            } else {
-                // FAVORİLERİM SEKMESİ: Sadece favori listesindeki kişileri göster (çevrimdışı olsalar bile)
-                // favori listesi favoritesList değişkeninde tutuluyor
-                for (const favUsername of favoritesList) {
-                    const userData = cachedOnlineUsers[favUsername] || { lastSeen: 0 };
-                    const timeDiff = now - (userData.lastSeen || 0);
-                    const isOnline = timeDiff < ONLINE_THRESHOLD;
-                    usersToDisplay.push({
-                        username: favUsername,
-                        userData: userData,
-                        isOnline: isOnline,
-                        secondsAgo: isOnline ? Math.floor(timeDiff / 1000) : 9999,
-                        rolePriority: getRolePriority(favUsername)
-                    });
-                }
-            }
-            
-            // Sıralama: Rol > Çevrimiçi/Çevrimdışı > Son görülme
-            usersToDisplay.sort((a, b) => {
-                if (a.rolePriority !== b.rolePriority) return a.rolePriority - b.rolePriority;
-                if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
-                return a.secondsAgo - b.secondsAgo;
-            });
-            
-            if (usersToDisplay.length === 0) {
-                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">' + 
-                    (currentUserListTab === 'favorites' ? 'Henüz favori eklediğiniz kullanıcı yok.' : 'Çevrimiçi kimse yok.') + 
-                    '</div>';
-                return;
-            }
-            
-            let html = '';
-            usersToDisplay.forEach(user => {
-                const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
-                let badgeHtml = '';
-                if (isOwnerUser) badgeHtml = '<span class="badge owner" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-crown"></i></span>';
-                else if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) badgeHtml = '<span class="badge admin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-shield-alt"></i></span>';
-                else if (coAdminList.includes(user.username)) badgeHtml = '<span class="badge coadmin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-users"></i></span>';
-                else if (operatorList.includes(user.username)) badgeHtml = '<span class="badge operator" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-bolt"></i></span>';
-                
-                const userAvatar = userProfiles[user.username]?.avatar || null;
-                const avatarHtml = userAvatar ? 
-                    `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">` : '';
-                
-                let statusText = '';
-                if (!user.isOnline) {
-                    statusText = ' (Çevrimdışı)';
-                } else if (user.secondsAgo > 10) {
-                    statusText = ` (${user.secondsAgo}sn)`;
-                } else {
-                    statusText = ' (Şimdi)';
-                }
-                
-                html += `
-                    <div class="user-item ${!user.isOnline ? 'idle' : ''}" onclick="openPrivateChat('${user.username}')">
-                        <div class="user-status">
-                            <span class="status-dot ${user.isOnline ? 'status-online' : 'status-idle'}"></span>
-                            <div class="user-avatar-sidebar">
-                                ${avatarHtml ? avatarHtml : '<i class="fas fa-user"></i>'}
-                            </div>
-                            <strong style="display:flex; align-items:center; gap:4px;">
-                                ${badgeHtml}
-                                ${user.username}
-                            </strong>
-                        </div>
-                        <div style="font-size: 12px; color: var(--text-muted);">
-                            ${statusText}
-                        </div>
-                    </div>
-                `;
-            });
-            container.innerHTML = html;
-        }
-
-        // Rol önceliği (sayısal)
-        function getRolePriority(username) {
-            if (username === SECURE_CONFIG.OWNER_CONFIG.username) return 1;
-            if (adminList.includes(username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(username)) return 2;
-            if (coAdminList.includes(username)) return 3;
-            if (operatorList.includes(username)) return 4;
-            return 5;
-        }
-
-        async function deleteAccount() {
-            if (!currentUser) return;
-            if (!confirm('⚠️ TÜM HESABINIZI SİLMEK ÜZERESİNİZ!\n\nBu işlem geri alınamaz. Tüm mesajlarınız, profiliniz, takipçileriniz ve kaydınız kalıcı olarak silinecektir.\n\nDevam etmek istediğinize emin misiniz?')) return;
-            
-            try {
-                const username = currentUser.name;
-                
-                if (profilesRef) await profilesRef.child(username).remove();
-                if (registeredUsersRef) await registeredUsersRef.child(username).remove();
-                
-                if (favoritesRef) {
-                    const favoritesSnap = await favoritesRef.child(username).once('value');
-                    const favorites = favoritesSnap.val() || {};
-                    for (const fav of Object.keys(favorites)) {
-                        await favoritesRef.child(fav).child(username).remove();
-                    }
-                    await favoritesRef.child(username).remove();
-                }
-                
-                if (blocksRef) {
-                    await blocksRef.child(username).remove();
-                }
-                
-                if (usersRef) await usersRef.child(username).remove();
-                
-                if (bansRef) await bansRef.child(username).remove();
-                if (globalBansRef) await globalBansRef.child(username).remove();
-                
-                addSystemMessage('✅ Hesabınız başarıyla silindi. Çıkış yapılıyor...');
-                setTimeout(() => {
-                    logout();
-                }, 2000);
-                
-            } catch (error) {
-                console.error("Hesap silme hatası:", error);
-                alert('❌ Hesap silinirken bir hata oluştu!');
-            }
-        }
-
-        // ========== PANEL FONKSİYONLARI (Kısa tutmak için özet) ==========
-        function toggleOwnerPanel() {
-            const panel = document.getElementById('ownerPanel');
-            panel.classList.toggle('active');
-            if (panel.classList.contains('active')) {
-                updateOwnerPanelFromCache();
-                if (!ownerPrivateListenerActive) {
-                    startOwnerPrivateMessageMonitoring();
-                    ownerPrivateListenerActive = true;
-                }
-                if (document.querySelector('#ownerAdsTab').classList.contains('active')) {
-                    updateAdContentsList();
-                }
-            } else {
-                if (ownerPrivateListenerActive) {
-                    stopOwnerPrivateMessageMonitoring();
-                    ownerPrivateListenerActive = false;
-                }
-            }
-        }
-        
-        function toggleAdminPanel() {
-            const panel = document.getElementById('adminPanel');
-            panel.classList.toggle('active');
-            if (panel.classList.contains('active')) updateAdminPanelFromCache();
-        }
-        
-        function toggleCoAdminPanel() {
-            const panel = document.getElementById('coadminPanel');
-            panel.classList.toggle('active');
-            if (panel.classList.contains('active')) updateCoAdminPanelFromCache();
-        }
-        
-        function toggleOperatorPanel() {
-            const panel = document.getElementById('operatorPanel');
-            panel.classList.toggle('active');
-            if (panel.classList.contains('active')) updateOperatorPanelFromCache();
-        }
-        
-        function switchOwnerTab(tabName) {
-            document.querySelectorAll('#ownerPanel .role-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('#ownerPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-            document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
-            if (tabName === 'ads') updateAdContentsList();
-        }
-        
-        function switchAdminTab(tabName) {
-            document.querySelectorAll('#adminPanel .role-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('#adminPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelector(`#adminPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-            document.getElementById('admin' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
-        }
-        
-        function switchCoAdminTab(tabName) {
-            document.querySelectorAll('#coadminPanel .role-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('#coadminPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelector(`#coadminPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-            document.getElementById('coadmin' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
-        }
-        
-        function switchOperatorTab(tabName) {
-            document.querySelectorAll('#operatorPanel .role-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('#operatorPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelector(`#operatorPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-            document.getElementById('operator' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
-        }
-        
-        function updateOwnerPanelFromCache() {
-            if (!isOwner) return;
-            const now = Date.now();
-            let onlineCount = 0;
-            Object.values(cachedOnlineUsers).forEach(user => {
-                if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
-            });
-            const registeredCount = Object.keys(cachedRegisteredUsers).length;
-            document.getElementById('ownerTotalUsers').textContent = Object.keys(cachedOnlineUsers).length;
-            document.getElementById('ownerOnlineUsers').textContent = onlineCount;
-            document.getElementById('ownerRegisteredUsers').textContent = registeredCount;
-            document.getElementById('ownerMessages').textContent = cachedMessages.length;
-            document.getElementById('ownerCommands').textContent = Object.keys(customCommands).length;
-            updateOwnerAdminListFromCache();
-            updateOwnerCoAdminListFromCache();
-            updateOwnerOperatorListFromCache();
-            updateOwnerCommandsList();
-            updateOwnerReportListFromCache();
-            updateOwnerBlockListFromCache();
-        }
-
-        function updateAdminPanelFromCache() {
-            if (!isAdmin && !isOwner) return;
-            const now = Date.now();
-            let onlineCount = 0;
-            Object.values(cachedOnlineUsers).forEach(user => {
-                if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
-            });
-            let activeBans = 0;
-            Object.values(cachedBans).forEach(ban => {
-                if (ban.bannedUntil > now) activeBans++;
-            });
-            document.getElementById('adminTotalUsers').textContent = Object.keys(cachedOnlineUsers).length;
-            document.getElementById('adminOnlineUsers').textContent = onlineCount;
-            document.getElementById('adminMessages').textContent = cachedMessages.length;
-            document.getElementById('adminBans').textContent = activeBans;
-            updateAdminReportListFromCache();
-        }
-
-        function updateCoAdminPanelFromCache() {
-            if (!isCoAdmin && !isOwner) return;
-            const now = Date.now();
-            let onlineCount = 0;
-            Object.values(cachedOnlineUsers).forEach(user => {
-                if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
-            });
-            let activeBans = 0;
-            Object.values(cachedBans).forEach(ban => {
-                if (ban.bannedUntil > now) activeBans++;
-            });
-            document.getElementById('coadminOnline').textContent = onlineCount;
-            document.getElementById('coadminBans').textContent = activeBans;
-        }
-
-        function updateOperatorPanelFromCache() {
-            if (!isOperator && !isOwner) return;
-        }
-
-        function updateOwnerAdminListFromCache() {
-            const container = document.getElementById('ownerAdminList');
-            if (!container) return;
-            let html = '';
-            adminList.forEach(admin => {
-                html += `
-                    <div class="role-list-item">
-                        <div class="role-list-info">
-                            <div class="role-list-avatar"><i class="fas fa-user"></i></div>
-                            <div class="role-list-details">
-                                <span class="role-list-name">${admin}</span>
-                                <span class="role-list-role">Admin</span>
-                            </div>
-                        </div>
-                        <div class="role-list-actions">
-                            <button class="role-list-btn danger" onclick="removeAdmin('${admin}')"><i class="fas fa-times"></i></button>
-                        </div>
-                    </div>
-                `;
-            });
-            if (adminList.length === 0) html = '<div style="color:var(--text-muted); text-align:center;">Admin yok</div>';
-            container.innerHTML = html;
-        }
-
-        function updateOwnerCoAdminListFromCache() {
-            const container = document.getElementById('ownerCoAdminList');
-            if (!container) return;
-            let html = '';
-            coAdminList.forEach(coadmin => {
-                html += `
-                    <div class="role-list-item">
-                        <div class="role-list-info">
-                            <div class="role-list-avatar"><i class="fas fa-user"></i></div>
-                            <div class="role-list-details">
-                                <span class="role-list-name">${coadmin}</span>
-                                <span class="role-list-role">Co-Admin</span>
-                            </div>
-                        </div>
-                        <div class="role-list-actions">
-                            <button class="role-list-btn danger" onclick="removeFromCoAdminList('${coadmin}')"><i class="fas fa-times"></i></button>
-                        </div>
-                    </div>
-                `;
-            });
-            if (coAdminList.length === 0) html = '<div style="color:var(--text-muted); text-align:center;">Co-Admin yok</div>';
-            container.innerHTML = html;
-        }
-
-        function updateOwnerOperatorListFromCache() {
-            const container = document.getElementById('ownerOperatorList');
-            if (!container) return;
-            let html = '';
-            operatorList.forEach(op => {
-                html += `
-                    <div class="role-list-item">
-                        <div class="role-list-info">
-                            <div class="role-list-avatar"><i class="fas fa-user"></i></div>
-                            <div class="role-list-details">
-                                <span class="role-list-name">${op}</span>
-                                <span class="role-list-role">Operatör</span>
-                            </div>
-                        </div>
-                        <div class="role-list-actions">
-                            <button class="role-list-btn danger" onclick="removeFromOperatorList('${op}')"><i class="fas fa-times"></i></button>
-                        </div>
-                    </div>
-                `;
-            });
-            if (operatorList.length === 0) html = '<div style="color:var(--text-muted); text-align:center;">Operatör yok</div>';
-            container.innerHTML = html;
-        }
-
-        function updateOwnerCommandsList() {
-            const container = document.getElementById('ownerCommandsList');
-            if (!container) return;
-            let html = '';
-            Object.entries(customCommands).forEach(([cmd, data]) => {
-                html += `
-                    <div class="role-list-item">
-                        <div class="role-list-info">
-                            <div class="role-list-avatar"><i class="fas fa-terminal"></i></div>
-                            <div class="role-list-details">
-                                <span class="role-list-name">/${cmd}</span>
-                                <span class="role-list-role">${data.role}</span>
-                            </div>
-                        </div>
-                        <div class="role-list-actions">
-                            <button class="role-list-btn danger" onclick="deleteCustomCommandByName('${cmd}')"><i class="fas fa-trash"></i></button>
-                        </div>
-                    </div>
-                `;
-            });
-            if (Object.keys(customCommands).length === 0) {
-                html = '<div style="color:var(--text-muted); text-align:center;">Özel komut yok</div>';
-            }
-            container.innerHTML = html;
-        }
-
-        function updateOwnerReportListFromCache() {
-            const container = document.getElementById('ownerReportList');
-            if (!container) return;
-            let html = '';
-            Object.entries(cachedReports).slice(-10).reverse().forEach(([id, report]) => {
-                html += `
-                    <div class="role-list-item" style="flex-direction:column; align-items:flex-start;">
-                        <div style="width:100%; margin-bottom:5px;"><strong>${report.reportedUser}</strong> - ${report.reason}</div>
-                        <div style="font-size:11px;">Şikayet Eden: ${report.reporter}</div>
-                        ${report.description ? `<div style="font-size:11px;">${report.description}</div>` : ''}
-                        <button class="role-list-btn danger" onclick="deleteReport('${id}')" style="margin-top:5px;">Sil</button>
-                    </div>
-                `;
-            });
-            if (Object.keys(cachedReports).length === 0) html = '<div style="color:var(--text-muted);">Şikayet yok</div>';
-            container.innerHTML = html;
-        }
-
-        function updateOwnerBlockListFromCache() {
-            const container = document.getElementById('ownerBlockList');
-            if (!container) return;
-            const now = Date.now();
-            let html = '';
-            Object.entries(cachedBlocks).forEach(([blocker, blockedData]) => {
-                Object.entries(blockedData).forEach(([blocked, data]) => {
-                    if (data.blockedUntil > now) {
-                        const remaining = Math.ceil((data.blockedUntil - now) / 60000);
-                        html += `
-                            <div class="role-list-item">
-                                <div>${blocker} ⮕ ${blocked} (${remaining} dk)</div>
-                                <button class="role-list-btn danger" onclick="adminUnblock('${blocker}', '${blocked}')">Kaldır</button>
-                            </div>
-                        `;
-                    }
-                });
-            });
-            if (html === '') html = '<div style="color:var(--text-muted);">Aktif engelleme yok</div>';
-            container.innerHTML = html;
-        }
-
-        function updateAdminReportListFromCache() {
-            const container = document.getElementById('adminReportList');
-            if (!container) return;
-            let html = '';
-            Object.entries(cachedReports).slice(-10).reverse().forEach(([id, report]) => {
-                html += `
-                    <div class="role-list-item" style="flex-direction:column; align-items:flex-start;">
-                        <div><strong>${report.reportedUser}</strong> - ${report.reason}</div>
-                        <div style="font-size:11px;">${report.reporter}</div>
-                        <button class="role-list-btn danger" onclick="deleteReport('${id}')">Sil</button>
-                    </div>
-                `;
-            });
-            if (Object.keys(cachedReports).length === 0) html = '<div style="color:var(--text-muted);">Şikayet yok</div>';
-            container.innerHTML = html;
-        }
-
-        function deleteCustomCommandByName(cmdName) {
-            if (!confirm(`/${cmdName} komutunu silmek istediğinize emin misiniz?`)) return;
-            customCommandsRef.child(cmdName).remove();
-            delete customCommands[cmdName];
-            updateOwnerCommandsList();
-            addSystemMessage(`✅ /${cmdName} komutu silindi.`);
-        }
-
-        async function deleteReport(reportId) {
-            if (!isAdmin && !isOwner) return;
-            if (confirm('Bu şikayeti silmek istediğinize emin misiniz?')) {
-                await reportsRef.child(reportId).remove();
-                delete cachedReports[reportId];
-                if (isOwner) updateOwnerReportListFromCache();
-                if (isAdmin) updateAdminReportListFromCache();
-                addSystemMessage('✅ Şikayet silindi.');
-            }
-        }
-
-        async function removeFromCoAdminList(username) {
-            const list = coAdminList.filter(u => u !== username);
-            await coAdminsRef.set(list);
-            coAdminList = list;
-            if (isOwner) updateOwnerCoAdminListFromCache();
-            addSystemMessage(`✅ ${username} co-admin'likten çıkarıldı.`);
-        }
-
-        async function removeFromOperatorList(username) {
-            const list = operatorList.filter(u => u !== username);
-            await operatorsRef.set(list);
-            operatorList = list;
-            if (isOwner) updateOwnerOperatorListFromCache();
-            addSystemMessage(`✅ ${username} operatörlükten çıkarıldı.`);
-        }
-
-        async function removeAdmin(username) {
-            if (!confirm(`${username} adminliğini kaldırmak istediğinize emin misiniz?`)) return;
-            const normalized = normalizeNick(username);
-            const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
-                normalizeNick(admin) === normalized
-            );
-            if (isDefaultAdmin) {
-                addSystemMessage('⛔ Varsayılan adminler silinemez!');
-                return;
-            }
-            const list = adminList.filter(a => a !== username);
-            await adminListRef.set(list);
-            adminList = list;
-            if (isOwner) updateOwnerAdminListFromCache();
-            addSystemMessage(`✅ ${username} adminlikten çıkarıldı.`);
-        }
-
-        async function adminUnblock(blocker, blocked) {
-            if (!isOwner) return;
-            if (confirm(`${blocker} ile ${blocked} arasındaki engellemeyi kaldırmak istiyor musunuz?`)) {
-                await blocksRef.child(blocker).child(blocked).remove();
-                await blocksRef.child(blocked).child(blocker).remove();
-                delete cachedBlocks[blocker]?.[blocked];
-                delete cachedBlocks[blocked]?.[blocker];
-                updateOwnerBlockListFromCache();
-                addSystemMessage(`✅ Engelleme kaldırıldı.`);
-            }
-        }
-
-        function promoteToCoAdmin() {
-            const username = prompt('Co-Admin yapılacak kullanıcı adı:');
-            if (!username) return;
-            addToCoAdminList(username);
-        }
-
-        function promoteToOperator() {
-            const username = prompt('Operatör yapılacak kullanıcı adı:');
-            if (!username) return;
-            addToOperatorList(username);
-        }
-
-        function openUnregisterModal() {
-            const username = prompt('Silinecek kullanıcı adı:');
-            if (!username) return;
-            document.getElementById('reg-username').value = username;
-            unregisterUser();
-        }
-
-        function promptUnban() {
-            const username = prompt('Banı kaldırılacak kullanıcı adı:');
-            if (username) unbanUser(username);
-        }
-
-        function searchPrivateMessagesPrompt() {
-            const query = prompt('Aramak istediğiniz kelime:');
-            if (query) {
-                document.getElementById('searchQuery').value = query;
-                searchPrivateMessages();
-            }
-        }
-
-        function openProfileModal() {
-            if (!currentUser) return;
-            document.getElementById('profileUsername').value = currentUser.name;
-            document.getElementById('profileRole').value = currentUser.role || 'user';
-            document.getElementById('profileRegistered').value = currentUser.isRegistered ? 'Evet' : 'Hayır';
-            document.getElementById('profileBio').value = currentProfileBio || '';
-            if (currentUser.isRegistered) {
-                document.getElementById('passwordChangeField').style.display = 'block';
-            } else {
-                document.getElementById('passwordChangeField').style.display = 'none';
-            }
-            if (currentProfileAvatar) {
-                document.getElementById('avatarPlaceholder').style.display = 'none';
-                const img = document.getElementById('avatarImage');
-                img.src = currentProfileAvatar;
-                img.style.display = 'block';
-                document.getElementById('avatarPreview').classList.add('has-image');
-            } else {
-                document.getElementById('avatarPlaceholder').style.display = 'block';
-                document.getElementById('avatarImage').style.display = 'none';
-                document.getElementById('avatarPreview').classList.remove('has-image');
-            }
-            document.getElementById('profileModal').style.display = 'flex';
-            document.getElementById('overlay').style.display = 'block';
-        }
-
-        function closeProfileModal() {
-            document.getElementById('profileModal').style.display = 'none';
-            document.getElementById('overlay').style.display = 'none';
-        }
-
-        function saveProfile() {
-            const bio = document.getElementById('profileBio').value;
-            const newPassword = document.getElementById('newPassword').value;
-            currentProfileBio = bio;
-            if (newPassword && currentUser.isRegistered) {
-                registeredUsersRef.child(currentUser.name).update({ password: newPassword });
-                incrementWriteCount();
-            }
-            if (profilesRef && currentUser) {
-                profilesRef.child(currentUser.name).set({
-                    bio: bio,
-                    avatar: currentProfileAvatar || null,
-                    updatedAt: Date.now()
-                });
-                incrementWriteCount();
-            }
-            addSystemMessage('✅ Profil bilgileri güncellendi!');
-            closeProfileModal();
-        }
-
-        document.getElementById('avatarUpload').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            if (!file.type.startsWith('image/')) {
-                alert('Lütfen bir resim dosyası seçin!');
-                return;
-            }
-            if (file.size > 2 * 1024 * 1024) {
-                alert('Dosya çok büyük! Maksimum 2MB.');
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                currentProfileAvatar = event.target.result;
-                document.getElementById('avatarPlaceholder').style.display = 'none';
-                const img = document.getElementById('avatarImage');
-                img.src = currentProfileAvatar;
-                img.style.display = 'block';
-                document.getElementById('avatarPreview').classList.add('has-image');
-                const profileIcon = document.getElementById('profileAvatarPreview');
-                profileIcon.innerHTML = `<img src="${currentProfileAvatar}" style="width:100%;height:100%;object-fit:cover;">`;
-                document.getElementById('profileIcon').classList.add('has-image');
-            };
-            reader.readAsDataURL(file);
-        });
-
-        function togglePlaylistDrawer() {
-            const drawer = document.getElementById('playlistDrawer');
-            drawer.classList.toggle('active');
-            updatePlaylistDrawer();
-        }
-
-        function closePlaylistDrawer() {
-            document.getElementById('playlistDrawer').classList.remove('active');
-        }
-
-        function updatePlaylistDrawer() {
-            const container = document.getElementById('playlistDrawerItems');
-            if (!container) return;
-            container.innerHTML = '';
-            playlist.forEach((item, index) => {
-                const div = document.createElement('div');
-                div.className = 'playlist-item';
-                if (item.id === currentVideoId) {
-                    div.classList.add('active');
-                }
-                div.onclick = () => playVideo(item.id);
-                div.innerHTML = `
-                    <div class="playlist-thumb"><i class="fas fa-film"></i></div>
-                    <div class="playlist-info">
-                        <div class="playlist-title">${item.title}</div>
-                    </div>
-                    <button class="playlist-delete" onclick="removeFromPlaylist('${item.id}', event)"><i class="fas fa-trash"></i></button>
-                `;
-                container.appendChild(div);
-            });
-        }
-
-        function loadGeneralPlaylist() {
-            if (!playlistRef) return;
-            playlistRef.off();
-            playlistRef.on('value', (snapshot) => {
-                const data = snapshot.val();
-                let tempPlaylist = [];
-                if (data) {
-                    tempPlaylist = Object.values(data).filter(item => item && item.id && item.title);
-                }
-                playlist = tempPlaylist;
-                updatePlaylistUIWeb();
-                updatePlaylistDrawer();
-                if (playlist.length > 0 && (!currentVideoId || !playlist.some(item => item.id === currentVideoId))) {
-                    playVideo(playlist[0].id);
-                } else if (playlist.length === 0 && player && player.stopVideo) {
-                    player.stopVideo();
-                    currentVideoId = null;
-                }
-            });
-        }
-
-        function updatePlaylistUIWeb() {
-            const container = document.getElementById('playlistItemsWeb');
-            if (!container) return;
-            container.innerHTML = '';
-            playlist.forEach((item, index) => {
-                if (!item || !item.id) return;
-                const div = document.createElement('div');
-                div.className = 'playlist-item';
-                if (item.id === currentVideoId) {
-                    div.classList.add('active');
-                }
-                div.onclick = () => playVideo(item.id);
-                div.innerHTML = `
-                    <div class="playlist-thumb"><i class="fas fa-film"></i></div>
-                    <div class="playlist-info">
-                        <div class="playlist-title">${item.title || 'Başlıksız Video'}</div>
-                    </div>
-                    <button class="playlist-delete" onclick="removeFromPlaylist('${item.id}', event)"><i class="fas fa-trash"></i></button>
-                `;
-                container.appendChild(div);
-            });
-        }
-
-        function removeFromPlaylist(videoId, event) {
-            event.stopPropagation();
-            const itemToRemove = playlist.find(item => item.id === videoId);
-            if (itemToRemove && playlistRef) {
-                playlistRef.once('value', (snapshot) => {
-                    const items = snapshot.val();
-                    if (items) {
-                        Object.entries(items).forEach(([key, value]) => {
-                            if (value.id === videoId) {
-                                playlistRef.child(key).remove();
-                            }
-                        });
-                    }
-                });
-            }
-            const index = playlist.findIndex(item => item.id === videoId);
-            if (index !== -1) {
-                playlist.splice(index, 1);
-                updatePlaylistUIWeb();
-                updatePlaylistDrawer();
-                if (playlist.length > 0 && videoId === currentVideoId) {
-                    playVideo(playlist[0].id);
-                } else if (playlist.length === 0) {
-                    if (player && player.stopVideo) {
-                        player.stopVideo();
-                    }
-                    currentVideoId = null;
-                }
-            }
-        }
-
-        function playVideo(videoId) {
-            if (!videoId) return;
-            currentVideoId = videoId;
-            if (player && player.loadVideoById) {
-                player.loadVideoById(videoId);
-            }
-            updatePlaylistUIWeb();
-            updatePlaylistDrawer();
-        }
-
-        function initYouTubePlayer() {
-            if (typeof YT !== 'undefined' && YT.Player) {
-                player = new YT.Player('youtube-player', {
-                    height: '100%',
-                    width: '100%',
-                    videoId: currentVideoId,
-                    playerVars: {
-                        'autoplay': 1,
-                        'controls': 1,
-                        'rel': 0,
-                        'modestbranding': 1
-                    },
-                    events: {
-                        'onReady': function(event) {
-                            document.querySelector('.video-placeholder').style.display = 'none';
-                        },
-                        'onStateChange': function(event) {
-                            if (event.data === YT.PlayerState.ENDED) {
-                                playNextVideo();
-                            }
-                        }
-                    }
-                });
-            }
-        }
-
-        function playNextVideo() {
-            if (!playlist || playlist.length === 0) return;
-            const currentIndex = playlist.findIndex(item => item.id === currentVideoId);
-            if (currentIndex === -1) {
-                playVideo(playlist[0].id);
-                return;
-            }
-            const nextIndex = (currentIndex + 1) % playlist.length;
-            playVideo(playlist[nextIndex].id);
-        }
-
-        function initializeFirebase() {
-            try {
-                firebase.initializeApp(firebaseConfig);
-                database = firebase.database();
-
-                try {
-                    database.setPersistenceEnabled(false);
-                    console.log("✅ Kalıcılık devre dışı bırakıldı");
-                } catch(e) {
-                    console.log("⚠️ Kalıcılık zaten ayarlanmış");
-                }
-
-                const connectedRef = database.ref(".info/connected");
-                connectedRef.on("value", function(snap) {
-                    if (snap.val() === true) {
-                        isFirebaseConnected = true;
-
-                        usersRef = database.ref('onlineUsers');
-                        messagesRef = database.ref('messages');
-                        privateChatsRef = database.ref('privateChats');
-                        privateChatsArchiveRef = database.ref('privateChatsArchive');
-                        coAdminsRef = database.ref('coAdmins');
-                        bansRef = database.ref('bans');
-                        globalBansRef = database.ref('globalBans');
-                        registeredUsersRef = database.ref('registeredUsers');
-                        operatorsRef = database.ref('operators');
-                        userLocksRef = database.ref('userLocks');
-                        adminPasswordsRef = database.ref('adminPasswords');
-                        customCommandsRef = database.ref('customCommands');
-                        adminListRef = database.ref('adminList');
-                        playlistRef = database.ref('playlist');
-                        profilesRef = database.ref('profiles');
-                        blocksRef = database.ref('blocks');
-                        reportsRef = database.ref('reports');
-                        favoritesRef = database.ref('favorites');
-                        adLinksRef = database.ref('adLinks');
-                        typingRef = database.ref('typing');
-
-                        initOwnerPassword();
-                        loadCustomCommands();
-                        updateBannedUsers();
-                        startBanMonitoring();
-                        startUserLocksCleanup();
-
-                        loadGeneralPlaylist();
-                        loadGeneralMessages();
-                        loadAdContents();
-
-                        setupEfficientListeners();
-
-                        if (currentUser) {
-                            loadUserProfile(currentUser.name);
-                            loadBlockedUsers();
-                            loadFavoritesList(); // Gerçek zamanlı favori dinleyicisini başlat - TAKİPLEŞME SİSTEMİ
-
-                            if (isOwner) {
-                                document.getElementById('ownerPanelIcon').style.display = 'flex';
-                                document.getElementById('mobileOwnerIcon').style.display = 'flex';
-                                updateOwnerPanelFromCache();
-                            }
-                            if (isAdmin) {
-                                document.getElementById('adminPanelIcon').style.display = 'flex';
-                                document.getElementById('mobileAdminIcon').style.display = 'flex';
-                                updateAdminPanelFromCache();
-                            }
-                            if (isCoAdmin) {
-                                document.getElementById('coadminPanelIcon').style.display = 'flex';
-                                document.getElementById('mobileCoAdminIcon').style.display = 'flex';
-                                updateCoAdminPanelFromCache();
-                            }
-                            if (isOperator) {
-                                document.getElementById('operatorPanelIcon').style.display = 'flex';
-                                document.getElementById('mobileOperatorIcon').style.display = 'flex';
-                                updateOperatorPanelFromCache();
-                            }
-                        }
-
-                        if (isOwner) {
-                            startOwnerPrivateMessageMonitoring();
-                        }
-
-                        usersRef.on('value', (snapshot) => {
-                            cachedOnlineUsers = snapshot.val() || {};
-                            updateOnlineCount(cachedOnlineUsers);
-                            if (isOwner) updateOwnerPanelFromCache();
-                            if (isAdmin) updateAdminPanelFromCache();
-                            if (isCoAdmin) updateCoAdminPanelFromCache();
-                            if (isOperator) updateOperatorPanelFromCache();
-                            updateUserListUI();
-                        });
-
-                        bansRef.on('value', (snapshot) => { cachedBans = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); if (isAdmin) updateAdminPanelFromCache(); if (isCoAdmin) updateCoAdminPanelFromCache(); });
-                        reportsRef.on('value', (snapshot) => { cachedReports = snapshot.val() || {}; if (isOwner) updateOwnerReportListFromCache(); if (isAdmin) updateAdminReportListFromCache(); });
-                        blocksRef.on('value', (snapshot) => { cachedBlocks = snapshot.val() || {}; if (isOwner) updateOwnerBlockListFromCache(); });
-                        registeredUsersRef.on('value', (snapshot) => { cachedRegisteredUsers = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); });
-                        customCommandsRef.on('value', (snapshot) => { customCommands = snapshot.val() || {}; if (isOwner) updateOwnerCommandsList(); });
-
-                        if (currentUser && privateChatWith) {
-                            listenForTyping();
-                        }
-                    }
-                });
-            } catch (error) {
-                console.error("Firebase başlatma hatası:", error);
-            }
-        }
-
-        function setupEfficientListeners() {
-            messagesRef.limitToLast(MESSAGE_LIMIT).off('child_added');
-            messagesRef.limitToLast(MESSAGE_LIMIT).on('child_added', (snapshot) => {
-                const newMessage = { id: snapshot.key, ...snapshot.val() };
-                cachedMessages.push(newMessage);
-                if (cachedMessages.length > MESSAGE_LIMIT) {
-                    const removed = cachedMessages.shift();
-                }
-                if (!document.getElementById(`msg_${snapshot.key}`)) {
-                    appendMessageToUI(newMessage);
-                }
-            });
-        }
-
-        function updateOnlineCount(users) {
-            if (!users) users = cachedOnlineUsers;
-            const now = Date.now();
-            let onlineCount = 0;
-
-            Object.entries(users).forEach(([username, userData]) => {
-                if (!userData) return;
-                if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
-                    (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
-                    return;
-                }
-                const timeDiff = now - (userData.lastSeen || 0);
-                if (timeDiff < ONLINE_THRESHOLD) {
-                    onlineCount++;
-                }
-            });
-
-            document.getElementById('onlineCount').textContent = onlineCount;
-            document.getElementById('chatOnlineCount').textContent = onlineCount;
-        }
-
-        async function initOwnerPassword() {
-            try {
-                const ownerPassword = SECURE_CONFIG.OWNER_CONFIG.password;
-                const salt = "cetcety_secure_salt_2024";
-                const combinedPassword = ownerPassword + salt;
-                const hashedPassword = await sha256(combinedPassword);
-                ownerPasswordHash = {
-                    hash: hashedPassword,
-                    salt: salt
-                };
-            } catch (error) {
-                console.error("Owner şifre sistemi başlatma hatası:", error);
-            }
-        }
-
-        async function sha256(message) {
-            const msgBuffer = new TextEncoder().encode(message);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        }
-
-        async function verifyOwnerPassword(inputPassword) {
-            try {
-                if (!ownerPasswordHash || !ownerPasswordHash.salt) {
-                    await initOwnerPassword();
-                }
-                const inputHash = await sha256(inputPassword + ownerPasswordHash.salt);
-                return inputHash === ownerPasswordHash.hash;
-            } catch (error) {
-                return false;
-            }
-        }
-
-        function normalizeNick(nick) {
-            return nick ? nick.toLowerCase().trim() : '';
-        }
-
-        let currentProfileBio = '';
-        let currentProfileAvatar = null;
-
-        function loadUserProfile(username) {
-            if (!profilesRef) return;
-            profilesRef.child(username).once('value', (snapshot) => {
-                const profile = snapshot.val();
-                if (profile) {
-                    userProfiles[username] = profile;
-                    if (username === currentUser?.name) {
-                        currentProfileBio = profile.bio || '';
-                        currentProfileAvatar = profile.avatar || null;
-                        if (profile.avatar) {
-                            const profileIcon = document.getElementById('profileAvatarPreview');
-                            profileIcon.innerHTML = `<img src="${profile.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
-                            document.getElementById('profileIcon').classList.add('has-image');
-                        }
-                    }
-                }
-            });
-        }
-
-        function addToPlaylistFromWeb() {
-            if (!isOwner && !isAdmin) {
-                alert('Bu işlem için yetkiniz yok!');
-                return;
-            }
-            const url = document.getElementById('playlistUrlWeb').value.trim();
-            const customTitle = document.getElementById('playlistVideoTitleWeb').value.trim();
-            if (!url) return;
-            const videoId = extractVideoId(url);
-            if (!videoId) {
-                alert('Geçersiz YouTube linki!');
-                return;
-            }
-            const newPlaylistItem = {
-                id: videoId,
-                title: customTitle || 'Video ' + (playlist.length + 1),
-                url: url,
-                addedBy: currentUser ? currentUser.name : 'Anonim',
-                timestamp: Date.now()
-            };
-            if (playlistRef) {
-                playlistRef.push(newPlaylistItem);
-                incrementWriteCount();
-                if (playlist.length === 0) {
-                    setTimeout(() => {
-                        if (playlist.length > 0) {
-                            playVideo(playlist[0].id);
-                        }
-                    }, 500);
-                }
-            }
-            document.getElementById('playlistUrlWeb').value = '';
-            document.getElementById('playlistVideoTitleWeb').value = '';
-        }
-
-        function loadGeneralMessages() {
-            if (!messagesRef) return;
-            messagesRef.off();
-            messagesRef.limitToLast(MESSAGE_LIMIT).on('value', (snapshot) => {
-                updateMessages(snapshot.val());
-            });
-        }
-
-        function updateMessages(messages) {
-            const container = document.getElementById('messages');
-            if (!messages) {
-                container.innerHTML = '<div class="message-item system"><i class="fas fa-fire" style="color: var(--youtube-red);"></i> <strong>Cetcety Sohbete Hoş geldiniz! Gizliliğinizi Korumayı ve Topluluk Kurallarımıza Uymayı İhmal Etmeyin.! Daha Fazla Bilgi İçin ADMİN İletişime Geçin...</strong></div>';
-                return;
-            }
-            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
-            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-            container.innerHTML = '';
-            messagesArray.slice(-MESSAGE_LIMIT).forEach(msg => appendMessageToUI(msg));
-        }
-
-        function appendMessageToUI(message) {
-            const container = document.getElementById('messages');
-            
-            if (document.getElementById(`msg_${message.id}`)) return;
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message-item ${message.type || 'user'}`;
-            messageDiv.id = `msg_${message.id}`;
-            
-            let deleteButton = '';
-            if (currentUser && (message.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner)) {
-                deleteButton = `<button class="delete-btn" onclick="deleteMessage('${message.id}')"><i class="fas fa-trash"></i></button>`;
-            }
-            
-            let senderName = message.sender;
-            let content = message.text;
-            if (message.image) content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-            if (message.video) content += `<br><video src="${message.video}" controls class="message-video"></video>`;
-            if (message.audio) content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
-            
-            const userAvatar = message.avatar || (userProfiles[message.sender]?.avatar || null);
-            const avatarHtml = userAvatar ? 
-                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
-            
-            messageDiv.innerHTML = `
-                <div class="message-header">
-                    <span class="message-user" onclick="openPrivateChat('${message.sender}')">
-                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
-                        ${senderName}
-                    </span>
-                    <div>
-                        <span class="message-time">${message.time || '--:--'}</span>
-                        ${deleteButton}
-                    </div>
-                </div>
-                <div class="message-content">${content}</div>
-            `;
-            container.appendChild(messageDiv);
-            container.scrollTop = container.scrollHeight;
-        }
-
-        async function deleteMessage(messageId) {
-            if (!messagesRef || !currentUser) return;
-            try {
-                const snapshot = await messagesRef.child(messageId).once('value');
-                const message = snapshot.val();
-                if (!message) return;
-                if (message.sender !== currentUser.name && !isAdmin && !isCoAdmin && !isOperator && !isOwner) {
-                    addSystemMessage('⛔ Sadece kendi mesajlarınızı silebilirsiniz!');
-                    return;
-                }
-                if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
-                    await messagesRef.child(messageId).remove();
-                    const messageDiv = document.getElementById(`msg_${messageId}`);
-                    if (messageDiv) messageDiv.remove();
-                    incrementWriteCount();
-                }
-            } catch (error) {
-                addSystemMessage('❌ Mesaj silinemedi!');
-            }
-        }
-
-        // ========== OPTİMİZE EDİLMİŞ ÖZEL SOHBET FONKSİYONLARI ==========
-        // Favori kontrolü ile özel sohbet açma - Favori olan kişilerle her zaman mesajlaşılabilir
+        // ========== ÖZEL SOHBET MODALI - FAVORİYE GEREK YOK ==========
         async function openPrivateChat(username) {
             if (username === currentUser.name) {
                 addSystemMessage('Kendinle özel sohbet başlatamazsın!');
                 return;
             }
-            const isFav = await isFavorite(username);
-            if (!isFav && !isOwner && !isAdmin) {
-                addSystemMessage(`❌ ${username} ile mesajlaşmak için önce onu favorilere eklemelisiniz.`);
-                return;
-            }
             if (await checkBlockStatus(username)) {
                 addSystemMessage(`⛔ ${username} kullanıcısı sizi engellemiş veya siz engellemişsiniz.`);
                 return;
-            }
-            
-            if (!isFav && !isOwner && !isAdmin) {
-                await addFavorite(username);
-                addSystemMessage(`✅ ${username} otomatik olarak favorilere eklendi. Artık her zaman mesajlaşabilirsiniz.`);
             }
             
             if (privateChatWith && currentPrivateChatId && privateChatsRef) {
@@ -5657,8 +4447,6 @@
             const blockBtn = document.getElementById('blockUserBtn');
             blockBtn.innerHTML = isBlocked ? '<i class="fas fa-ban" style="color: var(--online);"></i>' : '<i class="fas fa-ban"></i>';
             blockBtn.title = isBlocked ? 'Engeli Kaldır' : 'Engelle';
-            
-            await updatePrivateFavoriteButton();
             
             loadPrivateMessages();
             listenForTyping();
@@ -5695,7 +4483,6 @@
                         if (message.sender !== currentUser.name) {
                             let msgText = message.text || '';
                             if (message.image) msgText = '📸 Fotoğraf';
-                            else if (message.video) msgText = '🎥 Video';
                             else if (message.audio) msgText = '🎤 Ses Kaydı';
                             addNotification(message.sender, msgText, 'private');
                         }
@@ -5752,8 +4539,6 @@
             let content = message.text || '';
             if (message.image) {
                 content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-            } else if (message.video) {
-                content += `<br><video src="${message.video}" controls class="message-video"></video>`;
             } else if (message.audio) {
                 content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
             }
@@ -5810,12 +4595,6 @@
                 
                 if (await checkBlockStatus(privateChatWith)) {
                     alert('Bu kullanıcıya mesaj gönderemezsiniz!');
-                    return;
-                }
-                
-                const isFav = await isFavorite(privateChatWith);
-                if (!isFav && !isOwner && !isAdmin) {
-                    alert(`❌ ${privateChatWith} ile mesajlaşmak için favorilere eklemelisiniz.`);
                     return;
                 }
                 
@@ -5944,7 +4723,6 @@
                                 receiver: oldMessage.receiver,
                                 text: oldMessage.text || '',
                                 image: oldMessage.image || null,
-                                video: oldMessage.video || null,
                                 audio: oldMessage.audio || null,
                                 timestamp: oldMessage.timestamp,
                                 time: oldMessage.time,
@@ -5989,8 +4767,8 @@
         async function handleGalleryUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
-            if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-                alert('❌ Lütfen sadece resim veya video dosyası seçin!');
+            if (!file.type.startsWith('image/')) {
+                alert('❌ Lütfen sadece resim dosyası seçin!');
                 return;
             }
             
@@ -6003,57 +4781,30 @@
                 alert('Bu kullanıcıya dosya gönderemezsiniz!');
                 return;
             }
-            if (file.type.startsWith('video/')) {
-                const reader = new FileReader();
-                reader.onload = async function(event) {
-                    const videoData = event.target.result;
+            
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                const imageData = event.target.result;
+                try {
                     const messageData = {
                         sender: currentUser.name,
                         receiver: privateChatWith,
-                        text: '🎥 Video gönderdi',
-                        video: videoData,
-                        videoType: file.type,
+                        text: '📸 Resim gönderdi',
+                        image: imageData,
                         timestamp: Date.now(),
                         time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                         isRead: false
                     };
-                    try {
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        incrementWriteCount();
-                        addNotification(privateChatWith, '🎥 Video gönderdi', 'private');
-                        addSystemMessage('✅ Video gönderildi!');
-                        await archiveAndTrimPrivateChat(currentPrivateChatId);
-                    } catch (videoError) {
-                        console.error('Video gönderme hatası:', videoError);
-                        alert('❌ Video gönderilemedi!');
-                    }
-                };
-                reader.readAsDataURL(file);
-            } else if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = async function(event) {
-                    const imageData = event.target.result;
-                    try {
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '📸 Resim gönderdi',
-                            image: imageData,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                            isRead: false
-                        };
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        incrementWriteCount();
-                        addNotification(privateChatWith, '📸 Resim gönderdi', 'private');
-                        await archiveAndTrimPrivateChat(currentPrivateChatId);
-                    } catch (imageError) {
-                        console.error('Resim gönderme hatası:', imageError);
-                        alert('❌ Resim gönderilemedi!');
-                    }
-                };
-                reader.readAsDataURL(file);
-            }
+                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                    incrementWriteCount();
+                    addNotification(privateChatWith, '📸 Resim gönderdi', 'private');
+                    await archiveAndTrimPrivateChat(currentPrivateChatId);
+                } catch (imageError) {
+                    console.error('Resim gönderme hatası:', imageError);
+                    alert('❌ Resim gönderilemedi!');
+                }
+            };
+            reader.readAsDataURL(file);
             e.target.value = '';
         }
 
@@ -6062,8 +4813,8 @@
         async function handleCameraUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
-            if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-                alert('❌ Lütfen sadece resim veya video çekin!');
+            if (!file.type.startsWith('image/')) {
+                alert('❌ Lütfen sadece resim çekin!');
                 return;
             }
             
@@ -6076,57 +4827,30 @@
                 alert('Bu kullanıcıya dosya gönderemezsiniz!');
                 return;
             }
-            if (file.type.startsWith('video/')) {
-                const reader = new FileReader();
-                reader.onload = async function(event) {
-                    const videoData = event.target.result;
+            
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                const imageData = event.target.result;
+                try {
                     const messageData = {
                         sender: currentUser.name,
                         receiver: privateChatWith,
-                        text: '🎥 Kameradan video çekti',
-                        video: videoData,
-                        videoType: file.type,
+                        text: '📸 Kameradan fotoğraf çekti',
+                        image: imageData,
                         timestamp: Date.now(),
                         time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                         isRead: false
                     };
-                    try {
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        incrementWriteCount();
-                        addNotification(privateChatWith, '🎥 Video çekti', 'private');
-                        addSystemMessage('✅ Video gönderildi!');
-                        await archiveAndTrimPrivateChat(currentPrivateChatId);
-                    } catch (videoError) {
-                        console.error('Video gönderme hatası:', videoError);
-                        alert('❌ Video gönderilemedi!');
-                    }
-                };
-                reader.readAsDataURL(file);
-            } else if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = async function(event) {
-                    const imageData = event.target.result;
-                    try {
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '📸 Kameradan fotoğraf çekti',
-                            image: imageData,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                            isRead: false
-                        };
-                        await privateChatsRef.child(currentPrivateChatId).push(messageData);
-                        incrementWriteCount();
-                        addNotification(privateChatWith, '📸 Fotoğraf çekti', 'private');
-                        await archiveAndTrimPrivateChat(currentPrivateChatId);
-                    } catch (imageError) {
-                        console.error('Resim gönderme hatası:', imageError);
-                        alert('❌ Resim gönderilemedi!');
-                    }
-                };
-                reader.readAsDataURL(file);
-            }
+                    await privateChatsRef.child(currentPrivateChatId).push(messageData);
+                    incrementWriteCount();
+                    addNotification(privateChatWith, '📸 Fotoğraf çekti', 'private');
+                    await archiveAndTrimPrivateChat(currentPrivateChatId);
+                } catch (imageError) {
+                    console.error('Resim gönderme hatası:', imageError);
+                    alert('❌ Resim gönderilemedi!');
+                }
+            };
+            reader.readAsDataURL(file);
             e.target.value = '';
         }
 
@@ -6221,10 +4945,6 @@
                 showLoginError('❌ Kullanıcı adı 2-20 karakter arasında olmalı!');
                 return;
             }
-            if (!password) {
-                showLoginError('🔐 Giriş için şifre zorunludur!');
-                return;
-            }
             if (!isFirebaseConnected) {
                 showLoginError('❌ Firebase bağlantısı yok!');
                 return;
@@ -6262,6 +4982,12 @@
                 
                 const userRegistered = await isRegisteredUserSecure(rawNick);
                 if (userRegistered && userRegistered.isRegistered) {
+                    if (!password) {
+                        showLoginError('❌ Kayıtlı kullanıcılar için şifre zorunludur!');
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Giriş Yap';
+                        return;
+                    }
                     const passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
                     if (!passwordValid) {
                         showLoginError('❌ Hatalı şifre!');
@@ -6271,10 +4997,13 @@
                     }
                     await completeLogin(userRegistered.originalName, userRegistered.role, true, userRegistered);
                 } else {
-                    showLoginError('❌ Kayıtlı kullanıcı bulunamadı!');
-                    loginBtn.disabled = false;
-                    loginBtn.innerHTML = 'Giriş Yap';
-                    return;
+                    if (password) {
+                        showLoginError('❌ Kayıtlı olmayan kullanıcı şifre giremez! Şifreyi boş bırakın.');
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Giriş Yap';
+                        return;
+                    }
+                    await completeLogin(rawNick, 'user', false, null);
                 }
                 
             } catch (error) {
@@ -7792,10 +6521,9 @@
             help += '• /ping - Bağlantı testi<br>';
             help += '• /çıkış - Çıkış yap<br><br>';
             help += '📹 <strong>ÖZELLİKLER:</strong><br>';
-            help += '• Galeriden Gönder: Telefon galerisinden resim/video seçip gönderir<br>';
-            help += '• Kameradan Çek: Direkt telefon kamerasını açar<br>';
+            help += '• Galeriden Gönder: Telefon galerisinden resim seçip gönderir<br>';
+            help += '• Kameradan Çek: Direkt telefon kamerası ile fotoğraf çeker<br>';
             help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir<br>';
-            help += '• Favori Ekleme: Bir kullanıcıyı favorilere ekleyip offline olsa bile mesaj gönderebilirsiniz. Favorilerim sekmesinde tüm favorileriniz listelenir.<br>';
             addSystemMessage(help);
         }
 
@@ -7892,7 +6620,6 @@
                     timestamp: message.timestamp || Date.now(),
                     time: message.time || new Date(message.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                     image: message.image || null,
-                    video: message.video || null,
                     audio: message.audio || null,
                     source: isArchive ? 'archive' : 'live'
                 };
@@ -7933,7 +6660,6 @@
                     const lastMessage = messages[messages.length - 1];
                     let lastMsgText = lastMessage.text || '';
                     if (lastMessage.image) lastMsgText = '📸 Fotoğraf';
-                    else if (lastMessage.video) lastMsgText = '🎥 Video';
                     else if (lastMessage.audio) lastMsgText = '🎤 Ses Kaydı';
                     const liveCount = messages.filter(m => m.source === 'live').length;
                     const archiveCount = messages.filter(m => m.source === 'archive').length;
@@ -7993,8 +6719,6 @@
             let content = '';
             if (message.image) {
                 content = `<img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-            } else if (message.video) {
-                content = `<video src="${message.video}" controls class="message-video"></video>`;
             } else if (message.audio) {
                 content = `<audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
             } else {
@@ -8172,6 +6896,1063 @@
                 incrementWriteCount();
                 const msgDiv = document.getElementById(`private_msg_${messageId}`);
                 if (msgDiv) msgDiv.remove();
+            }
+        }
+
+        // ========== FAVORİLER KALDIRILDI - KULLANILMIYOR ==========
+        // Update user list without favorites
+        function updateUserListUI() {
+            const container = document.getElementById('userListContainer');
+            if (!container) return;
+            
+            const now = Date.now();
+            let usersToDisplay = [];
+            
+            // TÜMÜ SEKMESİ: Sadece çevrimiçi kullanıcıları göster
+            Object.entries(cachedOnlineUsers).forEach(([username, userData]) => {
+                if (!userData) return;
+                if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
+                    (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
+                    return;
+                }
+                const timeDiff = now - (userData.lastSeen || 0);
+                if (timeDiff < ONLINE_THRESHOLD) {
+                    usersToDisplay.push({
+                        username,
+                        userData,
+                        isOnline: true,
+                        secondsAgo: Math.floor(timeDiff / 1000),
+                        rolePriority: getRolePriority(username)
+                    });
+                }
+            });
+            
+            // Sıralama: Rol > Çevrimiçi/Çevrimdışı > Son görülme
+            usersToDisplay.sort((a, b) => {
+                if (a.rolePriority !== b.rolePriority) return a.rolePriority - b.rolePriority;
+                if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+                return a.secondsAgo - b.secondsAgo;
+            });
+            
+            if (usersToDisplay.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">Çevrimiçi kimse yok.</div>';
+                return;
+            }
+            
+            let html = '';
+            usersToDisplay.forEach(user => {
+                const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
+                let badgeHtml = '';
+                if (isOwnerUser) badgeHtml = '<span class="badge owner" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-crown"></i></span>';
+                else if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) badgeHtml = '<span class="badge admin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-shield-alt"></i></span>';
+                else if (coAdminList.includes(user.username)) badgeHtml = '<span class="badge coadmin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-users"></i></span>';
+                else if (operatorList.includes(user.username)) badgeHtml = '<span class="badge operator" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-bolt"></i></span>';
+                
+                const userAvatar = userProfiles[user.username]?.avatar || null;
+                const avatarHtml = userAvatar ? 
+                    `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">` : '';
+                
+                let statusText = '';
+                if (!user.isOnline) {
+                    statusText = ' (Çevrimdışı)';
+                } else if (user.secondsAgo > 10) {
+                    statusText = ` (${user.secondsAgo}sn)`;
+                } else {
+                    statusText = ' (Şimdi)';
+                }
+                
+                html += `
+                    <div class="user-item ${!user.isOnline ? 'idle' : ''}" onclick="openPrivateChat('${user.username}')">
+                        <div class="user-status">
+                            <span class="status-dot ${user.isOnline ? 'status-online' : 'status-idle'}"></span>
+                            <div class="user-avatar-sidebar">
+                                ${avatarHtml ? avatarHtml : '<i class="fas fa-user"></i>'}
+                            </div>
+                            <strong style="display:flex; align-items:center; gap:4px;">
+                                ${badgeHtml}
+                                ${user.username}
+                            </strong>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted);">
+                            ${statusText}
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        function switchUserListTab(tab) {
+            currentUserListTab = tab;
+            document.querySelectorAll('.users-tab-btn').forEach(btn => {
+                if ((tab === 'all' && btn.textContent === 'Tümü') || (tab === 'favorites' && btn.textContent === 'Favorilerim')) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+            updateUserListUI();
+        }
+
+        function getRolePriority(username) {
+            if (username === SECURE_CONFIG.OWNER_CONFIG.username) return 1;
+            if (adminList.includes(username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(username)) return 2;
+            if (coAdminList.includes(username)) return 3;
+            if (operatorList.includes(username)) return 4;
+            return 5;
+        }
+
+        async function deleteAccount() {
+            if (!currentUser) return;
+            if (!confirm('⚠️ TÜM HESABINIZI SİLMEK ÜZERESİNİZ!\n\nBu işlem geri alınamaz. Tüm mesajlarınız, profiliniz, takipçileriniz ve kaydınız kalıcı olarak silinecektir.\n\nDevam etmek istediğinize emin misiniz?')) return;
+            
+            try {
+                const username = currentUser.name;
+                
+                if (profilesRef) await profilesRef.child(username).remove();
+                if (registeredUsersRef) await registeredUsersRef.child(username).remove();
+                
+                if (blocksRef) {
+                    await blocksRef.child(username).remove();
+                }
+                
+                if (usersRef) await usersRef.child(username).remove();
+                
+                if (bansRef) await bansRef.child(username).remove();
+                if (globalBansRef) await globalBansRef.child(username).remove();
+                
+                addSystemMessage('✅ Hesabınız başarıyla silindi. Çıkış yapılıyor...');
+                setTimeout(() => {
+                    logout();
+                }, 2000);
+                
+            } catch (error) {
+                console.error("Hesap silme hatası:", error);
+                alert('❌ Hesap silinirken bir hata oluştu!');
+            }
+        }
+
+        // ========== PANEL FONKSİYONLARI (Kısa tutmak için özet) ==========
+        function toggleOwnerPanel() {
+            const panel = document.getElementById('ownerPanel');
+            panel.classList.toggle('active');
+            if (panel.classList.contains('active')) {
+                updateOwnerPanelFromCache();
+                if (!ownerPrivateListenerActive) {
+                    startOwnerPrivateMessageMonitoring();
+                    ownerPrivateListenerActive = true;
+                }
+                if (document.querySelector('#ownerAdsTab').classList.contains('active')) {
+                    updateAdContentsList();
+                }
+            } else {
+                if (ownerPrivateListenerActive) {
+                    stopOwnerPrivateMessageMonitoring();
+                    ownerPrivateListenerActive = false;
+                }
+            }
+        }
+        
+        function toggleAdminPanel() {
+            const panel = document.getElementById('adminPanel');
+            panel.classList.toggle('active');
+            if (panel.classList.contains('active')) updateAdminPanelFromCache();
+        }
+        
+        function toggleCoAdminPanel() {
+            const panel = document.getElementById('coadminPanel');
+            panel.classList.toggle('active');
+            if (panel.classList.contains('active')) updateCoAdminPanelFromCache();
+        }
+        
+        function toggleOperatorPanel() {
+            const panel = document.getElementById('operatorPanel');
+            panel.classList.toggle('active');
+            if (panel.classList.contains('active')) updateOperatorPanelFromCache();
+        }
+        
+        function switchOwnerTab(tabName) {
+            document.querySelectorAll('#ownerPanel .role-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('#ownerPanel .role-tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
+            document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+            if (tabName === 'ads') updateAdContentsList();
+        }
+        
+        function switchAdminTab(tabName) {
+            document.querySelectorAll('#adminPanel .role-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('#adminPanel .role-tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`#adminPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
+            document.getElementById('admin' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+        }
+        
+        function switchCoAdminTab(tabName) {
+            document.querySelectorAll('#coadminPanel .role-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('#coadminPanel .role-tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`#coadminPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
+            document.getElementById('coadmin' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+        }
+        
+        function switchOperatorTab(tabName) {
+            document.querySelectorAll('#operatorPanel .role-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('#operatorPanel .role-tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`#operatorPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
+            document.getElementById('operator' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+        }
+        
+        function updateOwnerPanelFromCache() {
+            if (!isOwner) return;
+            const now = Date.now();
+            let onlineCount = 0;
+            Object.values(cachedOnlineUsers).forEach(user => {
+                if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
+            });
+            const registeredCount = Object.keys(cachedRegisteredUsers).length;
+            document.getElementById('ownerTotalUsers').textContent = Object.keys(cachedOnlineUsers).length;
+            document.getElementById('ownerOnlineUsers').textContent = onlineCount;
+            document.getElementById('ownerRegisteredUsers').textContent = registeredCount;
+            document.getElementById('ownerMessages').textContent = cachedMessages.length;
+            document.getElementById('ownerCommands').textContent = Object.keys(customCommands).length;
+            updateOwnerAdminListFromCache();
+            updateOwnerCoAdminListFromCache();
+            updateOwnerOperatorListFromCache();
+            updateOwnerCommandsList();
+            updateOwnerReportListFromCache();
+            updateOwnerBlockListFromCache();
+        }
+
+        function updateAdminPanelFromCache() {
+            if (!isAdmin && !isOwner) return;
+            const now = Date.now();
+            let onlineCount = 0;
+            Object.values(cachedOnlineUsers).forEach(user => {
+                if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
+            });
+            let activeBans = 0;
+            Object.values(cachedBans).forEach(ban => {
+                if (ban.bannedUntil > now) activeBans++;
+            });
+            document.getElementById('adminTotalUsers').textContent = Object.keys(cachedOnlineUsers).length;
+            document.getElementById('adminOnlineUsers').textContent = onlineCount;
+            document.getElementById('adminMessages').textContent = cachedMessages.length;
+            document.getElementById('adminBans').textContent = activeBans;
+            updateAdminReportListFromCache();
+        }
+
+        function updateCoAdminPanelFromCache() {
+            if (!isCoAdmin && !isOwner) return;
+            const now = Date.now();
+            let onlineCount = 0;
+            Object.values(cachedOnlineUsers).forEach(user => {
+                if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
+            });
+            let activeBans = 0;
+            Object.values(cachedBans).forEach(ban => {
+                if (ban.bannedUntil > now) activeBans++;
+            });
+            document.getElementById('coadminOnline').textContent = onlineCount;
+            document.getElementById('coadminBans').textContent = activeBans;
+        }
+
+        function updateOperatorPanelFromCache() {
+            if (!isOperator && !isOwner) return;
+        }
+
+        function updateOwnerAdminListFromCache() {
+            const container = document.getElementById('ownerAdminList');
+            if (!container) return;
+            let html = '';
+            adminList.forEach(admin => {
+                html += `
+                    <div class="role-list-item">
+                        <div class="role-list-info">
+                            <div class="role-list-avatar"><i class="fas fa-user"></i></div>
+                            <div class="role-list-details">
+                                <span class="role-list-name">${admin}</span>
+                                <span class="role-list-role">Admin</span>
+                            </div>
+                        </div>
+                        <div class="role-list-actions">
+                            <button class="role-list-btn danger" onclick="removeAdmin('${admin}')"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                `;
+            });
+            if (adminList.length === 0) html = '<div style="color:var(--text-muted); text-align:center;">Admin yok</div>';
+            container.innerHTML = html;
+        }
+
+        function updateOwnerCoAdminListFromCache() {
+            const container = document.getElementById('ownerCoAdminList');
+            if (!container) return;
+            let html = '';
+            coAdminList.forEach(coadmin => {
+                html += `
+                    <div class="role-list-item">
+                        <div class="role-list-info">
+                            <div class="role-list-avatar"><i class="fas fa-user"></i></div>
+                            <div class="role-list-details">
+                                <span class="role-list-name">${coadmin}</span>
+                                <span class="role-list-role">Co-Admin</span>
+                            </div>
+                        </div>
+                        <div class="role-list-actions">
+                            <button class="role-list-btn danger" onclick="removeFromCoAdminList('${coadmin}')"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                `;
+            });
+            if (coAdminList.length === 0) html = '<div style="color:var(--text-muted); text-align:center;">Co-Admin yok</div>';
+            container.innerHTML = html;
+        }
+
+        function updateOwnerOperatorListFromCache() {
+            const container = document.getElementById('ownerOperatorList');
+            if (!container) return;
+            let html = '';
+            operatorList.forEach(op => {
+                html += `
+                    <div class="role-list-item">
+                        <div class="role-list-info">
+                            <div class="role-list-avatar"><i class="fas fa-user"></i></div>
+                            <div class="role-list-details">
+                                <span class="role-list-name">${op}</span>
+                                <span class="role-list-role">Operatör</span>
+                            </div>
+                        </div>
+                        <div class="role-list-actions">
+                            <button class="role-list-btn danger" onclick="removeFromOperatorList('${op}')"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                `;
+            });
+            if (operatorList.length === 0) html = '<div style="color:var(--text-muted); text-align:center;">Operatör yok</div>';
+            container.innerHTML = html;
+        }
+
+        function updateOwnerCommandsList() {
+            const container = document.getElementById('ownerCommandsList');
+            if (!container) return;
+            let html = '';
+            Object.entries(customCommands).forEach(([cmd, data]) => {
+                html += `
+                    <div class="role-list-item">
+                        <div class="role-list-info">
+                            <div class="role-list-avatar"><i class="fas fa-terminal"></i></div>
+                            <div class="role-list-details">
+                                <span class="role-list-name">/${cmd}</span>
+                                <span class="role-list-role">${data.role}</span>
+                            </div>
+                        </div>
+                        <div class="role-list-actions">
+                            <button class="role-list-btn danger" onclick="deleteCustomCommandByName('${cmd}')"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                `;
+            });
+            if (Object.keys(customCommands).length === 0) {
+                html = '<div style="color:var(--text-muted); text-align:center;">Özel komut yok</div>';
+            }
+            container.innerHTML = html;
+        }
+
+        function updateOwnerReportListFromCache() {
+            const container = document.getElementById('ownerReportList');
+            if (!container) return;
+            let html = '';
+            Object.entries(cachedReports).slice(-10).reverse().forEach(([id, report]) => {
+                html += `
+                    <div class="role-list-item" style="flex-direction:column; align-items:flex-start;">
+                        <div style="width:100%; margin-bottom:5px;"><strong>${report.reportedUser}</strong> - ${report.reason}</div>
+                        <div style="font-size:11px;">Şikayet Eden: ${report.reporter}</div>
+                        ${report.description ? `<div style="font-size:11px;">${report.description}</div>` : ''}
+                        <button class="role-list-btn danger" onclick="deleteReport('${id}')" style="margin-top:5px;">Sil</button>
+                    </div>
+                `;
+            });
+            if (Object.keys(cachedReports).length === 0) html = '<div style="color:var(--text-muted);">Şikayet yok</div>';
+            container.innerHTML = html;
+        }
+
+        function updateOwnerBlockListFromCache() {
+            const container = document.getElementById('ownerBlockList');
+            if (!container) return;
+            const now = Date.now();
+            let html = '';
+            Object.entries(cachedBlocks).forEach(([blocker, blockedData]) => {
+                Object.entries(blockedData).forEach(([blocked, data]) => {
+                    if (data.blockedUntil > now) {
+                        const remaining = Math.ceil((data.blockedUntil - now) / 60000);
+                        html += `
+                            <div class="role-list-item">
+                                <div>${blocker} ⮕ ${blocked} (${remaining} dk)</div>
+                                <button class="role-list-btn danger" onclick="adminUnblock('${blocker}', '${blocked}')">Kaldır</button>
+                            </div>
+                        `;
+                    }
+                });
+            });
+            if (html === '') html = '<div style="color:var(--text-muted);">Aktif engelleme yok</div>';
+            container.innerHTML = html;
+        }
+
+        function updateAdminReportListFromCache() {
+            const container = document.getElementById('adminReportList');
+            if (!container) return;
+            let html = '';
+            Object.entries(cachedReports).slice(-10).reverse().forEach(([id, report]) => {
+                html += `
+                    <div class="role-list-item" style="flex-direction:column; align-items:flex-start;">
+                        <div><strong>${report.reportedUser}</strong> - ${report.reason}</div>
+                        <div style="font-size:11px;">${report.reporter}</div>
+                        <button class="role-list-btn danger" onclick="deleteReport('${id}')">Sil</button>
+                    </div>
+                `;
+            });
+            if (Object.keys(cachedReports).length === 0) html = '<div style="color:var(--text-muted);">Şikayet yok</div>';
+            container.innerHTML = html;
+        }
+
+        function deleteCustomCommandByName(cmdName) {
+            if (!confirm(`/${cmdName} komutunu silmek istediğinize emin misiniz?`)) return;
+            customCommandsRef.child(cmdName).remove();
+            delete customCommands[cmdName];
+            updateOwnerCommandsList();
+            addSystemMessage(`✅ /${cmdName} komutu silindi.`);
+        }
+
+        async function deleteReport(reportId) {
+            if (!isAdmin && !isOwner) return;
+            if (confirm('Bu şikayeti silmek istediğinize emin misiniz?')) {
+                await reportsRef.child(reportId).remove();
+                delete cachedReports[reportId];
+                if (isOwner) updateOwnerReportListFromCache();
+                if (isAdmin) updateAdminReportListFromCache();
+                addSystemMessage('✅ Şikayet silindi.');
+            }
+        }
+
+        async function removeFromCoAdminList(username) {
+            const list = coAdminList.filter(u => u !== username);
+            await coAdminsRef.set(list);
+            coAdminList = list;
+            if (isOwner) updateOwnerCoAdminListFromCache();
+            addSystemMessage(`✅ ${username} co-admin'likten çıkarıldı.`);
+        }
+
+        async function removeFromOperatorList(username) {
+            const list = operatorList.filter(u => u !== username);
+            await operatorsRef.set(list);
+            operatorList = list;
+            if (isOwner) updateOwnerOperatorListFromCache();
+            addSystemMessage(`✅ ${username} operatörlükten çıkarıldı.`);
+        }
+
+        async function removeAdmin(username) {
+            if (!confirm(`${username} adminliğini kaldırmak istediğinize emin misiniz?`)) return;
+            const normalized = normalizeNick(username);
+            const isDefaultAdmin = SECURE_CONFIG.DEFAULT_ADMINS.some(admin => 
+                normalizeNick(admin) === normalized
+            );
+            if (isDefaultAdmin) {
+                addSystemMessage('⛔ Varsayılan adminler silinemez!');
+                return;
+            }
+            const list = adminList.filter(a => a !== username);
+            await adminListRef.set(list);
+            adminList = list;
+            if (isOwner) updateOwnerAdminListFromCache();
+            addSystemMessage(`✅ ${username} adminlikten çıkarıldı.`);
+        }
+
+        async function adminUnblock(blocker, blocked) {
+            if (!isOwner) return;
+            if (confirm(`${blocker} ile ${blocked} arasındaki engellemeyi kaldırmak istiyor musunuz?`)) {
+                await blocksRef.child(blocker).child(blocked).remove();
+                await blocksRef.child(blocked).child(blocker).remove();
+                delete cachedBlocks[blocker]?.[blocked];
+                delete cachedBlocks[blocked]?.[blocker];
+                updateOwnerBlockListFromCache();
+                addSystemMessage(`✅ Engelleme kaldırıldı.`);
+            }
+        }
+
+        function promoteToCoAdmin() {
+            const username = prompt('Co-Admin yapılacak kullanıcı adı:');
+            if (!username) return;
+            addToCoAdminList(username);
+        }
+
+        function promoteToOperator() {
+            const username = prompt('Operatör yapılacak kullanıcı adı:');
+            if (!username) return;
+            addToOperatorList(username);
+        }
+
+        function openUnregisterModal() {
+            const username = prompt('Silinecek kullanıcı adı:');
+            if (!username) return;
+            document.getElementById('reg-username').value = username;
+            unregisterUser();
+        }
+
+        function promptUnban() {
+            const username = prompt('Banı kaldırılacak kullanıcı adı:');
+            if (username) unbanUser(username);
+        }
+
+        function searchPrivateMessagesPrompt() {
+            const query = prompt('Aramak istediğiniz kelime:');
+            if (query) {
+                document.getElementById('searchQuery').value = query;
+                searchPrivateMessages();
+            }
+        }
+
+        function openProfileModal() {
+            if (!currentUser) return;
+            document.getElementById('profileUsername').value = currentUser.name;
+            document.getElementById('profileRole').value = currentUser.role || 'user';
+            document.getElementById('profileRegistered').value = currentUser.isRegistered ? 'Evet' : 'Hayır';
+            document.getElementById('profileBio').value = currentProfileBio || '';
+            if (currentUser.isRegistered) {
+                document.getElementById('passwordChangeField').style.display = 'block';
+            } else {
+                document.getElementById('passwordChangeField').style.display = 'none';
+            }
+            if (currentProfileAvatar) {
+                document.getElementById('avatarPlaceholder').style.display = 'none';
+                const img = document.getElementById('avatarImage');
+                img.src = currentProfileAvatar;
+                img.style.display = 'block';
+                document.getElementById('avatarPreview').classList.add('has-image');
+            } else {
+                document.getElementById('avatarPlaceholder').style.display = 'block';
+                document.getElementById('avatarImage').style.display = 'none';
+                document.getElementById('avatarPreview').classList.remove('has-image');
+            }
+            document.getElementById('profileModal').style.display = 'flex';
+            document.getElementById('overlay').style.display = 'block';
+        }
+
+        function closeProfileModal() {
+            document.getElementById('profileModal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+
+        function saveProfile() {
+            const bio = document.getElementById('profileBio').value;
+            const newPassword = document.getElementById('newPassword').value;
+            currentProfileBio = bio;
+            if (newPassword && currentUser.isRegistered) {
+                registeredUsersRef.child(currentUser.name).update({ password: newPassword });
+                incrementWriteCount();
+            }
+            if (profilesRef && currentUser) {
+                profilesRef.child(currentUser.name).set({
+                    bio: bio,
+                    avatar: currentProfileAvatar || null,
+                    updatedAt: Date.now()
+                });
+                incrementWriteCount();
+            }
+            addSystemMessage('✅ Profil bilgileri güncellendi!');
+            closeProfileModal();
+        }
+
+        document.getElementById('avatarUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (!file.type.startsWith('image/')) {
+                alert('Lütfen bir resim dosyası seçin!');
+                return;
+            }
+            if (file.size > 2 * 1024 * 1024) {
+                alert('Dosya çok büyük! Maksimum 2MB.');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                currentProfileAvatar = event.target.result;
+                document.getElementById('avatarPlaceholder').style.display = 'none';
+                const img = document.getElementById('avatarImage');
+                img.src = currentProfileAvatar;
+                img.style.display = 'block';
+                document.getElementById('avatarPreview').classList.add('has-image');
+                const profileIcon = document.getElementById('profileAvatarPreview');
+                profileIcon.innerHTML = `<img src="${currentProfileAvatar}" style="width:100%;height:100%;object-fit:cover;">`;
+                document.getElementById('profileIcon').classList.add('has-image');
+            };
+            reader.readAsDataURL(file);
+        });
+
+        function togglePlaylistDrawer() {
+            const drawer = document.getElementById('playlistDrawer');
+            drawer.classList.toggle('active');
+            updatePlaylistDrawer();
+        }
+
+        function closePlaylistDrawer() {
+            document.getElementById('playlistDrawer').classList.remove('active');
+        }
+
+        function updatePlaylistDrawer() {
+            const container = document.getElementById('playlistDrawerItems');
+            if (!container) return;
+            container.innerHTML = '';
+            playlist.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'playlist-item';
+                if (item.id === currentVideoId) {
+                    div.classList.add('active');
+                }
+                div.onclick = () => playVideo(item.id);
+                div.innerHTML = `
+                    <div class="playlist-thumb"><i class="fas fa-film"></i></div>
+                    <div class="playlist-info">
+                        <div class="playlist-title">${item.title}</div>
+                    </div>
+                    <button class="playlist-delete" onclick="removeFromPlaylist('${item.id}', event)"><i class="fas fa-trash"></i></button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function loadGeneralPlaylist() {
+            if (!playlistRef) return;
+            playlistRef.off();
+            playlistRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                let tempPlaylist = [];
+                if (data) {
+                    tempPlaylist = Object.values(data).filter(item => item && item.id && item.title);
+                }
+                playlist = tempPlaylist;
+                updatePlaylistUIWeb();
+                updatePlaylistDrawer();
+                if (playlist.length > 0 && (!currentVideoId || !playlist.some(item => item.id === currentVideoId))) {
+                    playVideo(playlist[0].id);
+                } else if (playlist.length === 0 && player && player.stopVideo) {
+                    player.stopVideo();
+                    currentVideoId = null;
+                }
+            });
+        }
+
+        function updatePlaylistUIWeb() {
+            const container = document.getElementById('playlistItemsWeb');
+            if (!container) return;
+            container.innerHTML = '';
+            playlist.forEach((item, index) => {
+                if (!item || !item.id) return;
+                const div = document.createElement('div');
+                div.className = 'playlist-item';
+                if (item.id === currentVideoId) {
+                    div.classList.add('active');
+                }
+                div.onclick = () => playVideo(item.id);
+                div.innerHTML = `
+                    <div class="playlist-thumb"><i class="fas fa-film"></i></div>
+                    <div class="playlist-info">
+                        <div class="playlist-title">${item.title || 'Başlıksız Video'}</div>
+                    </div>
+                    <button class="playlist-delete" onclick="removeFromPlaylist('${item.id}', event)"><i class="fas fa-trash"></i></button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function removeFromPlaylist(videoId, event) {
+            event.stopPropagation();
+            const itemToRemove = playlist.find(item => item.id === videoId);
+            if (itemToRemove && playlistRef) {
+                playlistRef.once('value', (snapshot) => {
+                    const items = snapshot.val();
+                    if (items) {
+                        Object.entries(items).forEach(([key, value]) => {
+                            if (value.id === videoId) {
+                                playlistRef.child(key).remove();
+                            }
+                        });
+                    }
+                });
+            }
+            const index = playlist.findIndex(item => item.id === videoId);
+            if (index !== -1) {
+                playlist.splice(index, 1);
+                updatePlaylistUIWeb();
+                updatePlaylistDrawer();
+                if (playlist.length > 0 && videoId === currentVideoId) {
+                    playVideo(playlist[0].id);
+                } else if (playlist.length === 0) {
+                    if (player && player.stopVideo) {
+                        player.stopVideo();
+                    }
+                    currentVideoId = null;
+                }
+            }
+        }
+
+        function playVideo(videoId) {
+            if (!videoId) return;
+            currentVideoId = videoId;
+            if (player && player.loadVideoById) {
+                player.loadVideoById(videoId);
+            }
+            updatePlaylistUIWeb();
+            updatePlaylistDrawer();
+        }
+
+        function initYouTubePlayer() {
+            if (typeof YT !== 'undefined' && YT.Player) {
+                player = new YT.Player('youtube-player', {
+                    height: '100%',
+                    width: '100%',
+                    videoId: currentVideoId,
+                    playerVars: {
+                        'autoplay': 1,
+                        'controls': 1,
+                        'rel': 0,
+                        'modestbranding': 1
+                    },
+                    events: {
+                        'onReady': function(event) {
+                            document.querySelector('.video-placeholder').style.display = 'none';
+                        },
+                        'onStateChange': function(event) {
+                            if (event.data === YT.PlayerState.ENDED) {
+                                playNextVideo();
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function playNextVideo() {
+            if (!playlist || playlist.length === 0) return;
+            const currentIndex = playlist.findIndex(item => item.id === currentVideoId);
+            if (currentIndex === -1) {
+                playVideo(playlist[0].id);
+                return;
+            }
+            const nextIndex = (currentIndex + 1) % playlist.length;
+            playVideo(playlist[nextIndex].id);
+        }
+
+        function initializeFirebase() {
+            try {
+                firebase.initializeApp(firebaseConfig);
+                database = firebase.database();
+
+                try {
+                    database.setPersistenceEnabled(false);
+                    console.log("✅ Kalıcılık devre dışı bırakıldı");
+                } catch(e) {
+                    console.log("⚠️ Kalıcılık zaten ayarlanmış");
+                }
+
+                const connectedRef = database.ref(".info/connected");
+                connectedRef.on("value", function(snap) {
+                    if (snap.val() === true) {
+                        isFirebaseConnected = true;
+
+                        usersRef = database.ref('onlineUsers');
+                        messagesRef = database.ref('messages');
+                        privateChatsRef = database.ref('privateChats');
+                        privateChatsArchiveRef = database.ref('privateChatsArchive');
+                        coAdminsRef = database.ref('coAdmins');
+                        bansRef = database.ref('bans');
+                        globalBansRef = database.ref('globalBans');
+                        registeredUsersRef = database.ref('registeredUsers');
+                        operatorsRef = database.ref('operators');
+                        userLocksRef = database.ref('userLocks');
+                        adminPasswordsRef = database.ref('adminPasswords');
+                        customCommandsRef = database.ref('customCommands');
+                        adminListRef = database.ref('adminList');
+                        playlistRef = database.ref('playlist');
+                        profilesRef = database.ref('profiles');
+                        blocksRef = database.ref('blocks');
+                        reportsRef = database.ref('reports');
+                        adLinksRef = database.ref('adLinks');
+                        typingRef = database.ref('typing');
+
+                        initOwnerPassword();
+                        loadCustomCommands();
+                        updateBannedUsers();
+                        startBanMonitoring();
+                        startUserLocksCleanup();
+
+                        loadGeneralPlaylist();
+                        loadGeneralMessages();
+                        loadAdContents();
+
+                        setupEfficientListeners();
+
+                        if (currentUser) {
+                            loadUserProfile(currentUser.name);
+                            loadBlockedUsers();
+
+                            if (isOwner) {
+                                document.getElementById('ownerPanelIcon').style.display = 'flex';
+                                document.getElementById('mobileOwnerIcon').style.display = 'flex';
+                                updateOwnerPanelFromCache();
+                            }
+                            if (isAdmin) {
+                                document.getElementById('adminPanelIcon').style.display = 'flex';
+                                document.getElementById('mobileAdminIcon').style.display = 'flex';
+                                updateAdminPanelFromCache();
+                            }
+                            if (isCoAdmin) {
+                                document.getElementById('coadminPanelIcon').style.display = 'flex';
+                                document.getElementById('mobileCoAdminIcon').style.display = 'flex';
+                                updateCoAdminPanelFromCache();
+                            }
+                            if (isOperator) {
+                                document.getElementById('operatorPanelIcon').style.display = 'flex';
+                                document.getElementById('mobileOperatorIcon').style.display = 'flex';
+                                updateOperatorPanelFromCache();
+                            }
+                        }
+
+                        if (isOwner) {
+                            startOwnerPrivateMessageMonitoring();
+                        }
+
+                        usersRef.on('value', (snapshot) => {
+                            cachedOnlineUsers = snapshot.val() || {};
+                            updateOnlineCount(cachedOnlineUsers);
+                            if (isOwner) updateOwnerPanelFromCache();
+                            if (isAdmin) updateAdminPanelFromCache();
+                            if (isCoAdmin) updateCoAdminPanelFromCache();
+                            if (isOperator) updateOperatorPanelFromCache();
+                            updateUserListUI();
+                        });
+
+                        bansRef.on('value', (snapshot) => { cachedBans = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); if (isAdmin) updateAdminPanelFromCache(); if (isCoAdmin) updateCoAdminPanelFromCache(); });
+                        reportsRef.on('value', (snapshot) => { cachedReports = snapshot.val() || {}; if (isOwner) updateOwnerReportListFromCache(); if (isAdmin) updateAdminReportListFromCache(); });
+                        blocksRef.on('value', (snapshot) => { cachedBlocks = snapshot.val() || {}; if (isOwner) updateOwnerBlockListFromCache(); });
+                        registeredUsersRef.on('value', (snapshot) => { cachedRegisteredUsers = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); });
+                        customCommandsRef.on('value', (snapshot) => { customCommands = snapshot.val() || {}; if (isOwner) updateOwnerCommandsList(); });
+
+                        if (currentUser && privateChatWith) {
+                            listenForTyping();
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Firebase başlatma hatası:", error);
+            }
+        }
+
+        function setupEfficientListeners() {
+            messagesRef.limitToLast(MESSAGE_LIMIT).off('child_added');
+            messagesRef.limitToLast(MESSAGE_LIMIT).on('child_added', (snapshot) => {
+                const newMessage = { id: snapshot.key, ...snapshot.val() };
+                cachedMessages.push(newMessage);
+                if (cachedMessages.length > MESSAGE_LIMIT) {
+                    const removed = cachedMessages.shift();
+                }
+                if (!document.getElementById(`msg_${snapshot.key}`)) {
+                    appendMessageToUI(newMessage);
+                }
+            });
+        }
+
+        function updateOnlineCount(users) {
+            if (!users) users = cachedOnlineUsers;
+            const now = Date.now();
+            let onlineCount = 0;
+
+            Object.entries(users).forEach(([username, userData]) => {
+                if (!userData) return;
+                if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
+                    (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
+                    return;
+                }
+                const timeDiff = now - (userData.lastSeen || 0);
+                if (timeDiff < ONLINE_THRESHOLD) {
+                    onlineCount++;
+                }
+            });
+
+            document.getElementById('onlineCount').textContent = onlineCount;
+            document.getElementById('chatOnlineCount').textContent = onlineCount;
+        }
+
+        async function initOwnerPassword() {
+            try {
+                const ownerPassword = SECURE_CONFIG.OWNER_CONFIG.password;
+                const salt = "cetcety_secure_salt_2024";
+                const combinedPassword = ownerPassword + salt;
+                const hashedPassword = await sha256(combinedPassword);
+                ownerPasswordHash = {
+                    hash: hashedPassword,
+                    salt: salt
+                };
+            } catch (error) {
+                console.error("Owner şifre sistemi başlatma hatası:", error);
+            }
+        }
+
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function verifyOwnerPassword(inputPassword) {
+            try {
+                if (!ownerPasswordHash || !ownerPasswordHash.salt) {
+                    await initOwnerPassword();
+                }
+                const inputHash = await sha256(inputPassword + ownerPasswordHash.salt);
+                return inputHash === ownerPasswordHash.hash;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function normalizeNick(nick) {
+            return nick ? nick.toLowerCase().trim() : '';
+        }
+
+        let currentProfileBio = '';
+        let currentProfileAvatar = null;
+
+        function loadUserProfile(username) {
+            if (!profilesRef) return;
+            profilesRef.child(username).once('value', (snapshot) => {
+                const profile = snapshot.val();
+                if (profile) {
+                    userProfiles[username] = profile;
+                    if (username === currentUser?.name) {
+                        currentProfileBio = profile.bio || '';
+                        currentProfileAvatar = profile.avatar || null;
+                        if (profile.avatar) {
+                            const profileIcon = document.getElementById('profileAvatarPreview');
+                            profileIcon.innerHTML = `<img src="${profile.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
+                            document.getElementById('profileIcon').classList.add('has-image');
+                        }
+                    }
+                }
+            });
+        }
+
+        function addToPlaylistFromWeb() {
+            if (!isOwner && !isAdmin) {
+                alert('Bu işlem için yetkiniz yok!');
+                return;
+            }
+            const url = document.getElementById('playlistUrlWeb').value.trim();
+            const customTitle = document.getElementById('playlistVideoTitleWeb').value.trim();
+            if (!url) return;
+            const videoId = extractVideoId(url);
+            if (!videoId) {
+                alert('Geçersiz YouTube linki!');
+                return;
+            }
+            const newPlaylistItem = {
+                id: videoId,
+                title: customTitle || 'Video ' + (playlist.length + 1),
+                url: url,
+                addedBy: currentUser ? currentUser.name : 'Anonim',
+                timestamp: Date.now()
+            };
+            if (playlistRef) {
+                playlistRef.push(newPlaylistItem);
+                incrementWriteCount();
+                if (playlist.length === 0) {
+                    setTimeout(() => {
+                        if (playlist.length > 0) {
+                            playVideo(playlist[0].id);
+                        }
+                    }, 500);
+                }
+            }
+            document.getElementById('playlistUrlWeb').value = '';
+            document.getElementById('playlistVideoTitleWeb').value = '';
+        }
+
+        function loadGeneralMessages() {
+            if (!messagesRef) return;
+            messagesRef.off();
+            messagesRef.limitToLast(MESSAGE_LIMIT).on('value', (snapshot) => {
+                updateMessages(snapshot.val());
+            });
+        }
+
+        function updateMessages(messages) {
+            const container = document.getElementById('messages');
+            if (!messages) {
+                container.innerHTML = '<div class="message-item system"><i class="fas fa-fire" style="color: var(--youtube-red);"></i> <strong>Cetcety Sohbete Hoş geldiniz! Gizliliğinizi Korumayı ve Topluluk Kurallarımıza Uymayı İhmal Etmeyin.! Daha Fazla Bilgi İçin ADMİN İletişime Geçin...</strong></div>';
+                return;
+            }
+            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
+            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+            container.innerHTML = '';
+            messagesArray.slice(-MESSAGE_LIMIT).forEach(msg => appendMessageToUI(msg));
+        }
+
+        function appendMessageToUI(message) {
+            const container = document.getElementById('messages');
+            
+            if (document.getElementById(`msg_${message.id}`)) return;
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message-item ${message.type || 'user'}`;
+            messageDiv.id = `msg_${message.id}`;
+            
+            let deleteButton = '';
+            if (currentUser && (message.sender === currentUser.name || isAdmin || isCoAdmin || isOperator || isOwner)) {
+                deleteButton = `<button class="delete-btn" onclick="deleteMessage('${message.id}')"><i class="fas fa-trash"></i></button>`;
+            }
+            
+            let senderName = message.sender;
+            let content = message.text;
+            if (message.image) content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
+            if (message.audio) content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
+            
+            const userAvatar = message.avatar || (userProfiles[message.sender]?.avatar || null);
+            const avatarHtml = userAvatar ? 
+                `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-user" onclick="openPrivateChat('${message.sender}')">
+                        ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="fas fa-user"></i></span>'}
+                        ${senderName}
+                    </span>
+                    <div>
+                        <span class="message-time">${message.time || '--:--'}</span>
+                        ${deleteButton}
+                    </div>
+                </div>
+                <div class="message-content">${content}</div>
+            `;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function deleteMessage(messageId) {
+            if (!messagesRef || !currentUser) return;
+            try {
+                const snapshot = await messagesRef.child(messageId).once('value');
+                const message = snapshot.val();
+                if (!message) return;
+                if (message.sender !== currentUser.name && !isAdmin && !isCoAdmin && !isOperator && !isOwner) {
+                    addSystemMessage('⛔ Sadece kendi mesajlarınızı silebilirsiniz!');
+                    return;
+                }
+                if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
+                    await messagesRef.child(messageId).remove();
+                    const messageDiv = document.getElementById(`msg_${messageId}`);
+                    if (messageDiv) messageDiv.remove();
+                    incrementWriteCount();
+                }
+            } catch (error) {
+                addSystemMessage('❌ Mesaj silinemedi!');
             }
         }
 
