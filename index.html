@@ -210,22 +210,6 @@
         }
         .badge.operator i { color: #88ffaa; }
         
-        .badge.favorite {
-            background: rgba(255, 102, 204, 0.25);
-            color: var(--favorite);
-            border-color: rgba(255, 102, 204, 0.5);
-            display: inline-flex;
-            width: auto;
-            padding: 0 6px;
-            border-radius: 12px;
-            font-size: 9px;
-            gap: 3px;
-        }
-        .badge.favorite i {
-            color: var(--favorite);
-            font-size: 8px;
-        }
-        
         .profile-btn {
             width: 40px;
             height: 40px;
@@ -1817,20 +1801,6 @@
             border-color: var(--ban);
             color: var(--ban);
         }
-        
-        .private-action-btn.favorite {
-            color: var(--text-muted);
-            display: flex;
-        }
-        .private-action-btn.favorite.active {
-            color: var(--favorite);
-            border-color: var(--favorite);
-            background: var(--favorite-bg);
-        }
-        .private-action-btn.favorite:hover {
-            border-color: var(--favorite);
-            color: var(--favorite);
-        }
 
         .private-typing-indicator {
             font-size: 12px;
@@ -3180,10 +3150,6 @@
             <div class="menu-icon"><i class="fas fa-list"></i></div>
             <div class="menu-text">Oynatma Listesi</div>
         </div>
-        <div class="mobile-menu-item" id="mobileFavIcon" onclick="toggleFavoriteListFromMenu()" style="display:flex;">
-            <div class="menu-icon" style="color: var(--favorite);"><i class="fas fa-heart"></i></div>
-            <div class="menu-text">Favorilerim</div>
-        </div>
         <div class="mobile-menu-item" id="mobileOwnerIcon" style="display:none;" onclick="toggleOwnerPanelFromMenu()">
             <div class="menu-icon" style="color:var(--owner);"><i class="fas fa-crown"></i></div>
             <div class="menu-text">Owner Paneli</div>
@@ -3209,9 +3175,6 @@
             <button class="profile-icon-btn" onclick="openProfileModal()" title="Profil" id="profileIcon">
                 <i class="fas fa-user"></i>
                 <div id="profileAvatarPreview"></div>
-            </button>
-            <button class="icon-btn" onclick="toggleFavoriteList()" title="Favori Listesi" id="favoriteListIcon" style="display:flex;">
-                <i class="fas fa-heart" style="color: var(--favorite);"></i>
             </button>
             <button class="role-icon-btn owner" onclick="toggleOwnerPanel()" title="Owner Paneli" id="ownerPanelIcon" style="display:none;">
                 <i class="fas fa-crown"></i>
@@ -3312,7 +3275,6 @@
             </div>
             <div class="users-tabs">
                 <button class="users-tab-btn active" onclick="switchUserListTab('all')">Tümü</button>
-                <button class="users-tab-btn" onclick="switchUserListTab('favorites')">Favorilerim</button>
             </div>
             <div id="userListContainer" class="user-list-container"></div>
         </div>
@@ -3661,7 +3623,6 @@
         <div class="private-header">
             <div id="privateWith"><i class="fas fa-lock"></i> Özel Sohbet</div>
             <div class="private-actions">
-                <button class="private-action-btn favorite" onclick="toggleFavoriteUser()" id="favoriteBtn" title="Favorilere Ekle/Çıkar"><i class="fas fa-star"></i></button>
                 <button class="private-action-btn report" onclick="openReportModal()" title="Şikayet Et"><i class="fas fa-exclamation-triangle"></i></button>
                 <button class="private-action-btn block" onclick="toggleBlockUser()" id="blockUserBtn" title="Engelle"><i class="fas fa-ban"></i></button>
                 <button class="private-action-btn" onclick="closePrivateChat()" title="Kapat"><i class="fas fa-times"></i></button>
@@ -3872,7 +3833,7 @@
         let coAdminsRef, bansRef, globalBansRef, registeredUsersRef, operatorsRef;
         let userLocksRef, adminPasswordsRef, customCommandsRef, adminListRef;
         let playlistRef, profilesRef, blocksRef, reportsRef;
-        let favoritesRef, adLinksRef, pendingMessagesRef;
+        let adLinksRef, pendingMessagesRef;
         let typingRef;
 
         let cachedOnlineUsers = {};
@@ -3882,7 +3843,6 @@
         let cachedBlocks = {};
         let cachedRegisteredUsers = {};
         let cachedAdContents = [];
-        let cachedFavorites = {};
 
         let isFirebaseConnected = false;
         
@@ -3908,7 +3868,6 @@
         let userProfiles = {};
         let blockedUsers = {};
         let blockedByUsers = {};
-        let favoritesList = [];
         
         let playlist = [];
         let currentVideoId = 'i75BZYOAPl4';
@@ -4408,13 +4367,6 @@
             }, 50);
         }
 
-        function toggleFavoriteListFromMenu() {
-            toggleMobileMenu();
-            setTimeout(() => {
-                toggleFavoriteList();
-            }, 50);
-        }
-
         function toggleOwnerPanelFromMenu() {
             toggleMobileMenu();
             setTimeout(() => {
@@ -4443,82 +4395,6 @@
             }, 50);
         }
 
-        // ========== FAVORİ SİSTEMİ ==========
-        async function loadFavorites() {
-            if (!currentUser || !favoritesRef) return;
-            favoritesRef.child(currentUser.name).on('value', (snapshot) => {
-                favoritesList = snapshot.val() || [];
-                updateFavoriteUI();
-                updateUserListUI();
-            });
-        }
-
-        async function isFavorite(username) {
-            return favoritesList.includes(username);
-        }
-
-        async function addFavorite(username) {
-            if (!currentUser || username === currentUser.name) return;
-            if (!checkWriteLimit()) {
-                addSystemMessage('⚠️ Günlük işlem limitine ulaşıldı!');
-                return;
-            }
-            if (favoritesList.includes(username)) {
-                addSystemMessage(`⚠️ ${username} zaten favorilerinizde!`);
-                return;
-            }
-            favoritesList.push(username);
-            await favoritesRef.child(currentUser.name).set(favoritesList);
-            incrementWriteCount();
-            addSystemMessage(`✅ ${username} favorilerinize eklendi. Artık çevrimdışıyken bile mesaj bırakabilirsiniz.`);
-            updateFavoriteUI();
-            updateUserListUI();
-        }
-
-        async function removeFavorite(username) {
-            if (!currentUser) return;
-            if (!checkWriteLimit()) {
-                addSystemMessage('⚠️ Günlük işlem limitine ulaşıldı!');
-                return;
-            }
-            favoritesList = favoritesList.filter(fav => fav !== username);
-            await favoritesRef.child(currentUser.name).set(favoritesList);
-            incrementWriteCount();
-            addSystemMessage(`✅ ${username} favorilerinizden çıkarıldı.`);
-            updateFavoriteUI();
-            updateUserListUI();
-        }
-
-        async function toggleFavoriteUser() {
-            if (!privateChatWith) return;
-            const isFav = await isFavorite(privateChatWith);
-            if (isFav) {
-                await removeFavorite(privateChatWith);
-            } else {
-                await addFavorite(privateChatWith);
-            }
-            updatePrivateFavoriteButton();
-        }
-
-        function updatePrivateFavoriteButton() {
-            const favBtn = document.getElementById('favoriteBtn');
-            if (!favBtn || !privateChatWith) return;
-            if (favoritesList.includes(privateChatWith)) {
-                favBtn.classList.add('active');
-                favBtn.title = 'Favorilerden Çıkar';
-            } else {
-                favBtn.classList.remove('active');
-                favBtn.title = 'Favorilere Ekle';
-            }
-        }
-
-        function updateFavoriteUI() {
-            const favIcon = document.getElementById('favoriteListIcon');
-            const mobileFavIcon = document.getElementById('mobileFavIcon');
-            if (favIcon) favIcon.style.display = 'flex';
-            if (mobileFavIcon) mobileFavIcon.style.display = 'flex';
-        }
-
         // ========== BEKLEYEN MESAJLAR (ÇEVRİMDIŞI MESAJ) ==========
         async function sendPendingMessage(toUser, messageData) {
             if (!currentUser || !pendingMessagesRef) return false;
@@ -4532,19 +4408,13 @@
                     await privateChatsRef.child(chatId).push(messageData);
                     return true;
                 } else {
-                    const isFav = await isFavorite(toUser);
-                    if (isFav) {
-                        await pendingMessagesRef.child(toUser).child(currentUser.name).push({
-                            ...messageData,
-                            originalTimestamp: messageData.timestamp,
-                            isPending: true
-                        });
-                        addSystemMessage(`📨 ${toUser} şu an çevrimdışı. Mesajınız favori listenizde olduğu için kaydedildi. Çevrimiçi olduğunda gönderilecek.`);
-                        return true;
-                    } else {
-                        addSystemMessage(`❌ ${toUser} çevrimdışı. Sadece favori listenizdeki kullanıcılara çevrimdışı mesaj bırakabilirsiniz.`);
-                        return false;
-                    }
+                    await pendingMessagesRef.child(toUser).child(currentUser.name).push({
+                        ...messageData,
+                        originalTimestamp: messageData.timestamp,
+                        isPending: true
+                    });
+                    addSystemMessage(`📨 ${toUser} şu an çevrimdışı. Mesajınız kaydedildi. Çevrimiçi olduğunda gönderilecek.`);
+                    return true;
                 }
             } catch (error) {
                 console.error("Mesaj gönderme hatası:", error);
@@ -4603,7 +4473,6 @@
             blockBtn.innerHTML = isBlocked ? '<i class="fas fa-ban" style="color: var(--online);"></i>' : '<i class="fas fa-ban"></i>';
             blockBtn.title = isBlocked ? 'Engeli Kaldır' : 'Engelle';
             
-            updatePrivateFavoriteButton();
             loadPrivateMessages();
             listenForTyping();
         }
@@ -7059,38 +6928,23 @@
             const now = Date.now();
             let usersToDisplay = [];
             
-            if (currentUserListTab === 'favorites') {
-                usersToDisplay = favoritesList.map(fav => {
-                    const userData = cachedOnlineUsers[fav] || { lastSeen: 0, isOnline: false };
-                    const timeDiff = now - (userData.lastSeen || 0);
-                    const isOnline = timeDiff < ONLINE_THRESHOLD;
-                    return {
-                        username: fav,
-                        userData: userData,
-                        isOnline: isOnline,
+            Object.entries(cachedOnlineUsers).forEach(([username, userData]) => {
+                if (!userData) return;
+                if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
+                    (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
+                    return;
+                }
+                const timeDiff = now - (userData.lastSeen || 0);
+                if (timeDiff < ONLINE_THRESHOLD) {
+                    usersToDisplay.push({
+                        username,
+                        userData,
+                        isOnline: true,
                         secondsAgo: Math.floor(timeDiff / 1000),
-                        rolePriority: getRolePriority(fav)
-                    };
-                });
-            } else {
-                Object.entries(cachedOnlineUsers).forEach(([username, userData]) => {
-                    if (!userData) return;
-                    if (username === SECURE_CONFIG.OWNER_CONFIG.username && userData.isHidden && 
-                        (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
-                        return;
-                    }
-                    const timeDiff = now - (userData.lastSeen || 0);
-                    if (timeDiff < ONLINE_THRESHOLD) {
-                        usersToDisplay.push({
-                            username,
-                            userData,
-                            isOnline: true,
-                            secondsAgo: Math.floor(timeDiff / 1000),
-                            rolePriority: getRolePriority(username)
-                        });
-                    }
-                });
-            }
+                        rolePriority: getRolePriority(username)
+                    });
+                }
+            });
             
             usersToDisplay.sort((a, b) => {
                 if (a.rolePriority !== b.rolePriority) return a.rolePriority - b.rolePriority;
@@ -7112,28 +6966,15 @@
                 else if (coAdminList.includes(user.username)) badgeHtml = '<span class="badge coadmin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-users"></i></span>';
                 else if (operatorList.includes(user.username)) badgeHtml = '<span class="badge operator" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-bolt"></i></span>';
                 
-                if (favoritesList.includes(user.username) && user.username !== currentUser?.name) {
-                    badgeHtml += '<span class="badge favorite" style="display:inline-flex; margin-left:4px;"><i class="fas fa-star"></i> Favori</span>';
-                }
-                
                 const userAvatar = userProfiles[user.username]?.avatar || null;
                 const avatarHtml = userAvatar ? 
                     `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">` : '';
                 
                 let statusText = '';
-                if (currentUserListTab === 'favorites') {
-                    if (user.isOnline) {
-                        statusText = user.secondsAgo > 10 ? ` (${user.secondsAgo}sn)` : ' (Şimdi)';
-                    } else {
-                        const lastSeenDate = new Date(user.userData.lastSeen || 0);
-                        statusText = ` (Son görülme: ${lastSeenDate.toLocaleTimeString('tr-TR')})`;
-                    }
+                if (user.secondsAgo > 10) {
+                    statusText = ` (${user.secondsAgo}sn)`;
                 } else {
-                    if (user.secondsAgo > 10) {
-                        statusText = ` (${user.secondsAgo}sn)`;
-                    } else {
-                        statusText = ' (Şimdi)';
-                    }
+                    statusText = ' (Şimdi)';
                 }
                 
                 html += `
@@ -7164,17 +7005,6 @@
             });
             document.querySelector(`.users-tab-btn[onclick*="${tab}"]`).classList.add('active');
             updateUserListUI();
-        }
-
-        function toggleFavoriteList() {
-            if (currentUserListTab === 'favorites') {
-                const sidebar = document.getElementById('usersSidebar');
-                sidebar.classList.toggle('active');
-            } else {
-                switchUserListTab('favorites');
-                const sidebar = document.getElementById('usersSidebar');
-                sidebar.classList.add('active');
-            }
         }
 
         function getRolePriority(username) {
@@ -7858,7 +7688,6 @@
                         profilesRef = database.ref('profiles');
                         blocksRef = database.ref('blocks');
                         reportsRef = database.ref('reports');
-                        favoritesRef = database.ref('favorites');
                         pendingMessagesRef = database.ref('pendingMessages');
                         adLinksRef = database.ref('adLinks');
                         typingRef = database.ref('typing');
@@ -7878,7 +7707,6 @@
                         if (currentUser) {
                             loadUserProfile(currentUser.name);
                             loadBlockedUsers();
-                            loadFavorites();
                             checkPendingMessagesForUser(currentUser.name);
 
                             if (isOwner) {
