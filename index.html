@@ -4683,8 +4683,6 @@
             <video id="camera-stream" autoplay playsinline></video>
             <div class="camera-controls">
                 <button class="camera-btn-control" onclick="capturePhoto()" title="Fotoğraf çek"><i class="fas fa-camera"></i></button>
-                <button class="camera-btn-control" onclick="startVideoRecording()" id="recordBtn" title="Video kaydet"><i class="fas fa-video"></i></button>
-                <button class="camera-btn-control stop" onclick="stopVideoRecording()" id="stopBtn" style="display: none;" title="Durdur"><i class="fas fa-stop"></i></button>
                 <button class="camera-btn-control" onclick="closeCameraModal()" title="Kapat"><i class="fas fa-times"></i></button>
             </div>
             <canvas id="camera-preview" style="display: none;"></canvas>
@@ -5977,6 +5975,75 @@
             return `chat_${users[0]}_${users[1]}`;
         }
 
+        function readBlobAsDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error || new Error('Dosya okunamadı.'));
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        async function compressImageForChat(file) {
+            if (file.size > 20 * 1024 * 1024) throw new Error('Resim 20 MB sınırını aşıyor.');
+            const source = await readBlobAsDataUrl(file);
+            const image = new Image();
+            await new Promise((resolve, reject) => {
+                image.onload = resolve;
+                image.onerror = () => reject(new Error('Resim açılamadı.'));
+                image.src = source;
+            });
+            const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+            canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error('Resim dönüştürülemedi.');
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+            const compressed = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.78));
+            if (!compressed) throw new Error('Resim sıkıştırılamadı.');
+            return readBlobAsDataUrl(compressed);
+        }
+
+        async function sendPrivateAttachment(content, text) {
+            const recipient = privateChatWith;
+            const chatId = currentPrivateChatId;
+            if (!recipient || !chatId || !currentUser) {
+                addSystemMessage('❌ Önce bir kullanıcı ile özel sohbet açın.');
+                return false;
+            }
+            if (!checkWriteLimit()) {
+                addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı!');
+                return false;
+            }
+            if (await checkBlockStatus(recipient)) {
+                addSystemMessage('⛔ Bu kullanıcıya dosya gönderemezsiniz.');
+                return false;
+            }
+            const messageData = {
+                sender: currentUser.name,
+                receiver: recipient,
+                text,
+                ...content,
+                timestamp: Date.now(),
+                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                avatar: currentProfileAvatar || null,
+                isRead: false
+            };
+            try {
+                if (!await sendPendingMessage(recipient, messageData)) throw new Error('Firebase mesajı kaydetmedi.');
+                incrementWriteCount();
+                addNotification(recipient, text, 'private');
+                await archiveAndTrimPrivateChat(chatId);
+                addSystemMessage('✅ Medya gönderildi.');
+                return true;
+            } catch (error) {
+                console.error('Özel medya gönderilemedi:', error);
+                addSystemMessage('❌ Medya gönderilemedi. Bağlantıyı veya dosya boyutunu kontrol edin.');
+                return false;
+            }
+        }
+
         function openGallery() {
             if (!privateChatWith) {
                 alert('❌ Önce bir kullanıcı ile özel sohbette olmalısınız!');
@@ -5985,187 +6052,150 @@
             document.getElementById('galleryUpload').click();
         }
 
-        function openCameraDirect() {
+        async function openCameraDirect() {
             if (!privateChatWith) {
-                alert('❌ Önce bir kullanıcı ile özel sohbette olmalısınız!');
+                addSystemMessage('❌ Önce bir kullanıcı ile özel sohbet açın.');
                 return;
             }
-            document.getElementById('cameraUpload').click();
+            if (!navigator.mediaDevices?.getUserMedia) {
+                addSystemMessage('❌ Kamera için HTTPS bağlantısı ve kamera izni gerekli.');
+                return;
+            }
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' } },
+                    audio: false
+                });
+                const cameraVideo = document.getElementById('camera-stream');
+                cameraVideo.srcObject = cameraStream;
+                document.getElementById('cameraModal').style.display = 'flex';
+                document.getElementById('overlay').style.display = 'block';
+                await cameraVideo.play();
+            } catch (error) {
+                console.error('Kamera açılamadı:', error);
+                addSystemMessage('❌ Kamera açılamadı. Kamera iznini kontrol edin.');
+            }
         }
 
         document.getElementById('galleryUpload').addEventListener('change', handleGalleryUpload);
 
-        async function handleGalleryUpload(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            if (!file.type.startsWith('image/')) {
-                alert('❌ Lütfen sadece resim dosyası seçin!');
-                return;
+        async function sendPrivateImage(file, text) {
+            try {
+                await sendPrivateAttachment({ image: await compressImageForChat(file) }, text);
+            } catch (error) {
+                console.error('Resim hazırlanamadı:', error);
+                addSystemMessage(`❌ Resim gönderilemedi: ${error.message}`);
             }
-            
-            if (!checkWriteLimit()) {
-                addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı! Yarın tekrar dene.');
-                return;
-            }
-            
-            if (await checkBlockStatus(privateChatWith)) {
-                alert('Bu kullanıcıya dosya gönderemezsiniz!');
-                return;
-            }
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = async function(event) {
-                    const imageData = event.target.result;
-                    try {
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '📸 Resim gönderdi',
-                            image: imageData,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                            isRead: false
-                        };
-                        const sent = await sendPendingMessage(privateChatWith, messageData);
-                        if (sent) {
-                            incrementWriteCount();
-                            addNotification(privateChatWith, '📸 Resim gönderdi', 'private');
-                            await archiveAndTrimPrivateChat(currentPrivateChatId);
-                        }
-                    } catch (imageError) {
-                        console.error('Resim gönderme hatası:', imageError);
-                        alert('❌ Resim gönderilemedi!');
+        }
+
+        async function handleGalleryUpload(event) {
+            const files = Array.from(event.target.files || []);
+            try {
+                for (const file of files) {
+                    if (!file.type.startsWith('image/')) {
+                        addSystemMessage('❌ Yalnızca resim dosyaları gönderilebilir.');
+                        continue;
                     }
-                };
-                reader.readAsDataURL(file);
+                    await sendPrivateImage(file, '📸 Resim gönderdi');
+                }
+            } finally {
+                event.target.value = '';
             }
-            e.target.value = '';
         }
 
         document.getElementById('cameraUpload').addEventListener('change', handleCameraUpload);
 
-        async function handleCameraUpload(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            if (!file.type.startsWith('image/')) {
-                alert('❌ Lütfen sadece resim çekin!');
-                return;
+        async function handleCameraUpload(event) {
+            const file = event.target.files?.[0];
+            try {
+                if (file && file.type.startsWith('image/')) {
+                    await sendPrivateImage(file, '📸 Kameradan fotoğraf gönderdi');
+                } else if (file) {
+                    addSystemMessage('❌ Kameradan resim alınamadı.');
+                }
+            } finally {
+                event.target.value = '';
             }
-            
-            if (!checkWriteLimit()) {
-                addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı! Yarın tekrar dene.');
-                return;
-            }
-            
-            if (await checkBlockStatus(privateChatWith)) {
-                alert('Bu kullanıcıya dosya gönderemezsiniz!');
-                return;
-            }
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = async function(event) {
-                    const imageData = event.target.result;
-                    try {
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '📸 Kameradan fotoğraf çekti',
-                            image: imageData,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                            isRead: false
-                        };
-                        const sent = await sendPendingMessage(privateChatWith, messageData);
-                        if (sent) {
-                            incrementWriteCount();
-                            addNotification(privateChatWith, '📸 Fotoğraf çekti', 'private');
-                            await archiveAndTrimPrivateChat(currentPrivateChatId);
-                        }
-                    } catch (imageError) {
-                        console.error('Resim gönderme hatası:', imageError);
-                        alert('❌ Resim gönderilemedi!');
-                    }
-                };
-                reader.readAsDataURL(file);
-            }
-            e.target.value = '';
         }
 
         async function startAudioRecording() {
             if (!privateChatWith) {
-                alert('❌ Önce bir kullanıcı ile özel sohbette olmalısınız!');
+                addSystemMessage('❌ Önce bir kullanıcı ile özel sohbet açın.');
                 return;
             }
             if (isAudioRecording) {
                 stopAudioRecording();
                 return;
             }
+            if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+                addSystemMessage('❌ Bu tarayıcı ses kaydını desteklemiyor.');
+                return;
+            }
+
             try {
                 audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorderAudio = new MediaRecorder(audioStream);
+                const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+                    .find(type => MediaRecorder.isTypeSupported(type));
+                const options = { audioBitsPerSecond: 32000 };
+                if (mimeType) options.mimeType = mimeType;
+                try {
+                    mediaRecorderAudio = new MediaRecorder(audioStream, options);
+                } catch (error) {
+                    mediaRecorderAudio = new MediaRecorder(audioStream);
+                }
                 audioChunks = [];
-                mediaRecorderAudio.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        audioChunks.push(event.data);
-                    }
+                mediaRecorderAudio.ondataavailable = event => {
+                    if (event.data.size) audioChunks.push(event.data);
+                };
+                mediaRecorderAudio.onerror = event => {
+                    console.error('Ses kaydı hatası:', event.error);
+                    addSystemMessage('❌ Ses kaydı sırasında hata oluştu.');
                 };
                 mediaRecorderAudio.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
-                    const reader = new FileReader();
-                    reader.onload = async function(e) {
-                        const audioData = e.target.result;
-                        
-                        if (!checkWriteLimit()) {
-                            addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı! Yarın tekrar dene.');
-                            return;
+                    const recordedType = mediaRecorderAudio.mimeType || audioChunks[0]?.type || 'audio/webm';
+                    const audioBlob = new Blob(audioChunks, { type: recordedType });
+                    try {
+                        if (!audioBlob.size) throw new Error('Ses kaydı boş.');
+                        if (audioBlob.size > 3 * 1024 * 1024) throw new Error('Ses kaydı 3 MB sınırını aşıyor.');
+                        await sendPrivateAttachment({ audio: await readBlobAsDataUrl(audioBlob) }, '🎤 Sesli mesaj gönderdi');
+                    } catch (error) {
+                        console.error('Ses gönderilemedi:', error);
+                        addSystemMessage(`❌ Ses gönderilemedi: ${error.message}`);
+                    } finally {
+                        if (audioStream) audioStream.getTracks().forEach(track => track.stop());
+                        audioStream = null;
+                        isAudioRecording = false;
+                        const audioButton = document.querySelector('.audio-record-btn');
+                        if (audioButton) {
+                            audioButton.classList.remove('recording');
+                            audioButton.innerHTML = '<i class="fas fa-microphone"></i>';
+                            audioButton.title = 'Sesli Mesaj Gönder';
                         }
-                        
-                        const messageData = {
-                            sender: currentUser.name,
-                            receiver: privateChatWith,
-                            text: '🎤 Sesli mesaj gönderdi',
-                            audio: audioData,
-                            timestamp: Date.now(),
-                            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                            isRead: false
-                        };
-                        const sent = await sendPendingMessage(privateChatWith, messageData);
-                        if (sent) {
-                            incrementWriteCount();
-                            addNotification(privateChatWith, '🎤 Sesli mesaj gönderdi', 'private');
-                            addSystemMessage('✅ Ses kaydı gönderildi!');
-                            await archiveAndTrimPrivateChat(currentPrivateChatId);
-                        }
-                    };
-                    reader.readAsDataURL(audioBlob);
-                    audioStream.getTracks().forEach(track => track.stop());
-                    isAudioRecording = false;
-                    const audioBtn = document.querySelector('.audio-record-btn');
-                    audioBtn.classList.remove('recording');
-                    audioBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-                    audioBtn.title = 'Sesli Mesaj Gönder';
+                    }
                 };
                 mediaRecorderAudio.start();
                 isAudioRecording = true;
+                const audioButton = document.querySelector('.audio-record-btn');
+                audioButton.classList.add('recording');
+                audioButton.innerHTML = '<i class="fas fa-stop"></i>';
+                audioButton.title = 'Kaydı Durdur';
                 setTimeout(() => {
                     if (isAudioRecording) {
                         stopAudioRecording();
-                        addSystemMessage('⏱️ 5 dakikalık kayıt süresi doldu.');
+                        addSystemMessage('⏱️ 60 saniyelik ses kaydı sınırına ulaşıldı.');
                     }
-                }, 300000);
-                const audioBtn = document.querySelector('.audio-record-btn');
-                audioBtn.classList.add('recording');
-                audioBtn.innerHTML = '<i class="fas fa-stop"></i>';
-                audioBtn.title = 'Kaydı Durdur';
+                }, 60000);
             } catch (error) {
-                alert('❌ Mikrofona erişilemedi!');
+                console.error('Mikrofon açılamadı:', error);
+                if (audioStream) audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+                addSystemMessage('❌ Mikrofon açılamadı. Mikrofon iznini kontrol edin.');
             }
         }
 
         function stopAudioRecording() {
-            if (mediaRecorderAudio && isAudioRecording) {
+            if (mediaRecorderAudio && mediaRecorderAudio.state !== 'inactive') {
                 mediaRecorderAudio.stop();
-                isAudioRecording = false;
             }
         }
 
@@ -8396,6 +8426,8 @@
                 cameraStream.getTracks().forEach(track => track.stop());
                 cameraStream = null;
             }
+            const cameraVideo = document.getElementById('camera-stream');
+            if (cameraVideo) cameraVideo.srcObject = null;
             document.getElementById('cameraModal').style.display = 'none';
             document.getElementById('overlay').style.display = 'none';
         }
@@ -8492,9 +8524,7 @@
 
             if (privateContactsRef) {
                 const contactsRef = privateContactsRef.child(currentUser.name);
-                if (privateContactsListListener) {
-                    contactsRef.off('child_added', privateContactsListListener);
-                }
+                if (privateContactsListListener) contactsRef.off('child_added', privateContactsListListener);
                 privateContactsListListener = snapshot => {
                     if (!snapshot.key || !snapshot.val() || snapshot.key === currentUser.name) return;
                     addPrivateContactToList(snapshot.key);
@@ -8504,9 +8534,7 @@
                 contactsRef.on('child_added', privateContactsListListener, error => {
                     console.warn('Özel sohbet listesi Firebase’den okunamadı:', error);
                 });
-                if (privateContactsChangedListener) {
-                    contactsRef.off('child_changed', privateContactsChangedListener);
-                }
+                if (privateContactsChangedListener) contactsRef.off('child_changed', privateContactsChangedListener);
                 privateContactsChangedListener = snapshot => {
                     if (snapshot.key) handlePrivateContactActivity(snapshot.key, snapshot);
                 };
@@ -8522,94 +8550,62 @@
         async function rememberPrivateContact(username, addToOtherUserList = false) {
             if (!currentUser || !username || username === currentUser.name) return;
             addPrivateContactToList(username);
-            const writeTasks = [];
-            if (privateContactsRef) {
-                const timestamp = Date.now();
-                writeTasks.push(upsertPrivateContactRecord(
-                    privateContactsRef.child(currentUser.name).child(username),
-                    { createdAt: timestamp }
-                ));
-                if (addToOtherUserList) {
-                    writeTasks.push(upsertPrivateContactRecord(
-                        privateContactsRef.child(username).child(currentUser.name),
-                        { createdAt: timestamp }
-                    ));
-                }
+            if (!privateContactsRef) return;
+            const timestamp = Date.now();
+            const updates = [
+                privateContactsRef.child(currentUser.name).child(username).update({ createdAt: timestamp })
+            ];
+            if (addToOtherUserList) {
+                updates.push(privateContactsRef.child(username).child(currentUser.name).update({ createdAt: timestamp }));
             }
-            if (writeTasks.length) await Promise.allSettled(writeTasks);
+            await Promise.allSettled(updates);
             if (privateChatWith !== username) startPrivateContactListener(username);
-        }
-
-        function upsertPrivateContactRecord(reference, data) {
-            return reference.update(data).catch(() => reference.set(data));
         }
 
         async function updatePrivateContactMessageIndex(username, messageId, message) {
             if (!privateContactsRef || !currentUser || !username || !messageId) return;
-            const activity = {
-                lastMessageId: messageId,
-                lastMessageAt: (message && message.timestamp) || Date.now()
-            };
-            const timestamp = Date.now();
-            const references = [
+            const activity = { lastMessageId: messageId, lastMessageAt: message.timestamp || Date.now() };
+            const records = [
                 privateContactsRef.child(currentUser.name).child(username),
                 privateContactsRef.child(username).child(currentUser.name)
             ];
-            await Promise.allSettled(references.map(reference =>
-                reference.update(activity).catch(() =>
-                    reference.set({ createdAt: timestamp, ...activity })
-                )
-            ));
+            await Promise.allSettled(records.map(record => record.update(activity)));
         }
 
         function notifyIncomingPrivateMessage(username, message, messageId) {
-            if (!currentUser || !message || !messageId ||
-                message.sender === currentUser.name || message.isNotification || message.sender === 'System') return;
-            const chatId = generateChatId(currentUser.name, username);
-            const alertId = `${chatId}/${messageId}`;
+            if (!currentUser || !message || !messageId || message.sender === currentUser.name ||
+                message.isNotification || message.sender === 'System') return;
+            const alertId = `${generateChatId(currentUser.name, username)}/${messageId}`;
             if (privateAlertedMessageIds.has(alertId)) return;
             privateAlertedMessageIds.add(alertId);
-            if (privateAlertedMessageIds.size > 500) {
-                privateAlertedMessageIds.delete(privateAlertedMessageIds.values().next().value);
-            }
-            if (privateChatWith !== username) {
-                privateUnreadCounts[username] = (privateUnreadCounts[username] || 0) + 1;
-                if (currentUserListTab === 'private') updatePrivateContactListUI();
-            }
+            if (privateChatWith !== username) privateUnreadCounts[username] = (privateUnreadCounts[username] || 0) + 1;
             addNotification(message.sender || username, privateMessagePreview(message), 'private', true);
         }
 
         function handlePrivateContactActivity(username, snapshot) {
-            if (!currentUser || !privateChatsRef || !username || username === currentUser.name) return;
             const contact = snapshot.val();
-            if (!contact || !contact.lastMessageId ||
-                !contact.lastMessageAt || contact.lastMessageAt < userSessionStartedAt ||
-                privateChatWith === username) return;
-
+            if (!privateChatsRef || !contact?.lastMessageId || !contact.lastMessageAt ||
+                contact.lastMessageAt < userSessionStartedAt || privateChatWith === username) return;
             const chatId = generateChatId(currentUser.name, username);
-            privateChatsRef.child(chatId).child(contact.lastMessageId).once('value')
-                .then(messageSnapshot => {
-                    const message = messageSnapshot.val();
-                    if (message) notifyIncomingPrivateMessage(username, message, contact.lastMessageId);
-                })
-                .catch(error => console.warn('Yeni özel mesaj alınamadı:', error));
+            privateChatsRef.child(chatId).child(contact.lastMessageId).once('value').then(messageSnapshot => {
+                const message = messageSnapshot.val();
+                if (message) notifyIncomingPrivateMessage(username, message, contact.lastMessageId);
+            }).catch(error => console.warn('Yeni özel mesaj alınamadı:', error));
         }
 
         function privateMessagePreview(message) {
-            if (message && message.image) return '📷 Fotoğraf gönderdi';
-            if (message && message.audio) return '🎤 Sesli mesaj gönderdi';
-            return (message && message.text) || 'Yeni mesaj';
+            if (message.image) return '📷 Fotoğraf gönderdi';
+            if (message.audio) return '🎤 Sesli mesaj gönderdi';
+            return message.text || 'Yeni mesaj';
         }
 
         function startPrivateContactListener(username) {
             if (!currentUser || !privateChatsRef || !username || username === currentUser.name ||
                 username === privateChatWith || privateContactListeners[username]) return;
-
             const chatId = generateChatId(currentUser.name, username);
             const query = privateChatsRef.child(chatId).limitToLast(1);
             const entry = { query, listener: null };
             privateContactListeners[username] = entry;
-
             query.once('value').then(snapshot => {
                 if (privateContactListeners[username] !== entry || privateChatWith === username) return;
                 const initialIds = new Set(Object.keys(snapshot.val() || {}));
@@ -8619,18 +8615,11 @@
                         return;
                     }
                     const message = messageSnapshot.val();
-                    if (!message || !message.sender || message.sender === currentUser.name ||
-                        message.isNotification || message.sender === 'System') return;
-
-                    notifyIncomingPrivateMessage(username, message, messageSnapshot.key);
+                    if (message) notifyIncomingPrivateMessage(username, message, messageSnapshot.key);
                 };
-                query.on('child_added', entry.listener, error => {
-                    console.warn('Özel mesaj bildirimi dinlenemedi:', error);
-                });
+                query.on('child_added', entry.listener);
             }).catch(error => {
-                if (privateContactListeners[username] === entry) {
-                    delete privateContactListeners[username];
-                }
+                if (privateContactListeners[username] === entry) delete privateContactListeners[username];
                 console.warn('Özel mesaj bildirimi başlatılamadı:', error);
             });
         }
@@ -8650,28 +8639,24 @@
                 .filter(username => username !== currentUser?.name)
                 .map(username => {
                     const userData = cachedOnlineUsers[username] || null;
-                    const hiddenOwner = username === SECURE_CONFIG.OWNER_CONFIG.username &&
-                        userData && userData.isHidden &&
-                        (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username);
+                    const hiddenOwner = username === SECURE_CONFIG.OWNER_CONFIG.username && userData?.isHidden &&
+                        currentUser?.name !== SECURE_CONFIG.OWNER_CONFIG.username;
                     const isOnline = !!userData && now - (userData.lastSeen || 0) < ONLINE_THRESHOLD;
                     return { username, userData, hiddenOwner, isOnline };
                 })
                 .filter(contact => !contact.hiddenOwner)
-                .sort((a, b) =>
-                    Number(b.isOnline) - Number(a.isOnline) ||
+                .sort((a, b) => Number(b.isOnline) - Number(a.isOnline) ||
                     (privateUnreadCounts[b.username] || 0) - (privateUnreadCounts[a.username] || 0) ||
-                    a.username.localeCompare(b.username)
-                );
+                    a.username.localeCompare(b.username));
 
             container.replaceChildren();
             if (!contacts.length) {
                 const empty = document.createElement('div');
                 empty.className = 'private-empty-state';
-                empty.textContent = 'Henüz özel sohbet yok. Bir kullanıcıya özel mesaj gönderdiğinizde burada görünür.';
+                empty.textContent = 'Henüz özel sohbet yok.';
                 container.appendChild(empty);
                 return;
             }
-
             contacts.forEach(contact => {
                 const item = document.createElement('div');
                 item.className = 'user-item';
@@ -8684,7 +8669,6 @@
                         openPrivateChat(contact.username);
                     }
                 });
-
                 const identity = document.createElement('div');
                 identity.className = 'user-status';
                 const dot = document.createElement('span');
@@ -8705,20 +8689,10 @@
                 const name = document.createElement('strong');
                 name.textContent = contact.username;
                 identity.append(dot, avatar, name);
-
-                const meta = document.createElement('div');
-                meta.className = 'private-contact-meta';
                 const status = document.createElement('span');
+                status.className = 'private-contact-meta';
                 status.textContent = contact.isOnline ? 'Çevrimiçi' : 'Çevrimdışı';
-                meta.appendChild(status);
-                const unreadCount = privateUnreadCounts[contact.username] || 0;
-                if (unreadCount > 0) {
-                    const badge = document.createElement('span');
-                    badge.className = 'private-unread-count';
-                    badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
-                    meta.appendChild(badge);
-                }
-                item.append(identity, meta);
+                item.append(identity, status);
                 container.appendChild(item);
             });
         }
@@ -10063,4 +10037,3 @@
     <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
-
