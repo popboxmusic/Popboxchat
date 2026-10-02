@@ -4636,7 +4636,7 @@
                 </div>
             </div>
             <button class="audio-record-btn" onclick="startAudioRecording()" title="Sesli Mesaj Gönder"><i class="fas fa-microphone"></i></button>
-            <input type="file" id="galleryUpload" accept="image/*" capture="environment" style="display: none;" multiple>
+            <input type="file" id="galleryUpload" accept="image/*" style="display: none;" multiple>
             <input type="file" id="cameraUpload" accept="image/*" capture="environment" style="display: none;">
             <textarea 
                 id="private-input" 
@@ -5975,16 +5975,72 @@
             return `chat_${users[0]}_${users[1]}`;
         }
 
+        function isSecureContextAllowed() {
+            return window.isSecureContext || location.protocol === 'https:' ||
+                location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+        }
+
         function readBlobAsDataUrl(blob) {
+            if (!blob) return Promise.reject(new Error('Boş dosya.'));
+
+            if (typeof FileReader !== 'undefined') {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(reader.error || new Error('Dosya okunamadı.'));
+                    reader.readAsDataURL(blob);
+                });
+            }
+
             return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = () => reject(reader.error || new Error('Dosya okunamadı.'));
-                reader.readAsDataURL(blob);
+                try {
+                    const mimeType = blob.type || 'application/octet-stream';
+                    if (blob.type && blob.type.startsWith('image/')) {
+                        const objectUrl = URL.createObjectURL(blob);
+                        const img = new Image();
+                        img.onload = () => {
+                            try {
+                                const canvas = document.createElement('canvas');
+                                const scale = Math.min(1, 1600 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+                                canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+                                canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+                                const context = canvas.getContext('2d');
+                                if (!context) throw new Error('Canvas bağlamı açılamadı.');
+                                context.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                resolve(canvas.toDataURL('image/jpeg', 0.82));
+                                URL.revokeObjectURL(objectUrl);
+                            } catch (error) {
+                                URL.revokeObjectURL(objectUrl);
+                                reject(error);
+                            }
+                        };
+                        img.onerror = () => {
+                            URL.revokeObjectURL(objectUrl);
+                            reject(new Error('Resim okunamadı.'));
+                        };
+                        img.src = objectUrl;
+                        return;
+                    }
+
+                    if (blob.arrayBuffer) {
+                        blob.arrayBuffer().then(buffer => {
+                            const bytes = new Uint8Array(buffer);
+                            let binary = '';
+                            bytes.forEach(byte => binary += String.fromCharCode(byte));
+                            resolve(`data:${mimeType};base64,${btoa(binary)}`);
+                        }).catch(reject);
+                        return;
+                    }
+
+                    reject(new Error('Dosya okuma desteklenmiyor.'));
+                } catch (error) {
+                    reject(error);
+                }
             });
         }
 
         async function compressImageForChat(file) {
+            if (!file || file.size === undefined) throw new Error('Geçersiz resim dosyası.');
             if (file.size > 20 * 1024 * 1024) throw new Error('Resim 20 MB sınırını aşıyor.');
             const source = await readBlobAsDataUrl(file);
             const image = new Image();
@@ -6057,8 +6113,12 @@
                 addSystemMessage('❌ Önce bir kullanıcı ile özel sohbet açın.');
                 return;
             }
+            if (!isSecureContextAllowed()) {
+                addSystemMessage('❌ Kamera için HTTPS gerekli. Siteyi https:// üzerinden açın.');
+                return;
+            }
             if (!navigator.mediaDevices?.getUserMedia) {
-                addSystemMessage('❌ Kamera için HTTPS bağlantısı ve kamera izni gerekli.');
+                addSystemMessage('❌ Kamera için izin gerekli. Tarayıcı ayarlarından kamera iznini açın.');
                 return;
             }
             try {
@@ -6089,7 +6149,11 @@
         }
 
         function isImageFile(file) {
-            return Boolean(file) && (file.type?.startsWith('image/') || /\.(heic|heif)$/i.test(file.name || ''));
+            if (!file || typeof file !== 'object') return false;
+            const name = (file.name || '').toLowerCase();
+            const mime = (file.type || '').toLowerCase();
+            const validExtensions = /\.(png|jpe?g|gif|bmp|webp|heic|heif|ico|svg)$/i;
+            return mime.startsWith('image/') || validExtensions.test(name);
         }
 
         async function handleGalleryUpload(event) {
@@ -6131,8 +6195,12 @@
                 stopAudioRecording();
                 return;
             }
+            if (!isSecureContextAllowed()) {
+                addSystemMessage('❌ Ses kaydı için HTTPS gerekli. Siteyi https:// üzerinden açın.');
+                return;
+            }
             if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-                addSystemMessage('❌ Bu tarayıcı ses kaydını desteklemiyor.');
+                addSystemMessage('❌ Bu tarayıcı ses kaydını desteklemiyor. HTTPS ve izni kontrol edin.');
                 return;
             }
 
@@ -8488,21 +8556,34 @@
             canvas.height = cameraVideo.videoHeight;
             context.drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
 
-            canvas.toBlob(async (blob) => {
-                if (!blob) {
+            const captureBlob = () => new Promise(resolve => {
+                if (typeof canvas.toBlob === 'function') {
+                    canvas.toBlob(resolve, 'image/jpeg', 0.82);
+                    return;
+                }
+                resolve(canvas.toDataURL('image/jpeg', 0.82));
+            });
+
+            captureBlob().then(async (blobOrDataUrl) => {
+                if (!blobOrDataUrl) {
                     addSystemMessage('❌ Fotoğraf yakalanamadı.');
                     return;
                 }
                 try {
-                    const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
-                    await sendPrivateImage(file, '📸 Kameradan fotoğraf gönderdi');
+                    const blob = typeof blobOrDataUrl === 'string'
+                        ? await (await fetch(blobOrDataUrl)).blob()
+                        : blobOrDataUrl;
+                    await sendPrivateImage(blob, '📸 Kameradan fotoğraf gönderdi');
                 } catch (error) {
                     console.error('Kameradan fotoğraf gönderilemedi:', error);
                     addSystemMessage('❌ Fotoğraf gönderilemedi.');
                 } finally {
                     closeCameraModal();
                 }
-            }, 'image/jpeg', 0.82);
+            }).catch(error => {
+                console.error('Kamera fotoğrafı alınamadı:', error);
+                addSystemMessage('❌ Fotoğraf yakalanamadı.');
+            });
         }
 
         function startVideoRecording() {
