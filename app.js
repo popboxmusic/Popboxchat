@@ -44,6 +44,7 @@ function initApp() {
                 closeRemoveOperatorModal();
                 closeReportModal();
                 closeProfileModal();
+                closeChannelManageModal();
                 document.getElementById('ownerPanel').classList.remove('active');
                 document.getElementById('adminPanel').classList.remove('active');
                 document.getElementById('coadminPanel').classList.remove('active');
@@ -59,6 +60,7 @@ function initApp() {
     if (messagesRef) {
         messagesRef.limitToLast(MESSAGE_LIMIT).off('child_added');
         messagesRef.limitToLast(MESSAGE_LIMIT).on('child_added', (snapshot) => {
+            if (currentChannel !== 'genel') return;
             const newMessage = { id: snapshot.key, ...snapshot.val() };
             if (!document.getElementById(`msg_${snapshot.key}`)) appendMessageToUI(newMessage);
         });
@@ -67,6 +69,12 @@ function initApp() {
     setupRoleListeners();
     loadRegisteredUsers();
     loadCustomCommands();
+
+    // Kanal sekmelerini render et
+    renderChannelTabs();
+    // Genel kanala bağlan
+    if (!currentChannel) currentChannel = 'genel';
+    switchChannel(currentChannel);
 
     window.addEventListener('beforeunload', function() {
         if (currentUser && usersRef) usersRef.child(currentUser.name).update({ isOnline: false, lastSeen: Date.now() });
@@ -324,6 +332,7 @@ function closeAllPanelsAndModals() {
     closeRemoveOperatorModal();
     closeProfileModal();
     closeReportModal();
+    closeChannelManageModal();
     document.getElementById('ownerPanel').classList.remove('active');
     document.getElementById('adminPanel').classList.remove('active');
     document.getElementById('coadminPanel').classList.remove('active');
@@ -341,7 +350,7 @@ function showAllPrivateChats() {
     if (!hasRole('owner')) { addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!"); return; }
     document.getElementById('ownerPrivateModal').style.display = 'flex';
     document.getElementById('ownerPrivateModal').setAttribute('data-view', 'list');
-    document.getElementById('ownerPrivateTitle').innerHTML = '<i class="fas fa-crown"></i> Owner - Özel Mesajlar';
+    document.getElementById('ownerPrivateTitle').innerHTML = '♛ Owner - Özel Mesajlar';
     document.getElementById('overlay').style.display = 'block';
     updateOwnerChatList();
 }
@@ -379,7 +388,7 @@ async function openOwnerPrivateMessages(user1, user2) {
     const chatId = `chat_${user1}_${user2}`;
     document.getElementById('ownerPrivateModal').style.display = 'flex';
     document.getElementById('ownerPrivateModal').setAttribute('data-view', chatId);
-    document.getElementById('ownerPrivateTitle').innerHTML = `<i class="fas fa-crown"></i> ${user1} ↔ ${user2} (Tüm Arşiv)`;
+    document.getElementById('ownerPrivateTitle').innerHTML = `♛ ${user1} ↔ ${user2} (Tüm Arşiv)`;
     document.getElementById('overlay').style.display = 'block';
     const container = document.getElementById('ownerPrivateMessages');
     container.innerHTML = '<div style="text-align:center;">Yükleniyor...</div>';
@@ -635,3 +644,19 @@ window.getRoleLevel = getRoleLevel;
 window.addToRoleList = addToRoleList;
 window.removeFromRoleList = removeFromRoleList;
 window.ROLES = ROLES;
+/* Kanal fonksiyonları */
+window.switchChannel = switchChannel;
+window.createChannel = createChannel;
+window.deleteChannel = deleteChannel;
+window.toggleChannelHidden = toggleChannelHidden;
+window.toggleChannelLocked = toggleChannelLocked;
+window.renameChannel = renameChannel;
+window.openChannelManageModal = openChannelManageModal;
+window.closeChannelManageModal = closeChannelManageModal;
+window.renderChannelManageList = renderChannelManageList;
+window.createChannelPrompt = createChannelPrompt;
+window.renameChannelPrompt = renameChannelPrompt;
+window.muteInChannel = muteInChannel;
+window.unmuteInChannel = unmuteInChannel;
+window.kickFromChannel = kickFromChannel;
+window.renderChannelTabs = renderChannelTabs;
