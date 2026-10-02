@@ -6895,22 +6895,20 @@
                 return;
             }
             
-            const banCheck = await checkUserBanOnLogin(rawNick);
-            if (banCheck.isBanned) {
-                if (banCheck.type === 'global') {
-                    showLoginError(`🚫 **GLOBAL BANLI KULLANICI**\nSebep: ${banCheck.reason}\nSüre: ${banCheck.duration}`);
-                } else {
-                    showLoginError(`🚫 **BANLI KULLANICI**\nSebep: ${banCheck.reason}\nKalan süre: ${banCheck.remaining} dakika`);
-                }
-                loginBtn.disabled = false;
-                loginBtn.innerHTML = 'Giriş Yap';
-                return;
-            }
-            
             loginBtn.disabled = true;
             loginBtn.innerHTML = '<span class="loading"></span> Kontrol ediliyor...';
             
             try {
+                const banCheck = await checkUserBanOnLogin(rawNick);
+                if (banCheck.isBanned) {
+                    if (banCheck.type === 'global') {
+                        showLoginError(`🚫 **GLOBAL BANLI KULLANICI**\nSebep: ${banCheck.reason}\nSüre: ${banCheck.duration}`);
+                    } else {
+                        showLoginError(`🚫 **BANLI KULLANICI**\nSebep: ${banCheck.reason}\nKalan süre: ${banCheck.remaining} dakika`);
+                    }
+                    return;
+                }
+
                 const normalizedNick = normalizeNick(rawNick);
                 
                 if (normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
@@ -6946,7 +6944,12 @@
                 }
                 
             } catch (error) {
-                showLoginError(`❌ Giriş hatası: ${error.message}`);
+                console.error('Giriş sırasında hata:', error);
+                const message = error.code === 'PERMISSION_DENIED'
+                    ? 'Firebase veritabanı erişimi reddedildi. Veritabanı kurallarını kontrol edin.'
+                    : `Giriş hatası: ${error.message || 'Beklenmeyen bir hata oluştu.'}`;
+                showLoginError(`❌ ${message}`);
+            } finally {
                 loginBtn.disabled = false;
                 loginBtn.innerHTML = 'Giriş Yap';
             }
@@ -10559,9 +10562,4 @@
             if (cachedChannels[cleanName]) { addSystemMessage(`❌ #${cleanName} kanalı zaten var!`); return; }
             if (!checkWriteLimit()) return;
             await channelsRef.child(cleanName).set({
-                name: cleanName, label: (label || cleanName).trim(), createdBy: currentUser.name,
-                owner: currentUser.name, createdAt: Date.now(), isHidden: false, isLocked: false,
-                order: Object.keys(cachedChannels).length
-            });
-            incrementWriteCount();
-            addSystemMessage(`✅
+                name: cleanName, label: (label || cleanName).trim(), createdBy: 
