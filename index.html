@@ -4861,7 +4861,7 @@
         let playlistRef, profilesRef, blocksRef, reportsRef;
         let adLinksRef, pendingMessagesRef;
         let typingRef;
-        let verifiedRef; // YENİ: Onaylı kullanıcılar
+        let verifiedRef;
         let channelsRef;
         let activeChannelMessagesRef = null;
         let activeChannelMessagesListener = null;
@@ -4887,7 +4887,6 @@
         let isFirebaseConnected = false;
         
         let currentUser = null;
-        // NOT: Bu boolean'lar artık currentUser.role'den türetiliyor (uyumluluk için korundu)
         let isAdmin = false;
         let isCoAdmin = false;
         let isOperator = false;
@@ -4900,7 +4899,7 @@
         let coAdminList = [];
         let operatorList = [];
         let adminList = [];
-        let verifiedList = []; // YENİ
+        let verifiedList = [];
         let bannedUsers = {};
         let registeredUsers = {};
         let customCommands = {};
@@ -4953,15 +4952,161 @@
         let lastWriteReset = Date.now();
         
         let currentUserListTab = 'all';
+
+        // ============================================================
+        // KANAL BAZLI ROL SİSTEMİ
+        // ============================================================
+        // Her kanalın kendi coadmin/operator/verified listesi vardır.
+        // Firebase'de: channelRoles/{channelName}/{role}/{username} = true
+        // ============================================================
         
-        // ============================================================
-        // MERKEZİ YETKİ KONTROL FONKSİYONU
-        // ============================================================
+        let channelRoles = {}; // { channelName: { coadmin: [], operator: [], verified: [] } }
+        let channelRolesListeners = {};
+
         /**
-         * Kullanıcının belirtilen minimum role sahip olup olmadığını kontrol eder.
-         * Örnek: hasRole('admin') → admin, owner, (daha yüksek) true döner
-         * Örnek: hasRole('operator') → operator, coadmin, admin, owner true döner
+         * Kullanıcının belirtilen kanaldaki rolünü döndürür.
+         * Kanal bazlı rol yoksa global role bakar.
          */
+        function getUserRoleInChannel(username, channelName) {
+            if (!username) return 'user';
+            const normalized = normalizeNick(username);
+            
+            // Owner her kanalda owner
+            if (normalized === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return 'owner';
+            
+            // Global admin her kanalda admin
+            if (adminList.some(u => normalizeNick(u) === normalized) ||
+                SECURE_CONFIG.DEFAULT_ADMINS.some(a => normalizeNick(a) === normalized)) {
+                return 'admin';
+            }
+            
+            // Kanal bazlı rol kontrolü
+            const cr = channelRoles[channelName];
+            if (cr) {
+                if (cr.coadmin && cr.coadmin.some(u => normalizeNick(u) === normalized)) return 'coadmin';
+                if (cr.operator && cr.operator.some(u => normalizeNick(u) === normalized)) return 'operator';
+                if (cr.verified && cr.verified.some(u => normalizeNick(u) === normalized)) return 'verified';
+            }
+            
+            // Global coadmin/operator/verified (tüm kanallarda geçerli)
+            if (coAdminList.some(u => normalizeNick(u) === normalized)) return 'coadmin';
+            if (operatorList.some(u => normalizeNick(u) === normalized)) return 'operator';
+            if (verifiedList.some(u => normalizeNick(u) === normalized)) return 'verified';
+            
+            return 'user';
+        }
+
+        /**
+         * Kullanıcının belirtilen kanalda minimum role sahip olup olmadığını kontrol eder.
+         */
+        function hasRoleInChannel(requiredRole, channelName, username) {
+            const user = username || (currentUser && currentUser.name);
+            if (!user) return false;
+            const userRole = getUserRoleInChannel(user, channelName);
+            return getRoleLevel(userRole) >= getRoleLevel(requiredRole);
+        }
+
+        /**
+         * Kullanıcının kanalda video ekleme yetkisi olup olmadığını kontrol eder.
+         * Sadece coadmin (kanal sahibi), admin ve owner video ekleyebilir.
+         */
+        function canAddVideoToChannel(channelName, username) {
+            const user = username || (currentUser && currentUser.name);
+            if (!user) return false;
+            const userRole = getUserRoleInChannel(user, channelName);
+            return getRoleLevel(userRole) >= getRoleLevel('coadmin');
+        }
+
+        /**
+         * Kullanıcının kanalda moderasyon yetkisi olup olmadığını kontrol eder.
+         */
+        function canModerateChannel(channelName, username) {
+            const user = username || (currentUser && currentUser.name);
+            if (!user) return false;
+            const userRole = getUserRoleInChannel(user, channelName);
+            return getRoleLevel(userRole) >= getRoleLevel('operator');
+        }
+
+        /**
+         * Kullanıcının spam engelinden muaf olup olmadığını kontrol eder.
+         * Verified ve üzeri roller spam engelinden muaftır.
+         */
+        function isExemptFromSpam(username) {
+            const user = username || (currentUser && currentUser.name);
+            if (!user) return false;
+            // Verified ve üzeri tüm kanallarda spam engelinden muaf
+            if (hasRole('verified')) return true;
+            // Kanal bazlı verified kontrolü
+            const userRole = getUserRoleInChannel(user, currentChannel);
+            return getRoleLevel(userRole) >= getRoleLevel('verified');
+        }
+
+        /**
+         * Kullanıcının sessiz kanalda yazma yetkisi olup olmadığını kontrol eder.
+         */
+        function canWriteInLockedChannel(channelName, username) {
+            const user = username || (currentUser && currentUser.name);
+            if (!user) return false;
+            const userRole = getUserRoleInChannel(user, channelName);
+            return getRoleLevel(userRole) >= getRoleLevel('verified');
+        }
+
+        /**
+         * Kanal rollerini yükler.
+         */
+        function loadChannelRoles(channelName) {
+            if (!database || !channelName) return;
+            const ref = database.ref(`channelRoles/${channelName}`);
+            if (channelRolesListeners[channelName]) {
+                ref.off('value', channelRolesListeners[channelName]);
+            }
+            channelRolesListeners[channelName] = ref.on('value', snapshot => {
+                const data = snapshot.val() || {};
+                channelRoles[channelName] = {
+                    coadmin: Object.keys(data.coadmin || {}),
+                    operator: Object.keys(data.operator || {}),
+                    verified: Object.keys(data.verified || {})
+                };
+                if (currentChannel === channelName) {
+                    updateAllRoleVisibilityUI();
+                    renderChannelManageList();
+                }
+            });
+        }
+
+        /**
+         * Kanala rol ekler.
+         */
+        async function addChannelRole(channelName, role, username) {
+            if (!database || !channelName || !role || !username) return;
+            try {
+                await database.ref(`channelRoles/${channelName}/${role}/${username}`).set(true);
+                incrementWriteCount();
+                addSystemMessage(`✅ ${username} kullanıcısı #${channelName} kanalında ${getRoleLabel(role)} yapıldı.`);
+            } catch (error) {
+                console.error('addChannelRole hatası:', error);
+                addSystemMessage(`❌ Rol eklenemedi: ${error.message}`);
+            }
+        }
+
+        /**
+         * Kanaldan rol siler.
+         */
+        async function removeChannelRole(channelName, role, username) {
+            if (!database || !channelName || !role || !username) return;
+            try {
+                await database.ref(`channelRoles/${channelName}/${role}/${username}`).remove();
+                incrementWriteCount();
+                addSystemMessage(`✅ ${username} kullanıcısının #${channelName} kanalındaki ${getRoleLabel(role)} rolü kaldırıldı.`);
+            } catch (error) {
+                console.error('removeChannelRole hatası:', error);
+                addSystemMessage(`❌ Rol kaldırılamadı: ${error.message}`);
+            }
+        }
+
+        // ============================================================
+        // MERKEZİ YETKİ KONTROL FONKSİYONU (GLOBAL)
+        // ============================================================
         function hasRole(requiredRole) {
             if (!currentUser || !currentUser.role) return false;
             return getRoleLevel(currentUser.role) >= getRoleLevel(requiredRole);
@@ -5018,13 +5163,11 @@
             if (!currentUser) return;
             const name = currentUser.name;
             
-            // Owner her zaman owner (login sırasında set edilir)
             if (isOwner && normalizeNick(name) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
                 currentUser.role = 'owner';
                 return;
             }
             
-            // Hiyerarşik kontrol: en yüksekten başla
             if (adminList.some(u => normalizeNick(u) === normalizeNick(name))) {
                 currentUser.role = 'admin';
             } else if (coAdminList.some(u => normalizeNick(u) === normalizeNick(name))) {
@@ -5148,7 +5291,9 @@
                     addSystemMessage('🔇 Susturuldunuz!'); 
                     return;
                 }
-                if (cachedChannels[currentChannel]?.isLocked && !canManageChannel(currentChannel) && !hasRole('operator')) {
+                
+                // KANAL KİLİTLİ KONTROLÜ — verified ve üzeri yazabilir
+                if (cachedChannels[currentChannel]?.isLocked && !canWriteInLockedChannel(currentChannel)) {
                     addSystemMessage(`🔇 #${currentChannel} kanalı sessize alındı; mesaj gönderilemiyor.`);
                     return;
                 }
@@ -5162,6 +5307,19 @@
                     input.value = '';
                     autoResize(input);
                     return;
+                }
+                
+                // SPAM ENGELLEME — verified ve üzeri muaf
+                if (!isExemptFromSpam(currentUser.name)) {
+                    // Basit spam kontrolü: son 5 saniyede 3'ten fazla mesaj
+                    const now = Date.now();
+                    if (!window._spamTracker) window._spamTracker = [];
+                    window._spamTracker = window._spamTracker.filter(t => now - t < 5000);
+                    if (window._spamTracker.length >= 3) {
+                        addSystemMessage('🚫 Spam engellendi! Çok hızlı mesaj gönderiyorsunuz.');
+                        return;
+                    }
+                    window._spamTracker.push(now);
                 }
                 
                 const messageData = {
@@ -5494,8 +5652,8 @@
         window.addEventListener('load', updateMobileUI);
 
         function addToPlaylistFromMobile() {
-            if (!hasRole('admin') && !canManageChannel(currentChannel)) {
-                alert('Bu işlem için yetkiniz yok!');
+            if (!canAddVideoToChannel(currentChannel)) {
+                alert('Bu işlem için yetkiniz yok! Sadece kanal Co-Admin\'i video ekleyebilir.');
                 return;
             }
             const url = document.getElementById('playlistUrlMobile').value.trim();
@@ -6437,11 +6595,9 @@
             privateAlertedMessageIds.clear();
             loadPrivateContacts();
             
-            // Rol durumunu güncelle
             isOwner = (role === 'owner');
             syncLegacyRoleFlags();
             
-            // UI'da tüm rol rozetlerini ve ikonlarını güncelle
             updateAllRoleVisibilityUI();
             
             document.getElementById('login-screen').style.display = 'none';
@@ -6450,10 +6606,10 @@
             addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}! (Rol: ${getRoleLabel(role)})`);
             loadUserProfile(username);
             
-            // Playlist ekleme butonlarını role göre ayarla
-            const canAddToPlaylist = hasRole('admin') || canManageChannel(currentChannel);
-            document.getElementById('addVideoBtnWeb').disabled = !canAddToPlaylist;
-            document.getElementById('addVideoBtnMobile').disabled = !canAddToPlaylist;
+            // Video ekleme butonu sadece coadmin+ için aktif
+            const canAdd = canAddVideoToChannel(currentChannel);
+            document.getElementById('addVideoBtnWeb').disabled = !canAdd;
+            document.getElementById('addVideoBtnMobile').disabled = !canAdd;
             
             if (isOwner) startOwnerPrivateMessageMonitoring();
             
@@ -6467,10 +6623,6 @@
             }, PING_INTERVAL);
         }
 
-        /**
-         * Tüm rol rozetlerini/ikonlarını tek seferde günceller
-         * Yeni bir rol eklendiğinde sadece buraya ekleme yapılır
-         */
         function updateAllRoleVisibilityUI() {
             const roleToUiMap = {
                 owner:    { badgeId: 'ownerBadge',        panelId: 'ownerPanelIcon',    mobileId: 'mobileOwnerIcon' },
@@ -6590,7 +6742,6 @@
                 });
             }
             
-            // Generic rol listener kurulumu
             setupRoleListeners();
             
             loadRegisteredUsers();
@@ -6622,10 +6773,6 @@
             startAdCycle();
         }
 
-        /**
-         * Tüm rol listeleri için Firebase listener'ları kurar.
-         * Yeni bir rol eklendiğinde sadece roleListConfig'e ekleme yapılır.
-         */
         function setupRoleListeners() {
             Object.entries(roleListConfig).forEach(([role, cfg]) => {
                 const ref = cfg.ref();
@@ -6816,7 +6963,6 @@
                 });
                 incrementWriteCount();
                 
-                // Rol listesine ekle (user değilse)
                 if (role !== 'user' && roleListConfig[role]) {
                     await addToRoleList(role, username);
                 }
@@ -6855,7 +7001,6 @@
                 const users = userSnapshot.val() || {};
                 for (const [dbUsername, userData] of Object.entries(users)) {
                     if (normalizeNick(dbUsername) === normalizeNick(username)) {
-                        // Rol listesinden çıkar
                         if (userData.role !== 'user' && roleListConfig[userData.role]) {
                             await removeFromRoleList(userData.role, dbUsername);
                         }
@@ -6947,8 +7092,8 @@
         }
 
         async function kickUser(username, duration = 5, reason = "Kick komutu") {
-            if (!hasRole('operator')) {
-                addSystemMessage("⛔ Yetkiniz yok!");
+            if (!canModerateChannel(currentChannel)) {
+                addSystemMessage("⛔ Bu kanalda yetkiniz yok!");
                 return;
             }
             
@@ -6968,9 +7113,8 @@
                 return;
             }
             
-            // Ban yetkisi kontrolü: operator kendinden yüksek rütbeliyi banlayamaz
-            const targetRegistered = await isRegisteredUserSecure(username);
-            if (targetRegistered && getRoleLevel(targetRegistered.role) >= getRoleLevel(currentUser.role)) {
+            const targetRole = getUserRoleInChannel(username, currentChannel);
+            if (getRoleLevel(targetRole) >= getRoleLevel(currentUser.role)) {
                 addSystemMessage("⛔ Sizden yüksek veya eşit rütbeli kullanıcıyı banlayamazsınız!");
                 return;
             }
@@ -7098,7 +7242,7 @@
         }
 
         async function unbanUser(username) {
-            if (!hasRole('operator')) {
+            if (!canModerateChannel(currentChannel)) {
                 addSystemMessage("⛔ Yetkiniz yok!");
                 return;
             }
@@ -7188,7 +7332,7 @@
         }
 
         async function muteUser(username, duration = 10, reason = "Mute") {
-            if (!hasRole('admin')) {
+            if (!canModerateChannel(currentChannel)) {
                 addSystemMessage("⛔ Yetkiniz yok!"); return;
             }
             const until = Date.now() + duration * 60000;
@@ -7273,13 +7417,17 @@
         }
 
         function clearAllMessagesPrompt() {
-            if (!hasRole('coadmin')) {
-                addSystemMessage("⛔ Yetkiniz yok!");
+            if (!canModerateChannel(currentChannel)) {
+                addSystemMessage("⛔ Bu kanalda yetkiniz yok!");
                 return;
             }
-            if (confirm('Tüm mesajları silmek istediğinize emin misiniz?')) {
-                messagesRef.remove();
-                addSystemMessage('✅ Tüm mesajlar temizlendi!');
+            if (confirm('Bu kanaldaki tüm mesajları silmek istediğinize emin misiniz?')) {
+                if (currentChannel === 'genel') {
+                    messagesRef.remove();
+                } else {
+                    database.ref(`channelMessages/${currentChannel}`).remove();
+                }
+                addSystemMessage(`✅ #${currentChannel} kanalındaki tüm mesajlar temizlendi!`);
             }
         }
 
@@ -7803,14 +7951,13 @@
         }
 
         // ============================================================
-        // KOMUT İŞLEME — hasRole ile merkezi kontrol
+        // KOMUT İŞLEME — hasRole ve kanal bazlı kontrol
         // ============================================================
         async function handleCommand(cmd) {
             const parts = cmd.substring(1).split(' ');
             const command = parts[0].toLowerCase();
             const args = parts.slice(1);
             
-            // Özel komut kontrolü
             if (customCommands[command]) {
                 const cmdData = customCommands[command];
                 let hasPermission = false;
@@ -7847,7 +7994,7 @@
                 return;
             }
             if (command === 'mute') {
-                if (!hasRole('admin')) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+                if (!canModerateChannel(currentChannel)) { addSystemMessage('⛔ Bu kanalda yetkiniz yok!'); return; }
                 if (args.length >= 1) {
                     const username = args[0];
                     const duration = args[1] ? parseInt(args[1]) : 10;
@@ -7857,21 +8004,25 @@
                 return;
             }
             if (command === 'unmute') {
-                if (!hasRole('admin')) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+                if (!canModerateChannel(currentChannel)) { addSystemMessage('⛔ Bu kanalda yetkiniz yok!'); return; }
                 if (args.length === 1) await unmuteUser(args[0]);
                 else addSystemMessage('Kullanım: /unmute [kullanıcı]');
                 return;
             }
             if (command === 'temizle') {
-                if (!hasRole('coadmin')) {
-                    addSystemMessage('⛔ Sadece yetkililer tüm mesajları temizleyebilir!');
+                if (!canModerateChannel(currentChannel)) {
+                    addSystemMessage('⛔ Bu kanalda yetkiniz yok!');
                     return;
                 }
-                if (confirm('TÜM mesajları temizlemek istediğinize emin misiniz?')) {
+                if (confirm('Bu kanaldaki TÜM mesajları temizlemek istediğinize emin misiniz?')) {
                     try {
-                        await messagesRef.remove();
-                        document.getElementById('messages').innerHTML = '<div class="message-item system">✅ Tüm mesajlar temizlendi!</div>';
-                        addSystemMessage('✅ Tüm mesajlar temizlendi!');
+                        if (currentChannel === 'genel') {
+                            await messagesRef.remove();
+                        } else {
+                            await database.ref(`channelMessages/${currentChannel}`).remove();
+                        }
+                        document.getElementById('messages').innerHTML = `<div class="message-item system">✅ #${currentChannel} kanalındaki tüm mesajlar temizlendi!</div>`;
+                        addSystemMessage(`✅ #${currentChannel} kanalındaki tüm mesajlar temizlendi!`);
                     } catch (error) {
                         addSystemMessage('❌ Temizleme hatası: ' + error.message);
                     }
@@ -7970,6 +8121,47 @@
                     return;
                 }
                 toggleVerifiedPanel();
+                return;
+            }
+            // KANAL BAZLI ROL KOMUTLARI
+            if (command === 'kanalop') {
+                if (!hasRoleInChannel('coadmin', currentChannel)) {
+                    addSystemMessage('⛔ Bu kanalda yetkiniz yok!');
+                    return;
+                }
+                if (args.length === 1) {
+                    await addChannelRole(currentChannel, 'operator', args[0]);
+                } else addSystemMessage('Kullanım: /kanalop [kullanıcı]');
+                return;
+            }
+            if (command === 'kanalopcikar') {
+                if (!hasRoleInChannel('coadmin', currentChannel)) {
+                    addSystemMessage('⛔ Bu kanalda yetkiniz yok!');
+                    return;
+                }
+                if (args.length === 1) {
+                    await removeChannelRole(currentChannel, 'operator', args[0]);
+                } else addSystemMessage('Kullanım: /kanalopcikar [kullanıcı]');
+                return;
+            }
+            if (command === 'kanalverified') {
+                if (!hasRoleInChannel('coadmin', currentChannel)) {
+                    addSystemMessage('⛔ Bu kanalda yetkiniz yok!');
+                    return;
+                }
+                if (args.length === 1) {
+                    await addChannelRole(currentChannel, 'verified', args[0]);
+                } else addSystemMessage('Kullanım: /kanalverified [kullanıcı]');
+                return;
+            }
+            if (command === 'kanalverifiedcikar') {
+                if (!hasRoleInChannel('coadmin', currentChannel)) {
+                    addSystemMessage('⛔ Bu kanalda yetkiniz yok!');
+                    return;
+                }
+                if (args.length === 1) {
+                    await removeChannelRole(currentChannel, 'verified', args[0]);
+                } else addSystemMessage('Kullanım: /kanalverifiedcikar [kullanıcı]');
                 return;
             }
             try {
@@ -8095,8 +8287,8 @@
                         break;
                     case 'kick':
                     case 'süreliban':
-                        if (!hasRole('operator')) {
-                            addSystemMessage('⛔ Sadece yetkililer ban/kick atabilir!');
+                        if (!canModerateChannel(currentChannel)) {
+                            addSystemMessage('⛔ Bu kanalda yetkiniz yok!');
                             return;
                         }
                         if (args.length >= 1) {
@@ -8109,8 +8301,8 @@
                         }
                         break;
                     case 'unban':
-                        if (!hasRole('operator')) {
-                            addSystemMessage('⛔ Sadece yetkililer ban kaldırabilir!');
+                        if (!canModerateChannel(currentChannel)) {
+                            addSystemMessage('⛔ Bu kanalda yetkiniz yok!');
                             return;
                         }
                         if (args.length === 1) {
@@ -8123,8 +8315,8 @@
                         await showBanList();
                         break;
                     case 'sil':
-                        if (!hasRole('operator')) {
-                            addSystemMessage('⛔ Sadece yetkililer ID ile mesaj silebilir!');
+                        if (!canModerateChannel(currentChannel)) {
+                            addSystemMessage('⛔ Bu kanalda yetkiniz yok!');
                             return;
                         }
                         if (args.length === 1) {
@@ -8225,30 +8417,34 @@
             help += '• /removecoadmin [kullanıcı] - Co-admin kaldır<br>';
             help += '• /opglobal [kullanıcı] - Operatör yap<br>';
             help += '• /deopglobal [kullanıcı] - Operatör kaldır<br><br>';
-            help += '🔰 <strong>CO-ADMIN PANELİ KOMUTLARI:</strong><br>';
+            help += '◈ <strong>CO-ADMIN PANELİ KOMUTLARI (KANAL BAZLI):</strong><br>';
             help += '• /coadminpanel - Co-Admin panelini açar<br>';
+            help += '• /kanalop [kullanıcı] - Kanala operatör ata<br>';
+            help += '• /kanalopcikar [kullanıcı] - Kanaldan operatör çıkar<br>';
+            help += '• /kanalverified [kullanıcı] - Kanala onaylı kullanıcı ata<br>';
+            help += '• /kanalverifiedcikar [kullanıcı] - Kanaldan onaylı kullanıcı çıkar<br>';
             help += '• /mute [kullanıcı] [dakika] [sebep] - Susturur<br>';
             help += '• /unmute [kullanıcı] - Susturmayı kaldırır<br>';
-            help += '• /temizle - Tüm mesajları temizle<br>';
+            help += '• /temizle - Kanal mesajlarını temizle<br>';
             help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
             help += '• /unban [kullanıcı] - Ban kaldır<br>';
-            help += '• /banlist - Aktif banları göster<br>';
-            help += '• /sikayetler - Tüm şikayetleri listeler<br><br>';
-            help += '⚡️ <strong>OPERATÖR PANELİ KOMUTLARI:</strong><br>';
+            help += '• /banlist - Aktif banları göster<br><br>';
+            help += '◇ <strong>OPERATÖR PANELİ KOMUTLARI (KANAL BAZLI):</strong><br>';
             help += '• /operatorpanel - Operatör panelini açar<br>';
             help += '• /mute [kullanıcı] [dakika] [sebep] - Susturur<br>';
-            help += '• /unmute [kullanıcı] - Susturmayı kaldırır<br><br>';
-            help += '✅ <strong>ONAYLI KULLANICI KOMUTLARI:</strong><br>';
-            help += '• /verifiedpanel - Onaylı kullanıcı panelini açar<br><br>';
+            help += '• /unmute [kullanıcı] - Susturmayı kaldırır<br>';
+            help += '• /kick [kullanıcı] [dakika] [sebep] - Süreli ban<br>';
+            help += '• /unban [kullanıcı] - Ban kaldır<br>';
+            help += '• /sil [mesaj-id] - Mesaj sil<br><br>';
+            help += '✓ <strong>ONAYLI KULLANICI KOMUTLARI:</strong><br>';
+            help += '• /verifiedpanel - Onaylı kullanıcı panelini açar<br>';
+            help += '• Sessiz kanalda yazabilir<br>';
+            help += '• Spam engelinden muaftır<br><br>';
             help += '👤 <strong>HERKES İÇİN:</strong><br>';
             help += '• /kullanıcılar - Online kullanıcıları göster<br>';
             help += '• /yardım - Bu mesajı göster<br>';
             help += '• /ping - Bağlantı testi<br>';
             help += '• /çıkış - Çıkış yap<br><br>';
-            help += '📹 <strong>ÖZELLİKLER:</strong><br>';
-            help += '• Galeriden Gönder: Telefon galerisinden resim seçip gönderir<br>';
-            help += '• Kameradan Çek: Direkt telefon kamerasını açar<br>';
-            help += '• Sesli Mesaj: 🎤 ikonu ile ses kaydı yapıp gönderir<br>';
             addSystemMessage(help);
         }
 
@@ -8994,7 +9190,6 @@
                 if (bansRef) await bansRef.child(username).remove();
                 if (globalBansRef) await globalBansRef.child(username).remove();
                 
-                // Rol listelerinden çıkar
                 for (const role of Object.keys(roleListConfig)) {
                     await removeFromRoleList(role, username);
                 }
@@ -9695,7 +9890,7 @@
                         globalBansRef = database.ref('globalBans');
                         registeredUsersRef = database.ref('registeredUsers');
                         operatorsRef = database.ref('operators');
-                        verifiedRef = database.ref('verifiedUsers'); // YENİ
+                        verifiedRef = database.ref('verifiedUsers');
                         userLocksRef = database.ref('userLocks');
                         adminPasswordsRef = database.ref('adminPasswords');
                         customCommandsRef = database.ref('customCommands');
@@ -9721,13 +9916,14 @@
                         loadAdContents();
 
                         setupEfficientListeners();
-                        setupRoleListeners(); // Generic rol listener'ları
+                        setupRoleListeners();
 
                         if (currentUser) {
                             loadUserProfile(currentUser.name);
                             loadBlockedUsers();
                             checkPendingMessagesForUser(currentUser.name);
                             updateAllRoleVisibilityUI();
+                            loadChannelRoles(currentChannel);
                         }
 
                         if (isOwner) {
@@ -9861,8 +10057,8 @@
         }
 
         function addToPlaylistFromWeb() {
-            if (!hasRole('admin') && !canManageChannel(currentChannel)) {
-                alert('Bu işlem için yetkiniz yok!');
+            if (!canAddVideoToChannel(currentChannel)) {
+                alert('Bu işlem için yetkiniz yok! Sadece kanal Co-Admin\'i video ekleyebilir.');
                 return;
             }
             const url = document.getElementById('playlistUrlWeb').value.trim();
@@ -9943,6 +10139,8 @@
                     renderChannelTabs();
                     renderChannelManageList();
                     if (currentChannel && activeChannelName !== currentChannel) switchChannel(currentChannel);
+                    // Kanal rolleri yükle
+                    Object.keys(cachedChannels).forEach(ch => loadChannelRoles(ch));
                 });
             } catch (error) {
                 console.error('Kanallar yüklenemedi:', error);
@@ -9962,7 +10160,7 @@
             }).join('') || '<span class="channel-empty">Kanal yok</span>';
             const manageButton = document.getElementById('channelManageToggle');
             if (manageButton) manageButton.style.display = (hasRole('admin') || isOwner || Object.keys(cachedChannels).some(canManageChannel)) ? 'inline-flex' : 'none';
-            const canManagePlaylist = hasRole('admin') || canManageChannel(currentChannel);
+            const canManagePlaylist = canAddVideoToChannel(currentChannel);
             document.getElementById('addVideoBtnWeb').disabled = !canManagePlaylist;
             document.getElementById('addVideoBtnMobile').disabled = !canManagePlaylist;
         }
@@ -10015,7 +10213,9 @@
                 order: Object.keys(cachedChannels).length
             });
             incrementWriteCount();
-            addSystemMessage(`✅ #${cleanName} kanalı açıldı.`);
+            // Kanal sahibi otomatik coadmin olur
+            await addChannelRole(cleanName, 'coadmin', currentUser.name);
+            addSystemMessage(`✅ #${cleanName} kanalı açıldı. Otomatik olarak Co-Admin oldunuz.`);
         }
 
         async function deleteChannel(name) {
@@ -10024,6 +10224,7 @@
             if (!confirm(`#${name} kanalını ve mesajlarını silmek istediğinize emin misiniz?`)) return;
             await channelsRef.child(name).remove();
             await database.ref(`channelMessages/${name}`).remove();
+            await database.ref(`channelRoles/${name}`).remove();
             if (name === 'genel') await messagesRef.remove();
             incrementWriteCount();
             addSystemMessage(`✅ #${name} kanalı silindi.`);
@@ -10052,6 +10253,9 @@
             const target = await isRegisteredUserSecure(targetName.trim());
             if (!target) { addSystemMessage('❌ Kayıtlı kullanıcı bulunamadı!'); return; }
             await channelsRef.child(name).update({ owner: target.originalName || targetName.trim() });
+            // Yeni sahibi coadmin yap, eski sahibi coadmin'den çıkar
+            await addChannelRole(name, 'coadmin', target.originalName || targetName.trim());
+            await removeChannelRole(name, 'coadmin', channel.owner);
             incrementWriteCount();
             addSystemMessage(`✅ #${name} kanalının sahipliği ${target.originalName || targetName.trim()} kullanıcısına devredildi.`);
         }
@@ -10081,12 +10285,16 @@
             const channelPopover = document.getElementById('chatRoomPopover');
             if (channelPopover) channelPopover.hidden = true;
             renderChannelTabs();
-            const canManagePlaylist = hasRole('admin') || canManageChannel(name);
+            const canManagePlaylist = canAddVideoToChannel(name);
             document.getElementById('addVideoBtnWeb').disabled = !canManagePlaylist;
             document.getElementById('addVideoBtnMobile').disabled = !canManagePlaylist;
             loadChannelMedia(name);
+            loadChannelRoles(name);
             const input = document.getElementById('message-input');
-            if (input) input.placeholder = channel.isLocked && !canManageChannel(name) && !hasRole('operator') ? 'Bu kanal sessize alındı' : 'Sohbet...';
+            if (input) {
+                const canWrite = !channel.isLocked || canWriteInLockedChannel(name);
+                input.placeholder = canWrite ? 'Sohbet...' : 'Bu kanal sessize alındı';
+            }
             const container = document.getElementById('messages');
             if (!activeChannelMessagesRef || !container) return;
             container.innerHTML = '<div class="message-item system">Mesajlar yükleniyor...</div>';
@@ -10116,7 +10324,7 @@
             messageDiv.id = `msg_${message.id}`;
             
             let deleteButton = '';
-            if (currentUser && (message.sender === currentUser.name || hasRole('operator'))) {
+            if (currentUser && (message.sender === currentUser.name || canModerateChannel(currentChannel))) {
                 deleteButton = `<button class="delete-btn" onclick="deleteMessage('${message.id}')"><i class="fas fa-trash"></i></button>`;
             }
             
@@ -10130,7 +10338,6 @@
             const avatarHtml = userAvatar ? 
                 `<img src="${userAvatar}" alt="${senderName}">` : '';
             
-            // Rol rozeti — type'a göre
             const roleInfo = ROLES[message.type] || null;
             const roleBadgeHtml = roleInfo && message.type !== 'user'
                 ? `<span class="message-role-badge ${message.type}" title="${roleInfo.label}">${roleInfo.badge}</span>`
@@ -10166,8 +10373,8 @@
                 const snapshot = await activeChannelMessagesRef.child(messageId).once('value');
                 const message = snapshot.val();
                 if (!message) return;
-                if (message.sender !== currentUser.name && !hasRole('operator')) {
-                    addSystemMessage('⛔ Sadece kendi mesajlarınızı silebilirsiniz!');
+                if (message.sender !== currentUser.name && !canModerateChannel(currentChannel)) {
+                    addSystemMessage('⛔ Bu kanalda yetkiniz yok!');
                     return;
                 }
                 if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
@@ -10215,4 +10422,3 @@
     <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
-
