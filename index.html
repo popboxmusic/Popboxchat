@@ -2971,28 +2971,50 @@
         
         @media (max-width: 768px) {
             .youtube-header {
-                height: 50px;
+                height: 0;
                 background: transparent;
                 backdrop-filter: none;
                 border-bottom: none;
-                position: absolute;
+                position: fixed;
                 top: 0;
                 left: 0;
                 right: 0;
                 z-index: 1100;
                 pointer-events: none;
                 margin-top: 0;
-                padding-top: 5px;
+                padding: 0;
             }
-            .youtube-header .header-left,
+            .youtube-header .header-left { display: contents; }
             .youtube-header .header-right {
-                pointer-events: auto;
-                background: rgba(0,0,0,0.6);
-                backdrop-filter: blur(10px);
-                border-radius: 30px;
-                padding: 4px 8px;
-                border: 1px solid var(--border-color);
+                position: static;
+                width: 0;
+                height: 0;
+                padding: 0;
+                border: 0;
+            }
+            .youtube-header .logo {
+                position: absolute;
+                top: 10px;
+                left: 12px;
+                z-index: 1;
                 gap: 6px;
+                padding: 5px 9px;
+                background: rgba(0, 0, 0, 0.62);
+                border: 1px solid var(--border-color);
+                border-radius: 20px;
+                pointer-events: auto;
+            }
+            .youtube-header .mobile-menu-btn {
+                position: absolute;
+                top: 8px;
+                right: 12px;
+                z-index: 1;
+                width: 36px;
+                height: 36px;
+                padding: 0;
+                background: rgba(0, 0, 0, 0.62);
+                border: 1px solid var(--border-color);
+                pointer-events: auto;
             }
             .logo span:last-child {
                 font-size: 12px;
@@ -3045,13 +3067,28 @@
             .mobile-playlist-btn { display: none !important; }
             .notification-panel {
                 position: fixed;
-                top: 60px;
+                top: var(--mobile-viewport-offset, 0px);
                 right: 10px;
                 left: 10px;
                 width: auto;
                 max-height: min(70vh, 500px);
                 margin: 0;
             }
+            .mobile-menu {
+                top: var(--mobile-viewport-offset, 0px);
+                left: -100%;
+                width: min(100vw, 420px);
+                max-width: none;
+                height: var(--mobile-viewport-height, 100vh);
+                max-height: var(--mobile-viewport-height, 100vh);
+                padding: max(18px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom));
+                overflow-x: hidden;
+                overflow-y: auto;
+                overscroll-behavior: contain;
+                -webkit-overflow-scrolling: touch;
+                z-index: 2400;
+            }
+            .mobile-menu.active { left: 0; }
             
             .main-container { flex-direction: column; position: relative; touch-action: pan-y; }
             .icon-panel { display: none; }
@@ -3098,21 +3135,27 @@
             
             .role-panel {
                 position: fixed;
-                top: 60px;
+                top: var(--mobile-viewport-offset, 0px);
                 left: 0;
                 right: 0;
                 width: 100%;
                 max-width: 100%;
-                height: calc(100vh - 60px);
-                max-height: calc(100vh - 60px);
+                height: var(--mobile-viewport-height, 100vh);
+                max-height: var(--mobile-viewport-height, 100vh);
                 margin: 0;
                 border-radius: 0;
-                z-index: 2000;
+                z-index: 2400;
+                overflow: hidden;
             }
             
             .role-panel .role-panel-content {
-                height: calc(100vh - 180px);
+                height: auto;
+                min-height: 0;
+                max-height: none;
+                flex: 1 1 auto;
                 overflow-y: auto;
+                overscroll-behavior: contain;
+                -webkit-overflow-scrolling: touch;
             }
             
             .panel-content { 
@@ -5467,7 +5510,12 @@
 
         function toggleMobileMenu() {
             const menu = document.getElementById('mobileMenu');
-            menu.classList.toggle('active');
+            if (menu.classList.contains('active')) {
+                menu.classList.remove('active');
+                return;
+            }
+            closeOtherPanels('mobileMenu');
+            menu.classList.add('active');
         }
 
         function openProfileModalFromMenu() {
@@ -7161,10 +7209,13 @@
 
         function toggleUserList() {
             const sidebar = document.getElementById('usersSidebar');
-            sidebar.classList.toggle('active');
             if (sidebar.classList.contains('active')) {
-                updateUserListUI();
+                sidebar.classList.remove('active');
+                return;
             }
+            closeOtherPanels('usersSidebar');
+            sidebar.classList.add('active');
+            updateUserListUI();
         }
 
         function autoResize(textarea) {
@@ -7175,11 +7226,12 @@
         function toggleChatPopover(id) {
             const target = document.getElementById(id);
             if (!target) return;
-            ['chatRoomPopover', 'chatOverflowMenu', 'chatEmojiPicker'].forEach(popoverId => {
-                const popover = document.getElementById(popoverId);
-                if (popover && popoverId !== id) popover.hidden = true;
-            });
-            target.hidden = !target.hidden;
+            if (!target.hidden) {
+                target.hidden = true;
+                return;
+            }
+            closeOtherPanels(id);
+            target.hidden = false;
         }
 
         function insertChatEmoji(emoji) {
@@ -7435,13 +7487,15 @@
         function toggleNotificationPanel(e) {
             if (e) e.stopPropagation();
             const panel = document.getElementById('notificationPanel');
-            notificationPanelOpen = !notificationPanelOpen;
-            if (notificationPanelOpen) {
-                panel.classList.add('active');
-                updateNotificationPanel();
-            } else {
+            if (panel.classList.contains('active')) {
                 panel.classList.remove('active');
+                notificationPanelOpen = false;
+                return;
             }
+            closeOtherPanels('notificationPanel');
+            panel.classList.add('active');
+            notificationPanelOpen = true;
+            updateNotificationPanel();
         }
 
         function closeNotificationPanel() {
@@ -8805,47 +8859,82 @@
         }
 
         // ========== PANEL FONKSİYONLARI ==========
+        function closeOtherPanels(activePanelId) {
+            ['ownerPanel', 'adminPanel', 'coadminPanel', 'operatorPanel', 'verifiedPanel'].forEach(panelId => {
+                if (panelId === activePanelId) return;
+                const panel = document.getElementById(panelId);
+                if (panel) panel.classList.remove('active');
+            });
+            if (activePanelId !== 'ownerPanel' && ownerPrivateListenerActive) {
+                stopOwnerPrivateMessageMonitoring();
+                ownerPrivateListenerActive = false;
+            }
+
+            if (activePanelId !== 'mobileMenu') document.getElementById('mobileMenu').classList.remove('active');
+            if (activePanelId !== 'notificationPanel') {
+                document.getElementById('notificationPanel').classList.remove('active');
+                notificationPanelOpen = false;
+            }
+            if (activePanelId !== 'usersSidebar') document.getElementById('usersSidebar').classList.remove('active');
+            if (activePanelId !== 'playlistDrawer') document.getElementById('playlistDrawer').classList.remove('active');
+            if (activePanelId !== 'channelManageArea') document.getElementById('channelManageArea').hidden = true;
+            ['chatRoomPopover', 'chatOverflowMenu', 'chatEmojiPicker'].forEach(popoverId => {
+                if (popoverId !== activePanelId) {
+                    const popover = document.getElementById(popoverId);
+                    if (popover) popover.hidden = true;
+                }
+            });
+        }
+
         function toggleOwnerPanel() {
             const panel = document.getElementById('ownerPanel');
-            panel.classList.toggle('active');
             if (panel.classList.contains('active')) {
-                updateOwnerPanelFromCache();
-                if (!ownerPrivateListenerActive) {
-                    startOwnerPrivateMessageMonitoring();
-                    ownerPrivateListenerActive = true;
-                }
-                if (document.querySelector('#ownerAdsTab').classList.contains('active')) {
-                    updateAdContentsList();
-                }
-            } else {
+                panel.classList.remove('active');
                 if (ownerPrivateListenerActive) {
                     stopOwnerPrivateMessageMonitoring();
                     ownerPrivateListenerActive = false;
                 }
+                return;
             }
+            closeOtherPanels('ownerPanel');
+            panel.classList.add('active');
+            updateOwnerPanelFromCache();
+            if (!ownerPrivateListenerActive) {
+                startOwnerPrivateMessageMonitoring();
+                ownerPrivateListenerActive = true;
+            }
+            if (document.querySelector('#ownerAdsTab').classList.contains('active')) updateAdContentsList();
         }
         
         function toggleAdminPanel() {
             const panel = document.getElementById('adminPanel');
-            panel.classList.toggle('active');
-            if (panel.classList.contains('active')) updateAdminPanelFromCache();
+            if (panel.classList.contains('active')) { panel.classList.remove('active'); return; }
+            closeOtherPanels('adminPanel');
+            panel.classList.add('active');
+            updateAdminPanelFromCache();
         }
         
         function toggleCoAdminPanel() {
             const panel = document.getElementById('coadminPanel');
-            panel.classList.toggle('active');
-            if (panel.classList.contains('active')) updateCoAdminPanelFromCache();
+            if (panel.classList.contains('active')) { panel.classList.remove('active'); return; }
+            closeOtherPanels('coadminPanel');
+            panel.classList.add('active');
+            updateCoAdminPanelFromCache();
         }
         
         function toggleOperatorPanel() {
             const panel = document.getElementById('operatorPanel');
-            panel.classList.toggle('active');
-            if (panel.classList.contains('active')) updateOperatorPanelFromCache();
+            if (panel.classList.contains('active')) { panel.classList.remove('active'); return; }
+            closeOtherPanels('operatorPanel');
+            panel.classList.add('active');
+            updateOperatorPanelFromCache();
         }
         
         function toggleVerifiedPanel() {
             const panel = document.getElementById('verifiedPanel');
-            panel.classList.toggle('active');
+            if (panel.classList.contains('active')) { panel.classList.remove('active'); return; }
+            closeOtherPanels('verifiedPanel');
+            panel.classList.add('active');
         }
         
         function switchOwnerTab(tabName) {
@@ -9222,7 +9311,12 @@
 
         function togglePlaylistDrawer() {
             const drawer = document.getElementById('playlistDrawer');
-            drawer.classList.toggle('active');
+            if (drawer.classList.contains('active')) {
+                drawer.classList.remove('active');
+                return;
+            }
+            closeOtherPanels('playlistDrawer');
+            drawer.classList.add('active');
             updatePlaylistDrawer();
         }
 
@@ -9724,7 +9818,12 @@
         function toggleChannelManageArea() {
             const area = document.getElementById('channelManageArea');
             if (!area) return;
-            area.hidden = !area.hidden;
+            if (!area.hidden) {
+                area.hidden = true;
+                return;
+            }
+            closeOtherPanels('channelManageArea');
+            area.hidden = false;
             renderChannelManageList();
         }
 
