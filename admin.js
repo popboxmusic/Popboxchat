@@ -1,6 +1,6 @@
 /* =====================================================================
    CETCETY – admin.js
-   Paneller, moderasyon, ban/mute, rol atama, komutlar, reklamlar
+   Paneller, moderasyon, ban/mute, rol atama, komutlar, reklamlar, kanallar
    ===================================================================== */
 
 /* ============ ROL ATAMA ============ */
@@ -238,6 +238,7 @@ function clearAllMessagesPrompt() {
     if (!hasRole('coadmin')) { addSystemMessage("⛔ Yetkiniz yok!"); return; }
     if (confirm('Tüm mesajları silmek istediğinize emin misiniz?')) {
         messagesRef.remove();
+        database.ref(`channelMessages/${currentChannel}`).remove();
         addSystemMessage('✅ Tüm mesajlar temizlendi!');
     }
 }
@@ -337,33 +338,45 @@ function toggleVerifiedPanel() {
 function switchOwnerTab(tabName) {
     document.querySelectorAll('#ownerPanel .role-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('#ownerPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-    document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-    document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+    const tab = document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`);
+    if (tab) tab.classList.add('active');
+    const content = document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab');
+    if (content) content.classList.add('active');
     if (tabName === 'ads') updateAdContentsList();
+    if (tabName === 'channels') renderChannelManageList();
 }
 function switchAdminTab(tabName) {
     document.querySelectorAll('#adminPanel .role-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('#adminPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-    document.querySelector(`#adminPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-    document.getElementById('admin' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+    const tab = document.querySelector(`#adminPanel .role-tab[onclick*="${tabName}"]`);
+    if (tab) tab.classList.add('active');
+    const content = document.getElementById('admin' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab');
+    if (content) content.classList.add('active');
+    if (tabName === 'channels') renderChannelManageList();
 }
 function switchCoAdminTab(tabName) {
     document.querySelectorAll('#coadminPanel .role-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('#coadminPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-    document.querySelector(`#coadminPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-    document.getElementById('coadmin' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+    const tab = document.querySelector(`#coadminPanel .role-tab[onclick*="${tabName}"]`);
+    if (tab) tab.classList.add('active');
+    const content = document.getElementById('coadmin' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab');
+    if (content) content.classList.add('active');
 }
 function switchOperatorTab(tabName) {
     document.querySelectorAll('#operatorPanel .role-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('#operatorPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-    document.querySelector(`#operatorPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-    document.getElementById('operator' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+    const tab = document.querySelector(`#operatorPanel .role-tab[onclick*="${tabName}"]`);
+    if (tab) tab.classList.add('active');
+    const content = document.getElementById('operator' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab');
+    if (content) content.classList.add('active');
 }
 function switchVerifiedTab(tabName) {
     document.querySelectorAll('#verifiedPanel .role-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('#verifiedPanel .role-tab-content').forEach(c => c.classList.remove('active'));
-    document.querySelector(`#verifiedPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
-    document.getElementById('verified' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
+    const tab = document.querySelector(`#verifiedPanel .role-tab[onclick*="${tabName}"]`);
+    if (tab) tab.classList.add('active');
+    const content = document.getElementById('verified' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab');
+    if (content) content.classList.add('active');
 }
 
 /* ============ PANEL GÜNCELLEMELERİ ============ */
@@ -374,13 +387,20 @@ function updateOwnerPanelFromCache() {
     Object.values(cachedOnlineUsers).forEach(user => {
         if (user && user.lastSeen && (now - user.lastSeen) < ONLINE_THRESHOLD) onlineCount++;
     });
-    document.getElementById('ownerTotalUsers').textContent = Object.keys(cachedOnlineUsers).length;
-    document.getElementById('ownerOnlineUsers').textContent = onlineCount;
-    document.getElementById('ownerRegisteredUsers').textContent = Object.keys(cachedRegisteredUsers).length;
-    document.getElementById('ownerMessages').textContent = cachedMessages.length;
-    document.getElementById('ownerCommands').textContent = Object.keys(customCommands).length;
-    const verifiedCountEl = document.getElementById('ownerVerifiedUsers');
-    if (verifiedCountEl) verifiedCountEl.textContent = verifiedList.length;
+    const totalEl = document.getElementById('ownerTotalUsers');
+    const onlineEl = document.getElementById('ownerOnlineUsers');
+    const regEl = document.getElementById('ownerRegisteredUsers');
+    const msgEl = document.getElementById('ownerMessages');
+    const cmdEl = document.getElementById('ownerCommands');
+    const verEl = document.getElementById('ownerVerifiedUsers');
+    const chEl = document.getElementById('ownerChannelCount');
+    if (totalEl) totalEl.textContent = Object.keys(cachedOnlineUsers).length;
+    if (onlineEl) onlineEl.textContent = onlineCount;
+    if (regEl) regEl.textContent = Object.keys(cachedRegisteredUsers).length;
+    if (msgEl) msgEl.textContent = cachedMessages.length;
+    if (cmdEl) cmdEl.textContent = Object.keys(customCommands).length;
+    if (verEl) verEl.textContent = verifiedList.length;
+    if (chEl) chEl.textContent = Object.keys(cachedChannels).length;
     updateOwnerRoleList('admin');
     updateOwnerRoleList('coadmin');
     updateOwnerRoleList('operator');
@@ -388,6 +408,7 @@ function updateOwnerPanelFromCache() {
     updateOwnerCommandsList();
     updateOwnerReportListFromCache();
     updateOwnerBlockListFromCache();
+    renderChannelManageList();
 }
 
 function updateAdminPanelFromCache() {
@@ -399,11 +420,16 @@ function updateAdminPanelFromCache() {
     });
     let activeBans = 0;
     Object.values(cachedBans).forEach(ban => { if (ban.bannedUntil > now) activeBans++; });
-    document.getElementById('adminTotalUsers').textContent = Object.keys(cachedOnlineUsers).length;
-    document.getElementById('adminOnlineUsers').textContent = onlineCount;
-    document.getElementById('adminMessages').textContent = cachedMessages.length;
-    document.getElementById('adminBans').textContent = activeBans;
+    const t = document.getElementById('adminTotalUsers');
+    const o = document.getElementById('adminOnlineUsers');
+    const m = document.getElementById('adminMessages');
+    const b = document.getElementById('adminBans');
+    if (t) t.textContent = Object.keys(cachedOnlineUsers).length;
+    if (o) o.textContent = onlineCount;
+    if (m) m.textContent = cachedMessages.length;
+    if (b) b.textContent = activeBans;
     updateAdminReportListFromCache();
+    renderChannelManageList();
 }
 
 function updateCoAdminPanelFromCache() {
@@ -415,8 +441,10 @@ function updateCoAdminPanelFromCache() {
     });
     let activeBans = 0;
     Object.values(cachedBans).forEach(ban => { if (ban.bannedUntil > now) activeBans++; });
-    document.getElementById('coadminOnline').textContent = onlineCount;
-    document.getElementById('coadminBans').textContent = activeBans;
+    const o = document.getElementById('coadminOnline');
+    const b = document.getElementById('coadminBans');
+    if (o) o.textContent = onlineCount;
+    if (b) b.textContent = activeBans;
 }
 
 function updateOperatorPanelFromCache() { /* ileride kullanılabilir */ }
