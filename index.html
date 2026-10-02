@@ -3442,33 +3442,55 @@
                 display: flex;
                 flex-direction: column;
                 margin-top: 0;
-                height: 100vh;
+                position: fixed;
+                top: var(--mobile-viewport-offset, 0px);
+                right: 0;
+                bottom: auto;
+                left: 0;
+                width: 100%;
+                height: var(--mobile-viewport-height, 100vh);
                 min-height: 0;
                 overflow: hidden;
             }
             .center-panel {
-                flex: 0 0 36vh;
-                height: 36vh;
+                flex: 0 0 var(--mobile-video-height, 36vh);
+                height: var(--mobile-video-height, 36vh);
                 min-height: 0;
             }
             .chat-container {
-                flex: 0 0 64vh;
-                height: 64vh;
+                flex: 0 0 var(--mobile-chat-height, 64vh);
+                height: var(--mobile-chat-height, 64vh);
                 min-height: 0;
                 overflow: hidden;
             }
             .drag-handle {
                 display: block;
                 position: absolute;
-                top: 9px;
+                top: 0;
+                left: 50%;
+                width: 76px;
+                height: 26px;
+                margin: 0;
+                padding: 0;
+                transform: translateX(-50%);
+                background: transparent;
+                border: 0;
+                border-radius: 0 0 12px 12px;
+                opacity: 1;
+                z-index: 4;
+                cursor: grab;
+                touch-action: none;
+            }
+            .drag-handle::before {
+                content: "";
+                position: absolute;
+                top: 8px;
                 left: 50%;
                 width: 62px;
                 height: 6px;
-                margin: 0;
                 transform: translateX(-50%);
                 background: #666;
-                opacity: 1;
-                z-index: 4;
+                border-radius: 3px;
             }
             .chat-header {
                 height: 88px;
@@ -3540,6 +3562,37 @@
             .chat-tool-button.heart-button { font-size: 22px; }
             .chat-emoji-picker { right: 18px; grid-template-columns: repeat(6, 36px); }
             .chat-attach-menu { right: 61px; }
+        }
+        @media (max-width: 768px) {
+            .chat-container.chat-dragging {
+                position: fixed;
+                top: calc(var(--mobile-viewport-offset, 0px) + var(--chat-drag-top, 0px));
+                right: 0;
+                bottom: auto;
+                left: 0;
+                width: 100%;
+                height: var(--chat-drag-height, 64vh);
+                max-height: none;
+                min-height: 0;
+                flex: none;
+                z-index: 2300;
+                border-radius: 0;
+            }
+            .chat-container.chat-expanded {
+                position: fixed;
+                top: var(--mobile-viewport-offset, 0px);
+                right: 0;
+                bottom: auto;
+                left: 0;
+                width: 100%;
+                height: var(--mobile-viewport-height, 100vh);
+                max-height: var(--mobile-viewport-height, 100vh);
+                min-height: 0;
+                flex: 0 0 var(--mobile-viewport-height, 100vh);
+                z-index: 2300;
+                border-radius: 0;
+                box-shadow: none;
+            }
         }
         @media (max-width: 390px) {
             .chat-header { padding-right: 10px; padding-left: 12px; gap: 5px; }
@@ -3701,7 +3754,7 @@
         
         <!-- SAĞ SOHBET PANELİ -->
         <div class="chat-container" id="chatContainer">
-            <div class="drag-handle"></div>
+            <button class="drag-handle" id="chatDragHandle" type="button" aria-label="Sohbeti tam ekrana al" title="Sohbeti büyütmek veya küçültmek için dokunup sürükleyin" aria-expanded="false"></button>
             <div class="chat-header" id="chatHeader">
                 <div class="chat-heading-group">
                     <button class="chat-room-selector" type="button" onclick="toggleChatPopover('chatRoomPopover')" aria-label="Sohbet bilgisi">
@@ -6655,7 +6708,14 @@
         }
 
         function closeChatPanel() {
-            document.getElementById('chatContainer').classList.add('chat-collapsed');
+            const chat = document.getElementById('chatContainer');
+            const input = document.getElementById('message-input');
+            if (input && document.activeElement === input) input.blur();
+            chat.classList.remove('chat-expanded', 'chat-dragging', 'keyboard-open');
+            chat.style.removeProperty('--chat-drag-top');
+            chat.style.removeProperty('--chat-drag-height');
+            document.body.classList.remove('mobile-chat-keyboard-open');
+            chat.classList.add('chat-collapsed');
             document.getElementById('chatReopenButton').classList.add('visible');
             hideChatNotice();
             ['chatRoomPopover', 'chatOverflowMenu', 'chatEmojiPicker', 'chatAttachMenu'].forEach(id => {
@@ -6669,6 +6729,177 @@
             document.getElementById('chatReopenButton').classList.remove('visible');
             showChatNoticeForEntry();
         }
+
+        function initializeMobileChatSheet() {
+            const chat = document.getElementById('chatContainer');
+            const handle = document.getElementById('chatDragHandle');
+            const input = document.getElementById('message-input');
+            if (!chat || !handle || !input) return;
+
+            const mobileQuery = window.matchMedia('(max-width: 768px)');
+            const root = document.documentElement;
+            let pointerActive = false;
+            let pointerStartY = 0;
+            let startedExpanded = false;
+            let crossedDragThreshold = false;
+            let dragTop = 0;
+            let keyboardExpandedBeforeFocus = false;
+            let manualGestureDuringKeyboard = false;
+            let ignoreClickUntil = 0;
+
+            function getMobileViewportHeight() {
+                return parseFloat(root.style.getPropertyValue('--mobile-viewport-height')) || window.innerHeight;
+            }
+
+            function setExpanded(expanded) {
+                if (!mobileQuery.matches) {
+                    chat.classList.remove('chat-expanded');
+                    handle.setAttribute('aria-expanded', 'false');
+                    return;
+                }
+                chat.classList.toggle('chat-expanded', expanded);
+                handle.setAttribute('aria-expanded', String(expanded));
+                handle.setAttribute(
+                    'aria-label',
+                    expanded ? 'Sohbeti küçült' : 'Sohbeti tam ekrana al'
+                );
+            }
+
+            function updateMobileViewport() {
+                if (!mobileQuery.matches) {
+                    root.style.removeProperty('--mobile-viewport-height');
+                    root.style.removeProperty('--mobile-viewport-offset');
+                    root.style.removeProperty('--mobile-video-height');
+                    root.style.removeProperty('--mobile-chat-height');
+                    chat.classList.remove('chat-expanded', 'chat-dragging', 'keyboard-open');
+                    chat.style.removeProperty('--chat-drag-top');
+                    chat.style.removeProperty('--chat-drag-height');
+                    document.body.classList.remove('mobile-chat-keyboard-open');
+                    handle.setAttribute('aria-expanded', 'false');
+                    return;
+                }
+
+                const viewport = window.visualViewport;
+                const height = Math.max(1, Math.round(viewport ? viewport.height : window.innerHeight));
+                const offset = Math.max(0, Math.round(viewport ? viewport.offsetTop : 0));
+                root.style.setProperty('--mobile-viewport-height', `${height}px`);
+                root.style.setProperty('--mobile-viewport-offset', `${offset}px`);
+                root.style.setProperty('--mobile-video-height', `${Math.round(height * 0.36)}px`);
+                root.style.setProperty('--mobile-chat-height', `${Math.round(height * 0.64)}px`);
+            }
+
+            function onMobileInputFocus() {
+                if (!mobileQuery.matches) return;
+                keyboardExpandedBeforeFocus = chat.classList.contains('chat-expanded');
+                manualGestureDuringKeyboard = false;
+                chat.classList.add('keyboard-open');
+                document.body.classList.add('mobile-chat-keyboard-open');
+                setExpanded(true);
+                updateMobileViewport();
+            }
+
+            function onMobileInputBlur() {
+                if (!mobileQuery.matches) return;
+                window.setTimeout(() => {
+                    if (document.activeElement === input) return;
+                    chat.classList.remove('keyboard-open');
+                    document.body.classList.remove('mobile-chat-keyboard-open');
+                    if (!manualGestureDuringKeyboard && !chat.classList.contains('chat-collapsed')) {
+                        setExpanded(keyboardExpandedBeforeFocus);
+                    }
+                    manualGestureDuringKeyboard = false;
+                    updateMobileViewport();
+                }, 180);
+            }
+
+            handle.addEventListener('pointerdown', event => {
+                if (!mobileQuery.matches) return;
+                pointerActive = true;
+                crossedDragThreshold = false;
+                pointerStartY = event.clientY;
+                startedExpanded = chat.classList.contains('chat-expanded');
+                if (document.activeElement === input) {
+                    manualGestureDuringKeyboard = true;
+                    input.blur();
+                }
+                const viewportHeight = getMobileViewportHeight();
+                const collapsedTop = viewportHeight * 0.36;
+                dragTop = startedExpanded ? 0 : collapsedTop;
+                chat.classList.add('chat-dragging');
+                chat.style.setProperty('--chat-drag-top', `${Math.round(dragTop)}px`);
+                chat.style.setProperty('--chat-drag-height', `${Math.round(viewportHeight - dragTop)}px`);
+                try {
+                    handle.setPointerCapture(event.pointerId);
+                } catch (_) {}
+                event.preventDefault();
+            });
+
+            handle.addEventListener('pointermove', event => {
+                if (!pointerActive || !mobileQuery.matches) return;
+                const movement = event.clientY - pointerStartY;
+                if (Math.abs(movement) >= 12) crossedDragThreshold = true;
+                const viewportHeight = getMobileViewportHeight();
+                const collapsedTop = viewportHeight * 0.36;
+                dragTop = Math.max(0, Math.min(
+                    collapsedTop,
+                    startedExpanded ? movement : collapsedTop + movement
+                ));
+                chat.style.setProperty('--chat-drag-top', `${Math.round(dragTop)}px`);
+                chat.style.setProperty('--chat-drag-height', `${Math.round(viewportHeight - dragTop)}px`);
+                event.preventDefault();
+            });
+
+            function finishHandleGesture(event) {
+                if (!pointerActive) return;
+                pointerActive = false;
+                if (event && event.type === 'pointerup') {
+                    if (mobileQuery.matches) {
+                        const collapsedTop = getMobileViewportHeight() * 0.36;
+                        const expand = crossedDragThreshold
+                            ? dragTop < collapsedTop / 2
+                            : !startedExpanded;
+                        chat.classList.remove('chat-dragging');
+                        chat.style.removeProperty('--chat-drag-top');
+                        chat.style.removeProperty('--chat-drag-height');
+                        setExpanded(expand);
+                    }
+                    ignoreClickUntil = Date.now() + 500;
+                } else {
+                    chat.classList.remove('chat-dragging');
+                    chat.style.removeProperty('--chat-drag-top');
+                    chat.style.removeProperty('--chat-drag-height');
+                    setExpanded(startedExpanded);
+                }
+            }
+
+            handle.addEventListener('pointerup', finishHandleGesture);
+            handle.addEventListener('pointercancel', finishHandleGesture);
+            handle.addEventListener('click', event => {
+                if (!mobileQuery.matches) return;
+                if (Date.now() < ignoreClickUntil) {
+                    event.preventDefault();
+                    return;
+                }
+                setExpanded(!chat.classList.contains('chat-expanded'));
+            });
+
+            input.addEventListener('focus', onMobileInputFocus);
+            input.addEventListener('blur', onMobileInputBlur);
+            window.addEventListener('resize', updateMobileViewport, { passive: true });
+            window.addEventListener('orientationchange', updateMobileViewport, { passive: true });
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', updateMobileViewport, { passive: true });
+                window.visualViewport.addEventListener('scroll', updateMobileViewport, { passive: true });
+            }
+            if (mobileQuery.addEventListener) {
+                mobileQuery.addEventListener('change', updateMobileViewport);
+            } else if (mobileQuery.addListener) {
+                mobileQuery.addListener(updateMobileViewport);
+            }
+            updateMobileViewport();
+        }
+
+        initializeMobileChatSheet();
 
         document.addEventListener('click', function(event) {
             if (event.target.closest('.chat-header, .chat-input-area')) return;
