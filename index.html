@@ -4812,15 +4812,32 @@
             <button class="icon-btn" onclick="hideVideoRecordingModal(true)" title="Kapat"><i class="fas fa-times"></i></button>
         </div>
         <div class="video-record-body">
-            <video id="videoRecordPreview" class="video-record-preview" autoplay muted playsinline></video>
-            <div class="video-record-status">
-                <span class="video-record-dot"></span>
-                <span>Kayıt yapılıyor</span>
+            <div id="videoLivePreviewWrapper" style="display:block;">
+                <video id="videoRecordPreview" class="video-record-preview" autoplay muted playsinline></video>
             </div>
+            <div id="videoPlaybackWrapper" style="display:none;">
+                <video id="videoPlayback" class="video-record-preview" controls playsinline></video>
+            </div>
+
+            <div id="videoRecordStatus" class="video-record-status">
+                <span class="video-record-dot"></span>
+                <span id="videoRecordingStatusText">Kayıt yapılıyor</span>
+            </div>
+
             <div class="video-record-timer"><span id="videoRecordTimer">00:30</span></div>
-            <div class="video-record-actions">
-                <button class="video-record-cancel" onclick="cancelVideoRecording()">İptal</button>
+
+            <div id="videoRecordingControls" class="video-record-actions">
+                <button class="camera-btn-control" id="videoSwitchCameraBtn" onclick="toggleVideoCameraFacing()" title="Ön/Arka kamera">
+                    <i class="fas fa-camera-rotate"></i>
+                </button>
                 <button class="video-record-stop" onclick="stopVideoRecording()">Dur</button>
+                <button class="video-record-cancel" onclick="cancelVideoRecording()">İptal</button>
+            </div>
+
+            <div id="videoPreviewControls" class="video-record-actions" style="display:none;">
+                <button class="video-record-cancel" onclick="retakeVideoRecording()">Tekrar Çek</button>
+                <button class="video-record-cancel" onclick="cancelVideoRecording()">İptal</button>
+                <button class="video-record-stop" id="videoSendBtn" onclick="sendRecordedVideo()">Gönder</button>
             </div>
         </div>
     </div>
@@ -5070,6 +5087,10 @@
         let isVideoRecording = false;
         let videoRecordingTimer = null;
         let videoRecordingStart = 0;
+        let videoRecordingTimerInterval = null;
+        let recordedVideoBlob = null;
+        let recordedVideoMimeType = 'video/webm';
+        let currentVideoFacingMode = 'environment';
 
         let ownerPrivateListenerActive = false;
         let typingTimeout = {};
@@ -6472,52 +6493,179 @@
             }
         }
 
+        function startVideoRecordingTimer(seconds = 30) {
+            if (videoRecordingTimerInterval) {
+                clearInterval(videoRecordingTimerInterval);
+            }
+
+            const timerEl = document.getElementById('videoRecordTimer');
+            const statusEl = document.getElementById('videoRecordingStatusText');
+            let remaining = Math.max(0, seconds);
+
+            if (timerEl) timerEl.textContent = `00:${String(remaining).padStart(2, '0')}`;
+            if (statusEl) statusEl.textContent = 'Kayıt yapılıyor';
+
+            videoRecordingTimerInterval = setInterval(() => {
+                remaining = Math.max(0, remaining - 1);
+                if (timerEl) timerEl.textContent = `00:${String(remaining).padStart(2, '0')}`;
+                if (remaining <= 0) {
+                    clearInterval(videoRecordingTimerInterval);
+                    videoRecordingTimerInterval = null;
+                    stopVideoRecording();
+                    addSystemMessage('⏱️ 30 saniyelik video kaydı otomatik durduruldu.');
+                }
+            }, 1000);
+        }
+
+        function showVideoPlaybackPreview(blob) {
+            const liveWrapper = document.getElementById('videoLivePreviewWrapper');
+            const playbackWrapper = document.getElementById('videoPlaybackWrapper');
+            const playback = document.getElementById('videoPlayback');
+            const recordingControls = document.getElementById('videoRecordingControls');
+            const previewControls = document.getElementById('videoPreviewControls');
+            const statusEl = document.getElementById('videoRecordingStatusText');
+
+            if (liveWrapper) liveWrapper.style.display = 'none';
+            if (playbackWrapper) playbackWrapper.style.display = 'block';
+            if (recordingControls) recordingControls.style.display = 'none';
+            if (previewControls) previewControls.style.display = 'flex';
+            if (statusEl) statusEl.textContent = 'Kayıt tamamlandı';
+
+            if (playback && blob) {
+                const url = URL.createObjectURL(blob);
+                playback.src = url;
+                playback.load();
+                playback.onloadedmetadata = () => {
+                    playback.play().catch(() => {});
+                };
+            }
+        }
+
+        async function sendRecordedVideo() {
+            if (!recordedVideoBlob) {
+                addSystemMessage('❌ Gönderilecek video yok.');
+                return;
+            }
+
+            const sendBtn = document.getElementById('videoSendBtn');
+            if (sendBtn) {
+                sendBtn.disabled = true;
+                sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            }
+
+            try {
+                const compactBlob = await compressVideoBlob(recordedVideoBlob);
+                await sendPrivateAttachment({ video: await readBlobAsDataUrl(compactBlob) }, '🎬 Video gönderdi');
+                hideVideoRecordingModal(false);
+            } catch (error) {
+                console.error('Video gönderilemedi:', error);
+                addSystemMessage(`❌ Video gönderilemedi: ${error.message}`);
+            } finally {
+                if (sendBtn) {
+                    sendBtn.disabled = false;
+                    sendBtn.innerHTML = 'Gönder';
+                }
+            }
+        }
+
+        function retakeVideoRecording() {
+            if (recordedVideoBlob) {
+                recordedVideoBlob = null;
+                videoChunks = [];
+            }
+            const playback = document.getElementById('videoPlayback');
+            if (playback && playback.src.startsWith('blob:')) {
+                URL.revokeObjectURL(playback.src);
+            }
+            if (playback) playback.src = '';
+            startVideoRecording(currentVideoFacingMode);
+        }
+
         function hideVideoRecordingModal(shouldStopRecording = false) {
             const modal = document.getElementById('videoRecordModal');
             const preview = document.getElementById('videoRecordPreview');
+            const playback = document.getElementById('videoPlayback');
+            const liveWrapper = document.getElementById('videoLivePreviewWrapper');
+            const playbackWrapper = document.getElementById('videoPlaybackWrapper');
+            const recordingControls = document.getElementById('videoRecordingControls');
+            const previewControls = document.getElementById('videoPreviewControls');
+
             if (shouldStopRecording && mediaRecorderVideo && mediaRecorderVideo.state !== 'inactive') {
                 mediaRecorderVideo.stop();
             }
-            if (videoRecordingTimer) {
-                clearInterval(videoRecordingTimer);
-                videoRecordingTimer = null;
+
+            if (videoRecordingTimerInterval) {
+                clearInterval(videoRecordingTimerInterval);
+                videoRecordingTimerInterval = null;
             }
+
             if (preview) {
                 preview.pause();
                 preview.srcObject = null;
             }
-            if (modal) modal.style.display = 'none';
-            if (document.getElementById('overlay')) {
-                document.getElementById('overlay').style.display = 'none';
-            }
-        }
 
-        function cancelVideoRecording() {
-            if (!mediaRecorderVideo || mediaRecorderVideo.state === 'inactive') {
-                hideVideoRecordingModal(false);
-                return;
+            if (playback) {
+                if (playback.src && playback.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(playback.src);
+                }
+                playback.pause();
+                playback.src = '';
             }
-            try {
-                mediaRecorderVideo.onstop = null;
-                mediaRecorderVideo.stop();
-            } catch (error) {
-                console.warn('Video kaydı iptal edilemedi:', error);
-            }
-            if (videoRecordingTimer) {
-                clearInterval(videoRecordingTimer);
-                videoRecordingTimer = null;
-            }
+
+            if (liveWrapper) liveWrapper.style.display = 'block';
+            if (playbackWrapper) playbackWrapper.style.display = 'none';
+            if (recordingControls) recordingControls.style.display = 'flex';
+            if (previewControls) previewControls.style.display = 'none';
+
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
                 videoStream = null;
             }
+
+            if (modal) modal.style.display = 'none';
+            const overlay = document.getElementById('overlay');
+            if (overlay) {
+                const shouldKeepOverlay = ['cameraModal', 'ownerPrivateModal', 'adminRegisterModal', 'reportModal', 'profileModal', 'privateModal']
+                    .some(id => {
+                        const element = document.getElementById(id);
+                        return element && (element.style.display === 'block' || element.style.display === 'flex');
+                    });
+                if (!shouldKeepOverlay) {
+                    overlay.style.display = 'none';
+                }
+            }
+
+            recordedVideoBlob = null;
+            videoChunks = [];
+            isVideoRecording = false;
+            setAttachButtonRecordingState(false);
+        }
+
+        function cancelVideoRecording() {
+            if (isVideoRecording && mediaRecorderVideo && mediaRecorderVideo.state !== 'inactive') {
+                mediaRecorderVideo.onstop = null;
+                mediaRecorderVideo.stop();
+            }
+
+            if (videoRecordingTimerInterval) {
+                clearInterval(videoRecordingTimerInterval);
+                videoRecordingTimerInterval = null;
+            }
+
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+
+            recordedVideoBlob = null;
+            videoChunks = [];
             isVideoRecording = false;
             setAttachButtonRecordingState(false);
             hideVideoRecordingModal(false);
-            addSystemMessage('❌ Video kaydı iptal edildi.');
+            addSystemMessage('ℹ️ Video kaydı iptal edildi.');
         }
 
-        async function startVideoRecording() {
+        async function startVideoRecording(facingMode = currentVideoFacingMode) {
             if (!privateChatWith) {
                 addSystemMessage('❌ Önce bir kullanıcı ile özel sohbet açın.');
                 return;
@@ -6541,22 +6689,44 @@
                     videoStream = null;
                 }
 
+                currentVideoFacingMode = facingMode;
+                currentCameraFacingMode = facingMode;
+
                 videoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: currentCameraFacingMode || 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } },
+                    video: {
+                        facingMode: { ideal: facingMode },
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 24 }
+                    },
                     audio: true
                 });
 
                 const preview = document.getElementById('videoRecordPreview');
                 const modal = document.getElementById('videoRecordModal');
-                if (preview) preview.srcObject = videoStream;
+                if (preview) {
+                    preview.srcObject = videoStream;
+                    preview.muted = true;
+                    preview.play().catch(() => {});
+                }
                 if (modal) modal.style.display = 'block';
-                document.getElementById('overlay').style.display = 'block';
-                document.getElementById('videoRecordTimer').textContent = '00:30';
+
+                const overlay = document.getElementById('overlay');
+                if (overlay) overlay.style.display = 'block';
+
                 videoRecordingStart = Date.now();
+                document.getElementById('videoRecordTimer').textContent = '00:30';
+                const statusEl = document.getElementById('videoRecordingStatusText');
+                if (statusEl) statusEl.textContent = 'Kayıt yapılıyor';
+                document.getElementById('videoPlaybackWrapper').style.display = 'none';
+                document.getElementById('videoLivePreviewWrapper').style.display = 'block';
+                document.getElementById('videoRecordingControls').style.display = 'flex';
+                document.getElementById('videoPreviewControls').style.display = 'none';
 
                 const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
                     .find(type => MediaRecorder.isTypeSupported(type));
-                const options = { videoBitsPerSecond: 600000 };
+
+                const options = { videoBitsPerSecond: 1000000, audioBitsPerSecond: 64000 };
                 if (mimeType) options.mimeType = mimeType;
 
                 try {
@@ -6566,24 +6736,30 @@
                 }
 
                 videoChunks = [];
+                recordedVideoBlob = null;
+                recordedVideoMimeType = mediaRecorderVideo.mimeType || 'video/webm';
+
                 mediaRecorderVideo.ondataavailable = event => {
                     if (event.data && event.data.size) videoChunks.push(event.data);
                 };
+
                 mediaRecorderVideo.onerror = event => {
                     console.error('Video kaydı hatası:', event.error || event);
                     addSystemMessage('❌ Video kaydı sırasında hata oluştu.');
                 };
+
                 mediaRecorderVideo.onstop = async () => {
-                    const recordedType = mediaRecorderVideo.mimeType || videoChunks[0]?.type || 'video/webm';
-                    const videoBlob = new Blob(videoChunks, { type: recordedType });
+                    recordedVideoMimeType = mediaRecorderVideo.mimeType || videoChunks[0]?.type || 'video/webm';
+                    const videoBlob = new Blob(videoChunks, { type: recordedVideoMimeType });
+
                     try {
                         if (!videoBlob.size) throw new Error('Video kaydı boş.');
-                        if (videoBlob.size > 8 * 1024 * 1024) throw new Error('Video 8 MB sınırını aşıyor. Kayıt kalitesini düşürün.');
                         const compactBlob = await compressVideoBlob(videoBlob);
-                        await sendPrivateAttachment({ video: await readBlobAsDataUrl(compactBlob) }, '🎬 30sn video gönderdi');
+                        recordedVideoBlob = compactBlob || videoBlob;
+                        showVideoPlaybackPreview(recordedVideoBlob);
                     } catch (error) {
-                        console.error('Video gönderilemedi:', error);
-                        addSystemMessage(`❌ Video gönderilemedi: ${error.message}`);
+                        console.error('Video önizleme hazırlanamadı:', error);
+                        addSystemMessage(`❌ Video hazırlanamadı: ${error.message}`);
                     } finally {
                         if (videoStream) {
                             videoStream.getTracks().forEach(track => track.stop());
@@ -6591,15 +6767,24 @@
                         }
                         isVideoRecording = false;
                         setAttachButtonRecordingState(false);
-                        hideVideoRecordingModal(false);
+                        if (videoRecordingTimerInterval) {
+                            clearInterval(videoRecordingTimerInterval);
+                            videoRecordingTimerInterval = null;
+                        }
                     }
                 };
 
                 mediaRecorderVideo.start(250);
                 isVideoRecording = true;
                 setAttachButtonRecordingState(true, 'video');
-                if (videoRecordingTimer) clearInterval(videoRecordingTimer);
-                videoRecordingTimer = setInterval(updateVideoRecordingTimer, 250);
+                startVideoRecordingTimer(30);
+
+                setTimeout(() => {
+                    if (isVideoRecording) {
+                        stopVideoRecording();
+                        addSystemMessage('⏱️ 30 saniyelik video kaydı otomatik durduruldu.');
+                    }
+                }, 30000);
             } catch (error) {
                 console.error('Video kamerası açılamadı:', error);
                 if (videoStream) {
@@ -6612,27 +6797,81 @@
         }
 
         async function compressVideoBlob(blob) {
-            if (!blob || blob.size <= 5 * 1024 * 1024) return blob;
+            if (!blob) return blob;
+            if (blob.size <= 5 * 1024 * 1024) return blob;
+
             const dataUrl = await readBlobAsDataUrl(blob);
             const video = document.createElement('video');
             video.preload = 'metadata';
             video.src = dataUrl;
+
             await new Promise((resolve, reject) => {
                 video.onloadedmetadata = resolve;
                 video.onerror = () => reject(new Error('Video önizleme yüklenemedi.'));
             });
+
             const canvas = document.createElement('canvas');
             canvas.width = 640;
             canvas.height = 480;
             const ctx = canvas.getContext('2d');
             if (!ctx) return blob;
+
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            return await new Promise(resolve => canvas.toBlob(resolve, 'video/webm', 0.7) || resolve(blob));
+            return await new Promise(resolve => {
+                canvas.toBlob(resolve, 'video/webm', 0.7) || resolve(blob);
+            });
         }
 
         function stopVideoRecording() {
             if (mediaRecorderVideo && mediaRecorderVideo.state !== 'inactive') {
                 mediaRecorderVideo.stop();
+            }
+        }
+
+        async function toggleVideoCameraFacing() {
+            const nextMode = currentVideoFacingMode === 'environment' ? 'user' : 'environment';
+            currentVideoFacingMode = nextMode;
+            currentCameraFacingMode = nextMode;
+
+            if (isVideoRecording) {
+                if (mediaRecorderVideo && mediaRecorderVideo.state !== 'inactive') {
+                    mediaRecorderVideo.onstop = null;
+                    mediaRecorderVideo.stop();
+                }
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                    videoStream = null;
+                }
+                if (videoRecordingTimerInterval) {
+                    clearInterval(videoRecordingTimerInterval);
+                    videoRecordingTimerInterval = null;
+                }
+                setTimeout(() => startVideoRecording(nextMode), 200);
+                return;
+            }
+
+            try {
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                }
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: nextMode },
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 24 }
+                    },
+                    audio: true
+                });
+
+                const preview = document.getElementById('videoRecordPreview');
+                if (preview) {
+                    preview.srcObject = videoStream;
+                    preview.play().catch(() => {});
+                }
+            } catch (error) {
+                console.error('Kamera değiştirilemedi:', error);
+                addSystemMessage('❌ Kamera değiştirilemedi. Lütfen tekrar deneyin.');
             }
         }
 
@@ -10325,203 +10564,4 @@
                 order: Object.keys(cachedChannels).length
             });
             incrementWriteCount();
-            addSystemMessage(`✅ #${cleanName} kanalı açıldı.`);
-        }
-
-        async function deleteChannel(name) {
-            if (!canManageChannel(name)) { addSystemMessage('⛔ Bu kanalı silme yetkiniz yok!'); return; }
-            if (Object.keys(cachedChannels).length <= 1) { addSystemMessage('⛔ Son kanal silinemez!'); return; }
-            if (!confirm(`#${name} kanalını ve mesajlarını silmek istediğinize emin misiniz?`)) return;
-            await channelsRef.child(name).remove();
-            await database.ref(`channelMessages/${name}`).remove();
-            if (name === 'genel') await messagesRef.remove();
-            incrementWriteCount();
-            addSystemMessage(`✅ #${name} kanalı silindi.`);
-        }
-
-        async function toggleChannelHidden(name) {
-            if (!canManageChannel(name)) return;
-            await channelsRef.child(name).update({ isHidden: !cachedChannels[name].isHidden });
-            incrementWriteCount();
-        }
-
-        async function toggleChannelLocked(name) {
-            if (!canManageChannel(name)) return;
-            await channelsRef.child(name).update({ isLocked: !cachedChannels[name].isLocked });
-            incrementWriteCount();
-        }
-
-        async function transferChannelPrompt(name) {
-            const channel = cachedChannels[name];
-            if (!channel || (!isOwner && normalizeNick(channel.owner) !== normalizeNick(currentUser?.name))) {
-                addSystemMessage('⛔ Kanal sahipliğini yalnızca Owner veya mevcut kanal sahibi devredebilir!');
-                return;
-            }
-            const targetName = prompt(`#${name} kanalının yeni sahibi olacak kayıtlı kullanıcı adı:`);
-            if (!targetName) return;
-            const target = await isRegisteredUserSecure(targetName.trim());
-            if (!target) { addSystemMessage('❌ Kayıtlı kullanıcı bulunamadı!'); return; }
-            await channelsRef.child(name).update({ owner: target.originalName || targetName.trim() });
-            incrementWriteCount();
-            addSystemMessage(`✅ #${name} kanalının sahipliği ${target.originalName || targetName.trim()} kullanıcısına devredildi.`);
-        }
-
-        function createChannelPrompt() {
-            const name = prompt('Kanal adı (harf/rakam/_):');
-            if (!name) return;
-            const label = prompt('Sekmede görünecek ad:', name);
-            if (label !== null) createChannel(name, label);
-        }
-
-        async function switchChannel(name) {
-            const channel = cachedChannels[name];
-            if (!channel) return;
-            if (channel.isHidden && !isOwner && !hasRole('admin') && !hasRole('operator') && !canManageChannel(name)) {
-                addSystemMessage(`🔒 #${name} kanalı gizli.`);
-                return;
-            }
-            if (activeChannelMessagesRef && activeChannelMessagesListener) {
-                activeChannelMessagesRef.off('value', activeChannelMessagesListener);
-            }
-            currentChannel = name;
-            activeChannelName = name;
-            activeChannelMessagesRef = name === 'genel' ? messagesRef : database.ref(`channelMessages/${name}`);
-            const channelTitle = document.getElementById('currentChatTitle');
-            if (channelTitle) channelTitle.textContent = `${channel.label || name} Sohbet`;
-            const channelPopover = document.getElementById('chatRoomPopover');
-            if (channelPopover) channelPopover.hidden = true;
-            renderChannelTabs();
-            const canManagePlaylist = hasRole('admin') || canManageChannel(name);
-            document.getElementById('addVideoBtnWeb').disabled = !canManagePlaylist;
-            document.getElementById('addVideoBtnMobile').disabled = !canManagePlaylist;
-            loadChannelMedia(name);
-            const input = document.getElementById('message-input');
-            if (input) input.placeholder = channel.isLocked && !canManageChannel(name) && !hasRole('operator') ? 'Bu kanal sessize alındı' : 'Sohbet...';
-            const container = document.getElementById('messages');
-            if (!activeChannelMessagesRef || !container) return;
-            container.innerHTML = '<div class="message-item system">Mesajlar yükleniyor...</div>';
-            activeChannelMessagesListener = snapshot => updateMessages(snapshot.val());
-            activeChannelMessagesRef.limitToLast(MESSAGE_LIMIT).on('value', activeChannelMessagesListener);
-        }
-
-        function updateMessages(messages) {
-            const container = document.getElementById('messages');
-            if (!messages) {
-                container.innerHTML = '<div class="message-item system">Sohbeti başlatmak için ilk mesajı gönderin.</div>';
-                return;
-            }
-            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
-            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-            container.innerHTML = '';
-            messagesArray.slice(-MESSAGE_LIMIT).forEach(msg => appendMessageToUI(msg));
-        }
-
-        function appendMessageToUI(message) {
-            const container = document.getElementById('messages');
-            
-            if (document.getElementById(`msg_${message.id}`)) return;
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message-item ${message.type || 'user'}`;
-            messageDiv.id = `msg_${message.id}`;
-            
-            let deleteButton = '';
-            if (currentUser && (message.sender === currentUser.name || hasRole('operator'))) {
-                deleteButton = `<button class="delete-btn" onclick="deleteMessage('${message.id}')"><i class="fas fa-trash"></i></button>`;
-            }
-            
-            let senderName = message.sender;
-            let content = message.text;
-            if (message.image) content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-            if (message.video) content += `<br><video src="${message.video}" controls class="message-video"></video>`;
-            if (message.audio) content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
-            
-            const userAvatar = message.avatar || (userProfiles[message.sender]?.avatar || null);
-            const avatarHtml = userAvatar ? 
-                `<img src="${userAvatar}" alt="${senderName}">` : '';
-            
-            // Rol rozeti — type'a göre
-            const roleInfo = ROLES[message.type] || null;
-            const roleBadgeHtml = roleInfo && message.type !== 'user'
-                ? `<span class="message-role-badge ${message.type}" title="${roleInfo.label}">${roleInfo.badge}</span>`
-                : '';
-            
-            messageDiv.innerHTML = `
-                <div class="message-header">
-                    <div class="message-avatar-column">
-                        <span class="user-avatar-small">
-                            ${avatarHtml || '<i class="fas fa-user"></i>'}
-                        </span>
-                    </div>
-                    <div class="message-body">
-                        <div class="message-content">
-                            <span class="message-user" onclick="openPrivateChat('${message.sender}')">${senderName}</span>
-                            ${roleBadgeHtml}
-                            <span class="message-text">${content}</span>
-                        </div>
-                    </div>
-                    <div class="message-meta">
-                        <span class="message-time">${message.time || '--:--'}</span>
-                        ${deleteButton}
-                    </div>
-                </div>
-            `;
-            container.appendChild(messageDiv);
-            container.scrollTop = container.scrollHeight;
-        }
-
-        async function deleteMessage(messageId) {
-            if (!activeChannelMessagesRef || !currentUser) return;
-            try {
-                const snapshot = await activeChannelMessagesRef.child(messageId).once('value');
-                const message = snapshot.val();
-                if (!message) return;
-                if (message.sender !== currentUser.name && !hasRole('operator')) {
-                    addSystemMessage('⛔ Sadece kendi mesajlarınızı silebilirsiniz!');
-                    return;
-                }
-                if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
-                    await activeChannelMessagesRef.child(messageId).remove();
-                    const messageDiv = document.getElementById(`msg_${messageId}`);
-                    if (messageDiv) messageDiv.remove();
-                    incrementWriteCount();
-                }
-            } catch (error) {
-                addSystemMessage('❌ Mesaj silinemedi!');
-            }
-        }
-
-        function addChannelOperator() {
-            alert('Bu özellik şimdilik devre dışı.');
-        }
-
-        function removeChannelOperator() {
-            alert('Bu özellik şimdilik devre dışı.');
-        }
-
-        window.addEventListener('load', function() {
-            originalTitle = document.title;
-            if (typeof YT === 'undefined') {
-                const checkYT = setInterval(() => {
-                    if (typeof YT !== 'undefined') {
-                        clearInterval(checkYT);
-                        initYouTubePlayer();
-                    }
-                }, 500);
-            }
-            initializeFirebase();
-            updateMobileUI();
-            document.getElementById('login-nick').focus();
-            document.getElementById('login-nick').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') login();
-            });
-            document.getElementById('login-password').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') login();
-            });
-        });
-    </script>
-    
-    <!-- YouTube IFrame API -->
-    <script src="https://www.youtube.com/iframe_api"></script>
-</body>
-</html>
+            addSystemMessage(`✅
