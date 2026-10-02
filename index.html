@@ -2057,6 +2057,14 @@
             color: white;
             animation: pulse 1.5s infinite;
         }
+
+        .attach-btn.recording {
+            background: rgba(255, 0, 0, 0.18);
+            border-color: #ff3b30;
+            color: #fff;
+            box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.14);
+            animation: pulse 1.2s infinite;
+        }
         
         @keyframes pulse {
             0% { transform: scale(1); }
@@ -4688,6 +4696,7 @@
         <div class="camera-container">
             <video id="camera-stream" autoplay playsinline></video>
             <div class="camera-controls">
+                <button class="camera-btn-control" id="cameraSwitchBtn" onclick="toggleCameraFacingMode()" title="Ön/Arka kamera"><i class="fas fa-camera-rotate"></i></button>
                 <button class="camera-btn-control" onclick="capturePhoto()" title="Fotoğraf çek"><i class="fas fa-camera"></i></button>
                 <button class="camera-btn-control" onclick="closeCameraModal()" title="Kapat"><i class="fas fa-times"></i></button>
             </div>
@@ -4916,6 +4925,7 @@
         let activeChannelVideoId = null;
         
         let cameraStream = null;
+        let currentCameraFacingMode = 'environment';
         let mediaRecorder = null;
         let recordedChunks = [];
         let isRecording = false;
@@ -6131,7 +6141,28 @@
             document.getElementById('galleryUpload').click();
         }
 
-        async function openCameraDirect() {
+        function setAttachButtonRecordingState(isRecording, mode = 'media') {
+            const btn = document.querySelector('.attach-btn');
+            if (!btn) return;
+            btn.classList.toggle('recording', Boolean(isRecording));
+            if (isRecording) {
+                btn.innerHTML = '<i class="fas fa-stop"></i>';
+                btn.title = mode === 'audio' ? 'Ses kaydı durdur' : mode === 'video' ? 'Video kaydı durdur' : 'Kayıt durdur';
+                btn.style.background = 'rgba(255, 0, 0, 0.18)';
+                btn.style.borderColor = '#ff3b30';
+                btn.style.color = '#fff';
+                btn.style.boxShadow = '0 0 0 3px rgba(255, 59, 48, 0.12)';
+            } else {
+                btn.innerHTML = '<i class="fas fa-plus"></i>';
+                btn.title = 'Dosya ekle';
+                btn.style.background = '';
+                btn.style.borderColor = '';
+                btn.style.color = '';
+                btn.style.boxShadow = '';
+            }
+        }
+
+        async function openCameraDirect(facingMode = currentCameraFacingMode) {
             if (!privateChatWith) {
                 addSystemMessage('❌ Önce bir kullanıcı ile özel sohbet açın.');
                 return;
@@ -6145,19 +6176,34 @@
                 return;
             }
             try {
+                if (cameraStream) {
+                    cameraStream.getTracks().forEach(track => track.stop());
+                    cameraStream = null;
+                }
+                currentCameraFacingMode = facingMode;
                 cameraStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: 'environment' } },
+                    video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
                     audio: false
                 });
                 const cameraVideo = document.getElementById('camera-stream');
                 cameraVideo.srcObject = cameraStream;
                 document.getElementById('cameraModal').style.display = 'flex';
                 document.getElementById('overlay').style.display = 'block';
+                const switchBtn = document.getElementById('cameraSwitchBtn');
+                if (switchBtn) {
+                    switchBtn.innerHTML = `<i class="fas ${facingMode === 'environment' ? 'fa-camera-rotate' : 'fa-camera'}"></i>`;
+                    switchBtn.title = facingMode === 'environment' ? 'Ön kameraya geç' : 'Arka kameraya geç';
+                }
                 await cameraVideo.play();
             } catch (error) {
                 console.error('Kamera açılamadı:', error);
                 addSystemMessage('❌ Kamera açılamadı. Kamera iznini kontrol edin.');
             }
+        }
+
+        function toggleCameraFacingMode() {
+            const nextMode = currentCameraFacingMode === 'environment' ? 'user' : 'environment';
+            openCameraDirect(nextMode);
         }
 
         document.getElementById('galleryUpload').addEventListener('change', handleGalleryUpload);
@@ -6262,23 +6308,13 @@
                         if (audioStream) audioStream.getTracks().forEach(track => track.stop());
                         audioStream = null;
                         isAudioRecording = false;
-                        const audioButton = document.querySelector('.audio-record-btn');
-                        if (audioButton) {
-                            audioButton.classList.remove('recording');
-                            audioButton.innerHTML = '<i class="fas fa-microphone"></i>';
-                            audioButton.title = 'Sesli Mesaj Gönder';
-                        }
+                        setAttachButtonRecordingState(false);
                     }
                 };
 
                 mediaRecorderAudio.start(250);
                 isAudioRecording = true;
-                const audioButton = document.querySelector('.audio-record-btn');
-                if (audioButton) {
-                    audioButton.classList.add('recording');
-                    audioButton.innerHTML = '<i class="fas fa-stop"></i>';
-                    audioButton.title = 'Kaydı Durdur';
-                }
+                setAttachButtonRecordingState(true, 'audio');
                 setTimeout(() => {
                     if (isAudioRecording) {
                         stopAudioRecording();
@@ -6356,23 +6392,13 @@
                         if (videoStream) videoStream.getTracks().forEach(track => track.stop());
                         videoStream = null;
                         isVideoRecording = false;
-                        const videoButton = document.querySelectorAll('.audio-record-btn')[1];
-                        if (videoButton) {
-                            videoButton.classList.remove('recording');
-                            videoButton.innerHTML = '<i class="fas fa-video"></i>';
-                            videoButton.title = '30sn Video Gönder';
-                        }
+                        setAttachButtonRecordingState(false);
                     }
                 };
 
                 mediaRecorderVideo.start(250);
                 isVideoRecording = true;
-                const videoButton = document.querySelectorAll('.audio-record-btn')[1];
-                if (videoButton) {
-                    videoButton.classList.add('recording');
-                    videoButton.innerHTML = '<i class="fas fa-stop"></i>';
-                    videoButton.title = 'Kaydı Durdur';
-                }
+                setAttachButtonRecordingState(true, 'video');
 
                 setTimeout(() => {
                     if (isVideoRecording) {
@@ -8710,14 +8736,6 @@
                 console.error('Kamera fotoğrafı alınamadı:', error);
                 addSystemMessage('❌ Fotoğraf yakalanamadı.');
             });
-        }
-
-        function startVideoRecording() {
-            alert('Video kayıt özelliği yakında...');
-        }
-
-        function stopVideoRecording() {
-            alert('Video kayıt durduruldu.');
         }
 
         function deletePrivateMessage(messageId, chatId) {
