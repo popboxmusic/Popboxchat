@@ -25,13 +25,13 @@ const firebaseConfig = {
     appId: "1:206625719024:web:d28f478a2c96d10412f835"
 };
 
-/* ============ MERKEZİ ROL TANIMLARI ============ */
+/* ============ MERKEZİ ROL TANIMLARI (İKONLAR GÜNCELLENDİ) ============ */
 const ROLES = {
     owner:    { level: 5, label: 'Owner',            color: '#ff4444', icon: 'fa-crown',        badge: '♛' },
-    admin:    { level: 4, label: 'Admin',            color: '#3ea6ff', icon: 'fa-shield-alt',   badge: '✓' },
-    coadmin:  { level: 3, label: 'Co-Admin',         color: '#ffaa33', icon: 'fa-users',        badge: '♛' },
-    operator: { level: 2, label: 'Operatör',         color: '#00ff88', icon: 'fa-bolt',         badge: '★' },
-    verified: { level: 1, label: 'Onaylı Kullanıcı', color: '#00d4ff', icon: 'fa-check-circle', badge: '✔' },
+    admin:    { level: 4, label: 'Admin',            color: '#3ea6ff', icon: 'fa-shield-alt',   badge: '✦' },
+    coadmin:  { level: 3, label: 'Co-Admin',         color: '#ffaa33', icon: 'fa-users',        badge: '◈' },
+    operator: { level: 2, label: 'Operatör',         color: '#00ff88', icon: 'fa-bolt',         badge: '◇' },
+    verified: { level: 1, label: 'Onaylı Kullanıcı', color: '#00d4ff', icon: 'fa-check-circle', badge: '✓' },
     user:     { level: 0, label: 'Kullanıcı',        color: '#ffffff', icon: 'fa-user',         badge: '' }
 };
 
@@ -45,7 +45,7 @@ let coAdminsRef, bansRef, globalBansRef, registeredUsersRef, operatorsRef;
 let userLocksRef, adminPasswordsRef, customCommandsRef, adminListRef;
 let playlistRef, profilesRef, blocksRef, reportsRef;
 let adLinksRef, pendingMessagesRef, typingRef;
-let verifiedRef;
+let verifiedRef, channelsRef;
 
 let cachedOnlineUsers = {};
 let cachedMessages = [];
@@ -54,6 +54,7 @@ let cachedReports = {};
 let cachedBlocks = {};
 let cachedRegisteredUsers = {};
 let cachedAdContents = [];
+let cachedChannels = {};
 let isFirebaseConnected = false;
 
 let currentUser = null;
@@ -81,6 +82,7 @@ let currentProfileAvatar = null;
 const PING_INTERVAL = 30000;
 const ONLINE_THRESHOLD = 60000;
 const MESSAGE_LIMIT = 15;
+const GUEST_TIMEOUT = 2 * 60 * 1000; // 2 dakika
 
 let dailyWriteCount = 0;
 let lastWriteReset = Date.now();
@@ -269,6 +271,53 @@ async function checkUserBanOnLogin(username) {
 function isMuted(username) { return mutedUsers[username] && mutedUsers[username] > Date.now(); }
 
 /* ============================================================
+   MİSAFİR NİCK KONTROLÜ (2 DAKİKA)
+   ============================================================ */
+async function checkGuestNicks() {
+    if (!usersRef || !registeredUsersRef || !isFirebaseConnected) return;
+    try {
+        const usersSnap = await usersRef.once('value');
+        const users = usersSnap.val() || {};
+        const now = Date.now();
+
+        for (const [username, userData] of Object.entries(users)) {
+            if (!userData) continue;
+            if (username === SECURE_CONFIG.OWNER_CONFIG.username) continue;
+            if (username.startsWith('Misafir_')) continue;
+
+            // Kayıtlı mı?
+            const registered = await isRegisteredUserSecure(username);
+            if (registered && registered.isRegistered) continue;
+
+            // Kayıtsız ve 2 dakikadan eski mi?
+            const joinedAt = userData.joinedAt || userData.timestamp || 0;
+            const elapsed = now - joinedAt;
+
+            if (elapsed > GUEST_TIMEOUT && !userData.isGuest) {
+                // Misafir olarak işaretle
+                const guestSuffix = Math.floor(Math.random() * 9000 + 1000);
+                const guestName = `Misafir_${guestSuffix}`;
+
+                await usersRef.child(username).update({
+                    isGuest: true,
+                    guestSince: now,
+                    displayName: guestName
+                });
+
+                if (addSystemMessage && typeof addSystemMessage === 'function') {
+                    addSystemMessage(`👤 <strong>${username}</strong> kayıtsız olduğu için misafir olarak işaretlendi.`);
+                }
+            }
+        }
+    } catch (e) { console.warn('Misafir kontrol hatası:', e); }
+}
+
+function startGuestNickMonitoring() {
+    setTimeout(() => { checkGuestNicks(); }, 30000);
+    setInterval(checkGuestNicks, 30000);
+}
+
+/* ============================================================
    FIREBASE BAŞLATMA
    ============================================================ */
 function initializeFirebase() {
@@ -305,12 +354,14 @@ function initializeFirebase() {
                 pendingMessagesRef = database.ref('pendingMessages');
                 adLinksRef = database.ref('adLinks');
                 typingRef = database.ref('typing');
+                channelsRef = database.ref('channels');
 
                 initOwnerPassword();
                 loadCustomCommands();
                 updateBannedUsers();
                 startBanMonitoring();
                 startUserLocksCleanup();
+                startGuestNickMonitoring();
 
                 loadGeneralPlaylist();
                 loadGeneralMessages();
@@ -360,6 +411,10 @@ function initializeFirebase() {
                 customCommandsRef.on('value', (snapshot) => {
                     customCommands = snapshot.val() || {};
                     if (isOwner) updateOwnerCommandsList();
+                });
+                channelsRef.on('value', (snapshot) => {
+                    cachedChannels = snapshot.val() || {};
+                    if (hasRole('admin')) updateChannelList();
                 });
 
                 if (currentUser && privateChatWith) listenForTyping();
@@ -423,8 +478,10 @@ function updateOnlineCount(users) {
             (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) return;
         if (now - (userData.lastSeen || 0) < ONLINE_THRESHOLD) onlineCount++;
     });
-    document.getElementById('onlineCount').textContent = onlineCount;
-    document.getElementById('chatOnlineCount').textContent = onlineCount;
+    const el1 = document.getElementById('onlineCount');
+    const el2 = document.getElementById('chatOnlineCount');
+    if (el1) el1.textContent = onlineCount;
+    if (el2) el2.textContent = onlineCount;
 }
 
 async function loadRegisteredUsers() {
@@ -501,8 +558,9 @@ function loadUserProfile(username) {
                 currentProfileAvatar = profile.avatar || null;
                 if (profile.avatar) {
                     const profileIcon = document.getElementById('profileAvatarPreview');
-                    profileIcon.innerHTML = `<img src="${profile.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
-                    document.getElementById('profileIcon').classList.add('has-image');
+                    if (profileIcon) profileIcon.innerHTML = `<img src="${profile.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
+                    const pIcon = document.getElementById('profileIcon');
+                    if (pIcon) pIcon.classList.add('has-image');
                 }
             }
         }
@@ -593,7 +651,8 @@ async function completeLogin(username, role, isRegistered, userData) {
     const userInfo = {
         name: username, lastSeen: now, joinedAt: now,
         isOnline: true, timestamp: now, role: role,
-        isRegistered: isRegistered, isHidden: (role === 'owner')
+        isRegistered: isRegistered, isHidden: (role === 'owner'),
+        isGuest: false
     };
     await usersRef.child(username).set(userInfo);
     usersRef.child(username).onDisconnect().update({ isOnline: false, lastSeen: Date.now() });
@@ -615,8 +674,10 @@ async function completeLogin(username, role, isRegistered, userData) {
     loadUserProfile(username);
 
     const canAddToPlaylist = hasRole('admin');
-    document.getElementById('addVideoBtnWeb').disabled = !canAddToPlaylist;
-    document.getElementById('addVideoBtnMobile').disabled = !canAddToPlaylist;
+    const addWeb = document.getElementById('addVideoBtnWeb');
+    const addMobile = document.getElementById('addVideoBtnMobile');
+    if (addWeb) addWeb.disabled = !canAddToPlaylist;
+    if (addMobile) addMobile.disabled = !canAddToPlaylist;
 
     if (isOwner) startOwnerPrivateMessageMonitoring();
 
