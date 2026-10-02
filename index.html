@@ -3385,8 +3385,7 @@
         .chat-tool-button:hover { background: #333; transform: scale(1.04); }
         .chat-tool-button.heart-button { font-size: 24px; }
         .chat-input-area .send-button { display: none; }
-        .chat-emoji-picker,
-        .chat-attach-menu {
+        .chat-emoji-picker {
             position: absolute;
             right: 30px;
             bottom: calc(100% + 8px);
@@ -3413,12 +3412,6 @@
             cursor: pointer;
         }
         .chat-emoji-picker button:hover { background: #444; }
-        .chat-attach-menu { right: 75px; width: 190px; }
-        .chat-attachment-status {
-            margin: 0 0 8px;
-            color: #bbb;
-            font-size: 12px;
-        }
         .chat-reopen-button {
             display: none;
             position: fixed;
@@ -3561,7 +3554,6 @@
             .chat-tool-button { width: 43px; height: 43px; flex-basis: 43px; font-size: 19px; }
             .chat-tool-button.heart-button { font-size: 22px; }
             .chat-emoji-picker { right: 18px; grid-template-columns: repeat(6, 36px); }
-            .chat-attach-menu { right: 61px; }
         }
         @media (max-width: 768px) {
             .chat-container.chat-dragging {
@@ -3822,13 +3814,6 @@
                     <button type="button" onclick="insertChatEmoji('✨')" aria-label="Parıltı">✨</button>
                     <button type="button" onclick="insertChatEmoji('💯')" aria-label="Harika">💯</button>
                 </div>
-                <div class="chat-attach-menu" id="chatAttachMenu" hidden>
-                    <button class="chat-menu-action" type="button" onclick="chooseChatImage()"><i class="far fa-image"></i> Fotoğraf ekle</button>
-                </div>
-                <div class="chat-attachment-status" id="chatAttachmentStatus" hidden>
-                    <i class="far fa-image"></i> <span id="chatAttachmentName"></span>
-                    <button type="button" class="chat-menu-action" style="display:inline-flex;width:auto;padding:2px 7px;" onclick="removeChatImage()">Kaldır</button>
-                </div>
                 <div class="input-wrapper">
                     <textarea 
                         id="message-input" 
@@ -3838,8 +3823,6 @@
                         onkeydown="handleEnterKey(event, 'sendMessage')"
                     ></textarea>
                     <button class="chat-tool-button" type="button" onclick="toggleChatPopover('chatEmojiPicker')" title="Emoji ekle" aria-label="Emoji ekle"><i class="far fa-smile"></i></button>
-                    <button class="chat-tool-button" type="button" onclick="toggleChatPopover('chatAttachMenu')" title="Fotoğraf ekle" aria-label="Fotoğraf ekle"><i class="fas fa-plus-circle"></i></button>
-                    <input id="chatImageInput" type="file" accept="image/*" hidden onchange="handleChatImageSelection(event)">
                     <button class="chat-tool-button heart-button" type="button" onclick="insertChatEmoji('❤️')" title="Kalp ekle" aria-label="Kalp ekle"><i class="far fa-heart"></i></button>
                     <button class="send-button" type="button" onclick="sendMessage()" aria-label="Mesaj gönder"><i class="fas fa-paper-plane"></i></button>
                 </div>
@@ -4532,7 +4515,6 @@
         }
 
         let isSendingMessage = false;
-        let pendingChatImage = null;
         let chatNoticeTimeoutId = null;
 
         function showChatNoticeForEntry() {
@@ -4586,7 +4568,7 @@
                 
                 const input = document.getElementById('message-input');
                 const text = input.value.trim();
-                if (!text && !pendingChatImage) return;
+                if (!text) return;
                 
                 if (text.startsWith('/')) {
                     handleCommand(text);
@@ -4597,13 +4579,12 @@
                 
                 const messageData = {
                     sender: currentUser.name,
-                    text: text || '📷 Fotoğraf',
+                    text: text,
                     type: 'user',
                     timestamp: Date.now(),
                     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                     avatar: currentProfileAvatar || null
                 };
-                if (pendingChatImage) messageData.image = pendingChatImage;
                 if (isOwner) messageData.type = 'owner';
                 else if (isAdmin) messageData.type = 'admin';
                 else if (isCoAdmin) messageData.type = 'coadmin';
@@ -4614,7 +4595,6 @@
                     incrementWriteCount();
                     input.value = '';
                     autoResize(input);
-                    removeChatImage();
                     if (usersRef) {
                         usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
                     }
@@ -6634,7 +6614,7 @@
         function toggleChatPopover(id) {
             const target = document.getElementById(id);
             if (!target) return;
-            ['chatRoomPopover', 'chatOverflowMenu', 'chatEmojiPicker', 'chatAttachMenu'].forEach(popoverId => {
+            ['chatRoomPopover', 'chatOverflowMenu', 'chatEmojiPicker'].forEach(popoverId => {
                 const popover = document.getElementById(popoverId);
                 if (popover && popoverId !== id) popover.hidden = true;
             });
@@ -6653,47 +6633,6 @@
             autoResize(input);
             const picker = document.getElementById('chatEmojiPicker');
             if (picker) picker.hidden = true;
-        }
-
-        function chooseChatImage() {
-            const menu = document.getElementById('chatAttachMenu');
-            if (menu) menu.hidden = true;
-            document.getElementById('chatImageInput').click();
-        }
-
-        function handleChatImageSelection(event) {
-            const file = event.target.files && event.target.files[0];
-            if (!file) return;
-            if (!file.type.startsWith('image/')) {
-                alert('Lütfen bir görsel dosyası seçin.');
-                event.target.value = '';
-                return;
-            }
-            if (file.size > 1024 * 1024) {
-                alert('Görsel en fazla 1 MB olabilir.');
-                event.target.value = '';
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = function(loadEvent) {
-                pendingChatImage = loadEvent.target.result;
-                document.getElementById('chatAttachmentName').textContent = file.name;
-                document.getElementById('chatAttachmentStatus').hidden = false;
-                document.getElementById('message-input').focus();
-            };
-            reader.onerror = function() {
-                alert('Görsel okunamadı. Lütfen tekrar deneyin.');
-                event.target.value = '';
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function removeChatImage() {
-            pendingChatImage = null;
-            const status = document.getElementById('chatAttachmentStatus');
-            const input = document.getElementById('chatImageInput');
-            if (status) status.hidden = true;
-            if (input) input.value = '';
         }
 
         function showChatRules() {
@@ -6718,7 +6657,7 @@
             chat.classList.add('chat-collapsed');
             document.getElementById('chatReopenButton').classList.add('visible');
             hideChatNotice();
-            ['chatRoomPopover', 'chatOverflowMenu', 'chatEmojiPicker', 'chatAttachMenu'].forEach(id => {
+            ['chatRoomPopover', 'chatOverflowMenu', 'chatEmojiPicker'].forEach(id => {
                 const popover = document.getElementById(id);
                 if (popover) popover.hidden = true;
             });
@@ -6903,7 +6842,7 @@
 
         document.addEventListener('click', function(event) {
             if (event.target.closest('.chat-header, .chat-input-area')) return;
-            ['chatRoomPopover', 'chatOverflowMenu', 'chatEmojiPicker', 'chatAttachMenu'].forEach(id => {
+            ['chatRoomPopover', 'chatOverflowMenu', 'chatEmojiPicker'].forEach(id => {
                 const popover = document.getElementById(id);
                 if (popover) popover.hidden = true;
             });
