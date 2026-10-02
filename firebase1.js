@@ -1,6 +1,6 @@
 /* =====================================================================
    CETCETY – firebase.js
-   Firebase başlatma, bağlantı, roller, kullanıcı yönetimi, auth
+   Firebase başlatma, bağlantı, roller, kullanıcı yönetimi, auth, kanallar
    ===================================================================== */
 
 /* ============ GÜVENLİK KONFİGÜRASYONU ============ */
@@ -25,7 +25,7 @@ const firebaseConfig = {
     appId: "1:206625719024:web:d28f478a2c96d10412f835"
 };
 
-/* ============ MERKEZİ ROL TANIMLARI (İKONLAR GÜNCELLENDİ) ============ */
+/* ============ MERKEZİ ROL TANIMLARI ============ */
 const ROLES = {
     owner:    { level: 5, label: 'Owner',            color: '#ff4444', icon: 'fa-crown',        badge: '♛' },
     admin:    { level: 4, label: 'Admin',            color: '#3ea6ff', icon: 'fa-shield-alt',   badge: '✦' },
@@ -45,7 +45,8 @@ let coAdminsRef, bansRef, globalBansRef, registeredUsersRef, operatorsRef;
 let userLocksRef, adminPasswordsRef, customCommandsRef, adminListRef;
 let playlistRef, profilesRef, blocksRef, reportsRef;
 let adLinksRef, pendingMessagesRef, typingRef;
-let verifiedRef, channelsRef;
+let verifiedRef;
+let channelsRef, channelMembersRef, channelMutesRef;
 
 let cachedOnlineUsers = {};
 let cachedMessages = [];
@@ -79,10 +80,16 @@ let userSessionStartedAt = 0;
 let currentProfileBio = '';
 let currentProfileAvatar = null;
 
+/* Kanal durumu */
+let currentChannel = 'genel';
+let channelMessagesRef = null;
+let channelMessagesListener = null;
+let guestNameTimer = null;
+
 const PING_INTERVAL = 30000;
 const ONLINE_THRESHOLD = 60000;
 const MESSAGE_LIMIT = 15;
-const GUEST_TIMEOUT = 2 * 60 * 1000; // 2 dakika
+const GUEST_RENAME_DELAY = 2 * 60 * 1000; // 2 dakika
 
 let dailyWriteCount = 0;
 let lastWriteReset = Date.now();
@@ -200,9 +207,6 @@ async function verifyOwnerPassword(inputPassword) {
     } catch (error) { return false; }
 }
 
-/* ============================================================
-   KULLANICI KAYIT KONTROLÜ (case-insensitive)
-   ============================================================ */
 async function isRegisteredUserSecure(username) {
     try {
         const normalized = normalizeNick(username);
@@ -271,53 +275,6 @@ async function checkUserBanOnLogin(username) {
 function isMuted(username) { return mutedUsers[username] && mutedUsers[username] > Date.now(); }
 
 /* ============================================================
-   MİSAFİR NİCK KONTROLÜ (2 DAKİKA)
-   ============================================================ */
-async function checkGuestNicks() {
-    if (!usersRef || !registeredUsersRef || !isFirebaseConnected) return;
-    try {
-        const usersSnap = await usersRef.once('value');
-        const users = usersSnap.val() || {};
-        const now = Date.now();
-
-        for (const [username, userData] of Object.entries(users)) {
-            if (!userData) continue;
-            if (username === SECURE_CONFIG.OWNER_CONFIG.username) continue;
-            if (username.startsWith('Misafir_')) continue;
-
-            // Kayıtlı mı?
-            const registered = await isRegisteredUserSecure(username);
-            if (registered && registered.isRegistered) continue;
-
-            // Kayıtsız ve 2 dakikadan eski mi?
-            const joinedAt = userData.joinedAt || userData.timestamp || 0;
-            const elapsed = now - joinedAt;
-
-            if (elapsed > GUEST_TIMEOUT && !userData.isGuest) {
-                // Misafir olarak işaretle
-                const guestSuffix = Math.floor(Math.random() * 9000 + 1000);
-                const guestName = `Misafir_${guestSuffix}`;
-
-                await usersRef.child(username).update({
-                    isGuest: true,
-                    guestSince: now,
-                    displayName: guestName
-                });
-
-                if (addSystemMessage && typeof addSystemMessage === 'function') {
-                    addSystemMessage(`👤 <strong>${username}</strong> kayıtsız olduğu için misafir olarak işaretlendi.`);
-                }
-            }
-        }
-    } catch (e) { console.warn('Misafir kontrol hatası:', e); }
-}
-
-function startGuestNickMonitoring() {
-    setTimeout(() => { checkGuestNicks(); }, 30000);
-    setInterval(checkGuestNicks, 30000);
-}
-
-/* ============================================================
    FIREBASE BAŞLATMA
    ============================================================ */
 function initializeFirebase() {
@@ -355,17 +312,19 @@ function initializeFirebase() {
                 adLinksRef = database.ref('adLinks');
                 typingRef = database.ref('typing');
                 channelsRef = database.ref('channels');
+                channelMembersRef = database.ref('channelMembers');
+                channelMutesRef = database.ref('channelMutes');
 
                 initOwnerPassword();
                 loadCustomCommands();
                 updateBannedUsers();
                 startBanMonitoring();
                 startUserLocksCleanup();
-                startGuestNickMonitoring();
 
                 loadGeneralPlaylist();
                 loadGeneralMessages();
                 loadAdContents();
+                loadChannels();
 
                 setupEfficientListeners();
                 setupRoleListeners();
@@ -412,10 +371,6 @@ function initializeFirebase() {
                     customCommands = snapshot.val() || {};
                     if (isOwner) updateOwnerCommandsList();
                 });
-                channelsRef.on('value', (snapshot) => {
-                    cachedChannels = snapshot.val() || {};
-                    if (hasRole('admin')) updateChannelList();
-                });
 
                 if (currentUser && privateChatWith) listenForTyping();
             }
@@ -429,7 +384,9 @@ function setupEfficientListeners() {
         const newMessage = { id: snapshot.key, ...snapshot.val() };
         cachedMessages.push(newMessage);
         if (cachedMessages.length > MESSAGE_LIMIT) cachedMessages.shift();
-        if (!document.getElementById(`msg_${snapshot.key}`)) appendMessageToUI(newMessage);
+        if (currentChannel === 'genel' && !document.getElementById(`msg_${snapshot.key}`)) {
+            appendMessageToUI(newMessage);
+        }
     });
 }
 
@@ -545,6 +502,269 @@ function startUserLocksCleanup() {
 }
 
 /* ============================================================
+   KANAL YÖNETİMİ
+   ============================================================ */
+function loadChannels() {
+    if (!channelsRef) return;
+    channelsRef.on('value', (snapshot) => {
+        let data = snapshot.val();
+        if (!data) {
+            // Varsayılan kanallar
+            const defaults = {
+                genel:    { name: 'genel',    label: 'Genel Sohbet',    createdBy: 'system', createdAt: Date.now(), isHidden: false, isLocked: false, order: 0 },
+                muzik:    { name: 'muzik',    label: 'Müzik',           createdBy: 'system', createdAt: Date.now(), isHidden: false, isLocked: false, order: 1 },
+                sohbet:   { name: 'sohbet',   label: 'Serbest Sohbet',  createdBy: 'system', createdAt: Date.now(), isHidden: false, isLocked: false, order: 2 }
+            };
+            channelsRef.set(defaults);
+            data = defaults;
+        }
+        cachedChannels = data;
+        renderChannelTabs();
+        // Eğer mevcut kanal silinmişse genel'e dön
+        if (currentChannel && !cachedChannels[currentChannel]) {
+            switchChannel('genel');
+        }
+    });
+}
+
+function getChannelLabel(name) {
+    return cachedChannels[name]?.label || name;
+}
+
+function getVisibleChannels() {
+    return Object.entries(cachedChannels)
+        .filter(([name, ch]) => !ch.isHidden || hasRole('operator'))
+        .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+}
+
+function renderChannelTabs() {
+    const container = document.getElementById('channelTabs');
+    if (!container) return;
+    const channels = getVisibleChannels();
+    if (!channels.length) {
+        container.innerHTML = '<div class="channel-empty">Kanal yok</div>';
+        return;
+    }
+    let html = '';
+    channels.forEach(([name, ch]) => {
+        const isActive = name === currentChannel;
+        const hiddenIcon = ch.isHidden ? ' <i class="fas fa-eye-slash" style="font-size:10px;opacity:0.6;"></i>' : '';
+        const lockedIcon = ch.isLocked ? ' <i class="fas fa-lock" style="font-size:10px;opacity:0.6;"></i>' : '';
+        html += `<button class="channel-tab ${isActive ? 'active' : ''}" data-channel="${name}" onclick="switchChannel('${name}')">
+            <span># ${ch.label || name}</span>${hiddenIcon}${lockedIcon}
+        </button>`;
+    });
+    container.innerHTML = html;
+}
+
+async function createChannel(name, label, isHidden = false) {
+    if (!hasRole('admin')) { addSystemMessage('⛔ Kanal açmak için admin yetkisi gerekli!'); return; }
+    const cleanName = normalizeNick(name).replace(/[^a-z0-9_]/g, '');
+    if (!cleanName || cleanName.length < 2) { addSystemMessage('❌ Kanal adı en az 2 karakter olmalı (harf/rakam/_)!'); return; }
+    if (cachedChannels[cleanName]) { addSystemMessage(`❌ #${cleanName} kanalı zaten var!`); return; }
+    if (!checkWriteLimit()) { addSystemMessage('⚠️ Günlük işlem limitine ulaşıldı!'); return; }
+    try {
+        const order = Object.keys(cachedChannels).length;
+        await channelsRef.child(cleanName).set({
+            name: cleanName,
+            label: label || cleanName,
+            createdBy: currentUser.name,
+            createdAt: Date.now(),
+            isHidden: isHidden,
+            isLocked: false,
+            order: order
+        });
+        incrementWriteCount();
+        addSystemMessage(`✅ #${cleanName} kanalı açıldı!`);
+        switchChannel(cleanName);
+    } catch (e) { addSystemMessage('❌ Kanal açılamadı!'); }
+}
+
+async function deleteChannel(name) {
+    if (!hasRole('admin')) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+    if (name === 'genel') { addSystemMessage('⛔ Genel kanal silinemez!'); return; }
+    if (!cachedChannels[name]) { addSystemMessage('❌ Kanal bulunamadı!'); return; }
+    if (!confirm(`#${name} kanalını silmek istediğinize emin misiniz?`)) return;
+    try {
+        await channelsRef.child(name).remove();
+        await database.ref(`channelMessages/${name}`).remove();
+        incrementWriteCount();
+        addSystemMessage(`✅ #${name} kanalı silindi.`);
+        if (currentChannel === name) switchChannel('genel');
+    } catch (e) { addSystemMessage('❌ Kanal silinemedi!'); }
+}
+
+async function toggleChannelHidden(name) {
+    if (!hasRole('admin')) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+    if (!cachedChannels[name]) return;
+    const newVal = !cachedChannels[name].isHidden;
+    await channelsRef.child(name).update({ isHidden: newVal });
+    incrementWriteCount();
+    addSystemMessage(`✅ #${name} ${newVal ? 'gizlendi' : 'görünür yapıldı'}.`);
+}
+
+async function toggleChannelLocked(name) {
+    if (!hasRole('admin')) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+    if (!cachedChannels[name]) return;
+    const newVal = !cachedChannels[name].isLocked;
+    await channelsRef.child(name).update({ isLocked: newVal });
+    incrementWriteCount();
+    addSystemMessage(`✅ #${name} ${newVal ? 'kilitlendi' : 'kilidi açıldı'}.`);
+}
+
+async function renameChannel(name, newLabel) {
+    if (!hasRole('admin')) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+    if (!cachedChannels[name] || !newLabel) return;
+    await channelsRef.child(name).update({ label: newLabel });
+    incrementWriteCount();
+    addSystemMessage(`✅ #${name} → ${newLabel}`);
+}
+
+function openChannelManageModal() {
+    if (!hasRole('admin')) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+    const modal = document.getElementById('channelManageModal');
+    if (!modal) { addSystemMessage('❌ Kanal yönetim modalı bulunamadı!'); return; }
+    modal.style.display = 'flex';
+    document.getElementById('overlay').style.display = 'block';
+    renderChannelManageList();
+}
+
+function closeChannelManageModal() {
+    const modal = document.getElementById('channelManageModal');
+    if (modal) modal.style.display = 'none';
+    document.getElementById('overlay').style.display = 'none';
+}
+
+function renderChannelManageList() {
+    const container = document.getElementById('channelManageList');
+    if (!container) return;
+    const channels = Object.entries(cachedChannels).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+    let html = '';
+    channels.forEach(([name, ch]) => {
+        html += `<div class="role-list-item">
+            <div class="role-list-info">
+                <div class="role-list-avatar"><i class="fas fa-hashtag"></i></div>
+                <div class="role-list-details">
+                    <span class="role-list-name"># ${ch.label || name}</span>
+                    <span class="role-list-role">${ch.isHidden ? 'Gizli' : 'Açık'} • ${ch.isLocked ? 'Kilitli' : 'Serbest'}</span>
+                </div>
+            </div>
+            <div class="role-list-actions">
+                <button class="role-list-btn" onclick="renameChannelPrompt('${name}')" title="Yeniden adlandır"><i class="fas fa-edit"></i></button>
+                <button class="role-list-btn" onclick="toggleChannelHidden('${name}')" title="${ch.isHidden ? 'Görünür yap' : 'Gizle'}"><i class="fas fa-eye${ch.isHidden ? '' : '-slash'}"></i></button>
+                <button class="role-list-btn" onclick="toggleChannelLocked('${name}')" title="${ch.isLocked ? 'Kilidi aç' : 'Kilitle'}"><i class="fas fa-lock${ch.isLocked ? '-open' : ''}"></i></button>
+                ${name !== 'genel' ? `<button class="role-list-btn danger" onclick="deleteChannel('${name}')" title="Sil"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html || '<div style="color:var(--text-muted); text-align:center;">Kanal yok</div>';
+}
+
+function renameChannelPrompt(name) {
+    const ch = cachedChannels[name];
+    if (!ch) return;
+    const newLabel = prompt('Yeni kanal adı:', ch.label || name);
+    if (newLabel) renameChannel(name, newLabel.trim());
+}
+
+function createChannelPrompt() {
+    const name = prompt('Kanal adı (harf/rakam/_):');
+    if (!name) return;
+    const label = prompt('Görünen ad:', name);
+    const hidden = confirm('Kanal gizli olsun mu? (Tamam = Gizli, İptal = Açık)');
+    createChannel(name, label || name, hidden);
+}
+
+async function muteInChannel(channelName, username, duration = 10, reason = 'Kanal susturma') {
+    if (!hasRole('admin')) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+    if (!channelMutesRef) return;
+    const until = Date.now() + duration * 60000;
+    await channelMutesRef.child(channelName).child(username).set({ until, reason, by: currentUser.name });
+    incrementWriteCount();
+    addSystemMessage(`🔇 ${username}, #${channelName} kanalında ${duration} dk susturuldu.`);
+}
+
+async function unmuteInChannel(channelName, username) {
+    if (!hasRole('admin')) return;
+    if (!channelMutesRef) return;
+    await channelMutesRef.child(channelName).child(username).remove();
+    incrementWriteCount();
+    addSystemMessage(`🔊 ${username}, #${channelName} kanalındaki susturması kaldırıldı.`);
+}
+
+async function isMutedInChannel(channelName, username) {
+    if (!channelMutesRef) return false;
+    const snap = await channelMutesRef.child(channelName).child(username).once('value');
+    const data = snap.val();
+    if (!data) return false;
+    if (data.until > Date.now()) return true;
+    await channelMutesRef.child(channelName).child(username).remove();
+    return false;
+}
+
+async function kickFromChannel(channelName, username) {
+    if (!hasRole('operator')) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+    addSystemMessage(`👢 ${username}, #${channelName} kanalından çıkarıldı.`);
+    // Kullanıcıya bildirim
+    const chatId = generateChatId(username, 'System');
+    await privateChatsRef.child(chatId).push({
+        sender: 'System',
+        text: `👢 #${channelName} kanalından çıkarıldınız. Yetkili: ${currentUser.name}`,
+        timestamp: Date.now(),
+        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        isNotification: true
+    });
+}
+
+async function switchChannel(name) {
+    if (!cachedChannels[name]) { addSystemMessage('❌ Kanal bulunamadı!'); return; }
+    // Kilitli kanal kontrolü
+    if (cachedChannels[name].isLocked && !hasRole('operator')) {
+        addSystemMessage(`🔒 #${name} kanalı kilitli!`); return;
+    }
+    // Üyelik kontrolü (gizli kanallar için)
+    if (cachedChannels[name].isHidden && !hasRole('operator') && !hasRole('admin')) {
+        addSystemMessage(`🔒 #${name} kanalına erişim yok!`); return;
+    }
+
+    // Eski listener'ı kaldır
+    if (channelMessagesListener && channelMessagesRef) {
+        channelMessagesRef.off('child_added', channelMessagesListener);
+    }
+
+    currentChannel = name;
+    renderChannelTabs();
+
+    const label = getChannelLabel(name);
+    const headerEl = document.getElementById('currentChannelLabel');
+    if (headerEl) headerEl.textContent = `# ${label}`;
+
+    // Mesajları yükle
+    const container = document.getElementById('messages');
+    container.innerHTML = '<div class="message-item system">Mesajlar yükleniyor...</div>';
+
+    channelMessagesRef = database.ref(`channelMessages/${name}`);
+    channelMessagesRef.limitToLast(MESSAGE_LIMIT).once('value').then(snapshot => {
+        const msgs = snapshot.val();
+        container.innerHTML = '';
+        if (!msgs) {
+            container.innerHTML = `<div class="message-item system"># ${label} kanalına hoş geldiniz. İlk mesajı siz gönderin!</div>`;
+        } else {
+            const arr = Object.entries(msgs).map(([id, v]) => ({ id, ...v }));
+            arr.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            arr.forEach(m => appendMessageToUI(m));
+        }
+        // Yeni mesaj dinleyicisi
+        channelMessagesRef.limitToLast(MESSAGE_LIMIT).on('child_added', channelMessagesListener = (snap) => {
+            const msg = { id: snap.key, ...snap.val() };
+            if (!document.getElementById(`msg_${snap.key}`)) appendMessageToUI(msg);
+        });
+    });
+
+    addSystemMessage(`📢 #${label} kanalına geçildi.`);
+}
+
+/* ============================================================
    PROFİL
    ============================================================ */
 function loadUserProfile(username) {
@@ -559,8 +779,8 @@ function loadUserProfile(username) {
                 if (profile.avatar) {
                     const profileIcon = document.getElementById('profileAvatarPreview');
                     if (profileIcon) profileIcon.innerHTML = `<img src="${profile.avatar}" style="width:100%;height:100%;object-fit:cover;">`;
-                    const pIcon = document.getElementById('profileIcon');
-                    if (pIcon) pIcon.classList.add('has-image');
+                    const pi = document.getElementById('profileIcon');
+                    if (pi) pi.classList.add('has-image');
                 }
             }
         }
@@ -651,8 +871,7 @@ async function completeLogin(username, role, isRegistered, userData) {
     const userInfo = {
         name: username, lastSeen: now, joinedAt: now,
         isOnline: true, timestamp: now, role: role,
-        isRegistered: isRegistered, isHidden: (role === 'owner'),
-        isGuest: false
+        isRegistered: isRegistered, isHidden: (role === 'owner')
     };
     await usersRef.child(username).set(userInfo);
     usersRef.child(username).onDisconnect().update({ isOnline: false, lastSeen: Date.now() });
@@ -675,15 +894,54 @@ async function completeLogin(username, role, isRegistered, userData) {
 
     const canAddToPlaylist = hasRole('admin');
     const addWeb = document.getElementById('addVideoBtnWeb');
-    const addMobile = document.getElementById('addVideoBtnMobile');
+    const addMob = document.getElementById('addVideoBtnMobile');
     if (addWeb) addWeb.disabled = !canAddToPlaylist;
-    if (addMobile) addMobile.disabled = !canAddToPlaylist;
+    if (addMob) addMob.disabled = !canAddToPlaylist;
 
     if (isOwner) startOwnerPrivateMessageMonitoring();
 
     setInterval(() => {
         if (currentUser && usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now(), isOnline: true });
     }, PING_INTERVAL);
+
+    // Kayıtsız kullanıcı için 2 dk sonra "Misafir" yap
+    if (!isRegistered && username !== SECURE_CONFIG.OWNER_CONFIG.username) {
+        if (guestNameTimer) clearTimeout(guestNameTimer);
+        guestNameTimer = setTimeout(() => {
+            renameToGuest(username);
+        }, GUEST_RENAME_DELAY);
+    }
+}
+
+async function renameToGuest(oldName) {
+    if (!currentUser || currentUser.name !== oldName) return;
+    const guestName = 'Misafir_' + Math.floor(1000 + Math.random() * 9000);
+    try {
+        // Kullanıcı adını değiştir (yeni kayıt oluştur, eskiyi sil)
+        const userData = (await usersRef.child(oldName).once('value')).val() || {};
+        userData.name = guestName;
+        userData.isGuest = true;
+        await usersRef.child(guestName).set(userData);
+        await usersRef.child(oldName).remove();
+
+        // Rol listelerinden temizle
+        for (const role of Object.keys(roleListConfig)) {
+            await removeFromRoleList(role, oldName);
+        }
+
+        // currentUser güncelle
+        const oldNameRef = currentUser.name;
+        currentUser.name = guestName;
+        currentUser.data.name = guestName;
+        currentUser.isRegistered = false;
+        currentUser.role = 'user';
+        currentUser.data.isGuest = true;
+
+        // Kanal mesajlarını güncelle (opsiyonel)
+        addSystemMessage(`👤 Kayıtsız kullanıcı adınız 2 dakika içinde değiştirilmediği için "${guestName}" olarak güncellendi.`);
+    } catch (e) {
+        console.error('Misafir adı değiştirme hatası:', e);
+    }
 }
 
 function showLoginError(message) {
@@ -702,6 +960,7 @@ function showLoginSuccess(message) {
 
 function logout() {
     if (currentUser && usersRef) usersRef.child(currentUser.name).update({ isOnline: false, lastSeen: Date.now() });
+    if (guestNameTimer) clearTimeout(guestNameTimer);
     if (typeof cameraStream !== 'undefined' && cameraStream) cameraStream.getTracks().forEach(t => t.stop());
     if (typeof audioStream !== 'undefined' && audioStream) audioStream.getTracks().forEach(t => t.stop());
     location.reload();
