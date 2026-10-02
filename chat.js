@@ -1,6 +1,6 @@
 /* =====================================================================
    CETCETY – chat.js
-   Genel sohbet, özel sohbet, medya, bildirimler, kullanıcı listesi
+   Genel sohbet, kanal sohbeti, özel sohbet, medya, bildirimler, kullanıcı listesi
    ===================================================================== */
 
 let isSendingMessage = false;
@@ -47,6 +47,15 @@ async function sendMessage() {
         if (await checkGlobalBan(currentUser.name)) { addSystemMessage('🚫 Global banlandınız!'); return; }
         if (isMuted(currentUser.name)) { addSystemMessage('🔇 Susturuldunuz!'); return; }
 
+        // Kanal susturma kontrolü
+        if (await isMutedInChannel(currentChannel, currentUser.name)) {
+            addSystemMessage(`🔇 #${currentChannel} kanalında susturuldunuz!`); return;
+        }
+        // Kanal kilit kontrolü
+        if (cachedChannels[currentChannel]?.isLocked && !hasRole('operator')) {
+            addSystemMessage(`🔒 #${currentChannel} kanalı kilitli!`); return;
+        }
+
         const input = document.getElementById('message-input');
         const text = input.value.trim();
         if (!text) return;
@@ -61,9 +70,18 @@ async function sendMessage() {
             sender: currentUser.name, text: text, type: currentUser.role,
             timestamp: Date.now(),
             time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-            avatar: currentProfileAvatar || null
+            avatar: currentProfileAvatar || null,
+            channel: currentChannel
         };
-        await messagesRef.push(messageData);
+
+        // Kanal mesajlarına yaz
+        const msgRef = database.ref(`channelMessages/${currentChannel}`).push();
+        await msgRef.set(messageData);
+
+        // Genel kanal için eski messagesRef'e de yaz (uyumluluk)
+        if (currentChannel === 'genel') {
+            await messagesRef.push(messageData);
+        }
         incrementWriteCount();
         input.value = ''; autoResize(input);
         if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
@@ -86,7 +104,7 @@ function loadGeneralMessages() {
     if (!messagesRef) return;
     messagesRef.off();
     messagesRef.limitToLast(MESSAGE_LIMIT).on('value', (snapshot) => {
-        updateMessages(snapshot.val());
+        if (currentChannel === 'genel') updateMessages(snapshot.val());
     });
 }
 
@@ -104,6 +122,7 @@ function updateMessages(messages) {
 
 function appendMessageToUI(message) {
     const container = document.getElementById('messages');
+    if (!container) return;
     if (document.getElementById(`msg_${message.id}`)) return;
     const messageDiv = document.createElement('div');
     messageDiv.className = `message-item ${message.type || 'user'}`;
@@ -148,18 +167,35 @@ function appendMessageToUI(message) {
 }
 
 async function deleteMessage(messageId) {
-    if (!messagesRef || !currentUser) return;
+    if (!currentUser) return;
     try {
-        const snapshot = await messagesRef.child(messageId).once('value');
+        const msgRef = database.ref(`channelMessages/${currentChannel}`).child(messageId);
+        const snapshot = await msgRef.once('value');
         const message = snapshot.val();
-        if (!message) return;
+        if (!message) {
+            // genel messagesRef'te olabilir
+            const s2 = await messagesRef.child(messageId).once('value');
+            const m2 = s2.val();
+            if (!m2) return;
+            if (m2.sender !== currentUser.name && !hasRole('operator')) {
+                addSystemMessage('⛔ Sadece kendi mesajlarınızı silebilirsiniz!'); return;
+            }
+            if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
+                await messagesRef.child(messageId).remove();
+                const div = document.getElementById(`msg_${messageId}`);
+                if (div) div.remove();
+                incrementWriteCount();
+            }
+            return;
+        }
         if (message.sender !== currentUser.name && !hasRole('operator')) {
             addSystemMessage('⛔ Sadece kendi mesajlarınızı silebilirsiniz!'); return;
         }
         if (confirm('Bu mesajı silmek istediğinize emin misiniz?')) {
-            await messagesRef.child(messageId).remove();
-            const messageDiv = document.getElementById(`msg_${messageId}`);
-            if (messageDiv) messageDiv.remove();
+            await msgRef.remove();
+            if (currentChannel === 'genel') await messagesRef.child(messageId).remove().catch(()=>{});
+            const div = document.getElementById(`msg_${messageId}`);
+            if (div) div.remove();
             incrementWriteCount();
         }
     } catch (error) { addSystemMessage('❌ Mesaj silinemedi!'); }
@@ -167,6 +203,7 @@ async function deleteMessage(messageId) {
 
 function addSystemMessage(text) {
     const container = document.getElementById('messages');
+    if (!container) return;
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message-item system';
     messageDiv.innerHTML = text;
@@ -939,11 +976,11 @@ function updateUserListUI() {
     usersToDisplay.forEach(user => {
         const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
         let badgeHtml = '';
-        if (isOwnerUser) badgeHtml = '<span class="badge owner" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-crown"></i></span>';
-        else if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) badgeHtml = '<span class="badge admin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-shield-alt"></i></span>';
-        else if (coAdminList.includes(user.username)) badgeHtml = '<span class="badge coadmin" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-users"></i></span>';
-        else if (operatorList.includes(user.username)) badgeHtml = '<span class="badge operator" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-bolt"></i></span>';
-        else if (verifiedList.includes(user.username)) badgeHtml = '<span class="badge verified" style="display:flex; width:18px; height:18px; font-size:9px;"><i class="fas fa-check-circle"></i></span>';
+        if (isOwnerUser) badgeHtml = '<span class="badge owner" style="display:flex; width:18px; height:18px; font-size:9px;">♛</span>';
+        else if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) badgeHtml = '<span class="badge admin" style="display:flex; width:18px; height:18px; font-size:9px;">✦</span>';
+        else if (coAdminList.includes(user.username)) badgeHtml = '<span class="badge coadmin" style="display:flex; width:18px; height:18px; font-size:9px;">◈</span>';
+        else if (operatorList.includes(user.username)) badgeHtml = '<span class="badge operator" style="display:flex; width:18px; height:18px; font-size:9px;">◇</span>';
+        else if (verifiedList.includes(user.username)) badgeHtml = '<span class="badge verified" style="display:flex; width:18px; height:18px; font-size:9px;">✓</span>';
         const userAvatar = userProfiles[user.username]?.avatar || null;
         const avatarHtml = userAvatar ? `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">` : '';
         let statusText = user.secondsAgo > 10 ? ` (${user.secondsAgo}sn)` : ' (Şimdi)';
@@ -1022,7 +1059,8 @@ async function handleCommand(cmd) {
         case 'temizle':
             if (!hasRole('coadmin')) { addSystemMessage('⛔ Sadece yetkililer tüm mesajları temizleyebilir!'); return; }
             if (confirm('TÜM mesajları temizlemek istediğinize emin misiniz?')) {
-                await messagesRef.remove();
+                await database.ref(`channelMessages/${currentChannel}`).remove();
+                if (currentChannel === 'genel') await messagesRef.remove();
                 document.getElementById('messages').innerHTML = '<div class="message-item system">✅ Tüm mesajlar temizlendi!</div>';
                 addSystemMessage('✅ Tüm mesajlar temizlendi!');
             }
@@ -1129,6 +1167,35 @@ async function handleCommand(cmd) {
         case 'yardım': case 'help': showHelp(); break;
         case 'ping': addSystemMessage('🏓 Pong! Bağlantı aktif.'); break;
         case 'çıkış': case 'exit': case 'logout': case 'quit': logout(); break;
+        /* Kanal komutları */
+        case 'kanal': case 'channel':
+            if (args.length === 0) { addSystemMessage('Kullanım: /kanal [ad] [etiket] [gizli?]'); return; }
+            await createChannel(args[0], args[1] || args[0], args[2] === 'gizli');
+            break;
+        case 'kanallar': case 'channels':
+            renderChannelManageList();
+            addSystemMessage('📋 Kanal listesi güncellendi. Yönetim panelini açmak için /kanalyonet yazın.');
+            break;
+        case 'kanalyonet': case 'channelmanage':
+            openChannelManageModal(); break;
+        case 'kanalsil': case 'channeldelete':
+            if (args.length === 1) await deleteChannel(args[0]);
+            break;
+        case 'kanalgizle': case 'channellisthide':
+            if (args.length === 1) await toggleChannelHidden(args[0]);
+            break;
+        case 'kanalkilitle': case 'channellock':
+            if (args.length === 1) await toggleChannelLocked(args[0]);
+            break;
+        case 'kanalsustur': case 'channelmute':
+            if (args.length >= 1) await muteInChannel(currentChannel, args[0], args[1] ? parseInt(args[1]) : 10, args.slice(2).join(' ') || 'Kanal susturma');
+            break;
+        case 'kanalunmute':
+            if (args.length === 1) await unmuteInChannel(currentChannel, args[0]);
+            break;
+        case 'kanalcikar': case 'channelkick':
+            if (args.length === 1) await kickFromChannel(currentChannel, args[0]);
+            break;
         default: addSystemMessage(`❌ Bilinmeyen komut: ${command}`);
     }
 }
@@ -1169,11 +1236,11 @@ function showFirebaseUsers() {
 function showHelp() {
     let help = '🔥 <strong>TÜM KOMUTLAR:</strong><br><br>';
     help += '👑 <strong>OWNER:</strong> /ownerpanel /özelokuma /özelara /özeltemizle /komut<br>';
-    help += '⭐️ <strong>ADMIN:</strong> /adminpanel /globalban /removeglobalban /info /reg /verified /unverified /coadmin /removecoadmin /opglobal /deopglobal<br>';
+    help += '⭐️ <strong>ADMIN:</strong> /adminpanel /globalban /removeglobalban /info /reg /verified /unverified /coadmin /removecoadmin /opglobal /deopglobal /kanal /kanalsil /kanalgizle /kanalkilitle /kanalyonet<br>';
     help += '🔰 <strong>CO-ADMIN:</strong> /coadminpanel /mute /unmute /temizle /kick /unban /banlist /sikayetler<br>';
-    help += '⚡️ <strong>OPERATÖR:</strong> /operatorpanel /mute /unmute<br>';
+    help += '⚡️ <strong>OPERATÖR:</strong> /operatorpanel /mute /unmute /kanalsustur /kanalunmute /kanalcikar<br>';
     help += '✅ <strong>ONAYLI:</strong> /verifiedpanel<br>';
-    help += '👤 <strong>HERKES:</strong> /kullanıcılar /yardım /ping /çıkış';
+    help += '👤 <strong>HERKES:</strong> /kullanıcılar /yardım /ping /çıkış /kanallar';
     addSystemMessage(help);
 }
 
@@ -1205,7 +1272,8 @@ function showChatRules() {
 }
 function refreshChatMessages() {
     document.getElementById('chatOverflowMenu').hidden = true;
-    loadGeneralMessages();
+    if (currentChannel) switchChannel(currentChannel);
+    else loadGeneralMessages();
 }
 function closeChatPanel() {
     const chat = document.getElementById('chatContainer');
