@@ -4636,7 +4636,7 @@
                 </div>
             </div>
             <button class="audio-record-btn" onclick="startAudioRecording()" title="Sesli Mesaj Gönder"><i class="fas fa-microphone"></i></button>
-            <input type="file" id="galleryUpload" accept="image/*" style="display: none;" multiple>
+            <input type="file" id="galleryUpload" accept="image/*" capture="environment" style="display: none;" multiple>
             <input type="file" id="cameraUpload" accept="image/*" capture="environment" style="display: none;">
             <textarea 
                 id="private-input" 
@@ -6088,11 +6088,15 @@
             }
         }
 
+        function isImageFile(file) {
+            return Boolean(file) && (file.type?.startsWith('image/') || /\.(heic|heif)$/i.test(file.name || ''));
+        }
+
         async function handleGalleryUpload(event) {
             const files = Array.from(event.target.files || []);
             try {
                 for (const file of files) {
-                    if (!file.type.startsWith('image/')) {
+                    if (!isImageFile(file)) {
                         addSystemMessage('❌ Yalnızca resim dosyaları gönderilebilir.');
                         continue;
                     }
@@ -6108,7 +6112,7 @@
         async function handleCameraUpload(event) {
             const file = event.target.files?.[0];
             try {
-                if (file && file.type.startsWith('image/')) {
+                if (file && isImageFile(file)) {
                     await sendPrivateImage(file, '📸 Kameradan fotoğraf gönderdi');
                 } else if (file) {
                     addSystemMessage('❌ Kameradan resim alınamadı.');
@@ -6134,21 +6138,23 @@
 
             try {
                 audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+                const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg']
                     .find(type => MediaRecorder.isTypeSupported(type));
-                const options = { audioBitsPerSecond: 32000 };
+                const options = {};
                 if (mimeType) options.mimeType = mimeType;
+
                 try {
-                    mediaRecorderAudio = new MediaRecorder(audioStream, options);
+                    mediaRecorderAudio = new MediaRecorder(audioStream, Object.keys(options).length ? options : undefined);
                 } catch (error) {
                     mediaRecorderAudio = new MediaRecorder(audioStream);
                 }
+
                 audioChunks = [];
                 mediaRecorderAudio.ondataavailable = event => {
-                    if (event.data.size) audioChunks.push(event.data);
+                    if (event.data && event.data.size) audioChunks.push(event.data);
                 };
                 mediaRecorderAudio.onerror = event => {
-                    console.error('Ses kaydı hatası:', event.error);
+                    console.error('Ses kaydı hatası:', event.error || event);
                     addSystemMessage('❌ Ses kaydı sırasında hata oluştu.');
                 };
                 mediaRecorderAudio.onstop = async () => {
@@ -6173,12 +6179,15 @@
                         }
                     }
                 };
-                mediaRecorderAudio.start();
+
+                mediaRecorderAudio.start(250);
                 isAudioRecording = true;
                 const audioButton = document.querySelector('.audio-record-btn');
-                audioButton.classList.add('recording');
-                audioButton.innerHTML = '<i class="fas fa-stop"></i>';
-                audioButton.title = 'Kaydı Durdur';
+                if (audioButton) {
+                    audioButton.classList.add('recording');
+                    audioButton.innerHTML = '<i class="fas fa-stop"></i>';
+                    audioButton.title = 'Kaydı Durdur';
+                }
                 setTimeout(() => {
                     if (isAudioRecording) {
                         stopAudioRecording();
@@ -8463,7 +8472,37 @@
         }
 
         function capturePhoto() {
-            alert('Fotoğraf çekme özelliği yakında...');
+            const cameraVideo = document.getElementById('camera-stream');
+            const canvas = document.getElementById('camera-preview');
+            if (!cameraVideo || !canvas) {
+                addSystemMessage('❌ Kamera önizlemesi bulunamadı.');
+                return;
+            }
+            if (!cameraVideo.videoWidth || !cameraVideo.videoHeight) {
+                addSystemMessage('❌ Kamera henüz hazır değil. Lütfen tekrar deneyin.');
+                return;
+            }
+
+            const context = canvas.getContext('2d');
+            canvas.width = cameraVideo.videoWidth;
+            canvas.height = cameraVideo.videoHeight;
+            context.drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob(async (blob) => {
+                if (!blob) {
+                    addSystemMessage('❌ Fotoğraf yakalanamadı.');
+                    return;
+                }
+                try {
+                    const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
+                    await sendPrivateImage(file, '📸 Kameradan fotoğraf gönderdi');
+                } catch (error) {
+                    console.error('Kameradan fotoğraf gönderilemedi:', error);
+                    addSystemMessage('❌ Fotoğraf gönderilemedi.');
+                } finally {
+                    closeCameraModal();
+                }
+            }, 'image/jpeg', 0.82);
         }
 
         function startVideoRecording() {
