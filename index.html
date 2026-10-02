@@ -4012,7 +4012,7 @@
             
             <div class="playlist-section" id="playlistSection">
                 <div class="playlist-header">
-                    <h3><i class="fas fa-list"></i> Oynatma Listesi</h3>
+                    <h3><i class="fas fa-list"></i> <span id="playlistHeading">Oynatma Listesi</span></h3>
                     <div class="playlist-header-actions">
                         <button class="icon-btn" style="width:36px;height:36px;" onclick="togglePlaylistDrawer()" title="Listeyi Aç"><i class="fas fa-chevron-up"></i></button>
                     </div>
@@ -4805,6 +4805,11 @@
         
         let playlist = [];
         let currentVideoId = 'i75BZYOAPl4';
+        let activeChannelPlaylistRef = null;
+        let activeChannelPlaylistListener = null;
+        let activeChannelPlaybackRef = null;
+        let activeChannelPlaybackListener = null;
+        let activeChannelVideoId = null;
         
         let cameraStream = null;
         let mediaRecorder = null;
@@ -5376,7 +5381,7 @@
         window.addEventListener('load', updateMobileUI);
 
         function addToPlaylistFromMobile() {
-            if (!hasRole('admin')) {
+            if (!hasRole('admin') && !canManageChannel(currentChannel)) {
                 alert('Bu işlem için yetkiniz yok!');
                 return;
             }
@@ -5397,6 +5402,7 @@
             };
             if (playlistRef) {
                 playlistRef.push(newPlaylistItem);
+                incrementWriteCount();
             }
             document.getElementById('playlistUrlMobile').value = '';
             document.getElementById('playlistVideoTitleMobile').value = '';
@@ -6160,7 +6166,7 @@
             loadUserProfile(username);
             
             // Playlist ekleme butonlarını role göre ayarla
-            const canAddToPlaylist = hasRole('admin');
+            const canAddToPlaylist = hasRole('admin') || canManageChannel(currentChannel);
             document.getElementById('addVideoBtnWeb').disabled = !canAddToPlaylist;
             document.getElementById('addVideoBtnMobile').disabled = !canAddToPlaylist;
             
@@ -9166,24 +9172,77 @@
         }
 
         function loadGeneralPlaylist() {
-            if (!playlistRef) return;
-            playlistRef.off();
-            playlistRef.on('value', (snapshot) => {
-                const data = snapshot.val();
-                let tempPlaylist = [];
-                if (data) {
-                    tempPlaylist = Object.values(data).filter(item => item && item.id && item.title);
-                }
-                playlist = tempPlaylist;
+            if (cachedChannels[currentChannel]) loadChannelMedia(currentChannel);
+        }
+
+        function setChannelVideo(videoId, updateRemote = true) {
+            currentVideoId = videoId || null;
+            activeChannelVideoId = currentVideoId;
+            const placeholder = document.querySelector('.video-placeholder');
+            if (placeholder) placeholder.style.display = currentVideoId ? 'none' : 'flex';
+            if (currentVideoId && player && player.loadVideoById) player.loadVideoById(currentVideoId);
+            else if (player && player.stopVideo) player.stopVideo();
+            updatePlaylistUIWeb();
+            updatePlaylistDrawer();
+            if (updateRemote && activeChannelPlaybackRef) {
+                activeChannelPlaybackRef.update({
+                    videoId: currentVideoId || '',
+                    updatedBy: currentUser?.name || 'system',
+                    updatedAt: Date.now()
+                });
+            }
+        }
+
+        async function loadChannelMedia(channelName) {
+            if (!database || !channelName) return;
+            if (activeChannelPlaylistRef && activeChannelPlaylistListener) {
+                activeChannelPlaylistRef.off('value', activeChannelPlaylistListener);
+            }
+            if (activeChannelPlaybackRef && activeChannelPlaybackListener) {
+                activeChannelPlaybackRef.off('value', activeChannelPlaybackListener);
+            }
+
+            activeChannelPlaylistRef = channelName === 'genel'
+                ? database.ref('playlist')
+                : database.ref(`channelPlaylists/${channelName}`);
+            playlistRef = activeChannelPlaylistRef;
+            activeChannelPlaybackRef = database.ref(`channelPlayback/${channelName}`);
+            activeChannelVideoId = null;
+
+            const playbackSnapshot = await activeChannelPlaybackRef.once('value');
+            if (currentChannel !== channelName) return;
+            const savedVideoId = playbackSnapshot.val()?.videoId || '';
+            let hasPickedInitialVideo = Boolean(savedVideoId);
+            if (savedVideoId) {
+                setChannelVideo(savedVideoId, false);
+            } else if (channelName === 'genel') {
+                setChannelVideo('i75BZYOAPl4', false);
+            } else {
+                setChannelVideo(null, false);
+            }
+
+            activeChannelPlaybackListener = snapshot => {
+                if (currentChannel !== channelName) return;
+                const videoId = snapshot.val()?.videoId || null;
+                if (videoId !== currentVideoId) setChannelVideo(videoId, false);
+            };
+            activeChannelPlaybackRef.on('value', activeChannelPlaybackListener);
+
+            activeChannelPlaylistListener = snapshot => {
+                if (currentChannel !== channelName) return;
+                const data = snapshot.val() || {};
+                playlist = Object.values(data).filter(item => item && item.id && item.title);
                 updatePlaylistUIWeb();
                 updatePlaylistDrawer();
-                if (playlist.length > 0 && (!currentVideoId || !playlist.some(item => item.id === currentVideoId))) {
-                    playVideo(playlist[0].id);
-                } else if (playlist.length === 0 && player && player.stopVideo) {
-                    player.stopVideo();
-                    currentVideoId = null;
+                if (!hasPickedInitialVideo && playlist.length) {
+                    setChannelVideo(playlist[0].id);
+                    hasPickedInitialVideo = true;
                 }
-            });
+            };
+            activeChannelPlaylistRef.on('value', activeChannelPlaylistListener);
+
+            const heading = document.getElementById('playlistHeading');
+            if (heading) heading.textContent = `#${cachedChannels[channelName]?.label || channelName} Yayın Listesi`;
         }
 
         function updatePlaylistUIWeb() {
@@ -9212,13 +9271,14 @@
         function removeFromPlaylist(videoId, event) {
             event.stopPropagation();
             const itemToRemove = playlist.find(item => item.id === videoId);
-            if (itemToRemove && playlistRef) {
-                playlistRef.once('value', (snapshot) => {
+            if (itemToRemove && activeChannelPlaylistRef) {
+                const channelPlaylistRef = activeChannelPlaylistRef;
+                channelPlaylistRef.once('value', (snapshot) => {
                     const items = snapshot.val();
                     if (items) {
                         Object.entries(items).forEach(([key, value]) => {
                             if (value.id === videoId) {
-                                playlistRef.child(key).remove();
+                                channelPlaylistRef.child(key).remove();
                             }
                         });
                     }
@@ -9232,22 +9292,14 @@
                 if (playlist.length > 0 && videoId === currentVideoId) {
                     playVideo(playlist[0].id);
                 } else if (playlist.length === 0) {
-                    if (player && player.stopVideo) {
-                        player.stopVideo();
-                    }
-                    currentVideoId = null;
+                    setChannelVideo(null);
                 }
             }
         }
 
         function playVideo(videoId) {
             if (!videoId) return;
-            currentVideoId = videoId;
-            if (player && player.loadVideoById) {
-                player.loadVideoById(videoId);
-            }
-            updatePlaylistUIWeb();
-            updatePlaylistDrawer();
+            setChannelVideo(videoId);
         }
 
         function initYouTubePlayer() {
@@ -9264,7 +9316,8 @@
                     },
                     events: {
                         'onReady': function(event) {
-                            document.querySelector('.video-placeholder').style.display = 'none';
+                            const placeholder = document.querySelector('.video-placeholder');
+                            if (placeholder) placeholder.style.display = currentVideoId ? 'none' : 'flex';
                         },
                         'onStateChange': function(event) {
                             if (event.data === YT.PlayerState.ENDED) {
@@ -9383,6 +9436,7 @@
         function setupEfficientListeners() {
             messagesRef.limitToLast(MESSAGE_LIMIT).off('child_added');
             messagesRef.limitToLast(MESSAGE_LIMIT).on('child_added', (snapshot) => {
+                if (currentChannel !== 'genel') return;
                 const newMessage = { id: snapshot.key, ...snapshot.val() };
                 cachedMessages.push(newMessage);
                 if (cachedMessages.length > MESSAGE_LIMIT) {
@@ -9476,7 +9530,7 @@
         }
 
         function addToPlaylistFromWeb() {
-            if (!hasRole('admin')) {
+            if (!hasRole('admin') && !canManageChannel(currentChannel)) {
                 alert('Bu işlem için yetkiniz yok!');
                 return;
             }
@@ -9495,8 +9549,8 @@
                 addedBy: currentUser ? currentUser.name : 'Anonim',
                 timestamp: Date.now()
             };
-            if (playlistRef) {
-                playlistRef.push(newPlaylistItem);
+            if (activeChannelPlaylistRef) {
+                activeChannelPlaylistRef.push(newPlaylistItem);
                 incrementWriteCount();
                 if (playlist.length === 0) {
                     setTimeout(() => {
@@ -9577,6 +9631,9 @@
             }).join('') || '<span class="channel-empty">Kanal yok</span>';
             const manageButton = document.getElementById('channelManageToggle');
             if (manageButton) manageButton.style.display = (hasRole('admin') || isOwner || Object.keys(cachedChannels).some(canManageChannel)) ? 'inline-flex' : 'none';
+            const canManagePlaylist = hasRole('admin') || canManageChannel(currentChannel);
+            document.getElementById('addVideoBtnWeb').disabled = !canManagePlaylist;
+            document.getElementById('addVideoBtnMobile').disabled = !canManagePlaylist;
         }
 
         function toggleChannelManageArea() {
@@ -9684,6 +9741,10 @@
             activeChannelName = name;
             activeChannelMessagesRef = name === 'genel' ? messagesRef : database.ref(`channelMessages/${name}`);
             renderChannelTabs();
+            const canManagePlaylist = hasRole('admin') || canManageChannel(name);
+            document.getElementById('addVideoBtnWeb').disabled = !canManagePlaylist;
+            document.getElementById('addVideoBtnMobile').disabled = !canManagePlaylist;
+            loadChannelMedia(name);
             const input = document.getElementById('message-input');
             if (input) input.placeholder = channel.isLocked && !canManageChannel(name) && !hasRole('operator') ? 'Bu kanal sessize alındı' : 'Sohbet...';
             const container = document.getElementById('messages');
