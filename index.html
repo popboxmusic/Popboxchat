@@ -4256,9 +4256,7 @@
             line-height: 1.6;
         }
         
-    </style>          ← BURADA BİTİYOR
-</head>
-    </style>
+    </style> 
 </head>
 <body>
     <!-- ============================================================
@@ -13318,7 +13316,894 @@
             sidebar.appendChild(chatPopover);
             chatPopover.hidden = false;
         })();
+        /* ============================================================
+   PROXY BOT v1.0 — Süpervizör Otomatik Moderasyon Botu
+   Sahibi: mateky (Owner)
+   Rol: Süpervizör (Admin altı, Co-Admin üstü)
+   İkon: ⚙️ Çark
+   ============================================================
+   Bu bot bağımsız çalışır. Ana HTML'ye sadece
+   <script src="proxy-bot.js"></script>
+   eklemeniz yeterlidir.
+   ============================================================ */
+
+(function () {
+    'use strict';
+
+    // ============================================================
+    // YAPILANDIRMA
+    // ============================================================
+    const PROXY_CONFIG = {
+        BOT_NAME: 'Proxy',
+        BOT_ICON: '⚙️',
+        BOT_TAG: '[PROXY]',
+        OWNER_NAME: 'mateky',           // Sadece bu kullanıcı botu yönetir
+        LEVEL: 4.5,                     // Admin(5) altı, Co-Admin(4) üstü
+        ROLE_KEY: 'supervisor',
+
+        // Koruma Eşikleri
+        FLOOD_LIMIT: 5,                 // 5 saniyede max 5 mesaj
+        FLOOD_WINDOW_MS: 5000,
+        SPAM_REPEAT_LIMIT: 3,           // Aynı mesaj 3 kez → spam
+        SPAM_WINDOW_MS: 30000,
+        CAPS_RATIO: 0.7,                // %70 büyük harf → caps spam
+        LINK_REGEX: /(https?:\/\/|www\.)/i,
+
+        // Müdahale Süreleri (dakika)
+        MUTE_DURATION: 5,               // İlk ihlal → 5 dk mute
+        KICK_DURATION: 30,              // İkinci ihlal → 30 dk kick
+        BAN_DURATION: 1440,             // Üçüncü ihlal → 24 saat ban
+
+        // Uyarı Eşikleri
+        STRIKE_WARN: 2,                 // 2 strike → uyarı
+        STRIKE_MUTE: 3,                 // 3 strike → mute
+        STRIKE_KICK: 5,                 // 5 strike → kick
+        STRIKE_BAN: 7,                  // 7 strike → ban
+
+        // Otomatik kanal katılımı
+        AUTO_JOIN_NEW_CHANNELS: true,
+        MONITOR_ALL_CHANNELS: true,
+
+        // Rapor kanalı
+        REPORT_CHANNEL: 'admin',
+
+        // Strike sıfırlama (ms) — 1 saat
+        STRIKE_RESET_MS: 3600000,
+
+        // Debug
+        DEBUG: true
+    };
+
+    // ============================================================
+    // GLOBAL DURUMLAR
+    // ============================================================
+    const ProxyBot = {
+        initialized: false,
+        version: '1.0.0',
+
+        // Kullanıcı davranış takibi
+        userBehavior: {},       // { username: { messages: [], strikes: 0, lastStrike: 0 } }
+        userStrikes: {},        // { username: number }
+        channelStates: {},      // { channelName: { muted: bool, reason: string } }
+
+        // Aktif dinleyiciler
+        listeners: {
+            messages: {},       // { channelName: ref }
+            channels: null,
+            onlineUsers: null
+        },
+
+        // Bot kullanıcı bilgisi
+        botUser: {
+            name: 'Proxy',
+            role: 'supervisor',
+            level: PROXY_CONFIG.LEVEL,
+            isBot: true,
+            icon: PROXY_CONFIG.BOT_ICON
+        },
+
+        // Firebase refs (ana HTML'den alınacak)
+        refs: {}
+    };
+
+    // Ana HTML'deki global değişkenlere erişim
+    // Bu değişkenler ana script'te tanımlı
+    function getGlobal(name) {
+        try {
+            return window[name];
+        } catch (e) {
+            return undefined;
+        }
+    }
+
+    // ============================================================
+    // YARDIMCI FONKSİYONLAR
+    // ============================================================
+    function log(...args) {
+        if (PROXY_CONFIG.DEBUG) {
+            console.log(`%c${PROXY_CONFIG.BOT_ICON} ${PROXY_CONFIG.BOT_TAG}`, 'color:#00d4ff;font-weight:bold;', ...args);
+        }
+    }
+
+    function warn(...args) {
+        console.warn(`%c${PROXY_CONFIG.BOT_ICON} ${PROXY_CONFIG.BOT_TAG}`, 'color:#ffaa33;font-weight:bold;', ...args);
+    }
+
+    function error(...args) {
+        console.error(`%c${PROXY_CONFIG.BOT_ICON} ${PROXY_CONFIG.BOT_TAG}`, 'color:#ff3d3d;font-weight:bold;', ...args);
+    }
+
+    function normalizeNick(nick) {
+        return nick ? String(nick).toLowerCase().trim() : '';
+    }
+
+    function isOwnerOrAdmin(username) {
+        const norm = normalizeNick(username);
+        // Owner
+        if (norm === normalizeNick(PROXY_CONFIG.OWNER_NAME)) return true;
+        // Admin listesini ana HTML'den al
+        try {
+            const adminList = getGlobal('adminList') || [];
+            const defaultAdmins = (getGlobal('SECURE_CONFIG')?.DEFAULT_ADMINS) || [];
+            if (adminList.some(u => normalizeNick(u) === norm)) return true;
+            if (defaultAdmins.some(u => normalizeNick(u) === norm)) return true;
+        } catch (e) {}
+        return false;
+    }
+
+    function getCurrentUser() {
+        return getGlobal('currentUser') || null;
+    }
+
+    function getDatabase() {
+        return getGlobal('database') || null;
+    }
+
+    function getCurrentChannel() {
+        return getGlobal('currentChannel') || 'genel';
+    }
+
+    function getChannelsCache() {
+        return getGlobal('cachedChannels') || {};
+    }
+
+    // ============================================================
+    // STRIKE SİSTEMİ
+    // ============================================================
+    function getUserStrikes(username) {
+        const norm = normalizeNick(username);
+        const data = ProxyBot.userStrikes[norm] || { count: 0, lastStrike: 0 };
+        // 1 saat geçtiyse sıfırla
+        if (Date.now() - data.lastStrike > PROXY_CONFIG.STRIKE_RESET_MS) {
+            data.count = 0;
+        }
+        return data.count;
+    }
+
+    function addStrike(username, reason) {
+        const norm = normalizeNick(username);
+        if (!ProxyBot.userStrikes[norm]) {
+            ProxyBot.userStrikes[norm] = { count: 0, lastStrike: 0 };
+        }
+        ProxyBot.userStrikes[norm].count++;
+        ProxyBot.userStrikes[norm].lastStrike = Date.now();
+        const count = ProxyBot.userStrikes[norm].count;
+
+        log(`Strike eklendi → ${username} (${count}) — ${reason}`);
+        return count;
+    }
+
+    // ============================================================
+    // DAVRANIŞ ANALİZİ
+    // ============================================================
+    function trackMessage(username, text) {
+        const norm = normalizeNick(username);
+        if (!ProxyBot.userBehavior[norm]) {
+            ProxyBot.userBehavior[norm] = { messages: [] };
+        }
+        const now = Date.now();
+        ProxyBot.userBehavior[norm].messages.push({
+            text: text,
+            timestamp: now
+        });
+        // Son 1 dakikadan eski mesajları temizle
+        ProxyBot.userBehavior[norm].messages = ProxyBot.userBehavior[norm].messages
+            .filter(m => now - m.timestamp < 60000);
+    }
+
+    function detectFlood(username) {
+        const norm = normalizeNick(username);
+        const data = ProxyBot.userBehavior[norm];
+        if (!data) return false;
+        const now = Date.now();
+        const recent = data.messages.filter(m => now - m.timestamp < PROXY_CONFIG.FLOOD_WINDOW_MS);
+        return recent.length >= PROXY_CONFIG.FLOOD_LIMIT;
+    }
+
+    function detectRepeatedSpam(username) {
+        const norm = normalizeNick(username);
+        const data = ProxyBot.userBehavior[norm];
+        if (!data) return false;
+        const now = Date.now();
+        const recent = data.messages
+            .filter(m => now - m.timestamp < PROXY_CONFIG.SPAM_WINDOW_MS)
+            .map(m => m.text.toLowerCase().trim());
+        if (recent.length < PROXY_CONFIG.SPAM_REPEAT_LIMIT) return false;
+
+        // Aynı mesaj kaç kez tekrarlanmış?
+        const counts = {};
+        recent.forEach(text => {
+            counts[text] = (counts[text] || 0) + 1;
+        });
+        return Object.values(counts).some(c => c >= PROXY_CONFIG.SPAM_REPEAT_LIMIT);
+    }
+
+    function detectCapsSpam(text) {
+        if (!text || text.length < 10) return false;
+        const letters = text.replace(/[^a-zA-ZçğıöşüÇĞİÖŞÜ]/g, '');
+        if (letters.length < 8) return false;
+        const uppercase = letters.replace(/[^A-ZÇĞİÖŞÜ]/g, '');
+        return (uppercase.length / letters.length) >= PROXY_CONFIG.CAPS_RATIO;
+    }
+
+    function detectSuspiciousLink(text) {
+        if (!text) return false;
+        if (!PROXY_CONFIG.LINK_REGEX.test(text)) return false;
+        // Güvenli linkler (YouTube vs.) istisna
+        if (/youtube\.com|youtu\.be/i.test(text)) return false;
+        return true;
+    }
+
+    function detectMassMention(text) {
+        if (!text) return false;
+        const mentions = text.match(/@\w+/g) || [];
+        return mentions.length >= 5;
+    }
+
+    function detectAllCapsShouting(text) {
+        if (!text || text.length < 5) return false;
+        return text === text.toUpperCase() && /[A-ZÇĞİÖŞÜ]/.test(text);
+    }
+
+    // ============================================================
+    // MÜDAHALE FONKSİYONLARI
+    // ============================================================
+    async function proxyMuteUser(username, durationMinutes, reason) {
+        const db = getDatabase();
+        if (!db) return false;
+        if (isOwnerOrAdmin(username)) {
+            warn(`⛔ ${username} Owner/Admin — susturulamaz`);
+            return false;
+        }
+
+        try {
+            // Ana HTML'deki mutedUsers objesini güncelle
+            const mutedUsers = getGlobal('mutedUsers');
+            if (mutedUsers) {
+                mutedUsers[username] = Date.now() + (durationMinutes * 60000);
+            }
+
+            // Firebase'e kaydet (mute kaydı)
+            await db.ref(`proxyBot/mutes/${username}`).set({
+                mutedBy: PROXY_CONFIG.BOT_NAME,
+                mutedAt: Date.now(),
+                expiresAt: Date.now() + (durationMinutes * 60000),
+                reason: reason,
+                duration: durationMinutes
+            });
+
+            log(`🔇 ${username} → ${durationMinutes} dk mute (${reason})`);
+            await reportToAdmin(
+                `🔇 **MUTE**\n` +
+                `👤 Kullanıcı: **${username}**\n` +
+                `⏱️ Süre: **${durationMinutes} dakika**\n` +
+                `📋 Sebep: ${reason}`
+            );
+            return true;
+        } catch (err) {
+            error('Mute hatası:', err);
+            return false;
+        }
+    }
+
+    async function proxyKickUser(username, durationMinutes, reason) {
+        const db = getDatabase();
+        if (!db) return false;
+        if (isOwnerOrAdmin(username)) {
+            warn(`⛔ ${username} Owner/Admin — kicklenemez`);
+            return false;
+        }
+
+        try {
+            const bansRef = getGlobal('bansRef');
+            if (bansRef) {
+                await bansRef.child(username).set({
+                    bannedUntil: Date.now() + (durationMinutes * 60000),
+                    bannedBy: PROXY_CONFIG.BOT_NAME,
+                    reason: `[PROXY] ${reason}`,
+                    timestamp: Date.now(),
+                    duration: durationMinutes,
+                    isProxyAction: true
+                });
+            }
+
+            log(`👢 ${username} → ${durationMinutes} dk kick (${reason})`);
+            await reportToAdmin(
+                `👢 **KICK**\n` +
+                `👤 Kullanıcı: **${username}**\n` +
+                `⏱️ Süre: **${durationMinutes} dakika**\n` +
+                `📋 Sebep: ${reason}`
+            );
+            return true;
+        } catch (err) {
+            error('Kick hatası:', err);
+            return false;
+        }
+    }
+
+    async function proxyBanUser(username, durationMinutes, reason) {
+        const db = getDatabase();
+        if (!db) return false;
+        if (isOwnerOrAdmin(username)) {
+            warn(`⛔ ${username} Owner/Admin — banlanamaz`);
+            return false;
+        }
+
+        try {
+            const bansRef = getGlobal('bansRef');
+            if (bansRef) {
+                await bansRef.child(username).set({
+                    bannedUntil: Date.now() + (durationMinutes * 60000),
+                    bannedBy: PROXY_CONFIG.BOT_NAME,
+                    reason: `[PROXY] ${reason}`,
+                    timestamp: Date.now(),
+                    duration: durationMinutes,
+                    isProxyAction: true
+                });
+            }
+
+            log(`🚫 ${username} → ${durationMinutes} dk ban (${reason})`);
+            await reportToAdmin(
+                `🚫 **BAN**\n` +
+                `👤 Kullanıcı: **${username}**\n` +
+                `⏱️ Süre: **${durationMinutes} dakika**\n` +
+                `📋 Sebep: ${reason}`
+            );
+            return true;
+        } catch (err) {
+            error('Ban hatası:', err);
+            return false;
+        }
+    }
+
+    async function proxyLockChannel(channelName, reason) {
+        const db = getDatabase();
+        if (!db) return false;
+        try {
+            await db.ref(`channels/${channelName}`).update({
+                isLocked: true,
+                lockedBy: PROXY_CONFIG.BOT_NAME,
+                lockedAt: Date.now(),
+                lockReason: reason
+            });
+
+            log(`🔒 #${channelName} kanalı sessize alındı (${reason})`);
+            await reportToAdmin(
+                `🔒 **KANAL SESSİZE ALINDI**\n` +
+                `📢 Kanal: **#${channelName}**\n` +
+                `📋 Sebep: ${reason}`
+            );
+
+            // 3 dakika sonra otomatik aç (eğer hala kilitli ise)
+            setTimeout(async () => {
+                try {
+                    const snap = await db.ref(`channels/${channelName}/lockedBy`).once('value');
+                    if (snap.val() === PROXY_CONFIG.BOT_NAME) {
+                        await db.ref(`channels/${channelName}`).update({
+                            isLocked: false,
+                            unlockedBy: PROXY_CONFIG.BOT_NAME,
+                            unlockedAt: Date.now()
+                        });
+                        await reportToAdmin(`🔓 **KANAL AÇILDI** — #${channelName} (otomatik)`);
+                    }
+                } catch (e) {}
+            }, 180000); // 3 dakika
+
+            return true;
+        } catch (err) {
+            error('Kanal kilitleme hatası:', err);
+            return false;
+        }
+    }
+
+    // ============================================================
+    // #ADMIN KANALINA RAPOR
+    // ============================================================
+    async function reportToAdmin(message) {
+        const db = getDatabase();
+        if (!db) return;
+        try {
+            const reportRef = db.ref(`channelMessages/${PROXY_CONFIG.REPORT_CHANNEL}`);
+            await reportRef.push({
+                sender: PROXY_CONFIG.BOT_NAME,
+                text: message,
+                type: 'supervisor',
+                isBotReport: true,
+                isRoleEntry: false,
+                timestamp: Date.now(),
+                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                avatar: null
+            });
+
+            // Ayrıca admin_channel_global'e de yaz
+            try {
+                await db.ref('admin_channel_global').push({
+                    text: `${PROXY_CONFIG.BOT_ICON} ${message}`,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    type: 'admin-global',
+                    priority: 'high',
+                    sender: PROXY_CONFIG.BOT_NAME,
+                    isProxyReport: true
+                });
+            } catch (e) {}
+        } catch (err) {
+            error('Rapor gönderilemedi:', err);
+        }
+    }
+
+    // ============================================================
+    // OTOMATİK MESAJ GÖNDERME (BOT)
+    // ============================================================
+    async function botSendToChannel(channelName, text) {
+        const db = getDatabase();
+        if (!db) return;
+        try {
+            const targetRef = channelName === 'genel'
+                ? db.ref('messages')
+                : db.ref(`channelMessages/${channelName}`);
+            await targetRef.push({
+                sender: PROXY_CONFIG.BOT_NAME,
+                text: text,
+                type: 'supervisor',
+                isBotMessage: true,
+                timestamp: Date.now(),
+                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                avatar: null
+            });
+        } catch (err) {
+            error('Bot mesaj gönderemedi:', err);
+        }
+    }
+
+    // ============================================================
+    // ANA MESAJ ANALİZ MOTORU
+    // ============================================================
+    async function analyzeMessage(channelName, username, text) {
+        // Owner ve Admin'e dokunma
+        if (isOwnerOrAdmin(username)) return;
+
+        // Bot kendini analiz etmesin
+        if (normalizeNick(username) === normalizeNick(PROXY_CONFIG.BOT_NAME)) return;
+
+        // Mesajı kaydet
+        trackMessage(username, text);
+
+        // Tehditleri tespit et
+        const threats = [];
+
+        if (detectFlood(username)) threats.push('flood');
+        if (detectRepeatedSpam(username)) threats.push('repeated_spam');
+        if (detectCapsSpam(text)) threats.push('caps_spam');
+        if (detectSuspiciousLink(text)) threats.push('suspicious_link');
+        if (detectMassMention(text)) threats.push('mass_mention');
+        if (detectAllCapsShouting(text)) threats.push('all_caps');
+
+        if (threats.length === 0) return;
+
+        // Strike ekle
+        const strikeCount = addStrike(username, threats.join(', '));
+
+        // Kanal bilgisi
+        const channelInfo = channelName === 'genel' ? '#genel' : `#${channelName}`;
+
+        // Müdahale karar matrisi
+        log(`⚠️ Tehdit tespit edildi → ${username} (${threats.join(', ')}) — Strike: ${strikeCount}`);
+
+        // Kanalı geçici sessize al (flood veya spam varsa)
+        if (threats.includes('flood') || threats.includes('repeated_spam')) {
+            const channels = getChannelsCache();
+            if (channels[channelName] && !channels[channelName].isLocked) {
+                // Sadece bu kullanıcı için uyarı gönder, kanalı kilitleme
+                await botSendToChannel(channelName,
+                    `⚠️ **${username}**, ${threats.includes('flood') ? 'çok hızlı mesaj gönderiyorsun' : 'aynı mesajı tekrar ediyorsun'}! Lütfen yavaşla. (Uyarı: ${strikeCount})`
+                );
+            }
+        }
+
+        // Strike seviyesine göre müdahale
+        if (strikeCount >= PROXY_CONFIG.STRIKE_BAN) {
+            await proxyBanUser(username, PROXY_CONFIG.BAN_DURATION,
+                `Tekrarlayan spam ihlali (${strikeCount} strike) — ${threats.join(', ')}`);
+            await botSendToChannel(channelName,
+                `🚫 **${username}** bot tarafından **${Math.floor(PROXY_CONFIG.BAN_DURATION / 60)} saat** banlandı. Sebep: Spam.`
+            );
+        } else if (strikeCount >= PROXY_CONFIG.STRIKE_KICK) {
+            await proxyKickUser(username, PROXY_CONFIG.KICK_DURATION,
+                `Spam ihlali (${strikeCount} strike) — ${threats.join(', ')}`);
+            await botSendToChannel(channelName,
+                `👢 **${username}** bot tarafından **${PROXY_CONFIG.KICK_DURATION} dakika** atıldı. Sebep: Spam.`
+            );
+        } else if (strikeCount >= PROXY_CONFIG.STRIKE_MUTE) {
+            await proxyMuteUser(username, PROXY_CONFIG.MUTE_DURATION,
+                `Spam ihlali (${strikeCount} strike) — ${threats.join(', ')}`);
+            await botSendToChannel(channelName,
+                `🔇 **${username}** bot tarafından **${PROXY_CONFIG.MUTE_DURATION} dakika** susturuldu. Sebep: Spam.`
+            );
+        } else if (strikeCount >= PROXY_CONFIG.STRIKE_WARN) {
+            await reportToAdmin(
+                `⚠️ **UYARI** — ${channelInfo}\n` +
+                `👤 Kullanıcı: **${username}**\n` +
+                `🎯 Tehditler: ${threats.join(', ')}\n` +
+                `📊 Strike: ${strikeCount}`
+            );
+        }
+    }
+
+    // ============================================================
+    // KANAL DİNLEYİCİLERİ
+    // ============================================================
+    function attachMessageListener(channelName) {
+        const db = getDatabase();
+        if (!db) return;
+        if (ProxyBot.listeners.messages[channelName]) return;
+
+        const ref = channelName === 'genel'
+            ? db.ref('messages').limitToLast(1)
+            : db.ref(`channelMessages/${channelName}`).limitToLast(1);
+
+        const listener = (snapshot) => {
+            const msg = snapshot.val();
+            if (!msg) return;
+
+            // Sadece yeni mesajları işle (kendi yazdığımızı atla)
+            if (Date.now() - (msg.timestamp || 0) > 10000) return;
+
+            analyzeMessage(channelName, msg.sender, msg.text || '');
+        };
+
+        ref.on('child_added', listener);
+        ProxyBot.listeners.messages[channelName] = { ref, listener };
+        log(`📡 Dinleyici kuruldu → #${channelName}`);
+    }
+
+    function attachAllChannelListeners() {
+        const channels = getChannelsCache();
+        Object.keys(channels).forEach(ch => attachMessageListener(ch));
+    }
+
+    function watchForNewChannels() {
+        const db = getDatabase();
+        if (!db) return;
+        if (ProxyBot.listeners.channels) return;
+
+        const channelsRef = db.ref('channels');
+        const listener = (snapshot) => {
+            const channels = snapshot.val() || {};
+            Object.keys(channels).forEach(ch => {
+                if (!ProxyBot.listeners.messages[ch]) {
+                    attachMessageListener(ch);
+                    log(`🆕 Yeni kanal keşfedildi → #${ch}`);
+
+                    // Yeni kanala otomatik katıl
+                    if (PROXY_CONFIG.AUTO_JOIN_NEW_CHANNELS) {
+                        autoJoinChannel(ch);
+                    }
+                }
+            });
+        };
+
+        channelsRef.on('value', listener);
+        ProxyBot.listeners.channels = { ref: channelsRef, listener };
+        log('👁️ Kanal izleyici aktif');
+    }
+
+    async function autoJoinChannel(channelName) {
+        const db = getDatabase();
+        if (!db) return;
+        try {
+            // Bot presence'a ekle
+            const presenceRef = db.ref(`channelPresence/${channelName}/${PROXY_CONFIG.BOT_NAME}`);
+            await presenceRef.set({
+                lastSeen: Date.now(),
+                role: 'supervisor',
+                isBot: true,
+                avatar: null
+            });
+            presenceRef.onDisconnect().remove();
+
+            // Hoşgeldin mesajı
+            await botSendToChannel(channelName,
+                `${PROXY_CONFIG.BOT_ICON} **Proxy** bu kanalı izlemeye başladı. Kurallara uyun, sorun yaşamayın.`
+            );
+
+            log(`✅ #${channelName} kanalına otomatik katıldı`);
+        } catch (err) {
+            error('Otomatik kanal katılımı hatası:', err);
+        }
+    }
+
+    // Bot presence ping'i (30sn)
+    function startPresenceHeartbeat() {
+        setInterval(async () => {
+            const db = getDatabase();
+            if (!db) return;
+            const channels = getChannelsCache();
+            const now = Date.now();
+            for (const ch of Object.keys(channels)) {
+                try {
+                    db.ref(`channelPresence/${ch}/${PROXY_CONFIG.BOT_NAME}`).update({
+                        lastSeen: now
+                    });
+                } catch (e) {}
+            }
+        }, 30000);
+    }
+
+    // ============================================================
+    // KOMUT SİSTEMİ (Owner sadece)
+    // ============================================================
+    const botCommands = {
+        '/proxy': {
+            owner: true,
+            handler: (args, channel) => {
+                botSendToChannel(channel,
+                    `${PROXY_CONFIG.BOT_ICON} **Proxy Bot v${ProxyBot.version}**\n` +
+                    `📊 Aktif kanal: ${Object.keys(ProxyBot.listeners.messages).length}\n` +
+                    `👥 İzlenen kullanıcı: ${Object.keys(ProxyBot.userStrikes).length}\n` +
+                    `⚡ Strike sistemi: Aktif\n` +
+                    `🔒 Koruma: Flood / Spam / Caps / Link`
+                );
+            }
+        },
+        '/proxy-durum': {
+            owner: true,
+            handler: (args, channel) => {
+                const strikeList = Object.entries(ProxyBot.userStrikes)
+                    .filter(([u, s]) => s.count > 0)
+                    .map(([u, s]) => `• ${u}: ${s.count} strike`)
+                    .join('\n') || 'Kayıt yok';
+                botSendToChannel(channel,
+                    `${PROXY_CONFIG.BOT_ICON} **Proxy Durum Raporu**\n` +
+                    `━━━━━━━━━━━━━━\n` +
+                    `📊 Toplam izleme: ${Object.keys(ProxyBot.listeners.messages).length} kanal\n` +
+                    `👥 Strike kaydı olan: ${Object.keys(ProxyBot.userStrikes).length} kişi\n\n` +
+                    `📋 **Detay:**\n${strikeList}`
+                );
+            }
+        },
+        '/proxy-sifirla': {
+            owner: true,
+            handler: (args, channel) => {
+                const target = args[0];
+                if (!target) {
+                    botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} Kullanım: /proxy-sifirla [kullanıcı]`);
+                    return;
+                }
+                const norm = normalizeNick(target);
+                if (ProxyBot.userStrikes[norm]) {
+                    delete ProxyBot.userStrikes[norm];
+                    delete ProxyBot.userBehavior[norm];
+                    botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} ✅ **${target}** kullanıcısının strike kayıtları sıfırlandı.`);
+                } else {
+                    botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} ⚠️ **${target}** için kayıt yok.`);
+                }
+            }
+        },
+        '/proxy-acil-durum': {
+            owner: true,
+            handler: async (args, channel) => {
+                await botSendToChannel(channel,
+                    `🚨 **ACİL DURUM PROTOKOLÜ**\n` +
+                    `Bot tüm kanalları izlemeye devam ediyor.\n` +
+                    `Flood/Spam tespit edilirse otomatik müdahale aktif.`
+                );
+            }
+        },
+        '/proxy-kapat': {
+            owner: true,
+            handler: async (args, channel) => {
+                await botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} ⏸️ Proxy Bot duraklatıldı. /proxy-baslat ile yeniden başlatın.`);
+                PROXY_CONFIG.DEBUG = false;
+                ProxyBot.paused = true;
+            }
+        },
+        '/proxy-baslat': {
+            owner: true,
+            handler: async (args, channel) => {
+                PROXY_CONFIG.DEBUG = true;
+                ProxyBot.paused = false;
+                await botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} ▶️ Proxy Bot aktif!`);
+            }
+        },
+        '/proxy-yardim': {
+            owner: true,
+            handler: (args, channel) => {
+                botSendToChannel(channel,
+                    `${PROXY_CONFIG.BOT_ICON} **Proxy Bot Komutları** (Sadece Owner)\n` +
+                    `━━━━━━━━━━━━━━\n` +
+                    `• /proxy → Bot bilgisi\n` +
+                    `• /proxy-durum → Strike raporu\n` +
+                    `• /proxy-sifirla [kullanıcı] → Strike sıfırla\n` +
+                    `• /proxy-kapat → Botu duraklat\n` +
+                    `• /proxy-baslat → Botu başlat\n` +
+                    `• /proxy-yardim → Bu mesaj`
+                );
+            }
+        }
+    };
+
+    // Komut yakalayıcı (tüm kanallarda)
+    function watchBotCommands() {
+        const db = getDatabase();
+        if (!db) return;
+
+        // Genel kanalı dinle
+        const watchChannel = (channelName) => {
+            const ref = channelName === 'genel'
+                ? db.ref('messages').limitToLast(1)
+                : db.ref(`channelMessages/${channelName}`).limitToLast(1);
+
+            const listener = (snapshot) => {
+                const msg = snapshot.val();
+                if (!msg) return;
+                if (Date.now() - (msg.timestamp || 0) > 10000) return;
+                if (!msg.text || !msg.text.startsWith('/proxy')) return;
+
+                // Sadece owner kullanabilir
+                if (normalizeNick(msg.sender) !== normalizeNick(PROXY_CONFIG.OWNER_NAME)) {
+                    reportToAdmin(
+                        `⛔ **Yetkisiz Komut Denemesi**\n` +
+                        `👤 Kullanıcı: **${msg.sender}**\n` +
+                        `💬 Komut: ${msg.text}\n` +
+                        `📢 Kanal: #${channelName}`
+                    );
+                    return;
+                }
+
+                // Komutu bul
+                const parts = msg.text.trim().split(/\s+/);
+                const cmd = parts[0].toLowerCase();
+                const args = parts.slice(1);
+
+                if (botCommands[cmd]) {
+                    botCommands[cmd].handler(args, channelName);
+                }
+            };
+
+            ref.on('child_added', listener);
+        };
+
+        // Tüm kanalları dinle
+        const channels = getChannelsCache();
+        Object.keys(channels).forEach(watchChannel);
+
+        // Yeni kanallar için
+        db.ref('channels').on('child_added', (snap) => {
+            watchChannel(snap.key);
+        });
+    }
+
+    // ============================================================
+    // BOT ANA BAŞLATICI
+    // ============================================================
+    async function initProxyBot() {
+        if (ProxyBot.initialized) return;
+        log(`🚀 Proxy Bot v${ProxyBot.version} başlatılıyor...`);
+
+        // Firebase'in hazır olmasını bekle
+        let attempts = 0;
+        while (!getDatabase() && attempts < 60) {
+            await new Promise(r => setTimeout(r, 500));
+            attempts++;
+        }
+
+        if (!getDatabase()) {
+            error('❌ Firebase bağlantısı kurulamadı, bot başlatılamadı.');
+            return;
+        }
+
+        // Kullanıcının giriş yapmasını bekle
+        attempts = 0;
+        while (!getCurrentUser() && attempts < 120) {
+            await new Promise(r => setTimeout(r, 500));
+            attempts++;
+        }
+
+        // Kanalların yüklenmesini bekle
+        attempts = 0;
+        while (Object.keys(getChannelsCache()).length === 0 && attempts < 40) {
+            await new Promise(r => setTimeout(r, 500));
+            attempts++;
+        }
+
+        log('✅ Bağımlılıklar hazır. Bot aktif ediliyor...');
+
+        // Tüm kanalları dinlemeye başla
+        attachAllChannelListeners();
+
+        // Yeni kanalları izle
+        watchForNewChannels();
+
+        // Bot komutlarını dinle
+        watchBotCommands();
+
+        // Presence heartbeat
+        startPresenceHeartbeat();
+
+        // Bot kullanıcısını sisteme kaydet
+        try {
+            const db = getDatabase();
+            await db.ref(`onlineUsers/${PROXY_CONFIG.BOT_NAME}`).set({
+                name: PROXY_CONFIG.BOT_NAME,
+                role: 'supervisor',
+                level: PROXY_CONFIG.LEVEL,
+                isBot: true,
+                isOnline: true,
+                lastSeen: Date.now(),
+                joinedAt: Date.now()
+            });
+            db.ref(`onlineUsers/${PROXY_CONFIG.BOT_NAME}`).onDisconnect().update({
+                isOnline: false,
+                lastSeen: Date.now()
+            });
+        } catch (e) {
+            warn('Bot kullanıcı kaydı hatası:', e);
+        }
+
+        // İlk raporu gönder
+        await reportToAdmin(
+            `${PROXY_CONFIG.BOT_ICON} **Proxy Bot Aktif**\n` +
+            `━━━━━━━━━━━━━━\n` +
+            `👤 Sahip: **${PROXY_CONFIG.OWNER_NAME}** (Owner)\n` +
+            `📊 İzlenen kanal: ${Object.keys(ProxyBot.listeners.messages).length}\n` +
+            `🛡️ Koruma modülleri:\n` +
+            `   • Flood koruması (5sn/5msj)\n` +
+            `   • Spam koruması (30sn/3x tekrar)\n` +
+            `   • Caps koruması\n` +
+            `   • Link filtresi\n` +
+            `   • Toplu mention koruması\n` +
+            `⚡ Strike sistemi: 2=uyarı, 3=mute, 5=kick, 7=ban\n` +
+            `📖 Komutlar için: /proxy-yardim`
+        );
+
+        ProxyBot.initialized = true;
+        log('🎉 Proxy Bot hazır!');
+
+        // Global erişim için
+        window.ProxyBot = ProxyBot;
+        window.ProxyBotConfig = PROXY_CONFIG;
+    }
+
+    // ============================================================
+    // DOM HAZIR OLDUĞUNDA BAŞLAT
+    // ============================================================
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initProxyBot);
+    } else {
+        initProxyBot();
+    }
+
+    // Yedek: 5 saniye sonra hala başlamadıysa zorla başlat
+    setTimeout(() => {
+        if (!ProxyBot.initialized) {
+            log('⏰ Yedek başlatıcı devreye girdi');
+            initProxyBot();
+        }
+    }, 5000);
+
+})();
     </script>
-    <script src="proxy-bot.js"></script>
+   
 </body>
 </html>
