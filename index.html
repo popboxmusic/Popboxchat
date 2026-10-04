@@ -12727,7 +12727,7 @@
 
         const ProxyBot = {
             initialized: false,
-            version: '1.0.0',
+            version: '1.1.0',
             userBehavior: {},
             userStrikes: {},
             channelStates: {},
@@ -12765,23 +12765,60 @@
         const PROXY_LEADER_TTL = 45000;
         const PROXY_CLIENT_ID = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
         let proxyIsLeader = false;
+        let proxyLeaderConfirmedAt = 0;
+        let proxyServerOffset = 0;
+
+        // Liderlik yalnızca son 25 sn içinde doğrulandıysa geçerli (arka plandaki yavaşlamış sekme çift yanıt vermesin)
+        function isLeaderNow() {
+            return proxyIsLeader && (Date.now() - proxyLeaderConfirmedAt) < 25000;
+        }
+
+        // Aynı olay için (mesaj/komut) yalnızca BİR istemci işlem yapsın
+        async function claimOnce(key) {
+            const db = getDatabase();
+            if (!db) return false;
+            try {
+                const res = await db.ref('proxyBot/claims/' + key).transaction(cur =>
+                    cur ? undefined : { by: PROXY_CLIENT_ID, at: Date.now() });
+                return !!res.committed;
+            } catch (e) { return true; }
+        }
+
+        async function cleanupProxyClaims() {
+            const db = getDatabase();
+            if (!db) return;
+            try {
+                const snap = await db.ref('proxyBot/claims').once('value');
+                const cutoff = Date.now() - 600000;
+                const upd = {};
+                snap.forEach(c => { if (((c.val() || {}).at || 0) < cutoff) upd[c.key] = null; });
+                if (Object.keys(upd).length) await db.ref('proxyBot/claims').update(upd);
+            } catch (e) {}
+        }
 
         async function refreshProxyLeadership() {
             const db = getDatabase();
             if (!db) { proxyIsLeader = false; return false; }
             try {
+                try { proxyServerOffset = (await db.ref('.info/serverTimeOffset').once('value')).val() || 0; } catch (e) {}
                 const res = await db.ref('proxyBot/leader').transaction(cur => {
                     const now = Date.now();
-                    if (!cur || !cur.ts || now - cur.ts > PROXY_LEADER_TTL || cur.id === PROXY_CLIENT_ID) {
-                        return { id: PROXY_CLIENT_ID, ts: now };
+                    if (!cur || !cur.ts || (Date.now() + proxyServerOffset) - cur.ts > PROXY_LEADER_TTL || cur.id === PROXY_CLIENT_ID) {
+                        return { id: PROXY_CLIENT_ID, ts: Date.now() + proxyServerOffset };
                     }
                     return undefined;
                 });
                 const val = res.snapshot.val();
                 proxyIsLeader = !!(res.committed && val && val.id === PROXY_CLIENT_ID);
+                if (proxyIsLeader) proxyLeaderConfirmedAt = Date.now();
             } catch (e) {
                 const cu = getCurrentUser();
                 proxyIsLeader = !!(cu && normalizeNick(cu.name) === normalizeNick(PROXY_CONFIG.OWNER_NAME));
+                if (proxyIsLeader) proxyLeaderConfirmedAt = Date.now();
+            }
+            if (proxyIsLeader && Date.now() - (ProxyBot._lastClaimCleanup || 0) > 600000) {
+                ProxyBot._lastClaimCleanup = Date.now();
+                cleanupProxyClaims();
             }
             return proxyIsLeader;
         }
@@ -12962,7 +12999,7 @@
         }
 
         async function reportToAdmin(message) {
-            if (!proxyIsLeader) return;
+            if (!isLeaderNow()) return;
             const db = getDatabase();
             if (!db) return;
             try {
@@ -12986,7 +13023,7 @@
         }
 
         async function botSendToChannel(channelName, text) {
-            if (!proxyIsLeader) return;
+            if (!isLeaderNow()) return;
             const db = getDatabase();
             if (!db) return;
             try {
@@ -13003,8 +13040,8 @@
             } catch (err) { error('Bot mesaj gönderemedi:', err); }
         }
 
-        async function analyzeMessage(channelName, username, text) {
-            if (!proxyIsLeader || ProxyBot.paused) return;
+        async function analyzeMessage(channelName, username, text, msgId) {
+            if (!isLeaderNow() || ProxyBot.paused) return;
             if (normalizeNick(username) === 'system') return;
             if (isOwnerOrAdmin(username)) return;
             if (normalizeNick(username) === normalizeNick(PROXY_CONFIG.BOT_NAME)) return;
@@ -13019,6 +13056,7 @@
             if (detectAllCapsShouting(text)) threats.push('all_caps');
             if (threats.length === 0) return;
 
+            if (msgId && !(await claimOnce('a_' + channelName + '_' + msgId))) return;
             const strikeCount = addStrike(username, threats.join(', '));
             const channelInfo = channelName === 'genel' ? '#genel' : `#${channelName}`;
 
@@ -13061,7 +13099,7 @@
                 if (!msg) return;
                 if (Date.now() - (msg.timestamp || 0) > 10000) return;
                 if (isSystemLikeMessage(msg)) return;
-                analyzeMessage(channelName, msg.sender, msg.text || '');
+                analyzeMessage(channelName, msg.sender, msg.text || '', snapshot.key);
             };
 
             ref.on('child_added', listener);
@@ -13106,7 +13144,7 @@
         }
 
         async function autoJoinChannel(channelName) {
-            if (!proxyIsLeader) return;
+            if (!isLeaderNow()) return;
             const db = getDatabase();
             if (!db) return;
             try {
@@ -13139,7 +13177,7 @@
                 owner: true,
                 handler: (args, channel) => {
                     botSendToChannel(channel,
-                        `${PROXY_CONFIG.BOT_ICON} **Proxy Bot v${ProxyBot.version}**\n` +
+                        `${PROXY_CONFIG.BOT_ICON} **Proxy Bot v${ProxyBot.version}** [${PROXY_CLIENT_ID.slice(-5)} / lider: ${isLeaderNow() ? 'evet' : 'hayır'}]\n` +
                         `📊 Aktif kanal: ${Object.keys(ProxyBot.listeners.messages).length}\n` +
                         `👥 İzlenen kullanıcı: ${Object.keys(ProxyBot.userStrikes).length}\n` +
                         `⚡ Strike sistemi: Aktif\n` +
@@ -13237,11 +13275,11 @@
                     ? db.ref('messages').limitToLast(5)
                     : db.ref(`channelMessages/${channelName}`).limitToLast(5);
 
-                const listener = (snapshot) => {
+                const listener = async (snapshot) => {
                     const msg = snapshot.val();
                     if (!msg) return;
                     const msgId = snapshot.key;
-                    if (!proxyIsLeader) return;
+                    if (!isLeaderNow()) return;
                     if (processedCommands.has(msgId)) return;
                     processedCommands.add(msgId);
                     
@@ -13253,6 +13291,7 @@
                         return;
                     }
 
+                    if (!(await claimOnce('c_' + channelName + '_' + msgId))) return;
                     const parts = msg.text.trim().split(/\s+/);
                     const cmd = parts[0].toLowerCase();
                     const args = parts.slice(1);
