@@ -12135,6 +12135,8 @@
         // KANAL SEKMELERİ — Yeni Madde 1 & 4 entegrasyonu
         // ============================================================
                 // 🔥 DÜZELTME (Madde 2): Kanal sekmeleri SABİT - sadece isim göster, minimal ikon
+               // 🔥 KRİTİK DÜZELTME: Kanal listesi SABİT — asla yeniden oluşturulmaz
+        // Sadece içeriği güncellenir, DOM yapısı korunur
         function renderChannelTabs() {
             const container = document.getElementById('channelTabs');
             if (!container) return;
@@ -12143,19 +12145,31 @@
                 .filter(([name, channel]) => canAccessHiddenChannel(name))
                 .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
             
-            // Sabit render: Sadece değişenleri güncelle, DOM'u yeniden oluşturma
-            const existingNames = Array.from(container.querySelectorAll('.channel-tab-wrapper')).map(el => el.dataset.channel);
+            // Mevcut DOM'daki kanal isimleri
+            const existingWrappers = Array.from(container.querySelectorAll('.channel-tab-wrapper'));
+            const existingNames = existingWrappers.map(el => el.dataset.channel);
             const newNames = channels.map(([n]) => n);
             
-            // Aynı kanallar varsa, sadece aktif sınıfı ve badge'leri güncelle
-            if (existingNames.length === newNames.length && existingNames.every((n, i) => n === newNames[i])) {
+            // 🔥 AYNI KANALLAR VARSA: DOM'u dokunma, sadece içeriği güncelle
+            const sameChannels = existingNames.length === newNames.length && 
+                                 existingNames.every((n, i) => n === newNames[i]);
+            
+            if (sameChannels && existingWrappers.length > 0) {
+                // Sadece active class ve içerik güncelle
                 channels.forEach(([name, channel]) => {
                     const wrapper = container.querySelector(`.channel-tab-wrapper[data-channel="${name}"]`);
                     if (!wrapper) return;
+                    
+                    // Aktif class güncelle
                     const tabBtn = wrapper.querySelector('.channel-tab');
                     if (tabBtn) {
-                        tabBtn.classList.toggle('active', name === currentChannel);
-                        // İkon güncellemesi (sadece değiştiyse)
+                        const wasActive = tabBtn.classList.contains('active');
+                        const isActive = name === currentChannel;
+                        if (wasActive !== isActive) {
+                            tabBtn.classList.toggle('active', isActive);
+                        }
+                        
+                        // İçerik güncelle (sadece değiştiyse)
                         const isSubbed = currentUser && cachedChannelSubscribers[name]?.[currentUser.name];
                         const subCount = Object.keys(cachedChannelSubscribers[name] || {}).length;
                         let statusIcon = '';
@@ -12163,10 +12177,13 @@
                         if (channel.isLocked) statusIcon += ' <i class="fas fa-volume-mute" title="Sessiz"></i>';
                         if (isSubbed) statusIcon += ' <i class="fas fa-bell" title="Abone" style="color: var(--favorite); font-size: 10px;"></i>';
                         const newHtml = `# ${escapeChannelHtml(channel.label || name)}${statusIcon}${subCount > 0 ? `<span class="channel-subscriber-badge"><i class="fas fa-users"></i>${subCount}</span>` : ''}`;
-                        if (tabBtn.innerHTML !== newHtml) tabBtn.innerHTML = newHtml;
+                        if (tabBtn.innerHTML !== newHtml) {
+                            tabBtn.innerHTML = newHtml;
+                        }
                     }
                 });
-                // Playlist buton güncellemesi
+                
+                // Buton durumlarını güncelle (DOM'a dokunmadan)
                 const canManagePlaylist = canAddVideoToChannel(currentChannel);
                 const btnWeb = document.getElementById('addVideoBtnWeb');
                 const btnMobile = document.getElementById('addVideoBtnMobile');
@@ -12174,10 +12191,11 @@
                 if (btnMobile) btnMobile.disabled = !canManagePlaylist;
                 const manageButton = document.getElementById('channelManageToggle');
                 if (manageButton) manageButton.style.display = (hasRole('admin') || isOwner || Object.keys(cachedChannels).some(canManageChannel)) ? 'inline-flex' : 'none';
-                return;
+                
+                return; // ✅ DOM'a hiç dokunmadık, kayma yok!
             }
             
-            // Farklı kanal listesi varsa yeniden oluştur
+            // 🔥 FARKLI KANAL LİSTESİ VARSA: Sadece o zaman yeniden oluştur
             container.innerHTML = '';
             
             channels.forEach(([name, channel]) => {
@@ -12188,7 +12206,6 @@
                 const isSubbed = currentUser && cachedChannelSubscribers[name]?.[currentUser.name];
                 const subCount = Object.keys(cachedChannelSubscribers[name] || {}).length;
                 
-                // 🔥 DÜZELTME: Sadece minimal ikonlar (gizli/sessiz/abone)
                 let statusIcon = '';
                 if (channel.isHidden) statusIcon += ' <i class="fas fa-eye-slash" title="Gizli"></i>';
                 if (channel.isLocked) statusIcon += ' <i class="fas fa-volume-mute" title="Sessiz"></i>';
@@ -12197,12 +12214,10 @@
                 const tabBtn = document.createElement('button');
                 tabBtn.className = `channel-tab ${name === currentChannel ? 'active' : ''}`;
                 tabBtn.type = 'button';
-                // 🔥 DÜZELTME: Sadece kanal ismi (basit görünüm)
                 tabBtn.innerHTML = `# ${escapeChannelHtml(channel.label || name)}${statusIcon}${subCount > 0 ? `<span class="channel-subscriber-badge"><i class="fas fa-users"></i>${subCount}</span>` : ''}`;
                 tabBtn.onclick = () => switchChannel(name);
                 tabWrapper.appendChild(tabBtn);
                 
-                // Kanal yönetim ikonları (hover'da görünür)
                 if (canManageChannel(name) || hasRole('halfoperator') || isOwner) {
                     const actions = document.createElement('div');
                     actions.className = 'channel-tab-actions';
@@ -12262,7 +12277,6 @@
             document.getElementById('addVideoBtnWeb').disabled = !canManagePlaylist;
             document.getElementById('addVideoBtnMobile').disabled = !canManagePlaylist;
         }
-
         function toggleChannelManageArea() {
             const area = document.getElementById('channelManageArea');
             if (!area) return;
