@@ -2096,6 +2096,78 @@
             height: 24px;
             font-size: 10px;
         }
+        .channel-sidebar .channel-tabs {
+            gap: 2px;
+            padding: 0 8px;
+            min-height: 100px;
+        }
+        .channel-sidebar .channel-tab-wrapper {
+            padding: 2px 0;
+            position: relative;
+        }
+        .channel-sidebar .channel-tab {
+            min-height: 38px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 13.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.15s ease, border-color 0.15s ease;
+            border-left: 3px solid transparent;
+        }
+        .channel-sidebar .channel-tab:hover {
+            background: var(--bg-hover);
+            border-left-color: var(--youtube-red);
+        }
+        .channel-sidebar .channel-tab.active {
+            background: rgba(255, 0, 0, 0.10);
+            color: #fff;
+            border-left: 3px solid var(--youtube-red);
+            padding-left: 9px;
+            font-weight: 600;
+        }
+        .channel-sidebar .channel-tab i {
+            font-size: 11px;
+            opacity: 0.7;
+        }
+        .channel-sidebar .channel-tab-actions {
+            opacity: 0;
+            margin-left: auto;
+            gap: 3px;
+            transition: opacity 0.2s ease;
+        }
+        .channel-sidebar .channel-tab-wrapper:hover .channel-tab-actions {
+            opacity: 1;
+        }
+        .channel-sidebar .channel-tab-action-btn {
+            width: 22px;
+            height: 22px;
+            font-size: 9px;
+        }
+        
+        /* Kanal yönetim paneli - daha etkili görünüm */
+        .channel-manage-item {
+            transition: all 0.15s ease;
+        }
+        .channel-manage-item:hover {
+            background: var(--bg-hover) !important;
+            transform: translateX(2px);
+        }
+        .channel-manage-item.active {
+            box-shadow: inset 3px 0 0 var(--youtube-red);
+        }
+        .channel-manage-item .role-list-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            font-size: 12px;
+        }
+        .channel-manage-item .role-list-btn {
+            width: 26px;
+            height: 26px;
+            font-size: 10px;
+        }
         .channel-sidebar .channel-manage-toggle {
             margin: 8px 12px 4px;
             padding: 10px;
@@ -6183,8 +6255,34 @@
                     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
                 });
                 incrementWriteCount();
-            } catch (error) {
+                        } catch (error) {
                 console.warn('Kanal giriş mesajı gönderilemedi:', error);
+            }
+        }
+
+        // 🔥 DÜZELTME (Madde 1): Bot kullanıcılarını onlineUsers'a kaydet
+        async function ensureBotUserExists(botName) {
+            if (!database || !botName) return;
+            try {
+                const snap = await database.ref(`onlineUsers/${botName}`).once('value');
+                const data = snap.val();
+                const now = Date.now();
+                if (!data || (now - (data.lastSeen || 0)) > ONLINE_THRESHOLD) {
+                    await database.ref(`onlineUsers/${botName}`).set({
+                        name: botName,
+                        role: 'supervisor',
+                        level: 4.5,
+                        isBot: true,
+                        isOnline: true,
+                        lastSeen: now,
+                        joinedAt: data?.joinedAt || now,
+                        avatar: null
+                    });
+                    const botRef = database.ref(`onlineUsers/${botName}`);
+                    botRef.onDisconnect().update({ isOnline: false, lastSeen: Date.now() });
+                }
+            } catch (e) {
+                console.warn('Bot kullanıcı kaydı hatası:', e);
             }
         }
 
@@ -7693,11 +7791,13 @@
                 const now = Date.now();
                 const channelUsers = {};
                 
-                Object.entries(data).forEach(([username, info]) => {
+                                Object.entries(data).forEach(([username, info]) => {
+                    // 🔥 DÜZELTME (Madde 1): Proxy botu listede göster
                     if (username === SECURE_CONFIG.OWNER_CONFIG.username && 
                         (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) {
                         return;
                     }
+                    // Bot kullanıcıları da göster
                     if (info.lastSeen && now - info.lastSeen < ONLINE_THRESHOLD) {
                         channelUsers[username] = info;
                     }
@@ -7756,8 +7856,11 @@
             
             usersToDisplay.forEach(user => {
                 const isOwnerUser = user.username === SECURE_CONFIG.OWNER_CONFIG.username;
+                const isBotUser = user.userData?.isBot === true || user.username === 'Proxy';
                 let badgeHtml = '';
                 if (isOwnerUser) badgeHtml = `<span class="badge owner" style="display:flex; width:20px; height:20px; font-size:12px;" title="Owner">♛</span>`;
+                // 🔥 DÜZELTME (Madde 1): Bot kullanıcıları için supervisor rozeti
+                else if (isBotUser) badgeHtml = `<span class="badge" style="display:flex; width:18px; height:18px; font-size:10px; background: rgba(0,212,255,0.15); color:#00d4ff; border:1px solid #00d4ff;" title="Proxy Bot">⚙️</span>`;
                 else if (adminList.includes(user.username) || SECURE_CONFIG.DEFAULT_ADMINS.includes(user.username)) badgeHtml = `<span class="badge admin" style="display:flex; width:18px; height:18px; font-size:10px;" title="Admin">⬟</span>`;
                 else if (coAdminList.includes(user.username)) badgeHtml = `<span class="badge coadmin" style="display:flex; width:18px; height:18px; font-size:10px;" title="Co-Admin">&</span>`;
                 else if (operatorList.includes(user.username)) badgeHtml = `<span class="badge operator" style="display:flex; width:18px; height:18px; font-size:10px;" title="Operatör">@</span>`;
@@ -11971,6 +12074,7 @@
         // ============================================================
         // KANAL SEKMELERİ — Yeni Madde 1 & 4 entegrasyonu
         // ============================================================
+                // 🔥 DÜZELTME (Madde 2): Kanal sekmeleri SABİT - sadece isim göster, minimal ikon
         function renderChannelTabs() {
             const container = document.getElementById('channelTabs');
             if (!container) return;
@@ -11979,15 +12083,52 @@
                 .filter(([name, channel]) => canAccessHiddenChannel(name))
                 .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
             
+            // Sabit render: Sadece değişenleri güncelle, DOM'u yeniden oluşturma
+            const existingNames = Array.from(container.querySelectorAll('.channel-tab-wrapper')).map(el => el.dataset.channel);
+            const newNames = channels.map(([n]) => n);
+            
+            // Aynı kanallar varsa, sadece aktif sınıfı ve badge'leri güncelle
+            if (existingNames.length === newNames.length && existingNames.every((n, i) => n === newNames[i])) {
+                channels.forEach(([name, channel]) => {
+                    const wrapper = container.querySelector(`.channel-tab-wrapper[data-channel="${name}"]`);
+                    if (!wrapper) return;
+                    const tabBtn = wrapper.querySelector('.channel-tab');
+                    if (tabBtn) {
+                        tabBtn.classList.toggle('active', name === currentChannel);
+                        // İkon güncellemesi (sadece değiştiyse)
+                        const isSubbed = currentUser && cachedChannelSubscribers[name]?.[currentUser.name];
+                        const subCount = Object.keys(cachedChannelSubscribers[name] || {}).length;
+                        let statusIcon = '';
+                        if (channel.isHidden) statusIcon += ' <i class="fas fa-eye-slash" title="Gizli"></i>';
+                        if (channel.isLocked) statusIcon += ' <i class="fas fa-volume-mute" title="Sessiz"></i>';
+                        if (isSubbed) statusIcon += ' <i class="fas fa-bell" title="Abone" style="color: var(--favorite); font-size: 10px;"></i>';
+                        const newHtml = `# ${escapeChannelHtml(channel.label || name)}${statusIcon}${subCount > 0 ? `<span class="channel-subscriber-badge"><i class="fas fa-users"></i>${subCount}</span>` : ''}`;
+                        if (tabBtn.innerHTML !== newHtml) tabBtn.innerHTML = newHtml;
+                    }
+                });
+                // Playlist buton güncellemesi
+                const canManagePlaylist = canAddVideoToChannel(currentChannel);
+                const btnWeb = document.getElementById('addVideoBtnWeb');
+                const btnMobile = document.getElementById('addVideoBtnMobile');
+                if (btnWeb) btnWeb.disabled = !canManagePlaylist;
+                if (btnMobile) btnMobile.disabled = !canManagePlaylist;
+                const manageButton = document.getElementById('channelManageToggle');
+                if (manageButton) manageButton.style.display = (hasRole('admin') || isOwner || Object.keys(cachedChannels).some(canManageChannel)) ? 'inline-flex' : 'none';
+                return;
+            }
+            
+            // Farklı kanal listesi varsa yeniden oluştur
             container.innerHTML = '';
             
             channels.forEach(([name, channel]) => {
                 const tabWrapper = document.createElement('div');
                 tabWrapper.className = 'channel-tab-wrapper';
+                tabWrapper.dataset.channel = name;
                 
                 const isSubbed = currentUser && cachedChannelSubscribers[name]?.[currentUser.name];
                 const subCount = Object.keys(cachedChannelSubscribers[name] || {}).length;
                 
+                // 🔥 DÜZELTME: Sadece minimal ikonlar (gizli/sessiz/abone)
                 let statusIcon = '';
                 if (channel.isHidden) statusIcon += ' <i class="fas fa-eye-slash" title="Gizli"></i>';
                 if (channel.isLocked) statusIcon += ' <i class="fas fa-volume-mute" title="Sessiz"></i>';
@@ -11996,10 +12137,12 @@
                 const tabBtn = document.createElement('button');
                 tabBtn.className = `channel-tab ${name === currentChannel ? 'active' : ''}`;
                 tabBtn.type = 'button';
+                // 🔥 DÜZELTME: Sadece kanal ismi (basit görünüm)
                 tabBtn.innerHTML = `# ${escapeChannelHtml(channel.label || name)}${statusIcon}${subCount > 0 ? `<span class="channel-subscriber-badge"><i class="fas fa-users"></i>${subCount}</span>` : ''}`;
                 tabBtn.onclick = () => switchChannel(name);
                 tabWrapper.appendChild(tabBtn);
                 
+                // Kanal yönetim ikonları (hover'da görünür)
                 if (canManageChannel(name) || hasRole('halfoperator') || isOwner) {
                     const actions = document.createElement('div');
                     actions.className = 'channel-tab-actions';
@@ -12072,30 +12215,84 @@
             renderChannelManageList();
         }
 
+                // 🔥 DÜZELTME (Madde 2): Kanal yönetim paneli - daha etkili ve detaylı
         function renderChannelManageList() {
             const container = document.getElementById('channelManageList');
             const createButton = document.querySelector('.channel-manage-create');
             if (!container) return;
             if (createButton) createButton.style.display = (hasRole('admin') || isOwner) ? 'inline-flex' : 'none';
-            const channels = Object.entries(cachedChannels).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+            
+            const channels = Object.entries(cachedChannels)
+                .filter(([name]) => canAccessHiddenChannel(name))
+                .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+            
+            if (channels.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:12px;">Kanal yok</div>';
+                return;
+            }
+            
             container.innerHTML = channels.map(([name, channel]) => {
                 const manageable = canManageChannel(name);
                 const mayTransfer = isOwner || normalizeNick(channel.owner) === normalizeNick(currentUser?.name);
-                const controls = manageable ? `
-                    <button class="role-list-btn" onclick="toggleChannelHidden('${name}')" title="${channel.isHidden ? 'Görünür yap' : 'Gizle'}"><i class="fas fa-eye${channel.isHidden ? '' : '-slash'}"></i></button>
-                    <button class="role-list-btn" onclick="toggleChannelLocked('${name}')" title="${channel.isLocked ? 'Sessizi aç' : 'Sessize al'}"><i class="fas fa-volume-${channel.isLocked ? 'up' : 'mute'}"></i></button>
-                    ${mayTransfer ? `<button class="role-list-btn" onclick="transferChannelPrompt('${name}')" title="Sahipliği devret"><i class="fas fa-exchange-alt"></i></button>` : ''}
-                    <button class="role-list-btn danger" onclick="deleteChannel('${name}')" title="Sil"><i class="fas fa-trash"></i></button>` : '';
-                return `<div class="role-list-item">
-                    <div class="role-list-info"><div class="role-list-avatar"><i class="fas fa-hashtag"></i></div>
-                        <div class="role-list-details"><span class="role-list-name"># ${escapeChannelHtml(channel.label || name)}</span>
-                            <span class="channel-manage-meta">Sahibi: ${escapeChannelHtml(channel.owner || SECURE_CONFIG.OWNER_CONFIG.username)} · ${channel.isHidden ? 'Gizli' : 'Açık'} · ${channel.isLocked ? 'Sessiz' : 'Sesli'}</span>
+                const isActive = name === currentChannel;
+                const subscriberCount = Object.keys(cachedChannelSubscribers[name] || {}).length;
+                const ownerName = channel.owner || SECURE_CONFIG.OWNER_CONFIG.username;
+                
+                // Durum etiketleri
+                let statusBadges = '';
+                if (channel.isHidden) statusBadges += '<span style="display:inline-block; padding:1px 6px; background: rgba(255,170,51,0.15); color: #ffaa33; border-radius: 8px; font-size: 10px; margin-right:4px;">🔒 Gizli</span>';
+                if (channel.isLocked) statusBadges += '<span style="display:inline-block; padding:1px 6px; background: rgba(255,68,68,0.15); color: #ff4444; border-radius: 8px; font-size: 10px; margin-right:4px;">🔇 Sessiz</span>';
+                if (subscriberCount > 0) statusBadges += `<span style="display:inline-block; padding:1px 6px; background: rgba(255,102,204,0.15); color: #ff66cc; border-radius: 8px; font-size: 10px; margin-right:4px;">🔔 ${subscriberCount}</span>`;
+                
+                // Yönetim butonları
+                let controls = '';
+                if (manageable) {
+                    controls = `
+                        <button class="role-list-btn" onclick="event.stopPropagation(); toggleChannelHidden('${name}')" title="${channel.isHidden ? 'Görünür Yap' : 'Gizle'}">
+                            <i class="fas fa-eye${channel.isHidden ? '' : '-slash'}"></i>
+                        </button>
+                        <button class="role-list-btn" onclick="event.stopPropagation(); toggleChannelLocked('${name}')" title="${channel.isLocked ? 'Sessizi Aç' : 'Sessize Al'}">
+                            <i class="fas fa-volume-${channel.isLocked ? 'up' : 'mute'}"></i>
+                        </button>
+                        ${mayTransfer ? `<button class="role-list-btn" onclick="event.stopPropagation(); transferChannelPrompt('${name}')" title="Sahipliği Devret"><i class="fas fa-exchange-alt"></i></button>` : ''}
+                        <button class="role-list-btn danger" onclick="event.stopPropagation(); deleteChannel('${name}')" title="Kanalı Sil">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    `;
+                } else if (hasRole('halfoperator')) {
+                    controls = `
+                        <button class="role-list-btn" onclick="event.stopPropagation(); toggleChannelLocked('${name}')" title="${channel.isLocked ? 'Sessizi Aç' : 'Sessize Al'}">
+                            <i class="fas fa-volume-${channel.isLocked ? 'up' : 'mute'}"></i>
+                        </button>
+                    `;
+                }
+                
+                return `<div class="role-list-item channel-manage-item ${isActive ? 'active' : ''}" 
+                            data-channel="${name}"
+                            style="cursor:pointer; ${isActive ? 'border-left: 3px solid var(--youtube-red); background: rgba(255,0,0,0.06);' : ''}"
+                            onclick="switchChannel('${name}'); toggleChannelManageArea();">
+                    <div class="role-list-info" style="flex:1; min-width:0;">
+                        <div class="role-list-avatar" style="background: ${isActive ? 'rgba(255,0,0,0.15)' : 'var(--bg-tertiary)'}; color: ${isActive ? 'var(--youtube-red)' : 'var(--text-muted)'};">
+                            <i class="fas fa-hashtag"></i>
                         </div>
-                    </div><div class="channel-manage-actions">${controls}</div>
+                        <div class="role-list-details" style="min-width:0;">
+                            <span class="role-list-name" style="font-weight:${isActive ? '700' : '600'}; color: ${isActive ? 'var(--youtube-red)' : 'var(--text-primary)'};">
+                                ${escapeChannelHtml(channel.label || name)}
+                            </span>
+                            <div style="display:flex; flex-wrap:wrap; gap:2px; margin-top:3px;">
+                                ${statusBadges || '<span style="font-size:10px; color:var(--text-muted);">Aktif kanal</span>'}
+                            </div>
+                            <span class="channel-manage-meta" style="font-size:10px; color:var(--text-muted); margin-top:2px;">
+                                Sahibi: ${escapeChannelHtml(ownerName)}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="channel-manage-actions" style="display:flex; gap:3px; flex-shrink:0;">
+                        ${controls || ''}
+                    </div>
                 </div>`;
-            }).join('') || '<div style="color:var(--text-muted);text-align:center;">Kanal yok</div>';
+            }).join('');
         }
-
         async function createChannel(name, label) {
             if (!isOwner && !hasRole('admin')) { addSystemMessage('⛔ Kanal açmak için Owner veya Admin yetkisi gerekli!'); return; }
             const cleanName = normalizeNick(name).replace(/[^a-z0-9_]/g, '');
@@ -12245,32 +12442,40 @@
         // 🔥 GÜNCELLENDİ (Madde 6): STABİL MESAJ GÜNCELLEME
         // Scroll pozisyonu korunur, son 100 mesaj tutulur
         // ============================================================
-        function updateMessages(messages) {
-            const container = document.getElementById('messages');
-            if (!container) return;
-            
-            if (!messages) {
-                container.innerHTML = '<div class="message-item system">Sohbeti başlatmak için ilk mesajı gönderin.</div>';
-                return;
-            }
-            
-            const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
-            messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-            
-            // 🔥 Sadece son MESSAGE_LIMIT (100) mesajı göster
-            const limitedMessages = messagesArray.slice(-MESSAGE_LIMIT);
-            
-            // Scroll pozisyonunu koru (kullanıcı aşağıdaysa aşağıda kal)
-            const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
-            
-            container.innerHTML = '';
-            limitedMessages.forEach(msg => appendMessageToUI(msg, true));
-            
-            // Kullanıcı zaten en alttaysa en alta in
-            if (wasAtBottom) {
-                container.scrollTop = container.scrollHeight;
-            }
-        }
+        // 🔥 DÜZELTME (Madde 3): Genel sohbet scroll sabitleme
+        // - Yeni mesajda scroll SADECE kullanıcı en alttaysa aşağı iner
+        // - Scroll pozisyonu asla kaymaz
+        // - 100 mesaj sınırı (yeniden eskiye silinir)
+       function updateMessages(messages) {
+    const container = document.getElementById('messages');
+    if (!container) return;
+    
+    if (!messages) {
+        container.innerHTML = '<div class="message-item system">Sohbeti başlatmak için ilk mesajı gönderin.</div>';
+        return;
+    }
+    
+    // Mesajları sırala
+    const messagesArray = Object.entries(messages).map(([id, value]) => ({ id, ...value }));
+    messagesArray.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    
+    // 🔥 Sadece son 100 mesaj
+    const limitedMessages = messagesArray.slice(-MESSAGE_LIMIT);
+    
+    // 🔥 Scroll pozisyonunu koru
+    const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+    
+    // DOM'u yeniden oluştur
+    container.innerHTML = '';
+    limitedMessages.forEach(msg => appendMessageToUI(msg, true));
+    
+    // 🔥 Sadece en alttaysa aşağı in
+    if (wasAtBottom) {
+        requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight;
+        });
+    }
+}
 
         function appendMessageToUI(message, skipScroll = false) {
             const container = document.getElementById('messages');
@@ -12570,11 +12775,13 @@
         // ============================================================
         // KARŞILIKLI ENGEL KONTROLÜ
         // ============================================================
-        async function checkBlockStatus(targetUser) {
+              async function checkBlockStatus(targetUser) {
             if (!currentUser || !blocksRef) return false;
             
             if (normalizeNick(targetUser) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return false;
             if (normalizeNick(targetUser) === normalizeNick(currentUser.name)) return false;
+            // 🔥 DÜZELTME (Madde 1): Proxy bot engellenemez
+            if (targetUser === 'Proxy' || targetUser === (window.PROXY_CONFIG?.BOT_NAME)) return false;
             
             try {
                 const now = Date.now();
@@ -12615,15 +12822,22 @@
         // ÖZEL SOHBET
         // ============================================================
         async function openPrivateChat(username) {
-            if (username === currentUser.name) {
-                addSystemMessage('Kendinle özel sohbet başlatamazsın!');
-                return;
-            }
-            
-            if (await checkBlockStatus(username)) {
-                addSystemMessage(`⛔ ${username} kullanıcısı ile mesajlaşamazsınız.`);
-                return;
-            }
+    if (username === currentUser.name) {
+        addSystemMessage('Kendinle özel sohbet başlatamazsın!');
+        return;
+    }
+    
+    // 🔥 DÜZELTME (Madde 1): Proxy bot ve botlarla özel sohbet engellenmez
+    const isProxyBot = username === 'Proxy' || username === PROXY_CONFIG?.BOT_NAME;
+    if (!isProxyBot) {
+        if (await checkBlockStatus(username)) {
+            addSystemMessage(`⛔ ${username} kullanıcısı ile mesajlaşamazsınız.`);
+            return;
+        }
+    } else {
+        // Bot kullanıcı ise kullanıcı kaydını garanti et
+        ensureBotUserExists(username);
+    }
             
             const previousContact = privateChatWith;
             if (privateChatWith && currentPrivateChatId && privateChatsRef) {
