@@ -6854,6 +6854,14 @@
 
         function canAccessHiddenChannel(name, username) {
             const channel = cachedChannels[name];
+            if (name === 'admin_channel_global') {
+                const u0 = username || (currentUser && currentUser.name);
+                if (isOwner) return true;
+                if (!u0) return false;
+                return normalizeNick(u0) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username) ||
+                    adminList.some(x => normalizeNick(x) === normalizeNick(u0)) ||
+                    SECURE_CONFIG.DEFAULT_ADMINS.some(x => normalizeNick(x) === normalizeNick(u0));
+            }
             if (!channel || !channel.isHidden) return true;
             if (isOwner) return true;
             const user = username || (currentUser && currentUser.name);
@@ -6861,7 +6869,7 @@
             if (normalizeNick(user) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return true;
             if (adminList.some(u => normalizeNick(u) === normalizeNick(user)) || 
                 SECURE_CONFIG.DEFAULT_ADMINS.some(a => normalizeNick(a) === normalizeNick(user))) return true;
-            if (channel.allowedUsers && channel.allowedUsers[user]) return true;
+            if (channel.allowedUsers && Object.keys(channel.allowedUsers).some(k => channel.allowedUsers[k] && normalizeNick(k) === normalizeNick(user))) return true;
             if (channel.owner && normalizeNick(channel.owner) === normalizeNick(user)) return true;
             return false;
         }
@@ -7044,6 +7052,7 @@
                     input.value = '';
                     autoResize(input);
                     if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
+                    if (currentChannel === 'ai' && window.AIBot) window.AIBot.askInChannel(text);
                     setTimeout(() => trimServerMessages(currentChannel), 2000);
                 } catch (error) {
                     addSystemMessage('❌ Mesaj gönderilemedi!');
@@ -7738,6 +7747,7 @@
             
             if (!rawNick) { showLoginError('❌ Lütfen bir kullanıcı adı girin!'); return; }
             if (rawNick.length < 2 || rawNick.length > 20) { showLoginError('❌ Kullanıcı adı 2-20 karakter arasında olmalı!'); return; }
+            if (['ai','sistem','proxy'].includes(normalizeNick(rawNick))) { showLoginError('❌ Bu kullanıcı adı bot/sistem için ayrılmıştır!'); return; }
             if (!isFirebaseConnected) { showLoginError('❌ Firebase bağlantısı yok!'); return; }
             
             loginBtn.disabled = true;
@@ -8624,44 +8634,19 @@
         async function sendToAdminChannel(message) {
             if (!database) return;
             try {
-                const adminChannelRef = database.ref('admin_channel_global');
-                await adminChannelRef.push({
-                    text: message, timestamp: Date.now(),
+                const t = String(message).replace(/\*\*/g, '').replace(/\\n|\n/g, ' • ');
+                await database.ref('channelMessages/admin_channel_global').push({
+                    sender: 'Sistem', text: t, type: 'supervisor', isBotMessage: true, isRoleEntry: false,
+                    timestamp: Date.now(),
                     time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                    type: 'admin-global', priority: 'important',
-                    sender: currentUser ? currentUser.name : 'System'
+                    avatar: null, channel: 'admin_channel_global'
                 });
                 incrementWriteCount();
+                if (Math.random() < 0.05) setTimeout(() => trimServerMessages('admin_channel_global'), 3000);
             } catch (error) { console.warn('Admin kanalına yazılamadı:', error); }
-            
-            if (isOwner || isAdmin) {
-                const container = document.getElementById('messages');
-                if (container) {
-                    const messageDiv = document.createElement('div');
-                    messageDiv.className = 'message-item system admin-global';
-                    messageDiv.innerHTML = message;
-                    messageDiv.setAttribute('data-admin-channel', 'true');
-                    container.appendChild(messageDiv);
-                    container.scrollTop = container.scrollHeight;
-                }
-            }
         }
 
-        async function createAdminGlobalChannel() {
-            if (!database) return;
-            try {
-                adminGlobalChannelRef = database.ref('admin_channel_global');
-                const snapshot = await adminGlobalChannelRef.once('value');
-                if (!snapshot.exists()) {
-                    await adminGlobalChannelRef.push({
-                        text: '📢 Sistem mesajları bu kanalda toplanır. Sadece Owner ve Admin erişebilir.',
-                        timestamp: Date.now(),
-                        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                        type: 'system', sender: 'System'
-                    });
-                }
-            } catch (error) { console.warn('Admin global kanal oluşturulamadı:', error); }
-        }
+        async function createAdminGlobalChannel() { /* kanal DEFAULT_CHANNELS ile oluşur; karşılama mesajı Sistem v3 modülünde */ }
 
         async function createHelpChannel() {
             if (!channelsRef) return;
@@ -8673,7 +8658,7 @@
                 order: -1, description: 'Yardım ve destek kanalı'
             };
             try {
-                await channelsRef.child('help').set(helpChannel);
+                const _hx = await channelsRef.child('help').once('value'); if (!_hx.exists()) await channelsRef.child('help').set(helpChannel);
                 incrementWriteCount();
             } catch (error) { console.warn('#Help kanalı oluşturulamadı:', error); }
         }
@@ -8681,36 +8666,38 @@
         // ============================================================
         // JOIN/UNJOIN KOMUTLARI
         // ============================================================
+        function _chArg(v) { return String(v || '').replace(/^#/, '').trim().toLowerCase(); }
+        function _moveKey(n) { return normalizeNick(n).replace(/[.#$\[\]\/]/g, '_'); }
         async function joinChannelByCommand(channelName, username) {
             if (!hasRole('admin') && !isOwner) { addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!'); return; }
-            const channel = cachedChannels[channelName];
-            if (!channel) { addSystemMessage(`❌ #${channelName} kanalı bulunamadı!`); return; }
-            
-            const targetUser = username || currentUser.name;
-            if (!channel.allowedUsers) channel.allowedUsers = {};
-            channel.allowedUsers[targetUser] = true;
-            
-            await channelsRef.child(channelName).update({ allowedUsers: channel.allowedUsers });
-            incrementWriteCount();
-            
-            addSystemMessage(`✅ ${targetUser} kullanıcısı #${channelName} kanalına eklendi.`);
-            await sendToAdminChannel(`✅ **${targetUser}** kullanıcısı **#${channelName}** kanalına eklendi.\nYetkili: ${currentUser.name}`);
+            const ch = _chArg(channelName);
+            if (!cachedChannels[ch]) { addSystemMessage(`❌ #${ch} kanalı bulunamadı!`); return; }
+            if (ch === 'admin_channel_global') { addSystemMessage('⛔ #admin_channel_global yalnızca Owner ve Admin içindir; kullanıcı eklenemez.'); return; }
+            const target = String(username || currentUser.name).trim();
+            try {
+                await channelsRef.child(ch).child('allowedUsers').child(target).set(true);
+                await database.ref('channelMoves/' + _moveKey(target)).set({ action: 'join', channel: ch, by: currentUser.name, ts: Date.now() });
+                incrementWriteCount();
+                addSystemMessage(`✅ ${target} kullanıcısı #${ch} kanalına alındı.`);
+                await sendToAdminChannel(`➡️ JOIN: ${target} → #${ch} • Yetkili: ${currentUser.name}`);
+            } catch (e) { addSystemMessage('❌ İşlem başarısız: ' + e.message); }
         }
 
         async function unjoinChannelByCommand(channelName, username) {
             if (!hasRole('admin') && !isOwner) { addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!'); return; }
-            const channel = cachedChannels[channelName];
-            if (!channel) { addSystemMessage(`❌ #${channelName} kanalı bulunamadı!`); return; }
-            
-            const targetUser = username || currentUser.name;
-            if (channel.allowedUsers && channel.allowedUsers[targetUser]) {
-                delete channel.allowedUsers[targetUser];
-                await channelsRef.child(channelName).update({ allowedUsers: channel.allowedUsers });
+            const ch = _chArg(channelName);
+            const channel = cachedChannels[ch];
+            if (!channel) { addSystemMessage(`❌ #${ch} kanalı bulunamadı!`); return; }
+            const target = String(username || currentUser.name).trim();
+            try {
+                const upd = {};
+                Object.keys(channel.allowedUsers || {}).filter(k => normalizeNick(k) === normalizeNick(target)).forEach(k => { upd['allowedUsers/' + k] = null; });
+                if (Object.keys(upd).length) await channelsRef.child(ch).update(upd);
+                await database.ref('channelMoves/' + _moveKey(target)).set({ action: 'unjoin', channel: ch, by: currentUser.name, ts: Date.now() });
                 incrementWriteCount();
-                addSystemMessage(`✅ ${targetUser} kullanıcısı #${channelName} kanalından çıkarıldı.`);
-            } else {
-                addSystemMessage(`❌ ${targetUser} kullanıcısı #${channelName} kanalında değil!`);
-            }
+                addSystemMessage(`✅ ${target} kullanıcısı #${ch} kanalından çıkarıldı ve önceki kanalına döndürüldü.`);
+                await sendToAdminChannel(`⬅️ UNJOIN: ${target} ← #${ch} • Yetkili: ${currentUser.name}`);
+            } catch (e) { addSystemMessage('❌ İşlem başarısız: ' + e.message); }
         }
 
         function kickUserPrompt() {
@@ -9848,15 +9835,23 @@
         }
 
         function showHelp() {
-            let help = '🔥 <strong>TÜM KOMUTLAR:</strong><br><br>';
-            help += '♛ <strong>OWNER KOMUTLARI:</strong><br>• /ownerpanel<br>• /admin [kullanıcı]<br>• /removeadmin [kullanıcı]<br>• /coadmin [kullanıcı]<br>• /opglobal [kullanıcı]<br>• /halfop [kullanıcı]<br>• /verified [kullanıcı]<br>• /özelokuma<br>• /özelara<br>• /özeltemizle<br>• /komut<br>• /join #kanal [kullanıcı]<br>• /unjoin #kanal [kullanıcı]<br><br>';
-            help += '⬟ <strong>ADMIN:</strong> /adminpanel, /globalban, /removeglobalban, /info, /reg, /verified, /coadmin, /halfop, /opglobal<br><br>';
-            help += '& <strong>CO-ADMIN:</strong> /coadminpanel, /kanalop, /kanalhalfop, /kanalverified, /mute, /kick, /temizle<br><br>';
-            help += '@ <strong>OPERATÖR:</strong> /operatorpanel, /mute, /unmute, /kick, /unban, /sil<br><br>';
-            help += '% <strong>HALF-OPERATÖR:</strong> /halfoperatorpanel, /sessizeal<br><br>';
-            help += '+ <strong>ONAYLI:</strong> /verifiedpanel<br><br>';
-            help += '👤 <strong>HERKES:</strong> /kullanıcılar, /yardım, /kurallar, /ping, /çıkış';
-            addSystemMessage(help);
+            const is = r => isOwner || hasRole(r);
+            const L = (title, items) => `<strong>${title}</strong><br>` + items.map(i => '• ' + i).join('<br>') + '<br><br>';
+            let h = '📖 <strong>KOMUT YARDIMI</strong> <span style="opacity:.6">(yetkine göre)</span><br><br>';
+            h += L('👤 Herkes', ['/help, /yardım — bu liste', '/kullanıcılar — çevrimiçi kullanıcılar', '/kurallar — topluluk kuralları', '/ping — bağlantı testi', '/çıkış — oturumu kapat', '#ai kanalı veya özelden <b>AI</b> — soru sor (çeviri, işlem, bilgi)']);
+            if (is('verified')) h += L('+ Onaylı', ['/verifiedpanel (/vpanel)']);
+            if (is('halfoperator')) h += L('% Half-Operatör', ['/halfoperatorpanel (/hopanel)', '/sessizeal — kanalı sessize al/aç']);
+            if (is('operator')) h += L('@ Operatör', ['/operatorpanel (/opanel)']);
+            if (isOwner || canModerateChannel(currentChannel)) h += L('🛡️ Kanal moderasyonu', ['/mute kullanıcı [dk]', '/unmute kullanıcı', '/kick kullanıcı [dk] [sebep] (/süreliban)', '/unban kullanıcı', '/banlist', '/sil — mesaj sil', '/temizle — kanalı temizle']);
+            if (is('coadmin')) h += L('& Co-Admin', ['/coadminpanel (/cap)', '/info kullanıcı mesaj — özel bildirim']);
+            if (isOwner || hasRoleInChannel('coadmin', currentChannel)) h += L('📌 Kanal yetkileri (bu kanal)', ['/kanalop, /kanalopcikar kullanıcı', '/kanalhalfop, /kanalhalfopcikar kullanıcı', '/kanalverified, /kanalverifiedcikar kullanıcı']);
+            if (is('admin')) h += L('⬟ Admin', ['/adminpanel (/ap)', '/globalban, /removeglobalban kullanıcı', '/sikayetler (/reports)', '/reg kullanıcı [şifre]', '/verified (/onayla), /unverified (/onaykaldir) kullanıcı', '/coadmin, /removecoadmin kullanıcı', '/halfop, /removehalfop kullanıcı', '/opglobal, /deopglobal kullanıcı', '/join #kanal [nick] — kullanıcıyı kanala al', '/unjoin #kanal [nick] — kanaldan çıkar, önceki kanalına döndür', '#admin_channel_global — sistem/Proxy/ban/şikayet kayıtları']);
+            if (isOwner) h += L('♛ Owner', ['/ownerpanel (/op)', '/admin, /removeadmin kullanıcı', '/özelokuma, /özelara, /özeltemizle', '/komut — özel komut oluştur']);
+            try {
+                const mine = Object.entries(customCommands || {}).filter(([, d]) => d && (d.role === 'all' || is(d.role)));
+                if (mine.length) h += L('✨ Özel komutlar', mine.map(([n]) => '/' + n));
+            } catch (_) {}
+            addSystemMessage(h);
         }
 
         function addSystemMessage(text) {
@@ -11692,9 +11687,11 @@
             incrementWriteCount();
             await addChannelRole(cleanName, 'coadmin', currentUser.name);
             addSystemMessage(`✅ #${cleanName} kanalı açıldı. Otomatik olarak Co-Admin oldunuz.`);
+            sendToAdminChannel(`🆕 YENİ KANAL: #${cleanName} • Açan: ${currentUser.name}`);
         }
 
         async function deleteChannel(name) {
+            if (['genel', 'help', 'admin_channel_global', 'ai'].includes(name)) { addSystemMessage('⛔ Sistem kanalları silinemez!'); return; }
             if (!canManageChannel(name)) { addSystemMessage('⛔ Bu kanalı silme yetkiniz yok!'); return; }
             if (Object.keys(cachedChannels).length <= 1) { addSystemMessage('⛔ Son kanal silinemez!'); return; }
             if (!confirm(`#${name} kanalını ve mesajlarını silmek istediğinize emin misiniz?`)) return;
@@ -11708,10 +11705,12 @@
             if (name === 'genel') await messagesRef.remove();
             incrementWriteCount();
             addSystemMessage(`✅ #${name} kanalı silindi.`);
+            sendToAdminChannel(`🗑️ KANAL SİLİNDİ: #${name} • Yetkili: ${currentUser.name}`);
         }
 
         async function toggleChannelHidden(name) {
             if (!canManageChannel(name)) return;
+            if (name === 'admin_channel_global') { addSystemMessage('⛔ #admin_channel_global her zaman gizli kalır.'); return; }
             await channelsRef.child(name).update({ isHidden: !cachedChannels[name].isHidden });
             incrementWriteCount();
             addSystemMessage(`✅ #${name} ${!cachedChannels[name].isHidden ? 'gizlendi' : 'görünür yapıldı'}.`);
@@ -11991,7 +11990,9 @@
             { name: 'spor', label: 'Spor', order: 2 },
             { name: 'haber', label: 'Haber', order: 3 },
             { name: 'sinema', label: 'Sinema', order: 4 },
-            { name: 'help', label: 'Help', order: -1, isHidden: true }
+            { name: 'help', label: 'Help', order: -1, isHidden: true },
+            { name: 'admin_channel_global', label: 'Admin Global', order: -2, isHidden: true, systemChannel: true, description: 'Sistem, Proxy, ban, şikayet ve kanal olayları' },
+            { name: 'ai', label: 'AI', order: 5, description: 'AI bilgi ve ödev yardım kanalı' }
         ];
 
         async function loadChannels() {
@@ -12039,7 +12040,7 @@
             
             const proxyConfig = window.PROXY_CONFIG || window.ProxyBotConfig || {};
             const botName = proxyConfig.BOT_NAME || 'Proxy';
-            const isProxyBot = username === 'Proxy' || username === botName;
+            const isProxyBot = username === 'Proxy' || username === botName || username === 'AI';
             
             if (!isProxyBot) {
                 if (await checkBlockStatus(username)) {
@@ -12223,6 +12224,7 @@
                     if (typingTimeout[currentPrivateChatId]) clearTimeout(typingTimeout[currentPrivateChatId]);
                     if (typingRef) typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
                     if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
+                    if (window.AIBot && window.AIBot.isBot(privateChatWith)) window.AIBot.askPrivate(text);
                     setTimeout(() => archiveAndTrimPrivateChat(currentPrivateChatId), 500);
                 }
             } catch (error) {
@@ -13064,7 +13066,7 @@
 
             AUTO_JOIN_NEW_CHANNELS: true,
             MONITOR_ALL_CHANNELS: true,
-            REPORT_CHANNEL: 'admin',
+            REPORT_CHANNEL: 'admin_channel_global',
             STRIKE_RESET_MS: 3600000,
             DEBUG: true
         };
@@ -13351,7 +13353,7 @@
                     avatar: null
                 });
                 try {
-                    await db.ref('admin_channel_global').push({
+                    await Promise.resolve({
                         text: `${PROXY_CONFIG.BOT_ICON} ${message}`,
                         timestamp: Date.now(),
                         time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
@@ -13846,6 +13848,164 @@
 
         // Mobildeki "Kanallar" menüsü ve sohbet başlığındaki kanal butonu artık bu pencereyi açar
         window.toggleMobileChannelsPanel = openSheet;
+    })();
+    </script>
+    <!-- ============================================================
+         SİSTEM v3 — Kanal taşıma (/join /unjoin) + AI botu + Admin Global kanalı
+         ============================================================ -->
+    <script>
+    (function () {
+        'use strict';
+        const ADMIN_CH = 'admin_channel_global', AI_CH = 'ai';
+        const cfg = window.AI_BOT_CONFIG = Object.assign({
+            NAME: 'AI', ICON: '🤖',
+            ENDPOINT: '',      // İsteğe bağlı: gerçek yapay zekâ için Worker adresi (ai-worker.js)
+            MAX_Q: 500, COOLDOWN_MS: 3000
+        }, window.AI_BOT_CONFIG || {});
+        const hhmm = () => new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        const clean = t => String(t).replace(/[<>]/g, '').trim().slice(0, 900);
+        const key = n => normalizeNick(n).replace(/[.#$\[\]\/]/g, '_');
+
+        /* ---------- AI "beyni" ---------- */
+        const LANGS = { ingilizce:'en', ingilizcesi:'en', almanca:'de', almancası:'de', fransızca:'fr', fransızcası:'fr',
+            ispanyolca:'es', ispanyolcası:'es', italyanca:'it', italyancası:'it', rusça:'ru', rusçası:'ru',
+            arapça:'ar', arapçası:'ar', türkçe:'tr', türkçesi:'tr' };
+        const LNAME = { en:'İngilizce', de:'Almanca', fr:'Fransızca', es:'İspanyolca', it:'İtalyanca', ru:'Rusça', ar:'Arapça', tr:'Türkçe' };
+        const STOP = new Set(['nedir','kimdir','nerede','nelerdir','hakkında','bilgi','ver','verir','misin','anlat','açıkla','açıklar','mısın','nasıl','çalışır','ne','işe','yarar','demek','bana','lütfen','nedir?']);
+
+        function parseTranslate(q) {
+            const s = q.toLowerCase().replace(/[?!.]+$/, '').trim();
+            let m = s.match(/^(.+?)\s+(?:kelimesinin\s+|sözcüğünün\s+|cümlesinin\s+)?(ingilizcesi|ingilizce|almancası|almanca|fransızcası|fransızca|ispanyolcası|ispanyolca|italyancası|italyanca|rusçası|rusça|arapçası|arapça|türkçesi|türkçe)(?:\s+(?:nedir|ne|nasıl|ne demek|nasıl yazılır|nasıl denir|nasıl söylenir))?$/);
+            if (m) { const to = LANGS[m[2]]; return { text: m[1], to, from: to === 'tr' ? 'en' : 'tr' }; }
+            m = s.match(/^(.+?)\s+(?:türkçe\s+)?ne demek$/);
+            if (m && !/[çğıöşü]/.test(m[1])) return { text: m[1], from: 'en', to: 'tr' };
+            return null;
+        }
+        async function translate(p) {
+            const r = await fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(p.text) + '&langpair=' + p.from + '|' + p.to);
+            const j = await r.json();
+            const t = j && j.responseData && j.responseData.translatedText;
+            if (!t || /QUERY LENGTH|MYMEMORY|INVALID/i.test(t)) return null;
+            return '🔤 "' + p.text + '" → ' + LNAME[p.to] + ': ' + t.toLowerCase();
+        }
+        function tryMath(q) {
+            let e = q.toLowerCase().replace(/^(hesapla|sonuç)\s*:?\s*/, '').replace(/\s*(kaç\s*eder|kaçtır|=|\?)+\s*$/, '')
+                .replace(/,/g, '.').replace(/[x×]/g, '*').replace(/÷/g, '/').replace(/\^/g, '**')
+                .replace(/(?:karekök|√)\s*\(?\s*([\d.]+)\s*\)?/g, 'Math.sqrt($1)');
+            const chk = e.replace(/Math\.sqrt/g, '');
+            if (!/^[\d+\-*/().\s%]+$/.test(chk) || !/\d/.test(chk) || !/[+\-*/%]|sqrt/.test(e)) return null;
+            try {
+                const v = Function('"use strict";return (' + e + ')')();
+                if (typeof v === 'number' && isFinite(v)) return String(Math.round(v * 1e10) / 1e10).replace('.', ',');
+            } catch (_) {}
+            return null;
+        }
+        async function wiki(q) {
+            const t = q.replace(/[?!.]+$/, '').split(/\s+/).filter(w => !STOP.has(w.toLowerCase())).join(' ').trim();
+            if (!t) return null;
+            const r = await fetch('https://tr.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrlimit=1&prop=extracts&exintro=1&explaintext=1&exsentences=3&gsrsearch=' + encodeURIComponent(t));
+            const j = await r.json();
+            const pages = j && j.query && j.query.pages;
+            const p = pages && Object.values(pages)[0];
+            if (!p || !p.extract) return null;
+            return '📚 ' + p.title + ': ' + p.extract.trim().slice(0, 600) + ' (Kaynak: Vikipedi)';
+        }
+        const INTRO = cfg.ICON + ' Merhaba! Ben AI. Şunları yapabilirim: çeviri ("kalem ingilizcesi nedir"), işlem ("12*8+5"), bilgi/arama ("fotosentez nedir", "Atatürk kimdir"). Bana özelden de yazabilirsin.';
+        async function think(q) {
+            q = String(q).trim().slice(0, cfg.MAX_Q);
+            if (cfg.ENDPOINT) {
+                try {
+                    const r = await fetch(cfg.ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ question: q, user: currentUser ? currentUser.name : '' }) });
+                    if (r.ok) { const j = await r.json(); if (j && j.reply) return clean(j.reply); }
+                } catch (_) {}
+            }
+            const m = tryMath(q); if (m !== null) return '🧮 Sonuç: ' + m;
+            if (/^(yardım|help|merhaba|selam|nasılsın|hi)\b/i.test(q)) return INTRO;
+            try { const p = parseTranslate(q); if (p) { const t = await translate(p); if (t) return t; } } catch (_) {}
+            try { const w = await wiki(q); if (w) return clean(w); } catch (_) {}
+            return '🤔 Bunu bulamadım. Soruyu daha kısa/net yazar mısın? Örn: "kalem ingilizcesi nedir", "üçgen nedir", "45*12".' +
+                   (cfg.ENDPOINT ? '' : ' (Ödev çözümü gibi ileri sorular için yapay zekâ servisi bağlanmalı.)');
+        }
+
+        let busyUntil = 0;
+        const guard = () => { if (Date.now() < busyUntil) return false; busyUntil = Date.now() + cfg.COOLDOWN_MS; return true; };
+        window.AIBot = {
+            isBot: n => normalizeNick(n) === normalizeNick(cfg.NAME),
+            async askInChannel(text) {
+                if (!guard() || !currentUser) return;
+                const nick = currentUser.name;
+                const a = await think(text);
+                await database.ref('channelMessages/' + AI_CH).push({
+                    sender: cfg.NAME, text: '@' + nick + ' ' + a, type: 'supervisor', isBotMessage: true,
+                    timestamp: Date.now(), time: hhmm(), avatar: null, channel: AI_CH });
+            },
+            async askPrivate(text) {
+                if (!guard() || !currentUser) return;
+                const nick = currentUser.name;
+                const a = await think(text);
+                await privateChatsRef.child(generateChatId(nick, cfg.NAME)).push({
+                    sender: cfg.NAME, receiver: nick, text: a, timestamp: Date.now(), time: hhmm(), avatar: null, isRead: false });
+            }
+        };
+
+        /* ---------- /join /unjoin : hedef kullanıcının tarafında uygulanır ---------- */
+        const returnTo = {};
+        function loadReturn() { try { Object.assign(returnTo, JSON.parse(sessionStorage.getItem('cety_return') || '{}')); } catch (_) {} }
+        function saveReturn() { try { sessionStorage.setItem('cety_return', JSON.stringify(returnTo)); } catch (_) {} }
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        async function onMove(m) {
+            if (!m || !m.channel) return;
+            if (m.action === 'join') {
+                for (let i = 0; i < 20 && !(cachedChannels[m.channel] && canAccessHiddenChannel(m.channel)); i++) await sleep(250);
+                if (!cachedChannels[m.channel] || !canAccessHiddenChannel(m.channel)) return;
+                if (activeChannelName !== m.channel) { returnTo[m.channel] = activeChannelName || 'genel'; saveReturn(); }
+                await switchChannel(m.channel);
+                addSystemMessage('📥 ' + m.by + ' sizi #' + m.channel + ' kanalına aldı.');
+            } else if (m.action === 'unjoin') {
+                if (activeChannelName === m.channel) {
+                    let dest = returnTo[m.channel];
+                    if (!dest || !cachedChannels[dest] || !canAccessHiddenChannel(dest) || dest === m.channel) dest = 'genel';
+                    await switchChannel(dest);
+                    addSystemMessage('📤 ' + m.by + ' sizi #' + m.channel + ' kanalından çıkardı; #' + dest + ' kanalına döndünüz.');
+                }
+                delete returnTo[m.channel]; saveReturn();
+            }
+        }
+
+        /* ---------- giriş sonrası kurulum ---------- */
+        let boundFor = null, firstMove = true;
+        async function welcome(ch, text) {
+            try {
+                const s = await database.ref('channelMessages/' + ch).limitToFirst(1).once('value');
+                if (!s.exists()) await database.ref('channelMessages/' + ch).push({
+                    sender: ch === AI_CH ? cfg.NAME : 'Sistem', text, type: 'supervisor', isBotMessage: true,
+                    timestamp: Date.now(), time: hhmm(), avatar: null, channel: ch });
+            } catch (_) {}
+        }
+        async function botPresence() {
+            try {
+                await ensureBotUserExists(cfg.NAME);
+                await database.ref('onlineUsers/' + cfg.NAME).update({ lastSeen: Date.now(), isOnline: true });
+            } catch (_) {}
+        }
+        setInterval(() => {
+            try {
+                if (typeof currentUser === 'undefined' || !currentUser || typeof database === 'undefined' || !database) return;
+                if (boundFor === currentUser.name) return;
+                boundFor = currentUser.name; firstMove = true; loadReturn();
+                database.ref('channelMoves/' + key(currentUser.name)).on('value', s => {
+                    const v = s.val();
+                    if (firstMove) { firstMove = false; window._lastMoveTs = v ? v.ts : 0; return; }
+                    if (v && v.ts !== window._lastMoveTs) { window._lastMoveTs = v.ts; onMove(v); }
+                });
+                botPresence(); setInterval(botPresence, 30000);
+                if (isOwner || hasRole('admin')) {
+                    welcome(ADMIN_CH, '📢 Sistem mesajları (ban, şikayet, kanal olayları, Proxy raporları, saldırı uyarıları) bu kanalda toplanır. Yalnızca Owner ve Admin görür.');
+                }
+                if (isOwner) welcome(AI_CH, cfg.ICON + ' #ai kanalına hoş geldiniz! Çeviri, işlem ve bilgi sorularınızı yazın; bana özelden de ulaşabilirsiniz.');
+            } catch (_) {}
+        }, 2000);
     })();
     </script>
 </body>
