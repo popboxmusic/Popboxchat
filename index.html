@@ -8027,12 +8027,13 @@
                     userData: info,
                     isOnline: true,
                     secondsAgo: Math.floor((now - (info.lastSeen || 0)) / 1000),
-                    rolePriority: getRolePriority(username)
+                    roleLevel: (info && info.isBot) ? 4.5 : getRoleLevel(getUserRoleInChannel(username, activeChannelName))
                 }))
                 .sort((a, b) => {
-                    if (a.rolePriority !== b.rolePriority) return a.rolePriority - b.rolePriority;
-                    return a.secondsAgo - b.secondsAgo;
+                    if (a.roleLevel !== b.roleLevel) return b.roleLevel - a.roleLevel;
+                    return a.username.toLocaleLowerCase('tr').localeCompare(b.username.toLocaleLowerCase('tr'), 'tr', { sensitivity: 'base', numeric: true });
                 });
+            const _prevScroll = container.scrollTop;
             
             if (usersToDisplay.length === 0) {
                 container.innerHTML = `<div style="color:var(--text-muted); text-align:center; padding:20px;">#${activeChannelName} kanalında kimse yok.</div>`;
@@ -8083,6 +8084,7 @@
                 `;
             });
             container.innerHTML = html;
+            container.scrollTop = _prevScroll;
         }
 
         // ============================================================
@@ -9480,6 +9482,7 @@
                 return;
             }
             
+            if (['konu','topic','konusil','sabitle','pin','sabitkaldir','unpin'].includes(command)) { if (window.ChInfo && await window.ChInfo.handle(command, args)) return; }
             if (command === 'join') {
                 if (args.length >= 1) {
                     const channelName = args[0].replace('#', '');
@@ -9842,6 +9845,8 @@
             if (is('verified')) h += L('+ Onaylı', ['/verifiedpanel (/vpanel)']);
             if (is('halfoperator')) h += L('% Half-Operatör', ['/halfoperatorpanel (/hopanel)', '/sessizeal — kanalı sessize al/aç']);
             if (is('operator')) h += L('@ Operatör', ['/operatorpanel (/opanel)']);
+            if (isOwner || hasRole('admin') || canManageChannel(currentChannel)) h += L('📝 Kanal sahibi (bu kanal)', ['/konu [metin] — kanal açıklamasını göster/ekle/değiştir', '/konusil — açıklamayı sil']);
+            if (isOwner || canModerateChannel(currentChannel)) h += L('📌 Sabit mesaj (bu kanal)', ['/sabitle metin — sabitle (veya mesajın yanındaki 📌)', '/sabitkaldir — sabiti kaldır']);
             if (isOwner || canModerateChannel(currentChannel)) h += L('🛡️ Kanal moderasyonu', ['/mute kullanıcı [dk]', '/unmute kullanıcı', '/kick kullanıcı [dk] [sebep] (/süreliban)', '/unban kullanıcı', '/banlist', '/sil — mesaj sil', '/temizle — kanalı temizle']);
             if (is('coadmin')) h += L('& Co-Admin', ['/coadminpanel (/cap)', '/info kullanıcı mesaj — özel bildirim']);
             if (isOwner || hasRoleInChannel('coadmin', currentChannel)) h += L('📌 Kanal yetkileri (bu kanal)', ['/kanalop, /kanalopcikar kullanıcı', '/kanalhalfop, /kanalhalfopcikar kullanıcı', '/kanalverified, /kanalverifiedcikar kullanıcı']);
@@ -11882,6 +11887,9 @@
             let deleteButton = '';
             if (currentUser && (message.sender === currentUser.name || canModerateChannel(currentChannel) || isOwner)) {
                 deleteButton = `<button class="delete-btn" onclick="deleteMessage('${message.id}')"><i class="fas fa-trash"></i></button>`;
+            }
+            if (window.canPinInChannel && window.canPinInChannel(currentChannel) && !message.isBotMessage) {
+                deleteButton = `<button class="pin-btn" title="Sabitle" onclick="pinMessageById('${message.id}')"><i class="fas fa-thumbtack"></i></button>` + deleteButton;
             }
             
             let senderName = message.sender;
@@ -14006,6 +14014,157 @@
                 if (isOwner) welcome(AI_CH, cfg.ICON + ' #ai kanalına hoş geldiniz! Çeviri, işlem ve bilgi sorularınızı yazın; bana özelden de ulaşabilirsiniz.');
             } catch (_) {}
         }, 2000);
+    })();
+    </script>
+    <!-- ============================================================
+         KANAL AÇIKLAMASI + SABİT MESAJ (v4)
+         Açıklama: kanal sahibi / admin / owner ekler-düzenler-siler
+         Sabit mesaj: kanal sahibi / operatör (ve üstü) / admin / owner
+         ============================================================ -->
+    <style>
+        #chInfoBar { flex: 0 0 auto; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); }
+        #chInfoBar:empty { display: none; }
+        .ch-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 12px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; }
+        .ch-row + .ch-row { border-top: 1px dashed var(--border-color); }
+        .ch-row > i { margin-top: 3px; flex: 0 0 auto; }
+        .ch-desc > i { color: var(--text-muted); }
+        .ch-pin { background: rgba(255,170,51,.07); }
+        .ch-pin > i { color: var(--coadmin); }
+        .ch-text { flex: 1; min-width: 0; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+        .ch-row.open .ch-text { -webkit-line-clamp: unset; display: block; }
+        .ch-text b { color: var(--text-primary); font-weight: 600; }
+        .ch-by { color: var(--text-muted); font-size: 11px; }
+        .ch-acts { display: flex; gap: 4px; flex: 0 0 auto; }
+        .ch-acts button { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-muted); font-size: 11px; cursor: pointer; }
+        .ch-acts button:hover { color: var(--text-primary); border-color: var(--youtube-red); }
+        .ch-add { color: var(--text-muted); font-style: italic; }
+        .pin-btn { background: transparent; border: 0; color: var(--text-muted); cursor: pointer; padding: 2px 6px; font-size: 12px; }
+        .pin-btn:hover { color: var(--coadmin); }
+    </style>
+    <script>
+    (function () {
+        'use strict';
+        const clip = (t, n) => String(t || '').replace(/[<>]/g, '').trim().slice(0, n);
+        const canEdit = ch => { try { return !!currentUser && canManageChannel(ch); } catch (_) { return false; } };
+        const canPin  = ch => { try { return !!currentUser && (canManageChannel(ch) || canModerateChannel(ch)); } catch (_) { return false; } };
+        window.canPinInChannel = canPin;
+
+        let bar = null, pinData = null, pinCh = null, pinRef = null, lastSig = '';
+        function ensureBar() {
+            if (bar && document.body.contains(bar)) return bar;
+            const msgs = document.getElementById('messages');
+            if (!msgs) return null;
+            bar = document.createElement('div'); bar.id = 'chInfoBar';
+            msgs.parentNode.insertBefore(bar, msgs);
+            return bar;
+        }
+        function row(cls, icon, inner, acts, onTap) {
+            const d = document.createElement('div'); d.className = 'ch-row ' + cls;
+            d.innerHTML = '<i class="fas ' + icon + '"></i><div class="ch-text"></div><div class="ch-acts"></div>';
+            if (inner.html) d.querySelector('.ch-text').innerHTML = inner.html; else d.querySelector('.ch-text').textContent = inner.text;
+            const a = d.querySelector('.ch-acts');
+            (acts || []).forEach(x => { const b = document.createElement('button'); b.type = 'button'; b.title = x.t; b.innerHTML = '<i class="fas ' + x.i + '"></i>';
+                b.onclick = e => { e.stopPropagation(); x.f(); }; a.appendChild(b); });
+            d.onclick = onTap || (() => d.classList.toggle('open'));
+            return d;
+        }
+        function render() {
+            const b = ensureBar(); if (!b) return;
+            const ch = (typeof activeChannelName !== 'undefined') ? activeChannelName : null;
+            const info = ch && cachedChannels ? cachedChannels[ch] : null;
+            const desc = info && info.description ? String(info.description) : '';
+            const sig = [ch, desc, canEdit(ch), canPin(ch), pinCh === ch && pinData ? pinData.ts : 0].join('|');
+            if (sig === lastSig) return; lastSig = sig;
+            b.innerHTML = '';
+            if (!ch || !info) return;
+            if (desc) {
+                b.appendChild(row('ch-desc', 'fa-circle-info', { text: desc }, canEdit(ch) ? [
+                    { i: 'fa-pen', t: 'Açıklamayı düzenle', f: () => setDescription(ch) },
+                    { i: 'fa-trash', t: 'Açıklamayı sil', f: () => clearDescription(ch) }] : []));
+            } else if (canEdit(ch)) {
+                b.appendChild(row('ch-desc', 'fa-circle-plus', { html: '<span class="ch-add">Kanal açıklaması ekle…</span>' }, [], () => setDescription(ch)));
+            }
+            if (pinCh === ch && pinData && pinData.text) {
+                const by = pinData.sender ? '<span class="ch-by"> — ' + clip(pinData.sender, 24) + '</span>' : '';
+                const r = row('ch-pin', 'fa-thumbtack', { text: '' }, canPin(ch) ? [{ i: 'fa-xmark', t: 'Sabiti kaldır', f: () => unpin(ch) }] : []);
+                const t = r.querySelector('.ch-text'); t.textContent = pinData.text; t.insertAdjacentHTML('beforeend', by);
+                b.appendChild(r);
+            }
+        }
+        function bindPin(ch) {
+            if (pinRef) { try { pinRef.off(); } catch (_) {} pinRef = null; }
+            pinData = null; pinCh = ch; lastSig = '';
+            if (!ch || typeof database === 'undefined' || !database) return;
+            pinRef = database.ref('channelPins/' + ch);
+            pinRef.on('value', s => { if (pinCh === ch) { pinData = s.val(); lastSig = ''; render(); } });
+        }
+        setInterval(() => {
+            try {
+                if (typeof currentUser === 'undefined' || !currentUser) return;
+                const ch = activeChannelName;
+                if (ch !== pinCh) bindPin(ch);
+                render();
+            } catch (_) {}
+        }, 600);
+
+        async function log(t) { try { await sendToAdminChannel(t); } catch (_) {} }
+        async function setDescription(ch) {
+            if (!canEdit(ch)) { addSystemMessage('⛔ Kanal açıklamasını yalnızca kanal sahibi, Admin veya Owner değiştirebilir!'); return; }
+            const cur = (cachedChannels[ch] && cachedChannels[ch].description) || '';
+            const v = prompt('#' + ch + ' kanal açıklaması (en fazla 200 karakter):', cur);
+            if (v === null) return;
+            const t = clip(v, 200);
+            if (!t) return clearDescription(ch);
+            await channelsRef.child(ch).update({ description: t, descriptionBy: currentUser.name });
+            incrementWriteCount(); lastSig = '';
+            addSystemMessage('✅ #' + ch + ' açıklaması güncellendi.');
+            log('📝 KANAL AÇIKLAMASI: #' + ch + ' • Yetkili: ' + currentUser.name);
+        }
+        async function clearDescription(ch) {
+            if (!canEdit(ch)) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+            await channelsRef.child(ch).update({ description: null, descriptionBy: null });
+            incrementWriteCount(); lastSig = '';
+            addSystemMessage('🗑️ #' + ch + ' açıklaması silindi.');
+            log('🗑️ KANAL AÇIKLAMASI SİLİNDİ: #' + ch + ' • Yetkili: ' + currentUser.name);
+        }
+        async function pinText(ch, text, sender) {
+            if (!canPin(ch)) { addSystemMessage('⛔ Mesaj sabitlemek için kanal sahibi veya operatör olmalısınız!'); return; }
+            const t = clip(text, 400); if (!t) { addSystemMessage('❌ Sabitlenecek metin boş!'); return; }
+            await database.ref('channelPins/' + ch).set({ text: t, sender: sender || currentUser.name, by: currentUser.name, ts: Date.now() });
+            incrementWriteCount();
+            addSystemMessage('📌 Mesaj #' + ch + ' kanalında sabitlendi.');
+            log('📌 SABİT MESAJ: #' + ch + ' • Yetkili: ' + currentUser.name);
+        }
+        async function unpin(ch) {
+            if (!canPin(ch)) { addSystemMessage('⛔ Yetkiniz yok!'); return; }
+            await database.ref('channelPins/' + ch).remove();
+            incrementWriteCount();
+            addSystemMessage('📌 Sabit mesaj kaldırıldı.');
+            log('📌 SABİT KALDIRILDI: #' + ch + ' • Yetkili: ' + currentUser.name);
+        }
+        window.pinMessageById = function (id) {
+            const el = document.getElementById('msg_' + id); if (!el) return;
+            const tx = el.querySelector('.message-text'), us = el.querySelector('.message-user');
+            pinText(activeChannelName, tx ? tx.textContent : '', us ? us.textContent.trim() : '');
+        };
+        window.ChInfo = {
+            async handle(cmd, args) {
+                const ch = activeChannelName, rest = args.join(' ');
+                if (cmd === 'konu' || cmd === 'topic') {
+                    if (!rest) { const d = cachedChannels[ch] && cachedChannels[ch].description; addSystemMessage(d ? '📝 #' + ch + ': ' + clip(d, 200) : 'Bu kanalın açıklaması yok. Kullanım: /konu açıklama'); return true; }
+                    if (!canEdit(ch)) { addSystemMessage('⛔ Kanal açıklamasını yalnızca kanal sahibi, Admin veya Owner değiştirebilir!'); return true; }
+                    await channelsRef.child(ch).update({ description: clip(rest, 200), descriptionBy: currentUser.name });
+                    incrementWriteCount(); addSystemMessage('✅ Kanal açıklaması güncellendi.'); log('📝 KANAL AÇIKLAMASI: #' + ch + ' • Yetkili: ' + currentUser.name); return true;
+                }
+                if (cmd === 'konusil') { await clearDescription(ch); return true; }
+                if (cmd === 'sabitle' || cmd === 'pin') {
+                    if (!rest) { addSystemMessage('Kullanım: /sabitle metin — veya mesajın yanındaki 📌 düğmesi'); return true; }
+                    await pinText(ch, rest); return true;
+                }
+                if (cmd === 'sabitkaldir' || cmd === 'unpin') { await unpin(ch); return true; }
+                return false;
+            }
+        };
     })();
     </script>
 </body>
