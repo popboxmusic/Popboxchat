@@ -2667,10 +2667,25 @@
             background: var(--bg-hover);
             color: var(--text-primary);
         }
-        .users-tab-btn.active {
-            background: var(--youtube-red);
-            color: white;
-        }
+       .users-tab-btn.active {
+    background: var(--youtube-red);
+    color: white;
+}
+
+/* 🔥 YENİ: Aboneliklerim sekmesi için özel stil */
+.users-tab-btn[data-user-list-tab="subscriptions"].active {
+    background: var(--favorite, #ff66cc);
+    color: #111;
+    box-shadow: 0 0 10px rgba(255, 102, 204, 0.4);
+}
+
+.user-item.subscription-item {
+    border-left: 3px solid var(--favorite, #ff66cc);
+}
+.user-item.subscription-item.active-channel {
+    background: rgba(255, 102, 204, 0.08);
+    border-color: var(--favorite, #ff66cc);
+}
         .user-list-container {
             flex: 1;
             overflow-y: auto;
@@ -4608,10 +4623,11 @@
                 <button class="close-sidebar" onclick="toggleUserList()"><i class="fas fa-times"></i></button>
             </div>
             <div class="users-tabs">
-                <button class="users-tab-btn active" data-user-list-tab="all" onclick="switchUserListTab('all')">Çevrimiçi</button>
-                <button class="users-tab-btn" data-user-list-tab="private" onclick="switchUserListTab('private')">Özel sohbetler</button>
-                <button class="users-tab-btn" data-user-list-tab="following" onclick="switchUserListTab('following')">Takip Ettiklerim</button>
-            </div>
+    <button class="users-tab-btn active" data-user-list-tab="all" onclick="switchUserListTab('all')">Çevrimiçi</button>
+    <button class="users-tab-btn" data-user-list-tab="private" onclick="switchUserListTab('private')">Özel sohbetler</button>
+    <button class="users-tab-btn" data-user-list-tab="following" onclick="switchUserListTab('following')">Takip Ettiklerim</button>
+    <button class="users-tab-btn" data-user-list-tab="subscriptions" onclick="switchUserListTab('subscriptions')">Aboneliklerim</button>
+</div>
             <div id="userListContainer" class="user-list-container"></div>
         </div>
     </div>
@@ -7396,25 +7412,30 @@
             }
         }
 
-        async function toggleChannelSubscription(channelName) {
-            if (!currentUser) return;
-            const channel = cachedChannels[channelName];
-            if (!channel) return;
-            
-            // Gizli kanala abone olma kontrolü
-            if (channel.isHidden && !canAccessHiddenChannel(channelName)) {
-                addSystemMessage(`🔒 #${channelName} gizli bir kanal, abone olamazsınız.`);
-                return;
-            }
-            
-            const isSubbed = await isSubscribedToChannel(channelName, currentUser.name);
-            if (isSubbed) {
-                await unsubscribeFromChannel(channelName, currentUser.name);
-            } else {
-                await subscribeToChannel(channelName, currentUser.name);
-            }
-            renderChannelTabs();
-        }
+       async function toggleChannelSubscription(channelName) {
+    if (!currentUser) return;
+    const channel = cachedChannels[channelName];
+    if (!channel) return;
+    
+    // Gizli kanala abone olma kontrolü
+    if (channel.isHidden && !canAccessHiddenChannel(channelName)) {
+        addSystemMessage(`🔒 #${channelName} gizli bir kanal, abone olamazsınız.`);
+        return;
+    }
+    
+    const isSubbed = await isSubscribedToChannel(channelName, currentUser.name);
+    if (isSubbed) {
+        await unsubscribeFromChannel(channelName, currentUser.name);
+    } else {
+        await subscribeToChannel(channelName, currentUser.name);
+    }
+    
+    // 🔥 YENİ: Aboneliklerim sekmesi açıksa hemen güncelle
+    if (currentUserListTab === 'subscriptions') {
+        updateSubscriptionListUI();
+    }
+    renderChannelTabs();
+}
 
         async function loadChannelSubscriberCount(channelName) {
             if (!channelSubscribersRef || !channelName) return 0;
@@ -7511,14 +7532,19 @@
         }
 
         async function loadChannelSubscribersForCurrent() {
-            if (!channelSubscribersRef || !currentChannel) return;
-            channelSubscribersRef.child(currentChannel).on('value', snapshot => {
-                const data = snapshot.val() || {};
-                cachedChannelSubscribers[currentChannel] = data;
-                updateChannelActionBar();
-                renderChannelTabs();
-            });
+    if (!channelSubscribersRef || !currentChannel) return;
+    channelSubscribersRef.child(currentChannel).on('value', snapshot => {
+        const data = snapshot.val() || {};
+        cachedChannelSubscribers[currentChannel] = data;
+        window.cachedChannelSubscribers = cachedChannelSubscribers;
+        updateChannelActionBar();
+        renderChannelTabs();
+        // 🔥 YENİ: Aboneliklerim sekmesi açıksa güncelle
+        if (currentUserListTab === 'subscriptions') {
+            updateSubscriptionListUI();
         }
+    });
+}
 
         // ============================================================
         // GİRİŞ SİSTEMİ
@@ -10869,9 +10895,92 @@
             delete privateContactListeners[username];
         }
 
-        function updatePrivateContactListUI() {
-            const container = document.getElementById('userListContainer');
-            if (!container) return;
+        // 🔥 YENİ: Abone olunan kanalları listeleyen fonksiyon
+function updateSubscriptionListUI() {
+    const container = document.getElementById('userListContainer');
+    if (!container || !currentUser) return;
+    
+    // Kullanıcının abone olduğu kanalları bul
+    const subscribedChannels = [];
+    Object.entries(cachedChannelSubscribers || {}).forEach(([channelName, subscribers]) => {
+        if (subscribers && subscribers[currentUser.name]) {
+            // Gizli kanala erişim kontrolü
+            if (!canAccessHiddenChannel(channelName)) return;
+            const channel = cachedChannels[channelName];
+            if (!channel) return;
+            subscribedChannels.push({
+                name: channelName,
+                channel: channel,
+                subscribedAt: subscribers[currentUser.name].subscribedAt || 0
+            });
+        }
+    });
+    
+    // Abonelik tarihine göre sırala (en yeni üstte)
+    subscribedChannels.sort((a, b) => b.subscribedAt - a.subscribedAt);
+    
+    if (subscribedChannels.length === 0) {
+        container.innerHTML = `
+            <div style="color:var(--text-muted); text-align:center; padding:24px 16px; line-height:1.6;">
+                <i class="fas fa-bell-slash" style="font-size:32px; opacity:0.3; display:block; margin-bottom:12px;"></i>
+                Henüz hiçbir kanala abone değilsiniz.<br>
+                <small style="font-size:11px; opacity:0.7;">Kanal başlığındaki <i class="fas fa-bell-slash"></i> ikonuna tıklayarak abone olun.</small>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = `<div style="padding:8px 12px; color:var(--favorite, #ff66cc); font-size:11px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid var(--border-color); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+        <i class="fas fa-bell"></i> Abone Olduğum Kanallar — ${subscribedChannels.length}
+    </div>`;
+    
+    subscribedChannels.forEach(({ name, channel }) => {
+        const subscriberCount = Object.keys(cachedChannelSubscribers[name] || {}).length;
+        const isActive = name === currentChannel;
+        const statusIcon = channel.isHidden 
+            ? ' <i class="fas fa-eye-slash" style="font-size:10px; color:var(--text-muted);" title="Gizli"></i>' 
+            : '';
+        const lockIcon = channel.isLocked 
+            ? ' <i class="fas fa-volume-mute" style="font-size:10px; color:var(--ban);" title="Sessiz"></i>' 
+            : '';
+        
+        html += `
+            <div class="user-item subscription-item ${isActive ? 'active-channel' : ''}" 
+                 style="cursor:pointer;" 
+                 onclick="switchChannel('${name}'); if (window.innerWidth <= 1023) { document.getElementById('usersSidebar').classList.remove('active'); }">
+                <div class="user-status" style="flex:1; min-width:0;">
+                    <span class="private-contact-dot online" 
+                          style="background: var(--favorite, #ff66cc); box-shadow: 0 0 8px rgba(255,102,204,0.6);"></span>
+                    <div class="user-avatar-sidebar" 
+                         style="background: var(--favorite-bg, rgba(255,102,204,0.15)); color: var(--favorite, #ff66cc);">
+                        <i class="fas fa-hashtag"></i>
+                    </div>
+                    <div style="min-width:0; flex:1;">
+                        <strong style="display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px;">
+                            #${escapeChannelHtml(channel.label || name)}${statusIcon}${lockIcon}
+                        </strong>
+                        <small style="color:var(--text-muted); font-size:10px; display:flex; align-items:center; gap:4px;">
+                            <i class="fas fa-users"></i> ${subscriberCount} abone
+                            ${isActive ? ' · <i class="fas fa-circle" style="font-size:6px; color:var(--youtube-red);"></i> Aktif' : ''}
+                        </small>
+                    </div>
+                </div>
+                <button class="user-follow-btn following" 
+                        onclick="event.stopPropagation(); toggleChannelSubscription('${name}')" 
+                        title="Abonelikten Çık"
+                        style="color: var(--favorite, #ff66cc); border-color: var(--favorite, #ff66cc); background: var(--favorite-bg, rgba(255,102,204,0.15));">
+                    <i class="fas fa-bell"></i>
+                </button>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function updatePrivateContactListUI() {
+    const container = document.getElementById('userListContainer');
+    if (!container) return;
             const now = Date.now();
             
             const blockedSet = new Set();
@@ -10948,35 +11057,40 @@
         }
 
         function updateUserListUI() {
-            const container = document.getElementById('userListContainer');
-            if (!container) return;
-            if (currentUserListTab === 'private') {
-                updatePrivateContactListUI();
-                return;
-            }
-            if (currentUserListTab === 'following') {
-                updateFollowingListUI();
-                return;
-            }
-            
-            const channelUsers = cachedChannelPresence[activeChannelName] || {};
-            
-            if (Object.keys(channelUsers).length === 0) {
-                container.innerHTML = `<div style="color:var(--text-muted); text-align:center; padding:20px;">#${activeChannelName} kanalında kimse yok.</div>`;
-                return;
-            }
-            
-            updateChannelUserListUI(channelUsers);
-        }
+    const container = document.getElementById('userListContainer');
+    if (!container) return;
+    if (currentUserListTab === 'private') {
+        updatePrivateContactListUI();
+        return;
+    }
+    if (currentUserListTab === 'following') {
+        updateFollowingListUI();
+        return;
+    }
+    // 🔥 YENİ: Aboneliklerim sekmesi
+    if (currentUserListTab === 'subscriptions') {
+        updateSubscriptionListUI();
+        return;
+    }
+    
+    const channelUsers = cachedChannelPresence[activeChannelName] || {};
+    
+    if (Object.keys(channelUsers).length === 0) {
+        container.innerHTML = `<div style="color:var(--text-muted); text-align:center; padding:20px;">#${activeChannelName} kanalında kimse yok.</div>`;
+        return;
+    }
+    
+    updateChannelUserListUI(channelUsers);
+}
 
-        function switchUserListTab(tab) {
-            if (tab !== 'all' && tab !== 'private' && tab !== 'following') return;
-            currentUserListTab = tab;
-            document.querySelectorAll('.users-tab-btn').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.userListTab === tab);
-            });
-            updateUserListUI();
-        }
+      function switchUserListTab(tab) {
+    if (tab !== 'all' && tab !== 'private' && tab !== 'following' && tab !== 'subscriptions') return;
+    currentUserListTab = tab;
+    document.querySelectorAll('.users-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.userListTab === tab);
+    });
+    updateUserListUI();
+}
 
         function getRolePriority(username) {
             if (username === SECURE_CONFIG.OWNER_CONFIG.username) return 1;
@@ -11910,14 +12024,20 @@
                         registeredUsersRef.on('value', (snapshot) => { cachedRegisteredUsers = snapshot.val() || {}; if (isOwner) updateOwnerPanelFromCache(); });
                         customCommandsRef.on('value', (snapshot) => { customCommands = snapshot.val() || {}; if (isOwner) updateOwnerCommandsList(); });
 
-                        // 🔥 YENİ: Kanal abonelik dinleyicisi
-                        if (channelSubscribersRef) {
-                            channelSubscribersRef.on('value', (snapshot) => {
-                                cachedChannelSubscribers = snapshot.val() || {};
-                                updateChannelActionBar();
-                                renderChannelTabs();
-                            });
-                        }
+                        
+                       // 🔥 YENİ: Kanal abonelik dinleyicisi
+if (channelSubscribersRef) {
+    channelSubscribersRef.on('value', (snapshot) => {
+        cachedChannelSubscribers = snapshot.val() || {};
+        window.cachedChannelSubscribers = cachedChannelSubscribers;
+        updateChannelActionBar();
+        renderChannelTabs();
+        // 🔥 YENİ: Aboneliklerim sekmesi açıksa güncelle
+        if (currentUserListTab === 'subscriptions') {
+            updateSubscriptionListUI();
+        }
+    });
+}
 
                         if (tempVerifiedRef) {
                             tempVerifiedRef.on('value', (snapshot) => {
@@ -12137,68 +12257,100 @@
                 // 🔥 DÜZELTME (Madde 2): Kanal sekmeleri SABİT - sadece isim göster, minimal ikon
                // 🔥 KRİTİK DÜZELTME: Kanal listesi SABİT — asla yeniden oluşturulmaz
         // Sadece içeriği güncellenir, DOM yapısı korunur
-        function renderChannelTabs() {
-            const container = document.getElementById('channelTabs');
-            if (!container) return;
+       // 🔥 KRİTİK DÜZELTME: Kanal listesi SABİT — signature ile DOM koruması
+let _lastChannelRenderSignature = '';
+let _renderChannelTabsScheduled = false;
+
+function renderChannelTabs() {
+    const container = document.getElementById('channelTabs');
+    if (!container) return;
+    
+    const channels = Object.entries(cachedChannels)
+        .filter(([name, channel]) => canAccessHiddenChannel(name))
+        .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+    
+    // 🔥 Signature oluştur — içerik değişmediyse DOM'a hiç dokunma
+    const signature = channels.map(([name, ch]) => {
+        const isSubbed = currentUser && cachedChannelSubscribers[name]?.[currentUser.name] ? '1' : '0';
+        const subCount = Object.keys(cachedChannelSubscribers[name] || {}).length;
+        return `${name}:${isSubbed}:${subCount}:${ch.isHidden ? 'h' : ''}:${ch.isLocked ? 'l' : ''}:${ch.label || name}`;
+    }).join('|') + `|active:${currentChannel}|user:${currentUser?.name || ''}`;
+    
+    if (signature === _lastChannelRenderSignature && container.children.length > 0) {
+        // Sadece buton durumlarını güncelle
+        const canManagePlaylist = canAddVideoToChannel(currentChannel);
+        const btnWeb = document.getElementById('addVideoBtnWeb');
+        const btnMobile = document.getElementById('addVideoBtnMobile');
+        if (btnWeb) btnWeb.disabled = !canManagePlaylist;
+        if (btnMobile) btnMobile.disabled = !canManagePlaylist;
+        const manageButton = document.getElementById('channelManageToggle');
+        if (manageButton) manageButton.style.display = (hasRole('admin') || isOwner || Object.keys(cachedChannels).some(canManageChannel)) ? 'inline-flex' : 'none';
+        return;
+    }
+    _lastChannelRenderSignature = signature;
+    
+    // Debounce: aynı frame'de birden fazla çağrıyı engelle
+    if (_renderChannelTabsScheduled) return;
+    _renderChannelTabsScheduled = true;
+    
+    requestAnimationFrame(() => {
+        _renderChannelTabsScheduled = false;
+        _doRenderChannelTabs(container, channels);
+    });
+}
+
+function _doRenderChannelTabs(container, channels) {
+    // Mevcut DOM'daki kanal isimleri
+    const existingWrappers = Array.from(container.querySelectorAll('.channel-tab-wrapper'));
+    const existingNames = existingWrappers.map(el => el.dataset.channel);
+    const newNames = channels.map(([n]) => n);
+    
+    // 🔥 AYNI KANALLAR VARSA: DOM'u dokunma, sadece içeriği güncelle
+    const sameChannels = existingNames.length === newNames.length && 
+                         existingNames.every((n, i) => n === newNames[i]);
+    
+    if (sameChannels && existingWrappers.length > 0) {
+        // Sadece active class ve içerik güncelle
+        channels.forEach(([name, channel]) => {
+            const wrapper = container.querySelector(`.channel-tab-wrapper[data-channel="${name}"]`);
+            if (!wrapper) return;
             
-            const channels = Object.entries(cachedChannels)
-                .filter(([name, channel]) => canAccessHiddenChannel(name))
-                .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
-            
-            // Mevcut DOM'daki kanal isimleri
-            const existingWrappers = Array.from(container.querySelectorAll('.channel-tab-wrapper'));
-            const existingNames = existingWrappers.map(el => el.dataset.channel);
-            const newNames = channels.map(([n]) => n);
-            
-            // 🔥 AYNI KANALLAR VARSA: DOM'u dokunma, sadece içeriği güncelle
-            const sameChannels = existingNames.length === newNames.length && 
-                                 existingNames.every((n, i) => n === newNames[i]);
-            
-            if (sameChannels && existingWrappers.length > 0) {
-                // Sadece active class ve içerik güncelle
-                channels.forEach(([name, channel]) => {
-                    const wrapper = container.querySelector(`.channel-tab-wrapper[data-channel="${name}"]`);
-                    if (!wrapper) return;
-                    
-                    // Aktif class güncelle
-                    const tabBtn = wrapper.querySelector('.channel-tab');
-                    if (tabBtn) {
-                        const wasActive = tabBtn.classList.contains('active');
-                        const isActive = name === currentChannel;
-                        if (wasActive !== isActive) {
-                            tabBtn.classList.toggle('active', isActive);
-                        }
-                        
-                        // İçerik güncelle (sadece değiştiyse)
-                        const isSubbed = currentUser && cachedChannelSubscribers[name]?.[currentUser.name];
-                        const subCount = Object.keys(cachedChannelSubscribers[name] || {}).length;
-                        let statusIcon = '';
-                        if (channel.isHidden) statusIcon += ' <i class="fas fa-eye-slash" title="Gizli"></i>';
-                        if (channel.isLocked) statusIcon += ' <i class="fas fa-volume-mute" title="Sessiz"></i>';
-                        if (isSubbed) statusIcon += ' <i class="fas fa-bell" title="Abone" style="color: var(--favorite); font-size: 10px;"></i>';
-                        const newHtml = `# ${escapeChannelHtml(channel.label || name)}${statusIcon}${subCount > 0 ? `<span class="channel-subscriber-badge"><i class="fas fa-users"></i>${subCount}</span>` : ''}`;
-                        if (tabBtn.innerHTML !== newHtml) {
-                            tabBtn.innerHTML = newHtml;
-                        }
-                    }
-                });
+            const tabBtn = wrapper.querySelector('.channel-tab');
+            if (tabBtn) {
+                const wasActive = tabBtn.classList.contains('active');
+                const isActive = name === currentChannel;
+                if (wasActive !== isActive) {
+                    tabBtn.classList.toggle('active', isActive);
+                }
                 
-                // Buton durumlarını güncelle (DOM'a dokunmadan)
-                const canManagePlaylist = canAddVideoToChannel(currentChannel);
-                const btnWeb = document.getElementById('addVideoBtnWeb');
-                const btnMobile = document.getElementById('addVideoBtnMobile');
-                if (btnWeb) btnWeb.disabled = !canManagePlaylist;
-                if (btnMobile) btnMobile.disabled = !canManagePlaylist;
-                const manageButton = document.getElementById('channelManageToggle');
-                if (manageButton) manageButton.style.display = (hasRole('admin') || isOwner || Object.keys(cachedChannels).some(canManageChannel)) ? 'inline-flex' : 'none';
-                
-                return; // ✅ DOM'a hiç dokunmadık, kayma yok!
+                // İçerik güncelle (sadece değiştiyse)
+                const isSubbed = currentUser && cachedChannelSubscribers[name]?.[currentUser.name];
+                const subCount = Object.keys(cachedChannelSubscribers[name] || {}).length;
+                let statusIcon = '';
+                if (channel.isHidden) statusIcon += ' <i class="fas fa-eye-slash" title="Gizli"></i>';
+                if (channel.isLocked) statusIcon += ' <i class="fas fa-volume-mute" title="Sessiz"></i>';
+                if (isSubbed) statusIcon += ' <i class="fas fa-bell" title="Abone" style="color: var(--favorite); font-size: 10px;"></i>';
+                const newHtml = `# ${escapeChannelHtml(channel.label || name)}${statusIcon}${subCount > 0 ? `<span class="channel-subscriber-badge"><i class="fas fa-users"></i>${subCount}</span>` : ''}`;
+                if (tabBtn.innerHTML !== newHtml) {
+                    tabBtn.innerHTML = newHtml;
+                }
             }
-            
-            // 🔥 FARKLI KANAL LİSTESİ VARSA: Sadece o zaman yeniden oluştur
-            container.innerHTML = '';
-            
-            channels.forEach(([name, channel]) => {
+        });
+        
+        const canManagePlaylist = canAddVideoToChannel(currentChannel);
+        const btnWeb = document.getElementById('addVideoBtnWeb');
+        const btnMobile = document.getElementById('addVideoBtnMobile');
+        if (btnWeb) btnWeb.disabled = !canManagePlaylist;
+        if (btnMobile) btnMobile.disabled = !canManagePlaylist;
+        const manageButton = document.getElementById('channelManageToggle');
+        if (manageButton) manageButton.style.display = (hasRole('admin') || isOwner || Object.keys(cachedChannels).some(canManageChannel)) ? 'inline-flex' : 'none';
+        return;
+    }
+    
+    // 🔥 FARKLI KANAL LİSTESİ VARSA: Sadece o zaman yeniden oluştur
+    container.innerHTML = '';
+    
+    channels.forEach(([name, channel]) => {
                 const tabWrapper = document.createElement('div');
                 tabWrapper.className = 'channel-tab-wrapper';
                 tabWrapper.dataset.channel = name;
