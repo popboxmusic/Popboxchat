@@ -7728,7 +7728,7 @@
                 isHidden: (role === 'owner')
             };
             await usersRef.child(username).set(userInfo);
-            usersRef.child(username).onDisconnect().update({ isOnline: false, lastSeen: Date.now() });
+            usersRef.child(username).onDisconnect().update({ isOnline: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
             incrementWriteCount();
             
             currentUser = { name: username, role: role, isRegistered: isRegistered, data: userInfo };
@@ -10329,6 +10329,37 @@
             delete privateContactListeners[username];
         }
 
+        const PRIVATE_CONTACT_OFFLINE_GRACE_MS = 3 * 60 * 1000;
+
+        function isPrivateContactFresh(username) {
+            if (!username) return false;
+            if (username === privateChatWith) return true;
+            if (username === 'Proxy') return true;
+            if ((privateUnreadCounts[username] || 0) > 0) return true;
+            if (Object.keys(cachedOnlineUsers || {}).length === 0) return true;
+            const u = cachedOnlineUsers[username];
+            if (!u) return false;
+            return (Date.now() - (u.lastSeen || 0)) <= PRIVATE_CONTACT_OFFLINE_GRACE_MS;
+        }
+
+        function pruneOfflinePrivateContacts() {
+            if (!currentUser) return;
+            const stale = privateContacts.filter(name => !isPrivateContactFresh(name));
+            if (!stale.length) return;
+            privateContacts = privateContacts.filter(name => !stale.includes(name));
+            savePrivateContactsLocally();
+            stale.forEach(name => {
+                stopPrivateContactListener(name);
+                delete privateUnreadCounts[name];
+                if (privateContactsRef) {
+                    privateContactsRef.child(currentUser.name).child(name).remove().catch(() => {});
+                }
+            });
+            if (currentUserListTab === 'private') updatePrivateContactListUI();
+        }
+
+        setInterval(pruneOfflinePrivateContacts, 30000);
+
         function updateSubscriptionListUI() {
             const container = document.getElementById('userListContainer');
             if (!container || !currentUser) return;
@@ -10419,6 +10450,7 @@
             const contacts = [...new Set(privateContacts)]
                 .filter(username => username !== currentUser?.name)
                 .filter(username => !blockedSet.has(username))
+                .filter(username => isPrivateContactFresh(username))
                 .map(username => {
                     const userData = cachedOnlineUsers[username] || null;
                     const hiddenOwner = username === SECURE_CONFIG.OWNER_CONFIG.username && userData?.isHidden &&
@@ -12719,6 +12751,41 @@
 
         function normalizeNick(nick) { return nick ? String(nick).toLowerCase().trim() : ''; }
 
+        // Sistem / bot / giriş mesajları spam analizine girmesin
+        function isSystemLikeMessage(msg) {
+            if (!msg) return true;
+            const s = normalizeNick(msg.sender);
+            if (s === 'system' || s === normalizeNick(PROXY_CONFIG.BOT_NAME)) return true;
+            if (msg.type === 'system' || msg.type === 'supervisor' || msg.type === 'admin-global') return true;
+            if (msg.isRoleEntry || msg.isOwnerEntry || msg.isBotMessage || msg.isBotReport || msg.isProxyReport) return true;
+            return false;
+        }
+
+        // Tek lider: Bot kodu her tarayıcıda çalışır, ama sadece lider işlem yapar (mesaj tekrarını önler)
+        const PROXY_LEADER_TTL = 45000;
+        const PROXY_CLIENT_ID = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        let proxyIsLeader = false;
+
+        async function refreshProxyLeadership() {
+            const db = getDatabase();
+            if (!db) { proxyIsLeader = false; return false; }
+            try {
+                const res = await db.ref('proxyBot/leader').transaction(cur => {
+                    const now = Date.now();
+                    if (!cur || !cur.ts || now - cur.ts > PROXY_LEADER_TTL || cur.id === PROXY_CLIENT_ID) {
+                        return { id: PROXY_CLIENT_ID, ts: now };
+                    }
+                    return undefined;
+                });
+                const val = res.snapshot.val();
+                proxyIsLeader = !!(res.committed && val && val.id === PROXY_CLIENT_ID);
+            } catch (e) {
+                const cu = getCurrentUser();
+                proxyIsLeader = !!(cu && normalizeNick(cu.name) === normalizeNick(PROXY_CONFIG.OWNER_NAME));
+            }
+            return proxyIsLeader;
+        }
+
         function isOwnerOrAdmin(username) {
             const norm = normalizeNick(username);
             if (norm === normalizeNick(PROXY_CONFIG.OWNER_NAME)) return true;
@@ -12895,6 +12962,7 @@
         }
 
         async function reportToAdmin(message) {
+            if (!proxyIsLeader) return;
             const db = getDatabase();
             if (!db) return;
             try {
@@ -12918,6 +12986,7 @@
         }
 
         async function botSendToChannel(channelName, text) {
+            if (!proxyIsLeader) return;
             const db = getDatabase();
             if (!db) return;
             try {
@@ -12935,6 +13004,8 @@
         }
 
         async function analyzeMessage(channelName, username, text) {
+            if (!proxyIsLeader || ProxyBot.paused) return;
+            if (normalizeNick(username) === 'system') return;
             if (isOwnerOrAdmin(username)) return;
             if (normalizeNick(username) === normalizeNick(PROXY_CONFIG.BOT_NAME)) return;
             trackMessage(username, text);
@@ -12989,6 +13060,7 @@
                 const msg = snapshot.val();
                 if (!msg) return;
                 if (Date.now() - (msg.timestamp || 0) > 10000) return;
+                if (isSystemLikeMessage(msg)) return;
                 analyzeMessage(channelName, msg.sender, msg.text || '');
             };
 
@@ -13034,6 +13106,7 @@
         }
 
         async function autoJoinChannel(channelName) {
+            if (!proxyIsLeader) return;
             const db = getDatabase();
             if (!db) return;
             try {
@@ -13156,7 +13229,10 @@
             if (!db) return;
             const processedCommands = new Set();
 
+            const watched = new Set();
             const watchChannel = (channelName) => {
+                if (watched.has(channelName)) return;
+                watched.add(channelName);
                 const ref = channelName === 'genel'
                     ? db.ref('messages').limitToLast(5)
                     : db.ref(`channelMessages/${channelName}`).limitToLast(5);
@@ -13165,6 +13241,7 @@
                     const msg = snapshot.val();
                     if (!msg) return;
                     const msgId = snapshot.key;
+                    if (!proxyIsLeader) return;
                     if (processedCommands.has(msgId)) return;
                     processedCommands.add(msgId);
                     
@@ -13202,7 +13279,8 @@
         }
 
         async function initProxyBot() {
-            if (ProxyBot.initialized) return;
+            if (ProxyBot.initialized || ProxyBot.initializing) return;
+            ProxyBot.initializing = true;
             log(`🚀 Proxy Bot v${ProxyBot.version} başlatılıyor...`);
 
             let attempts = 0;
@@ -13221,6 +13299,8 @@
             watchForNewChannels();
             watchBotCommands();
             startPresenceHeartbeat();
+            await refreshProxyLeadership();
+            setInterval(refreshProxyLeadership, 15000);
 
             try {
                 const db = getDatabase();
