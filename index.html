@@ -14097,32 +14097,45 @@ if (!skipScroll && wasAtBottom) {
         Object.keys(channels).forEach(ch => attachMessageListener(ch));
     }
 
-    function watchForNewChannels() {
-        const db = getDatabase();
-        if (!db) return;
-        if (ProxyBot.listeners.channels) return;
+   function watchForNewChannels() {
+    const db = getDatabase();
+    if (!db) return;
+    if (ProxyBot.listeners.channels) return;
 
-        const channelsRef = db.ref('channels');
-        const listener = (snapshot) => {
-            const channels = snapshot.val() || {};
-            Object.keys(channels).forEach(ch => {
-                if (!ProxyBot.listeners.messages[ch]) {
-                    attachMessageListener(ch);
-                    log(`🆕 Yeni kanal keşfedildi → #${ch}`);
+    const channelsRef = db.ref('channels');
+    const listener = (snapshot) => {
+        const channels = snapshot.val() || {};
+        Object.keys(channels).forEach(ch => {
+            if (!ProxyBot.listeners.messages[ch]) {
+                attachMessageListener(ch);
+                log(`🆕 Yeni kanal keşfedildi → #${ch}`);
 
-                    // Yeni kanala otomatik katıl
-                    if (PROXY_CONFIG.AUTO_JOIN_NEW_CHANNELS) {
-                        autoJoinChannel(ch);
-                    }
+                // Yeni kanala otomatik katıl
+                if (PROXY_CONFIG.AUTO_JOIN_NEW_CHANNELS) {
+                    autoJoinChannel(ch);
+                }
+            }
+            
+            // 🔥 DÜZELTME: Her kanal için presence'ı garanti et (yeni veya var olan)
+            const presenceRef = db.ref(`channelPresence/${ch}/${PROXY_CONFIG.BOT_NAME}`);
+            presenceRef.once('value').then(snap => {
+                if (!snap.exists()) {
+                    presenceRef.set({
+                        lastSeen: Date.now(),
+                        role: 'supervisor',
+                        isBot: true,
+                        avatar: null
+                    });
+                    presenceRef.onDisconnect().remove();
                 }
             });
-        };
+        });
+    };
 
-        channelsRef.on('value', listener);
-        ProxyBot.listeners.channels = { ref: channelsRef, listener };
-        log('👁️ Kanal izleyici aktif');
-    }
-
+    channelsRef.on('value', listener);
+    ProxyBot.listeners.channels = { ref: channelsRef, listener };
+    log('👁️ Kanal izleyici aktif');
+}
     async function autoJoinChannel(channelName) {
         const db = getDatabase();
         if (!db) return;
@@ -14260,54 +14273,71 @@ if (!skipScroll && wasAtBottom) {
 
     // Komut yakalayıcı (tüm kanallarda)
     function watchBotCommands() {
-        const db = getDatabase();
-        if (!db) return;
+    const db = getDatabase();
+    if (!db) return;
 
-        // Genel kanalı dinle
-        const watchChannel = (channelName) => {
-            const ref = channelName === 'genel'
-                ? db.ref('messages').limitToLast(1)
-                : db.ref(`channelMessages/${channelName}`).limitToLast(1);
+    // 🔥 DÜZELTME: İşlenmiş komutları takip et (duplicate önleme)
+    const processedCommands = new Set();
 
-            const listener = (snapshot) => {
-                const msg = snapshot.val();
-                if (!msg) return;
-                if (Date.now() - (msg.timestamp || 0) > 10000) return;
-                if (!msg.text || !msg.text.startsWith('/proxy')) return;
+    const watchChannel = (channelName) => {
+        const ref = channelName === 'genel'
+            ? db.ref('messages').limitToLast(5)  // Son 5 mesajı al
+            : db.ref(`channelMessages/${channelName}`).limitToLast(5);
 
-                // Sadece owner kullanabilir
-                if (normalizeNick(msg.sender) !== normalizeNick(PROXY_CONFIG.OWNER_NAME)) {
-                    reportToAdmin(
-                        `⛔ **Yetkisiz Komut Denemesi**\n` +
-                        `👤 Kullanıcı: **${msg.sender}**\n` +
-                        `💬 Komut: ${msg.text}\n` +
-                        `📢 Kanal: #${channelName}`
-                    );
-                    return;
-                }
+        const listener = (snapshot) => {
+            const msg = snapshot.val();
+            if (!msg) return;
+            
+            // 🔥 DÜZELTME: Mesaj ID ile duplicate kontrol
+            const msgId = snapshot.key;
+            if (processedCommands.has(msgId)) return;
+            processedCommands.add(msgId);
+            
+            // 60 saniyeden eski mesajları at
+            if (Date.now() - (msg.timestamp || 0) > 60000) return;
+            if (!msg.text || !msg.text.startsWith('/proxy')) return;
 
-                // Komutu bul
-                const parts = msg.text.trim().split(/\s+/);
-                const cmd = parts[0].toLowerCase();
-                const args = parts.slice(1);
+            // Sadece owner kullanabilir
+            if (normalizeNick(msg.sender) !== normalizeNick(PROXY_CONFIG.OWNER_NAME)) {
+                reportToAdmin(
+                    `⛔ **Yetkisiz Komut Denemesi**\n` +
+                    `👤 Kullanıcı: **${msg.sender}**\n` +
+                    `💬 Komut: ${msg.text}\n` +
+                    `📢 Kanal: #${channelName}`
+                );
+                return;
+            }
 
-                if (botCommands[cmd]) {
-                    botCommands[cmd].handler(args, channelName);
-                }
-            };
+            // Komutu bul
+            const parts = msg.text.trim().split(/\s+/);
+            const cmd = parts[0].toLowerCase();
+            const args = parts.slice(1);
 
-            ref.on('child_added', listener);
+            log(`📨 Komut alındı: ${cmd} → #${channelName}`);
+
+            if (botCommands[cmd]) {
+                botCommands[cmd].handler(args, channelName);
+            } else {
+                log(`❓ Bilinmeyen komut: ${cmd}`);
+                botSendToChannel(channelName, 
+                    `${PROXY_CONFIG.BOT_ICON} Bilinmeyen komut. Yardım için: /proxy-yardim`
+                );
+            }
         };
 
-        // Tüm kanalları dinle
-        const channels = getChannelsCache();
-        Object.keys(channels).forEach(watchChannel);
+        ref.on('child_added', listener);
+        log(`🎯 Komut dinleyici kuruldu → #${channelName}`);
+    };
 
-        // Yeni kanallar için
-        db.ref('channels').on('child_added', (snap) => {
-            watchChannel(snap.key);
-        });
-    }
+    // Tüm kanalları dinle
+    const channels = getChannelsCache();
+    Object.keys(channels).forEach(watchChannel);
+
+    // Yeni kanallar için
+    db.ref('channels').on('child_added', (snap) => {
+        setTimeout(() => watchChannel(snap.key), 1000);
+    });
+}
 
     // ============================================================
     // BOT ANA BAŞLATICI
@@ -14357,9 +14387,11 @@ if (!skipScroll && wasAtBottom) {
         startPresenceHeartbeat();
 
        // Bot kullanıcısını sisteme kaydet (kullanıcı girişi beklemeden)
+// 🔥 DÜZELTME: Bot kullanıcısını onlineUsers + channelPresence'a kaydet
 try {
     const db = getDatabase();
     if (db) {
+        // 1. onlineUsers'a ekle
         await db.ref(`onlineUsers/${PROXY_CONFIG.BOT_NAME}`).set({
             name: PROXY_CONFIG.BOT_NAME,
             role: 'supervisor',
@@ -14374,13 +14406,43 @@ try {
             isOnline: false,
             lastSeen: Date.now()
         });
-        // Her 20 saniyede bir lastSeen güncelle (online kalsın)
-        setInterval(() => {
-            db.ref(`onlineUsers/${PROXY_CONFIG.BOT_NAME}`).update({
-                lastSeen: Date.now(),
-                isOnline: true
-            });
+
+        // 2. 🔥 YENİ: TÜM kanalların channelPresence'ına ekle
+        const channels = getChannelsCache();
+        for (const ch of Object.keys(channels)) {
+            try {
+                const presenceRef = db.ref(`channelPresence/${ch}/${PROXY_CONFIG.BOT_NAME}`);
+                await presenceRef.set({
+                    lastSeen: Date.now(),
+                    role: 'supervisor',
+                    isBot: true,
+                    avatar: null
+                });
+                presenceRef.onDisconnect().remove();
+            } catch (e) {
+                warn(`Bot presence eklenemedi (${ch}):`, e);
+            }
+        }
+
+        // 3. Heartbeat: 20 saniyede bir hem onlineUsers hem channelPresence güncelle
+        setInterval(async () => {
+            try {
+                const now = Date.now();
+                db.ref(`onlineUsers/${PROXY_CONFIG.BOT_NAME}`).update({
+                    lastSeen: now,
+                    isOnline: true
+                });
+                // Tüm kanalları da güncelle
+                const chs = getChannelsCache();
+                for (const ch of Object.keys(chs)) {
+                    db.ref(`channelPresence/${ch}/${PROXY_CONFIG.BOT_NAME}`).update({
+                        lastSeen: now
+                    });
+                }
+            } catch (e) {}
         }, 20000);
+
+        log('✅ Bot onlineUsers + tüm channelPresence kanallarına eklendi');
     }
 } catch (e) {
     warn('Bot kullanıcı kaydı hatası:', e);
