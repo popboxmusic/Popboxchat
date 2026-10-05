@@ -1,32 +1,42 @@
 // ============================================================
-// DJ BOT 🎧 — v3.2 (Cloudflare Worker Proxy'li)
+// DJ BOT 🎧 — v4.0 (Cloudflare Worker Priority)
 // Kanal: radyo | Sahip: mateky
 // ============================================================
 (function () {
     'use strict';
 
-    if (window.__DJ_BOT_LOADED_V3__) return;
-    window.__DJ_BOT_LOADED_V3__ = true;
+    // ============================================================
+    // YÜKLEME KİLİDİ — v4
+    // ============================================================
+    if (window.__DJ_BOT_V4_LOADED__) {
+        console.warn('🎧 DJ Bot v4 zaten yüklü, atlanıyor.');
+        return;
+    }
+    window.__DJ_BOT_V4_LOADED__ = true;
 
+    // ============================================================
+    // AYARLAR
+    // ============================================================
     const CHANNEL = 'radyo';
     const BOT_NAME = 'DJ';
     const BOT_ICON = '🎧';
 
     const BOT_MSG_DEDUPE_MS = 5000;
-    const SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
-    const SEARCH_COOLDOWN_MS = 3000;
-    const MAX_SEARCH_PER_DAY = 300;
+    const SEARCH_CACHE_TTL = 60 * 60 * 1000; // 1 saat (test için kısaltıldı)
+    const SEARCH_COOLDOWN_MS = 2000;
 
-    // ------------------------------------------------------------
-    // CORS PROXY LİSTESİ — Kendi Cloudflare Worker'ın EN BAŞTA
-    // ------------------------------------------------------------
+    // ============================================================
+    // CORS PROXY LİSTESİ
+    // ⚠️ SADECE SENİN CLOUDFLARE WORKER'IN — En başta ve en güvenilir
+    // ============================================================
     const CORS_PROXIES = [
-        'https://ytproxy.kyazar07.workers.dev/?url=',   // ← SENİN PROXY'N
-        'https://api.allorigins.win/raw?url=',
-        'https://corsproxy.io/?',
-        'https://api.codetabs.com/v1/proxy?quest='
+        'https://ytproxy.kyazar07.workers.dev/?url=',
+        'https://api.allorigins.win/raw?url='
     ];
 
+    // ============================================================
+    // DURUM
+    // ============================================================
     let _initialized = false;
     let _listenerBound = false;
     let _listenerRef = null;
@@ -34,25 +44,22 @@
     let _lastBotMsg = { text: '', time: 0 };
     const _searchCache = {};
     let _lastSearchTime = 0;
-    let _dailySearchCount = 0;
-    let _dailySearchDate = new Date().toISOString().slice(0, 10);
 
+    // ============================================================
+    // YARDIMCILAR
+    // ============================================================
     function getDB() { return window.database || null; }
     function timeNow() {
         return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
     }
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-    function today() { return new Date().toISOString().slice(0, 10); }
 
-    function checkSearchQuota() {
-        const t = today();
-        if (_dailySearchDate !== t) { _dailySearchDate = t; _dailySearchCount = 0; }
-        return _dailySearchCount < MAX_SEARCH_PER_DAY;
-    }
-
+    // ============================================================
+    // VIDEO ID ÇIKAR (Link veya 11 karakterlik ID)
+    // ============================================================
     function extractVideoId(text) {
         if (!text) return null;
-        const s = text.trim();
+        const s = String(text).trim();
         if (/^[a-zA-Z0-9_-]{11}$/.test(s)) return s;
         let m = s.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
         if (m) return m[1];
@@ -65,11 +72,14 @@
         return null;
     }
 
+    // ============================================================
+    // YOUTUBE ARAMA — Cloudflare Worker üzerinden
+    // ============================================================
     async function searchYouTube(query) {
         const cacheKey = query.toLowerCase().trim();
         const cached = _searchCache[cacheKey];
         if (cached && (Date.now() - cached.ts) < SEARCH_CACHE_TTL) {
-            console.log('🎧 Cache:', query);
+            console.log('🎧 Cache hit:', query);
             return { id: cached.videoId, title: cached.title, fromCache: true };
         }
 
@@ -79,57 +89,68 @@
         }
         _lastSearchTime = Date.now();
 
-        if (!checkSearchQuota()) {
-            console.warn('🎧 Günlük arama limiti doldu.');
-            return { quotaExceeded: true };
-        }
-
         const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D`;
 
         for (const proxy of CORS_PROXIES) {
             try {
                 const url = proxy + encodeURIComponent(ytUrl);
+                console.log(`🎧 Deneniyor: ${proxy}`);
+                
                 const res = await fetch(url);
                 if (!res.ok) {
-                    console.warn('🎧 Proxy başarısız:', proxy, res.status);
+                    console.warn(`🎧 HTTP ${res.status}: ${proxy}`);
                     continue;
                 }
+                
                 const html = await res.text();
+                console.log(`🎧 Yanıt: ${html.length} karakter`);
 
                 const ids = extractVideoIdsFromHTML(html);
                 if (ids.length === 0) {
-                    console.warn('🎧 Proxy HTML döndü ama video yok:', proxy);
+                    console.warn(`🎧 Video ID bulunamadı: ${proxy}`);
                     continue;
                 }
 
                 const videoId = ids[0];
                 const title = extractTitleFromHTML(html, videoId) || query;
 
-                _dailySearchCount++;
                 _searchCache[cacheKey] = { videoId, title, ts: Date.now() };
 
-                console.log(`🎧 Bulundu: ${title} (${videoId})`);
+                console.log(`✅ Bulundu: ${title} (${videoId})`);
                 return { id: videoId, title };
             } catch (e) {
-                console.warn('🎧 Proxy hatası:', proxy, e.message);
+                console.warn(`❌ Proxy hatası: ${proxy} — ${e.message}`);
                 continue;
             }
         }
         return null;
     }
 
+    // ============================================================
+    // HTML'DEN VIDEO ID ÇIKAR
+    // ============================================================
     function extractVideoIdsFromHTML(html) {
         const ids = new Set();
         let m;
+        
+        // Yöntem 1: "videoId":"XXXX"
         const re1 = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
         while ((m = re1.exec(html)) !== null) ids.add(m[1]);
+        
+        // Yöntem 2: /watch?v=XXXX
         const re2 = /\/watch\?v=([a-zA-Z0-9_-]{11})/g;
         while ((m = re2.exec(html)) !== null) ids.add(m[1]);
+        
+        // Yöntem 3: youtu.be/XXXX
         const re3 = /youtu\.be\/([a-zA-Z0-9_-]{11})/g;
         while ((m = re3.exec(html)) !== null) ids.add(m[1]);
+        
         return Array.from(ids);
     }
 
+    // ============================================================
+    // HTML'DEN BAŞLIK ÇIKAR
+    // ============================================================
     function extractTitleFromHTML(html, videoId) {
         try {
             const re = new RegExp(`"videoId":"${videoId}"[^}]*?"title":\\{"runs":\\[\\{"text":"([^"]+)"`, 's');
@@ -147,6 +168,9 @@
             .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
     }
 
+    // ============================================================
+    // PLAYLIST'E EKLE
+    // ============================================================
     async function addToRadioPlaylist(videoId, title, requester) {
         const db = getDB();
         if (!db) return { error: true };
@@ -171,6 +195,9 @@
         }
     }
 
+    // ============================================================
+    // BOT MESAJ GÖNDER
+    // ============================================================
     async function botSend(text) {
         const db = getDB();
         if (!db) return null;
@@ -201,6 +228,9 @@
         }
     }
 
+    // ============================================================
+    // KOMUTLARI İŞLE
+    // ============================================================
     async function handleCommand(cmd, args, user) {
         switch (cmd) {
             case '!cal': {
@@ -222,10 +252,6 @@
                             `${BOT_ICON} ❌ Bulunamadı: **${query}**\n` +
                             `💡 YouTube linkini direkt yapıştırmayı dene: **!cal https://youtu.be/...**`
                         );
-                        return true;
-                    }
-                    if (result.quotaExceeded) {
-                        await botSend(`${BOT_ICON} ⚠️ Günlük arama limiti doldu. Link gönder.`);
                         return true;
                     }
                     videoId = result.id;
@@ -307,6 +333,9 @@
         }
     }
 
+    // ============================================================
+    // DİNLEYİCİ
+    // ============================================================
     function attachListener() {
         const db = getDB();
         if (!db) return;
@@ -335,26 +364,40 @@
             await handleCommand(parts[0].toLowerCase(), parts.slice(1), msg.sender);
         });
 
-        console.log('🎧 DJ Bot dinleyicisi bağlandı (filtreli).');
+        console.log('🎧 DJ Bot dinleyicisi bağlandı.');
     }
 
+    // ============================================================
+    // BAŞLAT
+    // ============================================================
     async function init() {
         if (_initialized) return;
         _initialized = true;
 
-        console.log('🎧 DJ Bot başlatılıyor...');
+        console.log('🎧 DJ Bot v4.0 başlatılıyor...');
 
         let tries = 0;
-        while (!getDB() && tries < 60) { await sleep(500); tries++; }
-        if (!getDB()) { console.error('❌ Firebase yok, DJ Bot başlatılamadı.'); return; }
+        while (!getDB() && tries < 60) {
+            await sleep(500);
+            tries++;
+        }
+        if (!getDB()) {
+            console.error('❌ Firebase yok, DJ Bot başlatılamadı.');
+            return;
+        }
 
         try {
             const s = await getDB().ref('channels/' + CHANNEL).once('value');
             if (!s.exists()) {
                 await getDB().ref('channels/' + CHANNEL).set({
-                    name: CHANNEL, label: 'Radyo',
-                    createdBy: 'mateky', owner: 'mateky',
-                    createdAt: Date.now(), isHidden: false, isLocked: false, order: 1,
+                    name: CHANNEL,
+                    label: 'Radyo',
+                    createdBy: 'mateky',
+                    owner: 'mateky',
+                    createdAt: Date.now(),
+                    isHidden: false,
+                    isLocked: false,
+                    order: 1,
                     description: '🎧 Radyo kanalı. **!cal [şarkı]** ile şarkı isteyin.'
                 });
                 console.log('🎧 #radyo kanalı oluşturuldu.');
@@ -363,24 +406,32 @@
 
         try {
             await getDB().ref('onlineUsers/' + BOT_NAME).set({
-                name: BOT_NAME, role: 'supervisor', level: 4.5,
-                isBot: true, isOnline: true, lastSeen: Date.now(),
-                joinedAt: Date.now(), avatar: null
+                name: BOT_NAME,
+                role: 'supervisor',
+                level: 4.5,
+                isBot: true,
+                isOnline: true,
+                lastSeen: Date.now(),
+                joinedAt: Date.now(),
+                avatar: null
             });
             getDB().ref('onlineUsers/' + BOT_NAME).onDisconnect().update({
-                isOnline: false, lastSeen: Date.now()
+                isOnline: false,
+                lastSeen: Date.now()
             });
         } catch (e) {}
 
         attachListener();
-        console.log('✅ DJ Bot hazır! (Cloudflare Worker proxy)');
+        console.log('✅ DJ Bot v4.0 hazır! (Cloudflare Worker)');
     }
 
+    // ============================================================
+    // DIŞA AÇIK API
+    // ============================================================
     window.DJ = {
         search: searchYouTube,
         add: addToRadioPlaylist,
-        cache: () => ({ ..._searchCache }),
-        quota: () => ({ used: _dailySearchCount, max: MAX_SEARCH_PER_DAY, date: _dailySearchDate })
+        cache: () => ({ ..._searchCache })
     };
 
     if (document.readyState === 'loading') {
