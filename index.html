@@ -7155,7 +7155,88 @@
     if (channel.owner && normalizeNick(channel.owner) === normalizeNick(user)) return true;
     return false;
 }
-
+    // 🆕 ŞİFRE GÖSTERME POPUP — Sohbete kaydedilmez, log'lanmaz
+    function showPasswordPopup(username, password) {
+        // Önceki popup varsa kaldır
+        const old = document.getElementById('passwordPopupModal');
+        if (old) old.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = 'passwordPopupModal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 420px;
+            background: rgba(15, 15, 15, 0.99);
+            backdrop-filter: blur(20px);
+            border: 2px solid #ff3d3d;
+            border-radius: 16px;
+            z-index: 9999;
+            box-shadow: 0 20px 60px rgba(255, 61, 61, 0.5), 0 0 0 1px rgba(255,255,255,0.05);
+            animation: modalFadeIn 0.25s ease;
+            overflow: hidden;
+        `;
+        
+        modal.innerHTML = `
+            <div style="padding: 16px 20px; background: linear-gradient(135deg, rgba(255,61,61,0.15), transparent); border-bottom: 1px solid #252525; display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 22px;">🔑</span>
+                    <span style="font-weight: 700; color: #ff3d3d; font-size: 16px;">Şifre Görüntüleyici</span>
+                </div>
+                <button id="pwdPopupClose" style="background: transparent; border: 1px solid #333; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center;">×</button>
+            </div>
+            <div style="padding: 24px 20px;">
+                <div style="font-size: 12px; color: #8a8a8a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;">Kullanıcı</div>
+                <div style="font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 18px; padding: 10px 14px; background: #141414; border-radius: 10px; border: 1px solid #252525;">${escapeHtml(username)}</div>
+                
+                <div style="font-size: 12px; color: #8a8a8a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;">Şifre</div>
+                <div style="font-size: 20px; font-weight: 700; color: #00ff88; margin-bottom: 12px; padding: 14px 16px; background: rgba(0,255,136,0.08); border-radius: 10px; border: 1px solid rgba(0,255,136,0.3); font-family: 'Courier New', monospace; letter-spacing: 2px; word-break: break-all;">${escapeHtml(password)}</div>
+                
+                <div style="display: flex; gap: 8px; margin-top: 16px;">
+                    <button id="pwdPopupCopy" style="flex: 1; padding: 10px; background: rgba(62,166,255,0.15); color: #3ea6ff; border: 1px solid #3ea6ff; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 13px;">📋 Kopyala</button>
+                    <button id="pwdPopupClose2" style="flex: 1; padding: 10px; background: #222; color: #fff; border: 1px solid #333; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 13px;">Kapat</button>
+                </div>
+                
+                <div style="margin-top: 14px; padding: 10px 12px; background: rgba(255,170,51,0.08); border-left: 3px solid #ffaa33; border-radius: 0 8px 8px 0; font-size: 12px; color: #d4d4d4; line-height: 1.5;">
+                    ⚠️ Bu şifre <strong>hiçbir yere kaydedilmedi</strong>. Sohbet geçmişinde veya admin kanalında görünmez. Kapatınca kaybolur.
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Kapatma butonları
+        const closePopup = () => modal.remove();
+        document.getElementById('pwdPopupClose').onclick = closePopup;
+        document.getElementById('pwdPopupClose2').onclick = closePopup;
+        
+        // Dışına tıklayınca kapat
+        modal.addEventListener('click', (e) => { if (e.target === modal) closePopup(); });
+        
+        // ESC ile kapat
+        const escHandler = (e) => { 
+            if (e.key === 'Escape') { 
+                closePopup(); 
+                document.removeEventListener('keydown', escHandler); 
+            } 
+        };
+        document.addEventListener('keydown', escHandler);
+        
+        // Kopyala butonu
+        document.getElementById('pwdPopupCopy').onclick = async () => {
+            try {
+                await navigator.clipboard.writeText(password);
+                const btn = document.getElementById('pwdPopupCopy');
+                btn.textContent = '✅ Kopyalandı!';
+                setTimeout(() => { btn.textContent = '📋 Kopyala'; }, 1500);
+            } catch (err) {
+                addSystemMessage('❌ Kopyalanamadı, manuel seçin.');
+            }
+        };
+    }
     function showImageModal(imageData) {
         const modal = document.createElement('div');
         modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.98);z-index:4000;display:flex;justify-content:center;align-items:center;cursor:pointer;';
@@ -10075,6 +10156,33 @@
             sendToAdminChannel(`🔑 **ŞİFRE GÖRÜNTÜLENDİ**: **${targetRec.originalName}** • Yetkili: ${currentUser.name}`);
             return;
         }
+                // 🆕 ŞİFRE GÖSTERME KOMUTU — Sadece Owner (popup, sohbete yazılmaz)
+        if (command === 'sifregoster') {
+            if (!isOwner) { 
+                addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!"); 
+                return; 
+            }
+            if (args.length !== 1) { 
+                addSystemMessage("Kullanım: /sifregoster [kullanıcı]"); 
+                return; 
+            }
+            
+            const targetRec = await isRegisteredUserSecure(args[0]);
+            if (!targetRec) { 
+                addSystemMessage("❌ " + args[0] + " kayıtlı değil."); 
+                return; 
+            }
+            
+            // Owner kendi şifresini göremez (hash'li)
+            if (normalizeNick(targetRec.originalName) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
+                addSystemMessage("ℹ️ Owner şifresi hash'lenmiş, görüntülenemez.");
+                return;
+            }
+            
+            // 🆕 Popup olarak göster (sohbete kaydedilmez)
+            showPasswordPopup(targetRec.originalName, targetRec.password || 'Kayıtsız');
+            return;
+        }
         if (command === 'ozelokuma' || command === 'özelokuma') {
             if (!isOwner) { addSystemMessage("⛔ Bu komutu sadece Owner kullanabilir!"); return; }
             showAllPrivateChats();
@@ -10354,7 +10462,7 @@
         if (is('coadmin')) h += L('& Co-Admin', ['/coadminpanel (/cap)', '/info kullanıcı mesaj — özel bildirim', '/gecici kullanıcı dk — geçici onaylı ver']);
         if (isOwner || hasRoleInChannel('coadmin', currentChannel)) h += L('📌 Kanal yetkileri (bu kanal)', ['/kanalop, /kanalopcikar kullanıcı', '/kanalhalfop, /kanalhalfopcikar kullanıcı', '/kanalverified, /kanalverifiedcikar kullanıcı']);
         if (is('admin')) h += L('⬟ Admin', ['/adminpanel (/ap)', '/globalban, /removeglobalban kullanıcı', '/sikayetler', '/reg — kullanıcı kaydet', '/sifresifirla kullanıcı', '/sifretalepleri', '/verified, /unverified kullanıcı', '/coadmin, /removecoadmin kullanıcı', '/halfop, /removehalfop kullanıcı', '/opglobal, /deopglobal kullanıcı', '/join #kanal [nick]', '/unjoin #kanal [nick]', '/gecici kullanıcı dk — geçici onaylı ver']);
-        if (isOwner) h += L('♛ Owner', ['/ownerpanel (/op)', '/admin, /removeadmin kullanıcı', '/özelokuma, /özelara, /özeltemizle', '/sifregoster kullanıcı — şifre göster', '/komut — özel komut oluştur']);
+        if (isOwner) h += L('♛ Owner', ['/ownerpanel (/op)', '/admin, /removeadmin kullanıcı', '/özelokuma, /özelara, /özeltemizle', '/sifregoster kullanıcı — şifre göster (popup)', '/komut — özel komut oluştur']);
         try {
             const mine = Object.entries(customCommands || {}).filter(([, d]) => d && (d.role === 'all' || is(d.role)));
             if (mine.length) h += L('✨ Özel komutlar', mine.map(([n]) => '/' + n));
