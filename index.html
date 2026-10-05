@@ -7560,22 +7560,21 @@
             if (text.startsWith('/')) {
                 const cmdName = text.substring(1).split(' ')[0].toLowerCase();
                 
-            // 🆕 SPOR BOTU
-            if (window.SporBot && window.SporBot.isCommand && window.SporBot.isCommand(text)) {
-                input.value = '';
-                autoResize(input);
-                window.SporBot.handleCommand(text);
-                isSendingMessage = false;
-                return;
-            }
-
-            // 🆕 HABER BOTU
-            if (window.HaberBot && window.HaberBot.isCommand && window.HaberBot.isCommand(text)) {
-                input.value = '';
-                autoResize(input);
-                window.HaberBot.handleCommand(text);
-                isSendingMessage = false;
-                return;
+            // 🆕 KANALA BAĞLI BOTLAR (Spor → #spor, Haber → #haber, DJ → #radyo)
+            // Komut yanlış kanalda yazılırsa bot çalışmaz, sadece uyarı gösterilir.
+            {
+                const homeBot = getBotForCommand(text);
+                if (homeBot) {
+                    input.value = '';
+                    autoResize(input);
+                    if (isBotAllowedInChannel(homeBot.key)) {
+                        homeBot.api.handleCommand(text);
+                    } else {
+                        addSystemMessage(`⛔ ${homeBot.label} sadece #${BOT_HOME_CHANNELS[homeBot.key]} kanalında çalışır.`);
+                    }
+                    isSendingMessage = false;
+                    return;
+                }
             }
                 
                 if (cmdName === 'proxy' || cmdName.startsWith('proxy-')) {
@@ -12191,6 +12190,52 @@
             else if (playlist.length === 0) setChannelVideo(null);
         }
     }
+
+    // ============================================================
+    // 🤖 BOT KANAL KİLİDİ — her bot sadece kendi kanalında çalışır
+    // ============================================================
+    const BOT_HOME_CHANNELS = { spor: 'spor', haber: 'haber', dj: 'radyo' };
+    const BOT_LABELS = { spor: 'Spor Botu', haber: 'Haber Botu', dj: 'DJ Botu' };
+
+    function getBotApi(key) {
+        if (key === 'spor') return window.SporBot;
+        if (key === 'haber') return window.HaberBot;
+        if (key === 'dj') return window.DJBot || window.DjBot || window.DJ;
+        return null;
+    }
+
+    function isBotAllowedInChannel(key, channelName) {
+        return (channelName || currentChannel) === BOT_HOME_CHANNELS[key];
+    }
+
+    // Metin hangi botun komutuysa onu döndürür (yoksa null)
+    function getBotForCommand(text) {
+        for (const key of Object.keys(BOT_HOME_CHANNELS)) {
+            const api = getBotApi(key);
+            if (api && typeof api.isCommand === 'function' && typeof api.handleCommand === 'function') {
+                try { if (api.isCommand(text)) return { key, api, label: BOT_LABELS[key] }; } catch (e) {}
+            }
+        }
+        return null;
+    }
+
+    // Bot scriptleri yüklendikten sonra handleCommand'ı sarmala:
+    // başka bir yerden (ör. dj.js kendi dinleyicisinden) çağrılsa bile yanlış kanalda çalışmasın
+    window.addEventListener('load', () => {
+        Object.keys(BOT_HOME_CHANNELS).forEach(key => {
+            const api = getBotApi(key);
+            if (!api || typeof api.handleCommand !== 'function' || api._channelGuarded) return;
+            const original = api.handleCommand.bind(api);
+            api.handleCommand = function (...args) {
+                if (!isBotAllowedInChannel(key)) {
+                    addSystemMessage(`⛔ ${BOT_LABELS[key]} sadece #${BOT_HOME_CHANNELS[key]} kanalında çalışır.`);
+                    return;
+                }
+                return original(...args);
+            };
+            api._channelGuarded = true;
+        });
+    });
 
     function playVideo(videoId) {
         if (!videoId) return;
