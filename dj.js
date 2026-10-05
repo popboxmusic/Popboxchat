@@ -1,29 +1,13 @@
 // ============================================================
-// DJ BOT 🎧 — v3.1 (API Anahtarsız — Temiz Sürüm)
+// DJ BOT 🎧 — v3.2 (Cloudflare Worker Proxy'li)
 // Kanal: radyo | Sahip: mateky
-// ============================================================
-// Özellikler:
-//   • API anahtarı GEREKMEZ (YouTube scraping + CORS proxy)
-//   • !cal [şarkı adı] — YouTube'da arar, playlist'e ekler
-//   • !cal [link/ID] — Direkt ekler
-//   • !atla / !kuyruk / !durdur / !devam
-//   • Firebase kotası dostu (filtreli dinleyici, dedupe, cache)
 // ============================================================
 (function () {
     'use strict';
 
-    // ============================================================
-    // TEK YÜKLEME KİLİDİ
-    // ============================================================
-    if (window.__DJ_BOT_LOADED_V3__) {
-        console.warn('🎧 DJ Bot zaten yüklü, atlanıyor.');
-        return;
-    }
+    if (window.__DJ_BOT_LOADED_V3__) return;
     window.__DJ_BOT_LOADED_V3__ = true;
 
-    // ============================================================
-    // AYARLAR
-    // ============================================================
     const CHANNEL = 'radyo';
     const BOT_NAME = 'DJ';
     const BOT_ICON = '🎧';
@@ -33,30 +17,26 @@
     const SEARCH_COOLDOWN_MS = 3000;
     const MAX_SEARCH_PER_DAY = 300;
 
+    // ------------------------------------------------------------
+    // CORS PROXY LİSTESİ — Kendi Cloudflare Worker'ın EN BAŞTA
+    // ------------------------------------------------------------
     const CORS_PROXIES = [
+        'https://ytproxy.kyazar07.workers.dev/?url=',   // ← SENİN PROXY'N
         'https://api.allorigins.win/raw?url=',
         'https://corsproxy.io/?',
         'https://api.codetabs.com/v1/proxy?quest='
     ];
 
-    // ============================================================
-    // DURUM
-    // ============================================================
     let _initialized = false;
     let _listenerBound = false;
     let _listenerRef = null;
-
     const _seenMsgKeys = new Set();
     let _lastBotMsg = { text: '', time: 0 };
-
     const _searchCache = {};
     let _lastSearchTime = 0;
     let _dailySearchCount = 0;
     let _dailySearchDate = new Date().toISOString().slice(0, 10);
 
-    // ============================================================
-    // YARDIMCILAR
-    // ============================================================
     function getDB() { return window.database || null; }
     function timeNow() {
         return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
@@ -66,16 +46,10 @@
 
     function checkSearchQuota() {
         const t = today();
-        if (_dailySearchDate !== t) {
-            _dailySearchDate = t;
-            _dailySearchCount = 0;
-        }
+        if (_dailySearchDate !== t) { _dailySearchDate = t; _dailySearchCount = 0; }
         return _dailySearchCount < MAX_SEARCH_PER_DAY;
     }
 
-    // ============================================================
-    // VIDEO ID ÇIKAR
-    // ============================================================
     function extractVideoId(text) {
         if (!text) return null;
         const s = text.trim();
@@ -91,9 +65,6 @@
         return null;
     }
 
-    // ============================================================
-    // YOUTUBE ARAMA — API ANAHTARSIZ (Scraping + CORS Proxy)
-    // ============================================================
     async function searchYouTube(query) {
         const cacheKey = query.toLowerCase().trim();
         const cached = _searchCache[cacheKey];
@@ -119,11 +90,17 @@
             try {
                 const url = proxy + encodeURIComponent(ytUrl);
                 const res = await fetch(url);
-                if (!res.ok) continue;
+                if (!res.ok) {
+                    console.warn('🎧 Proxy başarısız:', proxy, res.status);
+                    continue;
+                }
                 const html = await res.text();
 
                 const ids = extractVideoIdsFromHTML(html);
-                if (ids.length === 0) continue;
+                if (ids.length === 0) {
+                    console.warn('🎧 Proxy HTML döndü ama video yok:', proxy);
+                    continue;
+                }
 
                 const videoId = ids[0];
                 const title = extractTitleFromHTML(html, videoId) || query;
@@ -170,9 +147,6 @@
             .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
     }
 
-    // ============================================================
-    // PLAYLIST'E EKLE
-    // ============================================================
     async function addToRadioPlaylist(videoId, title, requester) {
         const db = getDB();
         if (!db) return { error: true };
@@ -197,9 +171,6 @@
         }
     }
 
-    // ============================================================
-    // BOT MESAJ
-    // ============================================================
     async function botSend(text) {
         const db = getDB();
         if (!db) return null;
@@ -230,9 +201,6 @@
         }
     }
 
-    // ============================================================
-    // KOMUTLAR
-    // ============================================================
     async function handleCommand(cmd, args, user) {
         switch (cmd) {
             case '!cal': {
@@ -329,8 +297,7 @@
                     `• **!kuyruk** — Kuyruğu göster\n` +
                     `• **!durdur** — Durdur\n` +
                     `• **!devam** — Devam et\n` +
-                    `• **!dj-yardim** — Bu mesaj\n\n` +
-                    `🔑 API anahtarı GEREKMEZ!`
+                    `• **!dj-yardim** — Bu mesaj`
                 );
                 return true;
             }
@@ -340,9 +307,6 @@
         }
     }
 
-    // ============================================================
-    // DİNLEYİCİ (Filtreli)
-    // ============================================================
     function attachListener() {
         const db = getDB();
         if (!db) return;
@@ -374,9 +338,6 @@
         console.log('🎧 DJ Bot dinleyicisi bağlandı (filtreli).');
     }
 
-    // ============================================================
-    // BAŞLATMA
-    // ============================================================
     async function init() {
         if (_initialized) return;
         _initialized = true;
@@ -384,59 +345,37 @@
         console.log('🎧 DJ Bot başlatılıyor...');
 
         let tries = 0;
-        while (!getDB() && tries < 60) {
-            await sleep(500);
-            tries++;
-        }
-        if (!getDB()) {
-            console.error('❌ Firebase yok, DJ Bot başlatılamadı.');
-            return;
-        }
+        while (!getDB() && tries < 60) { await sleep(500); tries++; }
+        if (!getDB()) { console.error('❌ Firebase yok, DJ Bot başlatılamadı.'); return; }
 
-        // #radyo kanalı var mı?
         try {
             const s = await getDB().ref('channels/' + CHANNEL).once('value');
             if (!s.exists()) {
                 await getDB().ref('channels/' + CHANNEL).set({
-                    name: CHANNEL,
-                    label: 'Radyo',
-                    createdBy: 'mateky',
-                    owner: 'mateky',
-                    createdAt: Date.now(),
-                    isHidden: false,
-                    isLocked: false,
-                    order: 1,
+                    name: CHANNEL, label: 'Radyo',
+                    createdBy: 'mateky', owner: 'mateky',
+                    createdAt: Date.now(), isHidden: false, isLocked: false, order: 1,
                     description: '🎧 Radyo kanalı. **!cal [şarkı]** ile şarkı isteyin.'
                 });
                 console.log('🎧 #radyo kanalı oluşturuldu.');
             }
         } catch (e) {}
 
-        // Bot kullanıcısı
         try {
             await getDB().ref('onlineUsers/' + BOT_NAME).set({
-                name: BOT_NAME,
-                role: 'supervisor',
-                level: 4.5,
-                isBot: true,
-                isOnline: true,
-                lastSeen: Date.now(),
-                joinedAt: Date.now(),
-                avatar: null
+                name: BOT_NAME, role: 'supervisor', level: 4.5,
+                isBot: true, isOnline: true, lastSeen: Date.now(),
+                joinedAt: Date.now(), avatar: null
             });
             getDB().ref('onlineUsers/' + BOT_NAME).onDisconnect().update({
-                isOnline: false,
-                lastSeen: Date.now()
+                isOnline: false, lastSeen: Date.now()
             });
         } catch (e) {}
 
         attachListener();
-        console.log('✅ DJ Bot hazır! (API anahtarsız)');
+        console.log('✅ DJ Bot hazır! (Cloudflare Worker proxy)');
     }
 
-    // ============================================================
-    // DIŞA AÇIK API
-    // ============================================================
     window.DJ = {
         search: searchYouTube,
         add: addToRadioPlaylist,
