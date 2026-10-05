@@ -14749,6 +14749,7 @@
         async function log(t) { try { await sendToAdminChannel(t); } catch (_) {} }
         async function setDescription(ch) {
             if (!canEdit(ch)) { addSystemMessage('⛔ Kanal açıklamasını yalnızca kanal sahibi, Admin veya Owner değiştirebilir!'); return; }
+            if (typeof window.openChannelAdminPanel === 'function') { window.openChannelAdminPanel(ch, 'chpDesc'); return; }
             const cur = (cachedChannels[ch] && cachedChannels[ch].description) || '';
             const v = prompt('#' + ch + ' kanal açıklaması (en fazla 200 karakter):', cur);
             if (v === null) return;
@@ -14790,6 +14791,7 @@
             async handle(cmd, args) {
                 const ch = activeChannelName, rest = args.join(' ');
                 if (cmd === 'konu' || cmd === 'topic') {
+                    if (!rest && canEdit(ch) && typeof window.openChannelAdminPanel === 'function') { window.openChannelAdminPanel(ch, 'chpDesc'); return true; }
                     if (!rest) { const d = cachedChannels[ch] && cachedChannels[ch].description; addSystemMessage(d ? '📝 #' + ch + ': ' + clip(d, 200) : 'Bu kanalın açıklaması yok. Kullanım: /konu açıklama'); return true; }
                     if (!canEdit(ch)) { addSystemMessage('⛔ Kanal açıklamasını yalnızca kanal sahibi, Admin veya Owner değiştirebilir!'); return true; }
                     await channelsRef.child(ch).update({ description: clip(rest, 200), descriptionBy: currentUser.name });
@@ -14809,6 +14811,8 @@
 
     <!-- oyun_bot.js -->
     <script src="oyun_bot.js"></script>
+    <!-- spor_bot.js -->
+    <script src="spor_bot.js"></script>
     
 <!-- DJ Bot -->
     <script src="dj.js"></script>
@@ -15128,6 +15132,14 @@
             p.addEventListener('click', onAct);
         }
         window.toggleChannelAdminPanel = toggle;
+        window.openChannelAdminPanel = async function (ch, focusId) {
+            buildPanel(); const p = $('channelAdminPanel');
+            if (ch && cachedChannels[ch]) sel = ch;
+            if (!p.classList.contains('active')) { closeOtherPanels('channelAdminPanel'); p.classList.add('active'); }
+            if (!sel || !cachedChannels[sel]) { const l = myChannels(); sel = (l.find(([n]) => n === activeChannelName) || l[0] || [])[0] || null; }
+            await loadPin(); render();
+            if (focusId) setTimeout(() => { const el = $(focusId); if (el && !el.disabled) { el.classList.add('focus-pulse'); try { el.scrollIntoView({ block: 'center' }); } catch (_) {} el.focus(); } }, 120);
+        };
         function toggle() {
             buildPanel(); const p = $('channelAdminPanel');
             if (p.classList.contains('active')) { p.classList.remove('active'); return; }
@@ -15675,5 +15687,38 @@
         }, 1000);
     })();
     </script>
+    <style>
+        /* ============================================================
+           v7 — Özel pencere gerçek görünür alana sığar + ses kaydı çubuğu
+                yazı alanının HEMEN ÜSTÜNDE, "Bitir" butonu her ekranda görünür
+           ============================================================ */
+        .private-modal { height: var(--app-h, 100%); top: var(--app-top, 0px); max-height: 100%; }
+        .private-messages { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; min-height: 0; }
+        .private-input-area { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+        .private-input-area .audio-recording-indicator {
+            order: -1; flex: 1 0 100%; width: 100%; box-sizing: border-box; min-width: 0;
+            padding: 6px 8px 6px 14px; gap: 8px; border-radius: 18px;
+        }
+        .private-input-area .audio-recording-indicator .recording-timer { min-width: 38px; }
+        .private-input-area .audio-waveform { min-width: 0; }
+        .audio-recording-indicator .stop-recording-btn {
+            width: auto; min-width: 84px; height: 42px; padding: 0 14px; border-radius: 21px;
+            gap: 6px; font-size: 14px; font-weight: 700; flex: 0 0 auto; touch-action: manipulation;
+        }
+        .audio-recording-indicator .stop-recording-btn::after { content: 'Bitir'; font-size: 13px; }
+        .audio-recording-indicator .cancel-recording {
+            width: 42px; height: 42px; border-radius: 50%; padding: 0; flex: 0 0 42px;
+            border: 1px solid var(--border-color); background: var(--bg-tertiary); touch-action: manipulation;
+        }
+        @media (max-width: 380px) {
+            .private-input-area { padding-left: 10px; padding-right: 10px; }
+            .private-input-area .audio-recording-indicator { padding-left: 10px; gap: 6px; }
+            .audio-recording-indicator .stop-recording-btn { min-width: 76px; padding: 0 10px; }
+            .private-input-area .audio-waveform { display: none; }
+            .private-input-area .audio-recording-indicator .recording-timer { flex: 1; }
+        }
+        /* Kanal açıklaması düzenlerken panel: yazı alanı belirgin */
+        #chpDesc.focus-pulse { border-color: #8b6cff; box-shadow: 0 0 0 3px rgba(139,108,255,.25); }
+    </style>
 </body>
 </html>
