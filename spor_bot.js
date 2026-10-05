@@ -19,10 +19,13 @@
     'use strict';
     if (window.__sporBot) return; window.__sporBot = true;
 
-    const VERSION = '2.0';
+    // ▼▼▼ Worker adresini buraya yapıştır (örn. 'https://spor.kullanici.workers.dev'). Boşsa doğrudan ESPN denenir. ▼▼▼
+    const WORKER_URL = '';
+    // ▲▲▲ ------------------------------------------------------------------------------------------------ ▲▲▲
+    const VERSION = '2.1';
     const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
     const CFG = Object.assign({
-        BASE: ESPN,
+        BASE: WORKER_URL ? WORKER_URL.replace(/\/+$/, '').replace(/\/soccer$/, '') + '/soccer' : ESPN,
         FALLBACKS: ['https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?url='],   // doğrudan erişim engellenirse (yalnız herkese açık skor verisi)
         LIVE_MS: 30000,      // canlı maç varken yenileme
         SOON_MS: 60000,      // maça 15 dk kala
@@ -199,7 +202,7 @@
         try { cache.delete('tur.1|'); const ev = await fetchBoard('tur.1', null, 0); n = ev.length; rows.push(ok + ' ESPN Süper Lig: ' + n + ' maç okundu (yol: ' + esc(net.route) + ')'); }
         catch (e) { rows.push(no + ' ESPN\'e ulaşılamadı'); }
         Object.keys(net.errs).forEach(k => rows.push('&nbsp;&nbsp;↳ ' + esc(k) + ': ' + esc(net.errs[k])));
-        if (n === null) rows.push('💡 Tarayıcı ESPN\'e erişemiyor (büyük olasılıkla CORS). Çözüm: spor-worker.js dosyasını Cloudflare Worker olarak yayınla ve window.SPOR_CONFIG = { BASE: \'https://SENIN.workers.dev/soccer\' } ekle.');
+        if (n === null) rows.push('💡 Tarayıcın ESPN\'e erişemiyor (CORS engeli ya da ağ engeli). Çözüm: spor-worker.js\'yi Cloudflare Worker olarak yayınla, adresi spor_bot.js başındaki WORKER_URL satırına yaz.' + (CFG.BASE === ESPN ? '' : '<br>⚠️ Worker adresi tanımlı ama yanıt vermiyor: ' + esc(CFG.BASE) + '/tur.1/scoreboard adresini yeni sekmede aç; JSON görmelisin.'));
         rows.push('🔔 Bildirimler: ' + (prefs.alerts ? 'açık' : 'kapalı') + ' • takip: ' + (prefs.teams.length ? prefs.teams.map(esc).join(', ') : 'yok'));
         say(rows.join('<br>'));
     }
