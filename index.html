@@ -3255,7 +3255,21 @@
         }
         .private-contact-dot.online { background: var(--operator); box-shadow: 0 0 8px var(--operator); }
         .private-contact-dot.offline { background: var(--text-dim); }
-        
+        /* 🆕 Okunmamış özel sohbet vurgusu */
+.user-item.has-unread {
+    background: rgba(255, 68, 68, 0.08) !important;
+    border-left: 3px solid #ff4444;
+    animation: unreadPulse 2s infinite;
+}
+
+@keyframes unreadPulse {
+    0%, 100% { 
+        box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.3);
+    }
+    50% { 
+        box-shadow: 0 0 0 6px rgba(255, 68, 68, 0);
+    }
+}
         .private-contact-meta {
             display: flex;
             align-items: center;
@@ -11183,7 +11197,7 @@
         if (privateAlertedMessageIds.has(alertId)) return;
         privateAlertedMessageIds.add(alertId);
         if (privateChatWith !== username) privateUnreadCounts[username] = (privateUnreadCounts[username] || 0) + 1;
-        addNotification(message.sender || username, privateMessagePreview(message), 'private', true);
+        addNotification(message.sender || username, privateMessagePreview(message), 'private', false);
     }
 
     function handlePrivateContactActivity(username, snapshot) {
@@ -11373,9 +11387,12 @@
             container.appendChild(empty);
             return;
         }
-        contacts.forEach(contact => {
+              contacts.forEach(contact => {
+            const unreadCount = privateUnreadCounts[contact.username] || 0;
+            const hasUnread = unreadCount > 0;
+            
             const item = document.createElement('div');
-            item.className = 'user-item';
+            item.className = 'user-item' + (hasUnread ? ' has-unread' : '');
             item.setAttribute('role', 'button');
             item.tabIndex = 0;
             item.addEventListener('click', () => openPrivateChat(contact.username));
@@ -11404,15 +11421,29 @@
             }
             const name = document.createElement('strong');
             name.textContent = contact.username;
+            
+            // 🆕 Okunmamış mesaj varsa nick kırmızı + kalın
+            if (hasUnread) {
+                name.style.color = '#ff4444';
+                name.style.fontWeight = '700';
+                name.style.textShadow = '0 0 8px rgba(255,68,68,0.4)';
+            }
+            
             identity.append(dot, avatar, name);
             const status = document.createElement('span');
             status.className = 'private-contact-meta';
-            status.textContent = contact.isOnline ? 'Çevrimiçi' : 'Çevrimdışı';
+            
+            // 🆕 Okunmamış sayı badge'i
+            if (hasUnread) {
+                status.innerHTML = `<span style="background:#ff4444; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; box-shadow:0 0 8px rgba(255,68,68,0.5);">${unreadCount > 99 ? '99+' : unreadCount}</span>`;
+            } else {
+                status.textContent = contact.isOnline ? 'Çevrimiçi' : 'Çevrimdışı';
+            }
+            
             item.append(identity, status);
             container.appendChild(item);
         });
-    }
-
+        }
     function updateUserListUI() {
         const container = document.getElementById('userListContainer');
         if (!container) return;
