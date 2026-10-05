@@ -14,7 +14,7 @@
     if (window.__sporBot) return; window.__sporBot = true;
 
     // ▼▼▼ Cloudflare Worker adresi — DJ botu için kullandığın worker ▼▼▼
-    const WORKER_URL = 'https://ytproxy.kyazar07.workers.dev';
+    const WORKER_URL = 'https://spor-worker.kyazar07.workers.dev/';
     // ▲▲▲ -------------------------------------------------------- ▲▲▲
 
     const VERSION = '3.0';
