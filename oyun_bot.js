@@ -1,23 +1,40 @@
 // ============================================================
-// AKIL KÜPÜ 🧠 - Dinamik Soru Üretici + Zorluk Sistemi
+// AKIL KÜPÜ 🧠 — v2.0 (Kararlı Sürüm)
+// Dinamik Soru Üretici + Zorluk Sistemi + Round Kilidi
 // Kanal Sahibi: mateky | Kanal: oyun
 // ============================================================
-// 🔧 v1.1 — Düzeltmeler:
-//   • Duplicate listener engellendi (çift mesaj sorunu çözüldü)
-//   • İngilizce API devre dışı bırakıldı (Türkçe sorular)
-//   • Duplicate bot mesajı koruması eklendi
-//   • Bot tek seferlik başlatılıyor
-//   • Bot user spam koruması eklendi
+// 🔧 v2.0 Çözülen Sorunlar:
+//   • Sorular art arda gönderiliyordu (setTimeout zinciri çoğalıyordu)
+//   • Çift listener bağlanıyordu
+//   • checkAnswer + süre dolması aynı anda tetikleniyordu
+//   • askQuestion reentrant çağrılabiliyordu
+//   • Duplicate bot mesajı sadece birebir aynı metinde engelleniyordu
 // ============================================================
 (function () {
     'use strict';
 
-    // --- Ayarlar ---
+    // ------------------------------------------------------------
+    // GLOBAL TEK YÜKLEME KİLİDİ
+    // ------------------------------------------------------------
+    if (window.__AKIL_KUPU_LOADED__) {
+        console.warn('🧠 Akıl Küpü zaten yüklü, ikinci kez başlatılmıyor.');
+        return;
+    }
+    window.__AKIL_KUPU_LOADED__ = true;
+
+    // ------------------------------------------------------------
+    // AYARLAR
+    // ------------------------------------------------------------
     const GAME_CHANNEL = 'oyun';
     const GAME_OWNER = 'mateky';
     const BOT_NAME = 'Akıl Küpü';
     const BOT_ICON = '🧠';
     const BOT_ROLE = 'supervisor';
+    const MAX_PLAYERS = 20;
+    const NEXT_QUESTION_DELAY = 2000;
+    const FIRST_QUESTION_DELAY = 3000;
+    const BOT_MSG_DEDUPE_MS = 5000;
+    const SEEN_MSG_LIMIT = 200;
 
     const DIFFICULTY = {
         kolay:  { label: '🟢 Kolay',  points: 5,  time: 30000 },
@@ -26,33 +43,86 @@
         efsane: { label: '💀 Efsane', points: 40, time: 15000 }
     };
 
-    // --- Global Değişkenler ---
-    let gameActive = false;
-    let currentQuestion = null;
-    let questionTimer = null;
-    let scores = {};
-    let players = new Set();
-    let answered = false;
-    let scoreRef = null;
-    let usedQuestions = new Set();
-    let roundNumber = 0;
-    let askedCount = { kolay: 0, orta: 0, zor: 0, efsane: 0 };
+    // ------------------------------------------------------------
+    // DURUM
+    // ------------------------------------------------------------
+    const state = {
+        active: false,
+        currentQuestion: null,
+        answered: false,
+        roundNumber: 0,
+        players: new Set(),
+        scores: {},
+        askedCount: { kolay: 0, orta: 0, zor: 0, efsane: 0 },
+        scoreRef: null,
+        usedQuestions: new Set()
+    };
 
-    // 🆕 Duplicate koruma değişkenleri
-    let _gameBotInitialized = false;
-    let _gameListenerRef = null;
+    // Zamanlayıcılar — hepsi tek noktadan yönetilir
+    let _questionTimer = null;      // süre dolması
+    let _nextQuestionTimer = null;  // sonraki soru planlaması
+
+    // Kilitler
+    let _askLock = false;
+    let _answerLock = false;
+
+    // Bot mesaj dedupe
     let _lastBotMsg = { text: '', time: 0 };
+    let _lastQuestionRound = -1;
 
-    // ============================================================
+    // Listener
+    let _gameListenerRef = null;
+    let _listenerBound = false;
+    const _seenMsgKeys = new Set();
+
+    // ------------------------------------------------------------
+    // YARDIMCILAR
+    // ------------------------------------------------------------
+    function rnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+    function factorial(n) { let r = 1; for (let i = 2; i <= n; i++) r *= i; return r; }
+    function isPrime(n) {
+        if (n < 2) return false;
+        for (let i = 2; i <= Math.sqrt(n); i++) if (n % i === 0) return false;
+        return true;
+    }
+    function normalizeNick(n) { return n ? String(n).toLowerCase().trim() : ''; }
+    function getDB() { return window.database || null; }
+    function timeNow() {
+        return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ------------------------------------------------------------
+    // ZAMANLAYICI YÖNETİCİSİ
+    // ------------------------------------------------------------
+    function clearQuestionTimer() {
+        if (_questionTimer) { clearTimeout(_questionTimer); _questionTimer = null; }
+    }
+    function clearNextQuestionTimer() {
+        if (_nextQuestionTimer) { clearTimeout(_nextQuestionTimer); _nextQuestionTimer = null; }
+    }
+    function clearAllTimers() {
+        clearQuestionTimer();
+        clearNextQuestionTimer();
+    }
+    function scheduleNextQuestion(delay = NEXT_QUESTION_DELAY) {
+        clearNextQuestionTimer();
+        _nextQuestionTimer = setTimeout(() => {
+            _nextQuestionTimer = null;
+            askQuestion();
+        }, delay);
+    }
+
+    // ------------------------------------------------------------
     // KATMAN 1: ŞABLON MOTORU
-    // ============================================================
+    // ------------------------------------------------------------
     const TEMPLATES = {
         kolay: [
             () => { const a = rnd(1, 20), b = rnd(1, 20); return { q: `${a} + ${b} kaçtır?`, a: String(a + b) }; },
             () => { const a = rnd(10, 50), b = rnd(1, 9); return { q: `${a} × ${b} kaçtır?`, a: String(a * b) }; },
             () => { const a = rnd(20, 100), b = rnd(1, 20); return { q: `${a} - ${b} kaçtır?`, a: String(a - b) }; },
             () => { const a = rnd(2, 12); return { q: `${a} sayısının karesi kaçtır?`, a: String(a * a) }; },
-            () => { const a = rnd(10, 60); return { q: `${a} sayısının yarısı kaçtır?`, a: String(a / 2) }; },
+            () => { const a = rnd(10, 60) * 2; return { q: `${a} sayısının yarısı kaçtır?`, a: String(a / 2) }; },
             () => { const n = rnd(10, 99); return { q: `${n} sayısının rakamları toplamı kaçtır?`, a: String(Math.floor(n / 10) + n % 10) }; },
             () => ({ q: 'Bir düzine kaç tanedir?', a: '12' }),
             () => ({ q: 'Bir hafta kaç gündür?', a: '7' }),
@@ -62,12 +132,14 @@
             () => ({ q: 'Gökyüzü hangi renktir?', a: 'mavi' }),
             () => ({ q: 'Kaç kıta vardır?', a: '7' }),
             () => ({ q: 'Bir çeyrek saat kaç dakikadır?', a: '15' }),
+            () => ({ q: 'Bir yılda kaç mevsim vardır?', a: '4' }),
+            () => ({ q: 'Bir metre kaç santimetredir?', a: '100' })
         ],
         orta: [
             () => { const a = rnd(5, 15), b = rnd(5, 15), c = rnd(1, 10); return { q: `${a} × ${b} + ${c} kaçtır?`, a: String(a * b + c) }; },
             () => { const a = rnd(2, 10); return { q: `${a}³ (küpü) kaçtır?`, a: String(a * a * a) }; },
-            () => { const a = rnd(100, 999); return { q: `${a} sayısının yarısı kaçtır?`, a: String(a / 2) }; },
-            () => { const a = rnd(3, 12), b = rnd(3, 12); return { q: `${a} sayısının %${b * 5}'i kaçtır?`, a: String(Math.round(a * b * 5 / 100)) }; },
+            () => { const a = rnd(100, 999); return { q: `${a} sayısının yarısı kaçtır?`, a: String(Math.floor(a / 2)) }; },
+            () => { const a = rnd(20, 80) * 5; return { q: `${a} sayısının %20'si kaçtır?`, a: String(Math.round(a * 0.2)) }; },
             () => ({ q: 'Türkiye Cumhuriyeti hangi yıl kuruldu?', a: '1923' }),
             () => ({ q: "İstanbul'un fethi hangi yıldır?", a: '1453' }),
             () => ({ q: 'İstiklal Marşı kaç kıtadır?', a: '10' }),
@@ -76,8 +148,8 @@
             () => ({ q: 'Suyun kimyasal formülü nedir?', a: 'h2o' }),
             () => ({ q: 'Bir üçgenin iç açıları toplamı kaçtır?', a: '180' }),
             () => ({ q: 'En büyük gezegen hangisidir?', a: 'jüpiter' }),
-            () => ({ q: 'Türk bayrağında ne vardır?', a: 'ay ve yıldız' }),
             () => ({ q: 'Türkiye kaç bölgeden oluşur?', a: '7' }),
+            () => ({ q: 'Bir asır kaç yıldır?', a: '100' })
         ],
         zor: [
             () => { const a = rnd(15, 40), b = rnd(15, 40); return { q: `${a} × ${b} kaçtır?`, a: String(a * b) }; },
@@ -91,9 +163,9 @@
             () => ({ q: 'En hızlı kara hayvanı hangisidir?', a: 'çita' }),
             () => ({ q: 'Periyodik tabloda demirin sembolü nedir?', a: 'fe' }),
             () => ({ q: "Türkiye'de kaç il vardır?", a: '81' }),
-            () => ({ q: 'Bir asır kaç yıldır?', a: '100' }),
             () => ({ q: 'Atom numarası 1 olan element nedir?', a: 'hidrojen' }),
             () => ({ q: 'Dünyanın en büyük kıtası hangisidir?', a: 'asya' }),
+            () => ({ q: 'Işık hızı yaklaşık kaç km/s?', a: '300000' })
         ],
         efsane: [
             () => { const a = rnd(50, 99), b = rnd(50, 99); return { q: `${a} × ${b} kaçtır?`, a: String(a * b) }; },
@@ -106,77 +178,63 @@
             () => ({ q: 'Einstein hangi teorisiyle ünlüdür?', a: 'izafiyet' }),
             () => ({ q: 'İnsan kalbi kaç odacıklıdır?', a: '4' }),
             () => ({ q: "Türkiye'nin en yüksek dağı hangisidir?", a: 'ağrı' }),
-            () => ({ q: 'Işık hızı yaklaşık kaç km/s?', a: '300000' }),
             () => ({ q: 'Periyodik tabloda kaç element vardır?', a: '118' }),
             () => ({ q: 'Pi sayısı yaklaşık kaçtır? (2 ondalık)', a: '3.14' }),
+            () => ({ q: 'Dünyanın uydusu nedir?', a: 'ay' })
         ]
     };
 
-    function rnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-    function factorial(n) { let r = 1; for (let i = 2; i <= n; i++) r *= i; return r; }
-    function isPrime(n) { if (n < 2) return false; for (let i = 2; i <= Math.sqrt(n); i++) if (n % i === 0) return false; return true; }
+    // ------------------------------------------------------------
+    // KATMAN 2: HARİCİ API (devre dışı — Türkçe sorular için)
+    // ------------------------------------------------------------
+    async function fetchFromAPI(_difficulty) { return null; }
 
-    // ============================================================
-    // KATMAN 2: HARİCİ API — DEVRE DIŞI
-    // ============================================================
-    // 🔧 DÜZELTME: İngilizce sorular geldiği için devre dışı bırakıldı.
-    // Tüm sorular Türkçe şablon motorundan üretiliyor.
-    async function fetchFromAPI(difficulty) {
-        return null;
-    }
-
-    // ============================================================
+    // ------------------------------------------------------------
     // KATMAN 3: YEDEK HAVUZ
-    // ============================================================
+    // ------------------------------------------------------------
     const FALLBACK_POOL = [
         { q: "Türkiye'nin en kalabalık şehri hangisidir?", a: 'istanbul' },
         { q: 'Bir yılda kaç ay vardır?', a: '12' },
-        { q: 'Dünyanın uydusu nedir?', a: 'ay' },
         { q: 'Güneş sisteminde kaç gezegen vardır?', a: '8' },
         { q: 'Türk bayrağının rengi nedir?', a: 'kırmızı' },
         { q: 'En büyük memeli hayvan hangisidir?', a: 'balina' },
         { q: 'Bir gün kaç saattir?', a: '24' },
+        { q: 'Türkiye\'nin para birimi nedir?', a: 'lira' }
     ];
 
-    // ============================================================
-    // SORU ÜRETİCİ (3 katmanlı)
-    // ============================================================
+    // ------------------------------------------------------------
+    // SORU ÜRETİCİ
+    // ------------------------------------------------------------
     async function generateQuestion(difficulty) {
-        // API dene (zor ve efsane için) — şu an devre dışı, null döner
         if (difficulty === 'zor' || difficulty === 'efsane') {
             const apiQ = await fetchFromAPI(difficulty);
-            if (apiQ && !usedQuestions.has(apiQ.q)) {
-                usedQuestions.add(apiQ.q);
+            if (apiQ && !state.usedQuestions.has(apiQ.q)) {
+                state.usedQuestions.add(apiQ.q);
                 return apiQ;
             }
         }
-
-        // Şablon motoru
         const templates = TEMPLATES[difficulty] || TEMPLATES.orta;
         for (let i = 0; i < 50; i++) {
             const gen = templates[rnd(0, templates.length - 1)];
             const q = gen();
-            if (!usedQuestions.has(q.q)) {
-                usedQuestions.add(q.q);
+            if (!state.usedQuestions.has(q.q)) {
+                state.usedQuestions.add(q.q);
                 return q;
             }
         }
-
-        // Yedek havuz
         for (const fb of FALLBACK_POOL) {
-            if (!usedQuestions.has(fb.q)) {
-                usedQuestions.add(fb.q);
+            if (!state.usedQuestions.has(fb.q)) {
+                state.usedQuestions.add(fb.q);
                 return fb;
             }
         }
-
         // Hepsi kullanıldıysa sıfırla
-        usedQuestions.clear();
+        state.usedQuestions.clear();
         return TEMPLATES[difficulty][0]();
     }
 
     function pickDifficulty() {
-        const total = roundNumber;
+        const total = state.roundNumber;
         const r = Math.random();
         if (total < 3) return r < 0.7 ? 'kolay' : 'orta';
         if (total < 8) {
@@ -195,148 +253,245 @@
         return 'efsane';
     }
 
-    // ============================================================
-    // YARDIMCILAR
-    // ============================================================
-    function normalizeNick(n) { return n ? String(n).toLowerCase().trim() : ''; }
-    function getDB() { return window.database || null; }
-    function timeNow() { return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); }
-
-    // ============================================================
-    // BOT MESAJ GÖNDER — 🔧 Duplicate korumalı
-    // ============================================================
-    async function botSend(text) {
+    // ------------------------------------------------------------
+    // BOT MESAJ — Round-bazlı dedupe
+    // ------------------------------------------------------------
+    async function botSend(text, opts = {}) {
         const db = getDB();
         if (!db) return null;
-        
-        // 🔧 DÜZELTME: Aynı mesajı 5 saniye içinde 2. kez göndermeyi engelle
+
+        // Aynı round için soru mesajı zaten gönderildi mi?
+        if (opts.isQuestion) {
+            if (_lastQuestionRound === state.roundNumber) {
+                console.warn('🧠 Aynı round için soru zaten gönderildi:', state.roundNumber);
+                return null;
+            }
+            _lastQuestionRound = state.roundNumber;
+        }
+
+        // Genel birebir aynı mesaj koruması
         const now = Date.now();
-        if (_lastBotMsg.text === text && (now - _lastBotMsg.time) < 5000) {
-            console.warn('🧠 Duplicate bot mesajı engellendi:', text.slice(0, 50));
+        if (_lastBotMsg.text === text && (now - _lastBotMsg.time) < BOT_MSG_DEDUPE_MS) {
+            console.warn('🧠 Duplicate bot mesajı engellendi:', text.slice(0, 60));
             return null;
         }
         _lastBotMsg = { text, time: now };
-        
-        const ref = db.ref('channelMessages/' + GAME_CHANNEL);
-        const r = await ref.push({
-            sender: BOT_NAME, text: text, type: 'supervisor',
-            isBotMessage: true, isGameBot: true,
-            timestamp: Date.now(), time: timeNow(), avatar: null, channel: GAME_CHANNEL
-        });
-        return r.key;
+
+        try {
+            const ref = db.ref('channelMessages/' + GAME_CHANNEL);
+            const r = await ref.push({
+                sender: BOT_NAME,
+                text: text,
+                type: 'supervisor',
+                isBotMessage: true,
+                isGameBot: true,
+                timestamp: Date.now(),
+                time: timeNow(),
+                avatar: null,
+                channel: GAME_CHANNEL
+            });
+            return r.key;
+        } catch (e) {
+            console.error('🧠 botSend hatası:', e);
+            return null;
+        }
     }
 
-    // ============================================================
-    // OYUN AKIŞI
-    // ============================================================
+    // ------------------------------------------------------------
+    // OYUN AKIŞI — SORU
+    // ------------------------------------------------------------
     async function askQuestion() {
-        if (!gameActive) return;
+        if (!state.active) return;
 
-        const difficulty = pickDifficulty();
-        const qData = await generateQuestion(difficulty);
-        
-        // 🔧 DÜZELTME: Null koruması
-        if (!qData || !qData.q) {
-            console.warn('Soru üretilemedi, tekrar deneniyor...');
-            setTimeout(askQuestion, 1000);
+        // Kilitler
+        if (_askLock) {
+            console.warn('🧠 askQuestion zaten çalışıyor, atlandı.');
             return;
         }
-        
-        currentQuestion = { ...qData, difficulty };
-        answered = false;
-        roundNumber++;
-        askedCount[difficulty]++;
+        if (state.currentQuestion && !state.answered) {
+            console.warn('🧠 Önceki soru hâlâ aktif, yeni soru gönderilmedi.');
+            return;
+        }
 
-        const d = DIFFICULTY[difficulty];
-        const msg = `${BOT_ICON} **SORU #${roundNumber}** — ${d.label}\n` +
-                    `━━━━━━━━━━━━━━\n` +
-                    `❓ ${currentQuestion.q}\n\n` +
-                    `💰 Ödül: **${d.points}** puan  |  ⏱️ Süre: **${d.time / 1000}s**`;
+        _askLock = true;
+        clearAllTimers();
 
-        await botSend(msg);
+        try {
+            const difficulty = pickDifficulty();
+            const qData = await generateQuestion(difficulty);
 
-        if (questionTimer) clearTimeout(questionTimer);
-        questionTimer = setTimeout(async () => {
-            if (!answered && gameActive) {
-                await botSend(`⏰ Süre doldu! Doğru cevap: **${currentQuestion.a}**\n${DIFFICULTY[currentQuestion.difficulty].label} soruydu.`);
-                setTimeout(askQuestion, 2000);
+            if (!qData || !qData.q) {
+                console.warn('🧠 Soru üretilemedi, 1 sn sonra tekrar denenecek.');
+                _askLock = false;
+                _nextQuestionTimer = setTimeout(() => {
+                    _nextQuestionTimer = null;
+                    askQuestion();
+                }, 1000);
+                return;
             }
-        }, d.time);
+
+            state.currentQuestion = { ...qData, difficulty };
+            state.answered = false;
+            state.roundNumber++;
+            state.askedCount[difficulty]++;
+
+            const d = DIFFICULTY[difficulty];
+            const msg =
+                `${BOT_ICON} **SORU #${state.roundNumber}** — ${d.label}\n` +
+                `━━━━━━━━━━━━━━\n` +
+                `❓ ${state.currentQuestion.q}\n\n` +
+                `💰 Ödül: **${d.points}** puan  |  ⏱️ Süre: **${d.time / 1000}s**`;
+
+            await botSend(msg, { isQuestion: true });
+
+            // Süre dolması
+            clearQuestionTimer();
+            _questionTimer = setTimeout(async () => {
+                _questionTimer = null;
+                if (state.answered || !state.active) return;
+                state.answered = true;
+                const correct = state.currentQuestion ? state.currentQuestion.a : '?';
+                const diff = state.currentQuestion ? state.currentQuestion.difficulty : 'orta';
+                await botSend(
+                    `⏰ Süre doldu! Doğru cevap: **${correct}**\n` +
+                    `${DIFFICULTY[diff].label} soruydu.`
+                );
+                state.currentQuestion = null;
+                scheduleNextQuestion(NEXT_QUESTION_DELAY);
+            }, d.time);
+
+        } catch (err) {
+            console.error('🧠 askQuestion hatası:', err);
+            scheduleNextQuestion(2000);
+        } finally {
+            _askLock = false;
+        }
     }
 
+    // ------------------------------------------------------------
+    // CEVAP KONTROLÜ
+    // ------------------------------------------------------------
     async function checkAnswer(username, text) {
-        if (!gameActive || !currentQuestion || answered) return;
-        if (!players.has(username)) return;
+        if (!state.active || !state.currentQuestion || state.answered) return;
+        if (_answerLock) return;
+        if (!state.players.has(username)) return;
 
         const answer = normalizeNick(text);
-        const correct = normalizeNick(currentQuestion.a);
+        const correct = normalizeNick(state.currentQuestion.a);
+        if (!answer || !correct) return;
 
-        const isMatch = answer === correct ||
+        const isMatch =
+            answer === correct ||
             (correct.length > 3 && answer.includes(correct)) ||
             (answer.length > 3 && correct.includes(answer));
 
-        if (isMatch) {
-            answered = true;
-            if (questionTimer) clearTimeout(questionTimer);
+        if (!isMatch) return;
 
-            const d = DIFFICULTY[currentQuestion.difficulty];
-            if (!scores[username]) scores[username] = 0;
-            scores[username] += d.points;
+        // ✅ Doğru cevap — hemen kilitle
+        _answerLock = true;
+        state.answered = true;
+        clearAllTimers();
 
-            await botSend(`✅ **${username}** doğru bildi! (+${d.points} puan)\n` +
-                          `📖 Cevap: **${currentQuestion.a}**\n` +
-                          `📊 Güncel puan: **${scores[username]}**`);
+        try {
+            const d = DIFFICULTY[state.currentQuestion.difficulty];
+            if (!state.scores[username]) state.scores[username] = 0;
+            state.scores[username] += d.points;
 
-            if (scoreRef) scoreRef.child(username).set(scores[username]);
-            setTimeout(askQuestion, 2000);
+            await botSend(
+                `✅ **${username}** doğru bildi! (+${d.points} puan)\n` +
+                `📖 Cevap: **${state.currentQuestion.a}**\n` +
+                `📊 Güncel puan: **${state.scores[username]}**`
+            );
+
+            if (state.scoreRef) {
+                state.scoreRef.child(username).set(state.scores[username]).catch(() => {});
+            }
+
+            state.currentQuestion = null;
+            scheduleNextQuestion(NEXT_QUESTION_DELAY);
+        } catch (err) {
+            console.error('🧠 checkAnswer hatası:', err);
+            scheduleNextQuestion(2000);
+        } finally {
+            _answerLock = false;
         }
     }
 
+    // ------------------------------------------------------------
+    // OYUN BAŞLAT / DURDUR
+    // ------------------------------------------------------------
     async function startGame(initiator) {
-        if (gameActive) { await botSend('⚠️ Oyun zaten aktif! `/oyun-durdur` ile durdurun.'); return; }
+        if (state.active) {
+            await botSend('⚠️ Oyun zaten aktif! `/oyun-durdur` ile durdurun.');
+            return;
+        }
         const db = getDB();
         if (!db) { await botSend('❌ Veritabanı bağlantısı yok!'); return; }
 
-        scoreRef = db.ref('gameScores/' + GAME_CHANNEL);
-        const snap = await scoreRef.once('value');
-        scores = snap.val() || {};
+        clearAllTimers();
+        state.scoreRef = db.ref('gameScores/' + GAME_CHANNEL);
 
-        players.clear();
-        if (window.currentUser) players.add(window.currentUser.name);
+        try {
+            const snap = await state.scoreRef.once('value');
+            state.scores = snap.val() || {};
+        } catch (_) {
+            state.scores = {};
+        }
 
-        gameActive = true;
-        roundNumber = 0;
-        usedQuestions.clear();
-        askedCount = { kolay: 0, orta: 0, zor: 0, efsane: 0 };
+        state.players.clear();
+        if (window.currentUser) state.players.add(window.currentUser.name);
 
-        await botSend(`${BOT_ICON} **AKIL KÜPÜ OYUNU BAŞLADI!**\n` +
-                      `━━━━━━━━━━━━━━\n` +
-                      `👤 Başlatan: **${initiator}**\n` +
-                      `👥 Katılmak için: **/katil**\n\n` +
-                      `📊 **ZORLUK SEVİYELERİ:**\n` +
-                      `🟢 Kolay → 5 puan (30s)\n` +
-                      `🟡 Orta → 10 puan (25s)\n` +
-                      `🔴 Zor → 20 puan (20s)\n` +
-                      `💀 Efsane → 40 puan (15s)\n\n` +
-                      `⚡ Sorular **dinamik** üretilir!\n\n` +
-                      `🎯 İlk soru geliyor...`);
+        state.active = true;
+        state.roundNumber = 0;
+        state.usedQuestions.clear();
+        state.askedCount = { kolay: 0, orta: 0, zor: 0, efsane: 0 };
+        state.currentQuestion = null;
+        state.answered = false;
+        _lastQuestionRound = -1;
 
-        setTimeout(askQuestion, 3000);
+        await botSend(
+            `${BOT_ICON} **AKIL KÜPÜ OYUNU BAŞLADI!**\n` +
+            `━━━━━━━━━━━━━━\n` +
+            `👤 Başlatan: **${initiator}**\n` +
+            `👥 Katılmak için: **/katil**\n\n` +
+            `📊 **ZORLUK SEVİYELERİ:**\n` +
+            `🟢 Kolay → 5 puan (30s)\n` +
+            `🟡 Orta → 10 puan (25s)\n` +
+            `🔴 Zor → 20 puan (20s)\n` +
+            `💀 Efsane → 40 puan (15s)\n\n` +
+            `⚡ Sorular **dinamik** üretilir!\n\n` +
+            `🎯 İlk soru geliyor...`
+        );
+
+        _nextQuestionTimer = setTimeout(() => {
+            _nextQuestionTimer = null;
+            askQuestion();
+        }, FIRST_QUESTION_DELAY);
     }
 
     async function stopGame(initiator) {
-        if (!gameActive) { await botSend('⚠️ Aktif oyun yok.'); return; }
-        gameActive = false;
-        if (questionTimer) clearTimeout(questionTimer);
-        currentQuestion = null;
+        if (!state.active) { await botSend('⚠️ Aktif oyun yok.'); return; }
+        state.active = false;
+        clearAllTimers();
+        state.currentQuestion = null;
+        state.answered = false;
+
         await botSend(`${BOT_ICON} **Oyun durduruldu!**\n👤 Durduran: **${initiator}**`);
         await sendScoreboard();
         await sendStats();
     }
 
+    // ------------------------------------------------------------
+    // SKOR / İSTATİSTİK
+    // ------------------------------------------------------------
     async function sendScoreboard() {
-        const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 10);
-        if (sorted.length === 0) { await botSend('📊 Henüz kimse puan kazanmadı.'); return; }
+        const sorted = Object.entries(state.scores)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10);
+        if (sorted.length === 0) {
+            await botSend('📊 Henüz kimse puan kazanmadı.');
+            return;
+        }
         let msg = `${BOT_ICON} **SKOR TABLOSU**\n━━━━━━━━━━━━━━\n`;
         sorted.forEach(([u, s], i) => {
             const m = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '•';
@@ -346,27 +501,42 @@
     }
 
     async function sendStats() {
-        const total = askedCount.kolay + askedCount.orta + askedCount.zor + askedCount.efsane;
+        const a = state.askedCount;
+        const total = a.kolay + a.orta + a.zor + a.efsane;
         if (total === 0) return;
-        await botSend(`${BOT_ICON} **OTURUM İSTATİSTİKLERİ**\n━━━━━━━━━━━━━━\n` +
-                      `🟢 Kolay: ${askedCount.kolay}\n` +
-                      `🟡 Orta: ${askedCount.orta}\n` +
-                      `🔴 Zor: ${askedCount.zor}\n` +
-                      `💀 Efsane: ${askedCount.efsane}\n` +
-                      `📊 Toplam: ${total} soru`);
+        await botSend(
+            `${BOT_ICON} **OTURUM İSTATİSTİKLERİ**\n━━━━━━━━━━━━━━\n` +
+            `🟢 Kolay: ${a.kolay}\n` +
+            `🟡 Orta: ${a.orta}\n` +
+            `🔴 Zor: ${a.zor}\n` +
+            `💀 Efsane: ${a.efsane}\n` +
+            `📊 Toplam: ${total} soru`
+        );
     }
 
+    // ------------------------------------------------------------
+    // OYUNCU EKLE
+    // ------------------------------------------------------------
     async function addPlayer(username) {
-        if (!gameActive) { await botSend('⚠️ Önce `/oyun` ile oyunu başlatın.'); return; }
-        if (players.has(username)) { await botSend(`ℹ️ **${username}** zaten oyunda.`); return; }
-        if (players.size >= 20) { await botSend('⚠️ Oyuncu limiti dolu (20).'); return; }
-        players.add(username);
-        await botSend(`✅ **${username}** oyuna katıldı! (${players.size}/20)`);
+        if (!state.active) {
+            await botSend('⚠️ Önce `/oyun` ile oyunu başlatın.');
+            return;
+        }
+        if (state.players.has(username)) {
+            await botSend(`ℹ️ **${username}** zaten oyunda.`);
+            return;
+        }
+        if (state.players.size >= MAX_PLAYERS) {
+            await botSend(`⚠️ Oyuncu limiti dolu (${MAX_PLAYERS}).`);
+            return;
+        }
+        state.players.add(username);
+        await botSend(`✅ **${username}** oyuna katıldı! (${state.players.size}/${MAX_PLAYERS})`);
     }
 
-    // ============================================================
+    // ------------------------------------------------------------
     // YETKİ
-    // ============================================================
+    // ------------------------------------------------------------
     function isOwnerOrAdmin(u) {
         const n = normalizeNick(u);
         if (n === normalizeNick(GAME_OWNER)) return true;
@@ -375,46 +545,74 @@
         return al.some(x => normalizeNick(x) === n) || da.some(x => normalizeNick(x) === n);
     }
 
-    // ============================================================
-    // KOMUTLAR
-    // ============================================================
+    // ------------------------------------------------------------
+    // KOMUT İŞLEYİCİ
+    // ------------------------------------------------------------
     async function handleCommand(cmd, args, user) {
         switch (cmd) {
             case '/oyun':
             case '/oyun-baslat':
-                if (!isOwnerOrAdmin(user)) { await botSend(`⛔ Sadece **${GAME_OWNER}** ve adminler oyun başlatabilir!`); return true; }
-                await startGame(user); return true;
-            case '/oyun-durdur':
-                if (!isOwnerOrAdmin(user)) { await botSend(`⛔ Sadece **${GAME_OWNER}** ve adminler oyun durdurabilir!`); return true; }
-                await stopGame(user); return true;
-            case '/katil': case '/katıl': await addPlayer(user); return true;
-            case '/skor': case '/puan': await sendScoreboard(); return true;
-            case '/istatistik': await sendStats(); return true;
-            case '/oyun-yardim': case '/akilkupu':
-                await botSend(`${BOT_ICON} **AKIL KÜPÜ KOMUTLARI**\n━━━━━━━━━━━━━━\n` +
-                              `• /oyun — Oyunu başlat\n• /oyun-durdur — Durdur\n` +
-                              `• /katil — Oyuna katıl\n• /skor — Skor tablosu\n` +
-                              `• /istatistik — Oturum özeti\n• /oyun-yardim — Bu mesaj\n\n` +
-                              `💡 Sorular **dinamik üretilir**: matematik, tarih, coğrafya, bilim...`);
+                if (!isOwnerOrAdmin(user)) {
+                    await botSend(`⛔ Sadece **${GAME_OWNER}** ve adminler oyun başlatabilir!`);
+                    return true;
+                }
+                await startGame(user);
                 return true;
-            default: return false;
+
+            case '/oyun-durdur':
+                if (!isOwnerOrAdmin(user)) {
+                    await botSend(`⛔ Sadece **${GAME_OWNER}** ve adminler oyun durdurabilir!`);
+                    return true;
+                }
+                await stopGame(user);
+                return true;
+
+            case '/katil':
+            case '/katıl':
+                await addPlayer(user);
+                return true;
+
+            case '/skor':
+            case '/puan':
+                await sendScoreboard();
+                return true;
+
+            case '/istatistik':
+                await sendStats();
+                return true;
+
+            case '/oyun-yardim':
+            case '/akilkupu':
+                await botSend(
+                    `${BOT_ICON} **AKIL KÜPÜ KOMUTLARI**\n━━━━━━━━━━━━━━\n` +
+                    `• /oyun — Oyunu başlat\n• /oyun-durdur — Durdur\n` +
+                    `• /katil — Oyuna katıl\n• /skor — Skor tablosu\n` +
+                    `• /istatistik — Oturum özeti\n• /oyun-yardim — Bu mesaj\n\n` +
+                    `💡 Sorular **dinamik üretilir**: matematik, tarih, coğrafya, bilim...`
+                );
+                return true;
+
+            default:
+                return false;
         }
     }
 
-    // ============================================================
-    // DİNLEYİCİ — 🔧 Duplicate korumalı
-    // ============================================================
+    // ------------------------------------------------------------
+    // DİNLEYİCİ — Tek seferlik bağlanır
+    // ------------------------------------------------------------
     function attachListener() {
         const db = getDB();
         if (!db) return;
-        
-        // 🔧 DÜZELTME: Eski listener varsa sil (yoksa çoğalır ve çift mesaj olur!)
+        if (_listenerBound) {
+            console.log('🧠 Listener zaten bağlı.');
+            return;
+        }
+        _listenerBound = true;
+
         if (_gameListenerRef) {
             try { _gameListenerRef.off('child_added'); } catch (_) {}
-            _gameListenerRef = null;
         }
-        
-        // 🔧 Yeni listener kur
+
         _gameListenerRef = db.ref('channelMessages/' + GAME_CHANNEL).limitToLast(1);
         _gameListenerRef.on('child_added', async (snap) => {
             const msg = snap.val();
@@ -422,81 +620,130 @@
             if (normalizeNick(msg.sender) === normalizeNick(BOT_NAME)) return;
             if (msg.type === 'system' || msg.type === 'supervisor') return;
 
+            // Aynı mesajı iki kez işleme
+            const key = snap.key;
+            if (_seenMsgKeys.has(key)) return;
+            _seenMsgKeys.add(key);
+            if (_seenMsgKeys.size > SEEN_MSG_LIMIT) {
+                const arr = Array.from(_seenMsgKeys);
+                _seenMsgKeys.clear();
+                arr.slice(-Math.floor(SEEN_MSG_LIMIT / 2)).forEach(k => _seenMsgKeys.add(k));
+            }
+
+            // Komut mu?
             if (msg.text && msg.text.startsWith('/')) {
                 const parts = msg.text.trim().split(/\s+/);
                 await handleCommand(parts[0].toLowerCase(), parts.slice(1), msg.sender);
                 return;
             }
-            if (gameActive && currentQuestion && !answered) {
+
+            // Cevap mı?
+            if (state.active && state.currentQuestion && !state.answered) {
                 await checkAnswer(msg.sender, msg.text || '');
             }
         });
+
+        console.log('🧠 Oyun kanalı dinleyicisi bağlandı.');
     }
 
-    // ============================================================
-    // KURULUM
-    // ============================================================
+    // ------------------------------------------------------------
+    // BOT KULLANICI + KANAL GARANTİSİ
+    // ------------------------------------------------------------
     async function ensureBotUser() {
-        const db = getDB(); if (!db) return;
+        const db = getDB();
+        if (!db) return;
         try {
-            // 🔧 DÜZELTME: Son 30 saniyede zaten yazdıysak atla
             const snap = await db.ref('onlineUsers/' + BOT_NAME).once('value');
             const existing = snap.val();
-            if (existing && existing.lastSeen && (Date.now() - existing.lastSeen < 30000)) {
-                return;
-            }
-            
+            if (existing && existing.lastSeen && (Date.now() - existing.lastSeen < 30000)) return;
+
             await db.ref('onlineUsers/' + BOT_NAME).set({
-                name: BOT_NAME, role: BOT_ROLE, level: 4.5, isBot: true,
-                isOnline: true, lastSeen: Date.now(), joinedAt: Date.now(), avatar: null
+                name: BOT_NAME,
+                role: BOT_ROLE,
+                level: 4.5,
+                isBot: true,
+                isOnline: true,
+                lastSeen: Date.now(),
+                joinedAt: existing?.joinedAt || Date.now(),
+                avatar: null
             });
-            db.ref('onlineUsers/' + BOT_NAME).onDisconnect().update({ isOnline: false, lastSeen: Date.now() });
-        } catch (e) {}
+            db.ref('onlineUsers/' + BOT_NAME)
+                .onDisconnect()
+                .update({ isOnline: false, lastSeen: Date.now() });
+        } catch (_) {}
     }
 
     async function ensureGameChannel() {
-        const db = getDB(); if (!db) return;
+        const db = getDB();
+        if (!db) return;
         try {
             const s = await db.ref('channels/' + GAME_CHANNEL).once('value');
             if (!s.exists()) {
                 await db.ref('channels/' + GAME_CHANNEL).set({
-                    name: GAME_CHANNEL, label: 'Oyun',
-                    createdBy: GAME_OWNER, owner: GAME_OWNER,
-                    createdAt: Date.now(), isHidden: false, isLocked: false, order: 10,
+                    name: GAME_CHANNEL,
+                    label: 'Oyun',
+                    createdBy: GAME_OWNER,
+                    owner: GAME_OWNER,
+                    createdAt: Date.now(),
+                    isHidden: false,
+                    isLocked: false,
+                    order: 10,
                     description: '🧠 Akıl Küpü genel kültür oyunu. /oyun-yardim yazarak komutları görebilirsiniz.'
                 });
             }
-        } catch (e) {}
+        } catch (_) {}
     }
 
-    // ============================================================
-    // BOT BAŞLATMA — 🔧 Tek seferlik
-    // ============================================================
+    // ------------------------------------------------------------
+    // BAŞLATMA — Tek seferlik
+    // ------------------------------------------------------------
     async function initGameBot() {
-        // 🔧 DÜZELTME: Bot 2 kere başlatılmasın
-        if (_gameBotInitialized) {
-            console.log('🧠 Akıl Küpü zaten başlatılmış, atlanıyor...');
+        console.log('🧠 Akıl Küpü botu başlatılıyor...');
+
+        let tries = 0;
+        while (!getDB() && tries < 60) {
+            await sleep(500);
+            tries++;
+        }
+        if (!getDB()) {
+            console.error('❌ Firebase bağlantısı kurulamadı, Akıl Küpü başlatılamadı.');
             return;
         }
-        _gameBotInitialized = true;
-        
-        console.log('🧠 Akıl Küpü botu başlatılıyor...');
-        let tries = 0;
-        while (!getDB() && tries < 60) { await new Promise(r => setTimeout(r, 500)); tries++; }
-        if (!getDB()) { console.error('❌ Firebase yok.'); return; }
+
         await ensureGameChannel();
         await ensureBotUser();
         attachListener();
+
+        // Bot presence güncellemesi
+        setInterval(() => {
+            ensureBotUser().catch(() => {});
+        }, 30000);
+
         console.log('✅ Akıl Küpü hazır!');
     }
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initGameBot);
-    else initGameBot();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initGameBot);
+    } else {
+        initGameBot();
+    }
 
+    // ------------------------------------------------------------
+    // DIŞA AÇIK API
+    // ------------------------------------------------------------
     window.AkilKupu = {
-        start: startGame, stop: stopGame,
-        scores: () => scores, players: () => Array.from(players),
-        isActive: () => gameActive,
-        stats: () => ({ ...askedCount, round: roundNumber })
+        start: startGame,
+        stop: stopGame,
+        scores: () => ({ ...state.scores }),
+        players: () => Array.from(state.players),
+        isActive: () => state.active,
+        stats: () => ({ ...state.askedCount, round: state.roundNumber }),
+        _debug: () => ({
+            askLock: _askLock,
+            answerLock: _answerLock,
+            listenerBound: _listenerBound,
+            hasTimer: !!_questionTimer,
+            hasNextTimer: !!_nextQuestionTimer
+        })
     };
 })();
