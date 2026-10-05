@@ -2,6 +2,13 @@
 // AKIL KÜPÜ 🧠 - Dinamik Soru Üretici + Zorluk Sistemi
 // Kanal Sahibi: mateky | Kanal: oyun
 // ============================================================
+// 🔧 v1.1 — Düzeltmeler:
+//   • Duplicate listener engellendi (çift mesaj sorunu çözüldü)
+//   • İngilizce API devre dışı bırakıldı (Türkçe sorular)
+//   • Duplicate bot mesajı koruması eklendi
+//   • Bot tek seferlik başlatılıyor
+//   • Bot user spam koruması eklendi
+// ============================================================
 (function () {
     'use strict';
 
@@ -30,6 +37,11 @@
     let usedQuestions = new Set();
     let roundNumber = 0;
     let askedCount = { kolay: 0, orta: 0, zor: 0, efsane: 0 };
+
+    // 🆕 Duplicate koruma değişkenleri
+    let _gameBotInitialized = false;
+    let _gameListenerRef = null;
+    let _lastBotMsg = { text: '', time: 0 };
 
     // ============================================================
     // KATMAN 1: ŞABLON MOTORU
@@ -105,31 +117,12 @@
     function isPrime(n) { if (n < 2) return false; for (let i = 2; i <= Math.sqrt(n); i++) if (n % i === 0) return false; return true; }
 
     // ============================================================
-    // KATMAN 2: HARİCİ API (Open Trivia DB)
+    // KATMAN 2: HARİCİ API — DEVRE DIŞI
     // ============================================================
+    // 🔧 DÜZELTME: İngilizce sorular geldiği için devre dışı bırakıldı.
+    // Tüm sorular Türkçe şablon motorundan üretiliyor.
     async function fetchFromAPI(difficulty) {
-        const diffMap = { kolay: 'easy', orta: 'medium', zor: 'hard', efsane: 'hard' };
-        const url = `https://opentdb.com/api.php?amount=1&category=9&difficulty=${diffMap[difficulty] || 'medium'}&type=multiple`;
-        try {
-            const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-            const data = await res.json();
-            if (data.response_code !== 0 || !data.results || !data.results[0]) return null;
-            const item = data.results[0];
-            const question = decodeHtml(item.question);
-            const correct = decodeHtml(item.correct_answer);
-            // Sadece İngilizce karakter içeriyorsa (Türkçe değilse) atla
-            if (!/[a-zA-Z]/.test(question)) return null;
-            // İngilizce soruları Türkçeleştirmek zor - sadece basit olanları al
-            return { q: question, a: correct };
-        } catch (e) {
-            return null;
-        }
-    }
-
-    function decodeHtml(html) {
-        const txt = document.createElement('textarea');
-        txt.innerHTML = html;
-        return txt.value;
+        return null;
     }
 
     // ============================================================
@@ -149,7 +142,7 @@
     // SORU ÜRETİCİ (3 katmanlı)
     // ============================================================
     async function generateQuestion(difficulty) {
-        // API dene (zor ve efsane için)
+        // API dene (zor ve efsane için) — şu an devre dışı, null döner
         if (difficulty === 'zor' || difficulty === 'efsane') {
             const apiQ = await fetchFromAPI(difficulty);
             if (apiQ && !usedQuestions.has(apiQ.q)) {
@@ -209,9 +202,21 @@
     function getDB() { return window.database || null; }
     function timeNow() { return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); }
 
+    // ============================================================
+    // BOT MESAJ GÖNDER — 🔧 Duplicate korumalı
+    // ============================================================
     async function botSend(text) {
         const db = getDB();
         if (!db) return null;
+        
+        // 🔧 DÜZELTME: Aynı mesajı 5 saniye içinde 2. kez göndermeyi engelle
+        const now = Date.now();
+        if (_lastBotMsg.text === text && (now - _lastBotMsg.time) < 5000) {
+            console.warn('🧠 Duplicate bot mesajı engellendi:', text.slice(0, 50));
+            return null;
+        }
+        _lastBotMsg = { text, time: now };
+        
         const ref = db.ref('channelMessages/' + GAME_CHANNEL);
         const r = await ref.push({
             sender: BOT_NAME, text: text, type: 'supervisor',
@@ -229,6 +234,14 @@
 
         const difficulty = pickDifficulty();
         const qData = await generateQuestion(difficulty);
+        
+        // 🔧 DÜZELTME: Null koruması
+        if (!qData || !qData.q) {
+            console.warn('Soru üretilemedi, tekrar deneniyor...');
+            setTimeout(askQuestion, 1000);
+            return;
+        }
+        
         currentQuestion = { ...qData, difficulty };
         answered = false;
         roundNumber++;
@@ -389,13 +402,21 @@
     }
 
     // ============================================================
-    // DİNLEYİCİ
+    // DİNLEYİCİ — 🔧 Duplicate korumalı
     // ============================================================
     function attachListener() {
         const db = getDB();
         if (!db) return;
-        const ref = db.ref('channelMessages/' + GAME_CHANNEL).limitToLast(1);
-        ref.on('child_added', async (snap) => {
+        
+        // 🔧 DÜZELTME: Eski listener varsa sil (yoksa çoğalır ve çift mesaj olur!)
+        if (_gameListenerRef) {
+            try { _gameListenerRef.off('child_added'); } catch (_) {}
+            _gameListenerRef = null;
+        }
+        
+        // 🔧 Yeni listener kur
+        _gameListenerRef = db.ref('channelMessages/' + GAME_CHANNEL).limitToLast(1);
+        _gameListenerRef.on('child_added', async (snap) => {
             const msg = snap.val();
             if (!msg) return;
             if (normalizeNick(msg.sender) === normalizeNick(BOT_NAME)) return;
@@ -418,6 +439,13 @@
     async function ensureBotUser() {
         const db = getDB(); if (!db) return;
         try {
+            // 🔧 DÜZELTME: Son 30 saniyede zaten yazdıysak atla
+            const snap = await db.ref('onlineUsers/' + BOT_NAME).once('value');
+            const existing = snap.val();
+            if (existing && existing.lastSeen && (Date.now() - existing.lastSeen < 30000)) {
+                return;
+            }
+            
             await db.ref('onlineUsers/' + BOT_NAME).set({
                 name: BOT_NAME, role: BOT_ROLE, level: 4.5, isBot: true,
                 isOnline: true, lastSeen: Date.now(), joinedAt: Date.now(), avatar: null
@@ -441,7 +469,17 @@
         } catch (e) {}
     }
 
+    // ============================================================
+    // BOT BAŞLATMA — 🔧 Tek seferlik
+    // ============================================================
     async function initGameBot() {
+        // 🔧 DÜZELTME: Bot 2 kere başlatılmasın
+        if (_gameBotInitialized) {
+            console.log('🧠 Akıl Küpü zaten başlatılmış, atlanıyor...');
+            return;
+        }
+        _gameBotInitialized = true;
+        
         console.log('🧠 Akıl Küpü botu başlatılıyor...');
         let tries = 0;
         while (!getDB() && tries < 60) { await new Promise(r => setTimeout(r, 500)); tries++; }
