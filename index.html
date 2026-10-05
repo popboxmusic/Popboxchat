@@ -9099,21 +9099,57 @@
     // ============================================================
     function _chArg(v) { return String(v || '').replace(/^#/, '').trim().toLowerCase(); }
     function _moveKey(n) { return normalizeNick(n).replace(/[.#$\[\]\/]/g, '_'); }
-    async function joinChannelByCommand(channelName, username) {
-        if (!hasRole('admin') && !isOwner) { addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!'); return; }
-        const ch = _chArg(channelName);
-        if (!cachedChannels[ch]) { addSystemMessage(`❌ #${ch} kanalı bulunamadı!`); return; }
-        if (ch === 'admin_channel_global' && !isOwner) { addSystemMessage('⛔ #admin_channel_global yalnızca Owner ve Admin içindir; kullanıcı eklenemez.'); return; }
-        const target = String(username || currentUser.name).trim();
-        try {
-            await channelsRef.child(ch).child('allowedUsers').child(target).set(true);
-            if (ch === 'help' && !(cachedChannels[ch] && cachedChannels[ch].isLocked)) await channelsRef.child(ch).update({ isLocked: true, lockInit: true });
-            await database.ref('channelMoves/' + _moveKey(target)).set({ action: 'join', channel: ch, by: currentUser.name, ts: Date.now() });
-            incrementWriteCount();
-            addSystemMessage(`✅ ${target} kullanıcısı #${ch} kanalına alındı.`);
-            await sendToAdminChannel(`➡️ JOIN: ${target} → #${ch} • Yetkili: ${currentUser.name}`);
-        } catch (e) { addSystemMessage('❌ İşlem başarısız: ' + e.message); }
+  async function joinChannelByCommand(channelName, username) {
+    if (!hasRole('admin') && !isOwner) { addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!'); return; }
+    const ch = _chArg(channelName);
+    if (!cachedChannels[ch]) { addSystemMessage(`❌ #${ch} kanalı bulunamadı!`); return; }
+    if (ch === 'admin_channel_global' && !isOwner) { 
+        addSystemMessage('⛔ #admin_channel_global yalnızca Owner ve Admin içindir; kullanıcı eklenemez.'); 
+        return; 
     }
+    const target = String(username || currentUser.name).trim();
+    try {
+        await channelsRef.child(ch).child('allowedUsers').child(target).set(true);
+        
+        // Help kanalı sessize
+        if (ch === 'help' && !(cachedChannels[ch] && cachedChannels[ch].isLocked)) 
+            await channelsRef.child(ch).update({ isLocked: true, lockInit: true });
+        
+        // 🆕 Admin kanalı da sessize
+        if (ch === 'admin_channel_global' && !(cachedChannels[ch] && cachedChannels[ch].isLocked)) 
+            await channelsRef.child(ch).update({ isLocked: true, lockInit: true });
+        
+        await database.ref('channelMoves/' + _moveKey(target)).set({ 
+            action: 'join', channel: ch, by: currentUser.name, ts: Date.now() 
+        });
+        incrementWriteCount();
+        addSystemMessage(`✅ ${target} kullanıcısı #${ch} kanalına alındı.`);
+        
+        // 🆕 Kanalın kendisine kalıcı sistem mesajı yaz
+        if (ch === 'help' || ch === 'admin_channel_global') {
+            try {
+                const channelMessagesRef = database.ref('channelMessages/' + ch);
+                await channelMessagesRef.push({
+                    sender: 'Sistem',
+                    text: ch === 'help' 
+                        ? `📥 ${target}, #help kanalına ${currentUser.name} tarafından alındı. Şikayetinizi veya sorununuzu yazmak için + Onaylı yetkisinin verilmesini bekleyin.`
+                        : `📥 ${target}, #admin_channel_global kanalına ${currentUser.name} tarafından alındı. Konuşmak için + Onaylı yetkisinin verilmesini bekleyin.`,
+                    type: 'supervisor',
+                    isBotMessage: true,
+                    isRoleEntry: false,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    avatar: null,
+                    channel: ch
+                });
+            } catch (e) {
+                console.warn('Sistem mesajı yazılamadı:', e);
+            }
+        }
+        
+        await sendToAdminChannel(`➡️ JOIN: ${target} → #${ch} • Yetkili: ${currentUser.name}`);
+    } catch (e) { addSystemMessage('❌ İşlem başarısız: ' + e.message); }
+}
 
     async function unjoinChannelByCommand(channelName, username) {
         if (!hasRole('admin') && !isOwner) { addSystemMessage('⛔ Bu komutu kullanma yetkiniz yok!'); return; }
@@ -14359,24 +14395,64 @@
         function loadReturn() { try { Object.assign(returnTo, JSON.parse(sessionStorage.getItem('cety_return') || '{}')); } catch (_) {} }
         function saveReturn() { try { sessionStorage.setItem('cety_return', JSON.stringify(returnTo)); } catch (_) {} }
         const sleep = ms => new Promise(r => setTimeout(r, ms));
-        async function onMove(m) {
-            if (!m || !m.channel) return;
-            if (m.action === 'join') {
-                for (let i = 0; i < 20 && !(cachedChannels[m.channel] && canAccessHiddenChannel(m.channel)); i++) await sleep(250);
-                if (!cachedChannels[m.channel] || !canAccessHiddenChannel(m.channel)) return;
-                if (activeChannelName !== m.channel) { returnTo[m.channel] = activeChannelName || 'genel'; saveReturn(); }
-                await switchChannel(m.channel);
-                addSystemMessage('📥 <strong>' + m.by + '</strong> tarafından #' + m.channel + ' kanalına alındınız.');
-            } else if (m.action === 'unjoin') {
-                if (activeChannelName === m.channel) {
-                    let dest = returnTo[m.channel];
-                    if (!dest || !cachedChannels[dest] || !canAccessHiddenChannel(dest) || dest === m.channel) dest = 'genel';
-                    await switchChannel(dest);
-                    addSystemMessage('📤 ' + m.by + ' sizi #' + m.channel + ' kanalından çıkardı; #' + dest + ' kanalına döndünüz.');
-                }
-                delete returnTo[m.channel]; saveReturn();
+       async function onMove(m) {
+    if (!m || !m.channel) return;
+    if (m.action === 'join') {
+        for (let i = 0; i < 20 && !(cachedChannels[m.channel] && canAccessHiddenChannel(m.channel)); i++) await sleep(250);
+        if (!cachedChannels[m.channel] || !canAccessHiddenChannel(m.channel)) return;
+        if (activeChannelName !== m.channel) { returnTo[m.channel] = activeChannelName || 'genel'; saveReturn(); }
+        await switchChannel(m.channel);
+        
+        // 🆕 Kanal tipi tespiti
+        const isHelpChannel = m.channel === 'help';
+        const isAdminChannel = m.channel === 'admin_channel_global';
+        
+        // 🆕 Ekranda geçici bildirim
+        let systemMsg = '📥 <strong>' + m.by + '</strong> tarafından #' + m.channel + ' kanalına alındınız.<br><br>';
+        if (isHelpChannel) {
+            systemMsg += '🆘 <strong>Şikayetiniz veya sorunuz nedir?</strong><br>' +
+                        'Sistem yetkililerimiz size yardımcı olacaktır.<br>' +
+                        'Lütfen bekleyiniz; sıra size geldiğinde <strong>+ Onaylı</strong> yetkisi verilecek ve sorunuzu yazabileceksiniz.';
+        } else if (isAdminChannel) {
+            systemMsg += '⚑ <strong>Sistem Yönetim Kanalındasınız</strong><br>' +
+                        'Bu kanal yalnızca Owner, Admin ve yetkilendirilmiş kullanıcılar içindir.<br>' +
+                        'Konuşmak için <strong>+ Onaylı</strong> yetkisinin verilmesini bekleyin.';
+        } else {
+            systemMsg += 'Bu kanalda sohbet edebilirsiniz.';
+        }
+        addSystemMessage(systemMsg);
+        
+        // 🆕 Kanalın kendisine KALICI sistem mesajı yaz (diğer kullanıcılar da görsün)
+        if ((isHelpChannel || isAdminChannel) && typeof database !== 'undefined' && database && currentUser) {
+            try {
+                const channelMessagesRef = database.ref('channelMessages/' + m.channel);
+                await channelMessagesRef.push({
+                    sender: 'Sistem',
+                    text: isHelpChannel 
+                        ? `📥 ${currentUser.name}, #help kanalına ${m.by} tarafından alındı. Şikayetinizi veya sorununuzu yazmak için + Onaylı yetkisinin verilmesini bekleyin.`
+                        : `📥 ${currentUser.name}, #admin_channel_global kanalına ${m.by} tarafından alındı. Konuşmak için + Onaylı yetkisinin verilmesini bekleyin.`,
+                    type: 'supervisor',
+                    isBotMessage: true,
+                    isRoleEntry: false,
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+                    avatar: null,
+                    channel: m.channel
+                });
+            } catch (e) {
+                console.warn('Sistem mesajı yazılamadı:', e);
             }
         }
+    } else if (m.action === 'unjoin') {
+        if (activeChannelName === m.channel) {
+            let dest = returnTo[m.channel];
+            if (!dest || !cachedChannels[dest] || !canAccessHiddenChannel(dest) || dest === m.channel) dest = 'genel';
+            await switchChannel(dest);
+            addSystemMessage('📤 ' + m.by + ' sizi #' + m.channel + ' kanalından çıkardı; #' + dest + ' kanalına döndünüz.');
+        }
+        delete returnTo[m.channel]; saveReturn();
+    }
+}
 
         async function ensureHelpLocked() {
             for (let i = 0; i < 20 && !(cachedChannels && cachedChannels.help); i++) await sleep(300);
