@@ -4781,7 +4781,7 @@
         <div class="header-left">
             <button class="mobile-menu-btn icon-btn" onclick="toggleMobileMenu()"><i class="fas fa-bars"></i></button>
             <div class="logo">
-                <i class="fas fa-play logo-icon"></i>
+                <i class="fas fa-comments logo-icon"></i>
                 <span>cetcety</span>
                 <div class="user-badges">
                     <span class="badge owner" id="ownerBadge">♛</span>
@@ -4920,7 +4920,7 @@
                 <div class="video-wrapper">
                     <div id="youtube-player"></div>
                     <div class="video-placeholder">
-                        <i class="fas fa-play logo-icon"></i>
+                        <i class="fas fa-music logo-icon"></i>
                         <div class="video-placeholder-text">cetcety Music</div>
                         <div class="video-placeholder-sub">Video oynatmak için playlist'e ekleyin</div>
                     </div>
@@ -4942,6 +4942,7 @@
                     </div>
                     <div class="banner-ad-badge">Reklam</div>
                 </a>
+                <button type="button" class="banner-ad-more" onclick="openAdInfo()">Daha fazla bilgi ›</button>
             </div>
             
             <div class="playlist-section" id="playlistSection">
@@ -4999,7 +5000,7 @@
             <div class="messages-area" id="messages"></div>
 
             <aside class="chat-notice" aria-label="Canlı sohbet bilgilendirmesi" hidden>
-                <div class="chat-notice-icon"><i class="fab fa-youtube"></i></div>
+                <div class="chat-notice-icon"><i class="fas fa-circle-info"></i></div>
                 <div class="chat-notice-copy">
                     <p>Canlı sohbete hoş geldiniz! Gizliliğinizi koruyun ve topluluk kurallarına uymayı ihmal etmeyin.</p>
                     <button class="chat-notice-link" type="button" onclick="openRulesModal()">Daha fazla bilgi</button>
@@ -5078,7 +5079,7 @@
         <div class="rules-container">
             <div class="rules-header">
                 <div class="rules-title" id="rulesTitle">
-                    <i class="fab fa-youtube rules-youtube-icon"></i>
+                    <i class="fas fa-scroll rules-youtube-icon"></i>
                     <span>CETCETY Topluluk Kuralları</span>
                 </div>
                 <button class="rules-close-btn" type="button" onclick="closeRulesModal()" aria-label="Kapat">
@@ -5437,7 +5438,7 @@
                             </label>
                             <label>
                                 <span>Açıklama</span>
-                                <input type="text" id="bannerAdDescInput" placeholder="Kısa açıklama" maxlength="120">
+                                <input type="text" id="bannerAdDescInput" placeholder="Açıklama (20-160 karakter)" maxlength="160">
                             </label>
                             <label>
                                 <span>Hedef Link</span>
@@ -5879,7 +5880,7 @@
     <div id="login-screen">
         <div class="login-container">
             <div class="login-title">
-                <i class="fas fa-play logo-icon"></i>
+                <i class="fas fa-comments logo-icon"></i>
                 CETCETY
             </div>
             <input 
@@ -5905,7 +5906,7 @@
             <div id="password-info" style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px; display: block; text-align: center;">
                 <i class="fas fa-info-circle"></i> Kayıtlı değilseniz şifre girmeden giriş yapabilirsiniz.<br>
                 <button type="button" class="login-rules-trigger" onclick="openRulesModal()">
-                    <i class="fab fa-youtube"></i> Topluluk ve sistem kurallarını oku
+                    <i class="fas fa-book"></i> Topluluk ve sistem kurallarını oku
                 </button>
             </div>
             <button class="login-button" onclick="login()" id="login-btn">
@@ -6085,6 +6086,7 @@
         <div class="modal-body">
             <input type="text" id="reg-username" class="modal-input" placeholder="Kullanıcı Adı">
             <input type="password" id="reg-password" class="modal-input" placeholder="Şifre">
+            <input type="email" id="reg-email" class="modal-input" placeholder="E-posta (şifre kurtarma için zorunlu)" autocomplete="off">
             <select id="reg-role" class="modal-select">
                 <option value="user">Kullanıcı</option>
                 <option value="verified">+ Onaylı Kullanıcı</option>
@@ -7099,10 +7101,7 @@
                 removeFromRoleList('verified', username)
             ]).then(() => addToRoleList('admin', username))
             .then(async () => {
-                await registeredUsersRef.child(username).set({
-                    password: 'admin123', role: 'admin',
-                    registeredBy: currentUser.name, registeredAt: Date.now(), isRegistered: true
-                }, { merge: true });
+                await window.setRegisteredRole(username, 'admin');
                 addSystemMessage(`✅ ${username} admin yapıldı!`);
                 document.getElementById('cmd-add-admin').value = '';
             });
@@ -7791,20 +7790,27 @@
                 const userRegistered = await isRegisteredUserSecure(rawNick);
                 if (userRegistered && userRegistered.isRegistered) {
                     if (!password) {
-                        showLoginError('❌ Kayıtlı kullanıcılar için şifre girişi zorunludur!');
+                        nickInput.value = userRegistered.originalName;
+                        showLoginError('🔒 "' + userRegistered.originalName + '" kayıtlı bir kullanıcıdır; şifre gerekli.\nBu nick size ait değilse başka bir nick seçin.\n' + await nickSuggestionText(userRegistered.originalName));
                         loginBtn.disabled = false;
                         loginBtn.innerHTML = 'Giriş Yap';
                         return;
                     }
                     const passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
                     if (!passwordValid) {
-                        showLoginError('❌ Hatalı şifre!');
+                        nickInput.value = userRegistered.originalName;
+                        showLoginError('❌ Hatalı şifre! "' + userRegistered.originalName + '" kayıtlı bir nicktir.\nŞifrenizi unuttuysanız "Şifremi unuttum" bağlantısını kullanın.\n' + await nickSuggestionText(userRegistered.originalName));
                         loginBtn.disabled = false;
                         loginBtn.innerHTML = 'Giriş Yap';
                         return;
                     }
                     await completeLogin(userRegistered.originalName, userRegistered.role, true, userRegistered);
                 } else {
+                    const _clash = await guestNickClash(rawNick);
+                    if (_clash) {
+                        showLoginError('⚠️ "' + _clash + '" nicki şu an kullanımda.\n' + await nickSuggestionText(rawNick));
+                        return;
+                    }
                     await completeLogin(rawNick, 'user', false, null);
                 }
                 
@@ -8322,7 +8328,9 @@
             const username = document.getElementById('reg-username').value.trim();
             const password = document.getElementById('reg-password').value.trim();
             const role = document.getElementById('reg-role').value;
+            const email = ((document.getElementById('reg-email') || {}).value || '').trim().toLowerCase();
             if (!username || !password) { addSystemMessage("❌ Kullanıcı adı ve şifre gerekli!"); return; }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { addSystemMessage("❌ Geçerli bir e-posta adresi gerekli (şifre kurtarma için)!"); return; }
             if (!checkWriteLimit()) { addSystemMessage('⚠️ Günlük işlem limitine ulaşıldı!'); return; }
             if (role === 'admin' && !isOwner) { addSystemMessage("⛔ Sadece Owner admin atayabilir!"); return; }
             if (normalizeNick(username) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
@@ -8336,7 +8344,7 @@
             }
             try {
                 await registeredUsersRef.child(username).set({
-                    password: password, role: role,
+                    password: password, role: role, email: email,
                     registeredBy: currentUser.name, registeredAt: Date.now(),
                     isRegistered: true
                 });
@@ -8683,6 +8691,7 @@
             const target = String(username || currentUser.name).trim();
             try {
                 await channelsRef.child(ch).child('allowedUsers').child(target).set(true);
+                if (ch === 'help' && !(cachedChannels[ch] && cachedChannels[ch].isLocked)) await channelsRef.child(ch).update({ isLocked: true, lockInit: true });
                 await database.ref('channelMoves/' + _moveKey(target)).set({ action: 'join', channel: ch, by: currentUser.name, ts: Date.now() });
                 incrementWriteCount();
                 addSystemMessage(`✅ ${target} kullanıcısı #${ch} kanalına alındı.`);
@@ -8829,10 +8838,7 @@
                 removeFromRoleList('verified', username)
             ]).then(() => addToRoleList('admin', username))
             .then(async () => {
-                await registeredUsersRef.child(username).set({
-                    password: 'admin123', role: 'admin',
-                    registeredBy: currentUser.name, registeredAt: Date.now(), isRegistered: true
-                }, { merge: true });
+                await window.setRegisteredRole(username, 'admin');
                 addSystemMessage(`✅ ${username} admin yapıldı!`);
                 await sendToAdminChannel(`⬟ **ADMIN ATAMA**: **${username}** kullanıcısı Admin yapıldı.\nYetkili: ${currentUser.name} (Owner)`);
             }).catch(err => {
@@ -9488,6 +9494,7 @@
             }
             
             if (['konu','topic','konusil','sabitle','pin','sabitkaldir','unpin'].includes(command)) { if (window.ChInfo && await window.ChInfo.handle(command, args)) return; }
+            if (['sifresifirla','sifretalepleri','email','eposta'].includes(command)) { if (window.V5Cmd && await window.V5Cmd.handle(command, args)) return; }
             if (command === 'join') {
                 if (args.length >= 1) {
                     const channelName = args[0].replace('#', '');
@@ -9520,10 +9527,7 @@
                         removeFromRoleList('verified', targetName)
                     ]).then(() => addToRoleList('admin', targetName))
                     .then(async () => {
-                        await registeredUsersRef.child(targetName).set({
-                            password: 'admin123', role: 'admin',
-                            registeredBy: currentUser.name, registeredAt: Date.now(), isRegistered: true
-                        }, { merge: true });
+                        await window.setRegisteredRole(targetName, 'admin');
                         addSystemMessage(`✅ ${targetName} admin yapıldı!`);
                         await sendToAdminChannel(`⬟ **ADMIN ATAMA**: **${targetName}** kullanıcısı Admin yapıldı.\nYetkili: ${currentUser.name} (Owner)`);
                     });
@@ -9717,10 +9721,7 @@
                         if (!hasRole('admin') && !isOwner) { addSystemMessage('⛔ Sadece adminler co-admin ekleyebilir!'); return; }
                         if (args.length === 1) {
                             await addToRoleList('coadmin', args[0]);
-                            await registeredUsersRef.child(args[0]).set({
-                                password: 'coadmin123', role: 'coadmin',
-                                registeredBy: currentUser.name, registeredAt: Date.now(), isRegistered: true
-                            }, { merge: true });
+                            await window.setRegisteredRole(args[0], 'coadmin');
                             addSystemMessage(`✅ ${args[0]} co-admin yapıldı!`);
                         } else addSystemMessage('Kullanım: /coadmin [kullanıcı]');
                         break;
@@ -9735,10 +9736,7 @@
                         if (!hasRole('admin') && !isOwner) { addSystemMessage('⛔ Sadece adminler half-operatör ekleyebilir!'); return; }
                         if (args.length === 1) {
                             await addToRoleList('halfoperator', args[0]);
-                            await registeredUsersRef.child(args[0]).set({
-                                password: 'halfop123', role: 'halfoperator',
-                                registeredBy: currentUser.name, registeredAt: Date.now(), isRegistered: true
-                            }, { merge: true });
+                            await window.setRegisteredRole(args[0], 'halfoperator');
                             addSystemMessage(`✅ ${args[0]} half-operatör yapıldı!`);
                         } else addSystemMessage('Kullanım: /halfop [kullanıcı]');
                         break;
@@ -9753,10 +9751,7 @@
                         if (!hasRole('admin') && !isOwner) { addSystemMessage('⛔ Sadece adminler global operatör ekleyebilir!'); return; }
                         if (args.length === 1) {
                             await addToRoleList('operator', args[0]);
-                            await registeredUsersRef.child(args[0]).set({
-                                password: 'operator123', role: 'operator',
-                                registeredBy: currentUser.name, registeredAt: Date.now(), isRegistered: true
-                            }, { merge: true });
+                            await window.setRegisteredRole(args[0], 'operator');
                             addSystemMessage(`✅ ${args[0]} global operatör yapıldı!`);
                         } else addSystemMessage('Kullanım: /opglobal [kullanıcı]');
                         break;
@@ -9846,7 +9841,7 @@
             const is = r => isOwner || hasRole(r);
             const L = (title, items) => `<strong>${title}</strong><br>` + items.map(i => '• ' + i).join('<br>') + '<br><br>';
             let h = '📖 <strong>KOMUT YARDIMI</strong> <span style="opacity:.6">(yetkine göre)</span><br><br>';
-            h += L('👤 Herkes', ['/help, /yardım — bu liste', '/kullanıcılar — çevrimiçi kullanıcılar', '/kurallar — topluluk kuralları', '/ping — bağlantı testi', '/çıkış — oturumu kapat', '#ai kanalı veya özelden <b>AI</b> — soru sor (çeviri, işlem, bilgi)']);
+            h += L('👤 Herkes', ['/help, /yardım — bu liste', '/kullanıcılar — çevrimiçi kullanıcılar', '/kurallar — topluluk kuralları', '/ping — bağlantı testi', '/çıkış — oturumu kapat', '/email adres — kayıtlı hesabına e-posta ekle', '#ai kanalı veya özelden <b>AI</b> — soru sor (çeviri, işlem, bilgi)']);
             if (is('verified')) h += L('+ Onaylı', ['/verifiedpanel (/vpanel)']);
             if (is('halfoperator')) h += L('% Half-Operatör', ['/halfoperatorpanel (/hopanel)', '/sessizeal — kanalı sessize al/aç']);
             if (is('operator')) h += L('@ Operatör', ['/operatorpanel (/opanel)']);
@@ -9855,7 +9850,7 @@
             if (isOwner || canModerateChannel(currentChannel)) h += L('🛡️ Kanal moderasyonu', ['/mute kullanıcı [dk]', '/unmute kullanıcı', '/kick kullanıcı [dk] [sebep] (/süreliban)', '/unban kullanıcı', '/banlist', '/sil — mesaj sil', '/temizle — kanalı temizle']);
             if (is('coadmin')) h += L('& Co-Admin', ['/coadminpanel (/cap)', '/info kullanıcı mesaj — özel bildirim']);
             if (isOwner || hasRoleInChannel('coadmin', currentChannel)) h += L('📌 Kanal yetkileri (bu kanal)', ['/kanalop, /kanalopcikar kullanıcı', '/kanalhalfop, /kanalhalfopcikar kullanıcı', '/kanalverified, /kanalverifiedcikar kullanıcı']);
-            if (is('admin')) h += L('⬟ Admin', ['/adminpanel (/ap)', '/globalban, /removeglobalban kullanıcı', '/sikayetler (/reports)', '/reg kullanıcı [şifre]', '/verified (/onayla), /unverified (/onaykaldir) kullanıcı', '/coadmin, /removecoadmin kullanıcı', '/halfop, /removehalfop kullanıcı', '/opglobal, /deopglobal kullanıcı', '/join #kanal [nick] — kullanıcıyı kanala al', '/unjoin #kanal [nick] — kanaldan çıkar, önceki kanalına döndür', '#admin_channel_global — sistem/Proxy/ban/şikayet kayıtları']);
+            if (is('admin')) h += L('⬟ Admin', ['/adminpanel (/ap)', '/globalban, /removeglobalban kullanıcı', '/sikayetler (/reports)', '/reg — kullanıcı kaydet (ad, şifre, e-posta)', '/sifresifirla kullanıcı — geçici şifre üret', '/sifretalepleri — bekleyen şifre talepleri', '/verified (/onayla), /unverified (/onaykaldir) kullanıcı', '/coadmin, /removecoadmin kullanıcı', '/halfop, /removehalfop kullanıcı', '/opglobal, /deopglobal kullanıcı', '/join #kanal [nick] — kullanıcıyı kanala al', '/unjoin #kanal [nick] — kanaldan çıkar, önceki kanalına döndür', '#admin_channel_global — sistem/Proxy/ban/şikayet kayıtları']);
             if (isOwner) h += L('♛ Owner', ['/ownerpanel (/op)', '/admin, /removeadmin kullanıcı', '/özelokuma, /özelara, /özeltemizle', '/komut — özel komut oluştur']);
             try {
                 const mine = Object.entries(customCommands || {}).filter(([, d]) => d && (d.role === 'all' || is(d.role)));
@@ -10108,6 +10103,8 @@
                 alert('❌ Hedef link "http://" veya "https://" ile başlamalıdır!');
                 return;
             }
+            if (title.length < 5 || title.length > 50) { alert('❌ Başlık 5-50 karakter arasında olmalı (şu an ' + title.length + ').'); return; }
+            if (description.length < 20 || description.length > 160) { alert('❌ Açıklama 20-160 karakter arasında olmalı (şu an ' + description.length + '). Ne çok kısa ne çok uzun olsun.'); return; }
             
             const adData = {
                 image: image || 'https://via.placeholder.com/60x60/333333/ffffff?text=AD',
@@ -13879,32 +13876,73 @@
         const clean = t => String(t).replace(/[<>]/g, '').trim().slice(0, 900);
         const key = n => normalizeNick(n).replace(/[.#$\[\]\/]/g, '_');
 
-        /* ---------- AI "beyni" ---------- */
-        const LANGS = { ingilizce:'en', ingilizcesi:'en', almanca:'de', almancası:'de', fransızca:'fr', fransızcası:'fr',
-            ispanyolca:'es', ispanyolcası:'es', italyanca:'it', italyancası:'it', rusça:'ru', rusçası:'ru',
-            arapça:'ar', arapçası:'ar', türkçe:'tr', türkçesi:'tr' };
-        const LNAME = { en:'İngilizce', de:'Almanca', fr:'Fransızca', es:'İspanyolca', it:'İtalyanca', ru:'Rusça', ar:'Arapça', tr:'Türkçe' };
-        const STOP = new Set(['nedir','kimdir','nerede','nelerdir','hakkında','bilgi','ver','verir','misin','anlat','açıkla','açıklar','mısın','nasıl','çalışır','ne','işe','yarar','demek','bana','lütfen','nedir?']);
+        /* ---------- AI "beyni" v2: devrik cümle + arama motoru + kaynak linki ---------- */
+        const LANG = { ingilizce:'en', ingilizcesi:'en', ingilizceye:'en', ingilizcede:'en', almanca:'de', almancası:'de', almancaya:'de',
+            fransızca:'fr', fransızcası:'fr', fransızcaya:'fr', ispanyolca:'es', ispanyolcası:'es', ispanyolcaya:'es',
+            italyanca:'it', italyancası:'it', italyancaya:'it', rusça:'ru', rusçası:'ru', rusçaya:'ru', arapça:'ar', arapçası:'ar', arapçaya:'ar',
+            japonca:'ja', japoncası:'ja', çince:'zh-CN', çincesi:'zh-CN', korece:'ko', korecesi:'ko', portekizce:'pt', portekizcesi:'pt',
+            türkçe:'tr', türkçesi:'tr', türkçeye:'tr', türkçede:'tr' };
+        const LNAME = { en:'İngilizce', de:'Almanca', fr:'Fransızca', es:'İspanyolca', it:'İtalyanca', ru:'Rusça', ar:'Arapça',
+            ja:'Japonca', 'zh-CN':'Çince', ko:'Korece', pt:'Portekizce', tr:'Türkçe' };
+        const FILL = new Set(('nedir ne neydi nelerdir nasıl nerede nereden neden niçin niye kaç hangi kimdir kim anlat anlatır anlatsana mısın misin musun mısınız ' +
+            'açıkla açıklar açıklasana bilgi bilgisi ver verir verebilir söyle söyler söylesene hakkında ilgili ile bana bize lütfen acaba demek anlamı anlamına ' +
+            'yani bir bu şu o sence bilir biliyor bul bulur ara araştır tanımı tanımla tanım çevir çevirir çeviri çevirisi tercüme kelimesi kelimesinin sözcüğü ' +
+            'sözcüğünün cümlesi cümlesinin olarak karşılığı karşılık yazılır yazılışı söylenir denir okunur okunuşu ya mı mi mu mü midir mıdır soru sorum var ' +
+            'what is the of in how do you say mean means meaning').split(' '));
+        const tok = q => String(q).toLocaleLowerCase('tr').replace(/[?!.,;:"“”()\[\]]/g, ' ').split(/\s+/).filter(Boolean);
+        const safeUrl = u => String(u).replace(/"/g, '%22').replace(/</g, '%3C').replace(/>/g, '%3E').replace(/'/g, '%27').replace(/\s/g, '%20');
+        const ans = (text, links) => clean(text) + (links || []).map(l => '<br>🔗 <a href="' + safeUrl(l.url) + '" target="_blank" rel="noopener noreferrer">' + clean(l.label) + '</a>').join('');
+        const stripSuffix = w => (w.length > 5 ? w.replace(/(lar|ler|nın|nin|nun|nün|dan|den|tan|ten|da|de|ta|te|ın|in|un|ün|ı|i|u|ü|yı|yi|yu|yü)$/, '') : w);
 
         function parseTranslate(q) {
-            const s = q.toLowerCase().replace(/[?!.]+$/, '').trim();
-            let m = s.match(/^(.+?)\s+(?:kelimesinin\s+|sözcüğünün\s+|cümlesinin\s+)?(ingilizcesi|ingilizce|almancası|almanca|fransızcası|fransızca|ispanyolcası|ispanyolca|italyancası|italyanca|rusçası|rusça|arapçası|arapça|türkçesi|türkçe)(?:\s+(?:nedir|ne|nasıl|ne demek|nasıl yazılır|nasıl denir|nasıl söylenir))?$/);
-            if (m) { const to = LANGS[m[2]]; return { text: m[1], to, from: to === 'tr' ? 'en' : 'tr' }; }
-            m = s.match(/^(.+?)\s+(?:türkçe\s+)?ne demek$/);
-            if (m && !/[çğıöşü]/.test(m[1])) return { text: m[1], from: 'en', to: 'tr' };
-            return null;
+            const s = String(q).toLocaleLowerCase('tr');
+            const toks = tok(q); let to = null; const rest = [];
+            for (const t of toks) {
+                const b = t.replace(/['’]/g, '');
+                const base = !to && Object.keys(LANG).find(k => !k.endsWith('si') && !k.endsWith('sı') && b.startsWith(k) && b.length - k.length <= 6);
+                if (!to && (LANG[b] || base)) { to = LANG[b] || LANG[base]; continue; }
+                if (FILL.has(b)) continue;
+                rest.push(t);
+            }
+            if (!to) {
+                if (/\bne demek\b/.test(s) && rest.length && !/[çğıöşü]/.test(rest.join(' '))) return { text: rest.join(' '), from: 'en', to: 'tr' };
+                return null;
+            }
+            if (!rest.length) return null;
+            return { text: rest.join(' '), to, from: to === 'tr' ? 'auto' : 'tr' };
         }
-        async function translate(p) {
-            const r = await fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(p.text) + '&langpair=' + p.from + '|' + p.to);
+        async function gtx(text, sl, tl) {
+            const r = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=' + sl + '&tl=' + tl + '&dt=t&q=' + encodeURIComponent(text));
             const j = await r.json();
-            const t = j && j.responseData && j.responseData.translatedText;
-            if (!t || /QUERY LENGTH|MYMEMORY|INVALID/i.test(t)) return null;
-            return '🔤 "' + p.text + '" → ' + LNAME[p.to] + ': ' + t.toLowerCase();
+            return ((j && j[0]) || []).map(x => x[0]).join('').trim();
+        }
+        async function mymem(text, sl, tl) {
+            const r = await fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + (sl === 'auto' ? 'en' : sl) + '|' + tl);
+            const j = await r.json(); const t = j && j.responseData && j.responseData.translatedText;
+            return (!t || /QUERY LENGTH|MYMEMORY|INVALID/i.test(t)) ? '' : t.trim();
+        }
+        async function translateText(text, sl, tl) {
+            try { const t = await gtx(text, sl, tl); if (t) return t; } catch (_) {}
+            try { return await mymem(text, sl, tl); } catch (_) {}
+            return '';
+        }
+        async function doTranslate(p) {
+            const w = p.text; let out = '', used = w;
+            const single = !/\s/.test(w);
+            if (single && p.to !== 'tr' && w.length >= 5 && /(nin|nın|nun|nün|in|ın|un|ün)$/.test(w)) {
+                const st = w.replace(/(nin|nın|nun|nün|in|ın|un|ün)$/, '');
+                const t = await translateText(st, p.from, p.to);
+                if (t && t.toLocaleLowerCase('tr') !== st) { out = t; used = st; }
+            }
+            if (!out) out = await translateText(w, p.from, p.to);
+            if (!out) return null;
+            return ans('🔤 "' + used + '" → ' + LNAME[p.to] + ': ' + out.toLocaleLowerCase('tr'),
+                [{ label: 'Kaynak: Google Çeviri', url: 'https://translate.google.com/?sl=' + p.from + '&tl=' + p.to + '&text=' + encodeURIComponent(used) + '&op=translate' }]);
         }
         function tryMath(q) {
-            let e = q.toLowerCase().replace(/^(hesapla|sonuç)\s*:?\s*/, '').replace(/\s*(kaç\s*eder|kaçtır|=|\?)+\s*$/, '')
-                .replace(/,/g, '.').replace(/[x×]/g, '*').replace(/÷/g, '/').replace(/\^/g, '**')
-                .replace(/(?:karekök|√)\s*\(?\s*([\d.]+)\s*\)?/g, 'Math.sqrt($1)');
+            let e = String(q).toLowerCase().replace(/^(hesapla|sonuç)\s*:?\s*/, '').replace(/\s*(kaç\s*eder|kaçtır|=|\?)+\s*$/, '')
+                .replace(/,/g, '.').replace(/(?<![\p{L}])artı(?![\p{L}])/gu, '+').replace(/(?<![\p{L}])eksi(?![\p{L}])/gu, '-').replace(/(?<![\p{L}])çarpı(?![\p{L}])/gu, '*').replace(/(?<![\p{L}])bölü(?![\p{L}])/gu, '/')
+                .replace(/[x×]/g, '*').replace(/÷/g, '/').replace(/\^/g, '**').replace(/(?:karekök|√)\s*\(?\s*([\d.]+)\s*\)?/g, 'Math.sqrt($1)');
             const chk = e.replace(/Math\.sqrt/g, '');
             if (!/^[\d+\-*/().\s%]+$/.test(chk) || !/\d/.test(chk) || !/[+\-*/%]|sqrt/.test(e)) return null;
             try {
@@ -13913,17 +13951,40 @@
             } catch (_) {}
             return null;
         }
-        async function wiki(q) {
-            const t = q.replace(/[?!.]+$/, '').split(/\s+/).filter(w => !STOP.has(w.toLowerCase())).join(' ').trim();
-            if (!t) return null;
-            const r = await fetch('https://tr.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrlimit=1&prop=extracts&exintro=1&explaintext=1&exsentences=3&gsrsearch=' + encodeURIComponent(t));
-            const j = await r.json();
-            const pages = j && j.query && j.query.pages;
-            const p = pages && Object.values(pages)[0];
-            if (!p || !p.extract) return null;
-            return '📚 ' + p.title + ': ' + p.extract.trim().slice(0, 600) + ' (Kaynak: Vikipedi)';
+        async function wikiSearch(lang, q) {
+            const u = 'https://' + lang + '.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrlimit=3&gsrsearch=' + encodeURIComponent(q) +
+                '&prop=extracts|info&exintro=1&explaintext=1&exchars=700&inprop=url';
+            const j = await (await fetch(u)).json();
+            const pages = Object.values((j.query || {}).pages || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
+            return pages.find(p => p.extract && p.extract.length > 40 && !/anlam ayrımı|may refer to|disambiguation/i.test(p.extract.slice(0, 200))) || null;
         }
-        const INTRO = cfg.ICON + ' Merhaba! Ben AI. Şunları yapabilirim: çeviri ("kalem ingilizcesi nedir"), işlem ("12*8+5"), bilgi/arama ("fotosentez nedir", "Atatürk kimdir"). Bana özelden de yazabilirsin.';
+        function brief(t, n) {
+            t = String(t).replace(/\s+/g, ' ').trim();
+            if (t.length <= n) return t;
+            const cut = t.slice(0, n), i = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '));
+            return (i > n * 0.5 ? cut.slice(0, i + 1) : cut.replace(/\s+\S*$/, '') + '…');
+        }
+        async function doSearch(q) {
+            const toks = tok(q); let words = toks.filter(t => !FILL.has(t.replace(/['’]/g, '')));
+            if (!words.length) words = toks;
+            const topic = words.join(' ');
+            let p = null;
+            try { p = await wikiSearch('tr', topic); } catch (_) {}
+            if (!p && words.length) { try { const alt = words.map(stripSuffix).join(' '); if (alt !== topic) p = await wikiSearch('tr', alt); } catch (_) {} }
+            if (p) return ans('📚 ' + p.title + ': ' + brief(p.extract, 430), [{ label: 'Kaynak: Vikipedi — ' + p.title, url: p.fullurl || ('https://tr.wikipedia.org/wiki/' + encodeURIComponent(p.title)) }]);
+            try {
+                const en = await translateText(topic, 'tr', 'en');
+                if (en) {
+                    const e = await wikiSearch('en', en);
+                    if (e) {
+                        const tr = await translateText(brief(e.extract, 420), 'en', 'tr');
+                        return ans('📚 ' + e.title + ': ' + (tr || brief(e.extract, 420)), [{ label: 'Kaynak: Wikipedia (EN) — ' + e.title, url: e.fullurl || ('https://en.wikipedia.org/wiki/' + encodeURIComponent(e.title)) }]);
+                    }
+                }
+            } catch (_) {}
+            return null;
+        }
+        const INTRO = cfg.ICON + ' Merhaba! Ben AI — bilgi ve arama botuyum. Soruyu nasıl yazarsan yaz anlarım: çeviri ("kalem ingilizcesi nedir", "ingilizce elma"), işlem ("12*8+5", "karekök 144"), bilgi/arama ("fotosentez nedir", "nedir fotosentez", "Atatürk kimdir"). Cevaplara kaynak linki eklerim. Bana özelden de yazabilirsin.';
         async function think(q) {
             q = String(q).trim().slice(0, cfg.MAX_Q);
             if (cfg.ENDPOINT) {
@@ -13933,12 +13994,14 @@
                     if (r.ok) { const j = await r.json(); if (j && j.reply) return clean(j.reply); }
                 } catch (_) {}
             }
-            const m = tryMath(q); if (m !== null) return '🧮 Sonuç: ' + m;
-            if (/^(yardım|help|merhaba|selam|nasılsın|hi)\b/i.test(q)) return INTRO;
-            try { const p = parseTranslate(q); if (p) { const t = await translate(p); if (t) return t; } } catch (_) {}
-            try { const w = await wiki(q); if (w) return clean(w); } catch (_) {}
-            return '🤔 Bunu bulamadım. Soruyu daha kısa/net yazar mısın? Örn: "kalem ingilizcesi nedir", "üçgen nedir", "45*12".' +
-                   (cfg.ENDPOINT ? '' : ' (Ödev çözümü gibi ileri sorular için yapay zekâ servisi bağlanmalı.)');
+            const m = tryMath(q); if (m !== null) return '🧮 Sonuç: ' + clean(m);
+            if (/^(yardım|help|merhaba|selam|nasılsın|hi|hey)\b/i.test(q)) return INTRO;
+            try { const p = parseTranslate(q); if (p) { const t = await doTranslate(p); if (t) return t; } } catch (_) {}
+            try { const s = await doSearch(q); if (s) return s; } catch (_) {}
+            const g = encodeURIComponent(q);
+            return ans('🤔 Tam cevabı bulamadım; şu kaynaklara bakabilirsin:', [
+                { label: 'Google\'da ara', url: 'https://www.google.com/search?q=' + g },
+                { label: 'Vikipedi\'de ara', url: 'https://tr.wikipedia.org/w/index.php?search=' + g }]);
         }
 
         let busyUntil = 0;
@@ -13950,7 +14013,7 @@
                 const nick = currentUser.name;
                 const a = await think(text);
                 await database.ref('channelMessages/' + AI_CH).push({
-                    sender: cfg.NAME, text: '@' + nick + ' ' + a, type: 'supervisor', isBotMessage: true,
+                    sender: cfg.NAME, text: '@' + clean(nick) + ' ' + a, type: 'supervisor', isBotMessage: true,
                     timestamp: Date.now(), time: hhmm(), avatar: null, channel: AI_CH });
             },
             async askPrivate(text) {
@@ -13974,7 +14037,7 @@
                 if (!cachedChannels[m.channel] || !canAccessHiddenChannel(m.channel)) return;
                 if (activeChannelName !== m.channel) { returnTo[m.channel] = activeChannelName || 'genel'; saveReturn(); }
                 await switchChannel(m.channel);
-                addSystemMessage('📥 ' + m.by + ' sizi #' + m.channel + ' kanalına aldı.');
+                addSystemMessage('📥 <strong>' + m.by + '</strong> tarafından #' + m.channel + ' kanalına alındınız.' + (m.channel === 'help' ? '<br>🆘 Şikayetiniz veya sorunuz nedir? Sistem Adminlerimiz size yardımcı olacaktır.<br>Lütfen bekleyiniz; sıra size geldiğinde <strong>+</strong> yetkisi verilecek ve sorunuzu yazabileceksiniz.' : ''));
             } else if (m.action === 'unjoin') {
                 if (activeChannelName === m.channel) {
                     let dest = returnTo[m.channel];
@@ -13986,6 +14049,11 @@
             }
         }
 
+        async function ensureHelpLocked() {
+            for (let i = 0; i < 20 && !(cachedChannels && cachedChannels.help); i++) await sleep(300);
+            const h = cachedChannels && cachedChannels.help;
+            if (h && h.lockInit !== true) { try { await channelsRef.child('help').update({ isLocked: true, lockInit: true }); } catch (_) {} }
+        }
         /* ---------- giriş sonrası kurulum ---------- */
         let boundFor = null, firstMove = true;
         async function welcome(ch, text) {
@@ -14015,6 +14083,7 @@
                 botPresence(); setInterval(botPresence, 30000);
                 if (isOwner || hasRole('admin')) {
                     welcome(ADMIN_CH, '📢 Sistem mesajları (ban, şikayet, kanal olayları, Proxy raporları, saldırı uyarıları) bu kanalda toplanır. Yalnızca Owner ve Admin görür.');
+                    ensureHelpLocked();
                 }
                 if (isOwner) welcome(AI_CH, cfg.ICON + ' #ai kanalına hoş geldiniz! Çeviri, işlem ve bilgi sorularınızı yazın; bana özelden de ulaşabilirsiniz.');
             } catch (_) {}
@@ -14173,5 +14242,434 @@
     })();
     </script>
     <script src="oyun_bot.js"></script>
+    <!-- ============================================================
+         v5 — Arama, Kanal Yönetim Paneli, kayıt/nick koruması, şifre kurtarma,
+              reklam "Daha fazla bilgi", mobil tam sayfa sohbet, görsel boyutu
+         ============================================================ -->
+    <style>
+        #login-error { white-space: pre-line; }
+        /* --- Logo (YouTube'a benzemeyen) --- */
+        .logo-icon { color: #8b6cff !important; filter: drop-shadow(0 2px 8px rgba(139,108,255,.45)) !important; font-size: 28px !important; }
+        /* --- Görsel boyutları (özel + genel sohbet) --- */
+        .message-image { display: block; max-width: min(240px, 100%); max-height: 200px; width: auto; height: auto; object-fit: cover; border-radius: 10px; margin-top: 6px; cursor: zoom-in; }
+        .private-messages .message-image { max-width: min(200px, 70%); max-height: 160px; }
+        .message-video { max-width: min(260px, 100%); max-height: 200px; border-radius: 10px; }
+        /* --- Mobil: sohbeti tam sayfa yap (dokun / sürükle) --- */
+        @media (max-width: 768px) {
+            .drag-handle { display: block !important; flex: 0 0 auto; width: 100%; height: 26px; margin: 0; padding: 0; border: 0; background: transparent; position: relative; touch-action: none; cursor: grab; -webkit-tap-highlight-color: transparent; opacity: 1; }
+            .drag-handle::after { content: ''; position: absolute; left: 50%; top: 10px; width: 46px; height: 5px; margin-left: -23px; border-radius: 3px; background: var(--text-muted); opacity: .75; }
+            .chat-container.chat-expanded, .chat-container.chat-dragging { position: fixed; left: 0; right: 0; width: 100%; z-index: 1500; border-top: 0; background: var(--bg-primary, #0f0f0f); }
+            .chat-container.chat-expanded { top: var(--hdr-h); height: calc(var(--app-h) - var(--hdr-h)); }
+            .chat-container.chat-dragging { top: max(var(--hdr-h), var(--chat-drag-top, 0px)); height: calc(var(--app-h) - max(var(--hdr-h), var(--chat-drag-top, 0px))); transition: none; }
+        }
+        /* --- Üst arama --- */
+        #hdrSearch { flex: 1 1 auto; min-width: 0; max-width: 520px; margin: 0 16px; position: relative; }
+        .hs-bar { display: flex; align-items: center; height: 38px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 20px; overflow: hidden; }
+        .hs-bar:focus-within { border-color: var(--border-strong); }
+        #hsMode { background: transparent; border: 0; border-right: 1px solid var(--border-color); color: var(--text-primary); font: inherit; font-size: 13px; padding: 0 6px 0 12px; height: 100%; outline: none; cursor: pointer; }
+        #hsMode option { background: #181818; }
+        #hsInput { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--text-primary); font: inherit; font-size: 14px; padding: 0 12px; height: 100%; }
+        #hsGo { width: 44px; height: 100%; border: 0; background: rgba(255,255,255,.06); color: var(--text-secondary); cursor: pointer; }
+        #hsResults { position: absolute; left: 0; right: 0; top: 44px; max-height: min(60vh, 420px); overflow: auto; background: var(--bg-secondary); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.6); z-index: 3500; padding: 6px; }
+        .hs-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+        .hs-row:hover { background: var(--bg-tertiary); }
+        .hs-row > i { width: 18px; text-align: center; color: var(--text-muted); }
+        .hs-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .hs-sub { color: var(--text-muted); font-size: 11.5px; flex: 0 1 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .hs-dot { width: 8px; height: 8px; border-radius: 50%; background: #00c853; flex: 0 0 8px; }
+        .hs-dot.off { background: #555; }
+        .hs-empty { padding: 14px; text-align: center; color: var(--text-muted); font-size: 13px; }
+        #hsToggle { display: none; }
+        @media (max-width: 768px) {
+            #hsToggle { display: flex; }
+            #hdrSearch { display: none; position: fixed; left: 0; right: 0; top: var(--hdr-h); margin: 0; max-width: none; padding: 8px 10px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); z-index: 3400; }
+            #hdrSearch.open { display: block; }
+            #hsResults { position: static; margin-top: 8px; max-height: calc(var(--app-h) - var(--hdr-h) - 84px); }
+            #hsInput { font-size: 16px; }
+        }
+        /* --- Kanal Yönetim Paneli --- */
+        #channelAdminPanel { width: min(840px, calc(100vw - 40px)); }
+        .chp { display: flex; min-height: 0; flex: 1; overflow: hidden; height: min(560px, calc(85vh - 64px)); }
+        .chp-list { width: 230px; flex: 0 0 230px; border-right: 1px solid var(--border-color); overflow: auto; padding: 8px; }
+        .chp-detail { flex: 1; min-width: 0; overflow: auto; padding: 14px 16px; }
+        .chp-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; margin-bottom: 4px; border-radius: 10px; border: 1px solid transparent; background: var(--bg-tertiary); color: var(--text-primary); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+        .chp-item.sel { border-color: #8b6cff; background: rgba(139,108,255,.12); }
+        .chp-item .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .chp-sec { margin-bottom: 18px; }
+        .chp-sec h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; }
+        .chp textarea { width: 100%; min-height: 72px; resize: vertical; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-primary); font: inherit; font-size: 14px; padding: 10px; box-sizing: border-box; }
+        .chp-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+        .chp-btn { padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; }
+        .chp-btn.primary { background: #8b6cff; border-color: #8b6cff; color: #fff; }
+        .chp-btn.danger { border-color: #ff4444; color: #ff6666; }
+        .chp-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .chp-meta { color: var(--text-muted); font-size: 12px; margin: 2px 0 14px; }
+        .chp-count { font-size: 11px; color: var(--text-muted); text-align: right; }
+        @media (max-width: 768px) {
+            #channelAdminPanel { top: var(--hdr-h); left: 0; right: 0; width: 100%; max-width: 100%; max-height: none; height: calc(var(--app-h) - var(--hdr-h)); border-radius: 0; }
+            .chp { flex-direction: column; height: auto; flex: 1; }
+            .chp-list { width: auto; flex: 0 0 auto; max-height: 32%; border-right: 0; border-bottom: 1px solid var(--border-color); }
+        }
+        #channelManageToggle { display: none !important; }
+        /* --- Reklam: Daha fazla bilgi --- */
+        .banner-ad-more { display: block; margin: 2px 0 0 auto; padding: 2px 6px; background: none; border: 0; color: #3ea6ff; font: inherit; font-size: 11.5px; cursor: pointer; }
+        #adInfoModal { position: fixed; inset: 0; z-index: 4200; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.7); padding: 16px; }
+        #adInfoModal .card { width: min(440px, 100%); max-height: 86%; overflow: auto; background: var(--bg-secondary); border: 1px solid var(--border-strong); border-radius: 16px; padding: 18px; }
+        #adInfoModal img { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; float: left; margin: 0 12px 6px 0; }
+        #adInfoModal h3 { margin: 0 0 8px; font-size: 17px; color: var(--text-primary); }
+        #adInfoModal p { margin: 10px 0; clear: both; color: var(--text-secondary); font-size: 14px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+        #adInfoModal .row { display: flex; gap: 8px; margin-top: 12px; }
+        /* --- Şifremi unuttum --- */
+        .forgot-link { display: block; margin: 12px auto 0; background: none; border: 0; color: #3ea6ff; font: inherit; font-size: 13px; cursor: pointer; }
+        #forgotModal { position: fixed; inset: 0; z-index: 6000; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.75); padding: 16px; }
+        #forgotModal .card { width: min(380px, 100%); background: #181818; border: 1px solid #333; border-radius: 16px; padding: 20px; color: #fff; }
+        #forgotModal input { width: 100%; box-sizing: border-box; margin: 6px 0; padding: 11px 12px; border-radius: 10px; border: 1px solid #333; background: #0f0f0f; color: #fff; font: inherit; font-size: 16px; }
+        #forgotModal .msg { font-size: 13px; color: #aaa; margin: 8px 0; min-height: 18px; }
+    </style>
+    <script>
+    (function () {
+        'use strict';
+        const $ = id => document.getElementById(id);
+        const nk = n => normalizeNick(n);
+        const trl = s => String(s == null ? '' : s).toLocaleLowerCase('tr');
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        const isReg = () => !!(isOwner || (currentUser && (currentUser.isRegistered || SECURE_CONFIG.DEFAULT_ADMINS.some(a => normalizeNick(a) === normalizeNick(currentUser.name)))));
+        const OWNER = () => SECURE_CONFIG.OWNER_CONFIG.username;
+        const dbKey = n => nk(n).replace(/[.#$\[\]\/]/g, '_');
+        const logAdmin = t => { try { return sendToAdminChannel(t); } catch (_) {} };
+        const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+        /* ================= 7-8) Kayıtlı kullanıcı kuralları ================= */
+        function needReg(what) {
+            if (isReg()) return false;
+            addSystemMessage('🔒 ' + what + ' yalnızca kayıtlı kullanıcılar içindir. Kayıt için bir yöneticiyle iletişime geçin.');
+            return true;
+        }
+        [['toggleFollowUser', 'Takip etme'], ['followUser', 'Takip etme'], ['subscribeToChannel', 'Abone olma'],
+         ['toggleChannelSubscription', 'Abone olma'], ['createChannel', 'Kanal açma'], ['createChannelPrompt', 'Kanal açma']
+        ].forEach(([fn, label]) => {
+            const f = window[fn]; if (typeof f !== 'function') return;
+            window[fn] = function () { if (needReg(label)) return; return f.apply(this, arguments); };
+        });
+
+        const _addRole = window.addToRoleList;
+        window.addToRoleList = async function (role, username) {
+            const rec = await isRegisteredUserSecure(username);
+            if (!rec && nk(username) !== nk(OWNER())) {
+                addSystemMessage('⛔ ' + username + ' kayıtlı değil. Kayıtsız kullanıcılara kalıcı yetki verilemez; yalnızca süreli geçici + verilebilir (Half-Operatör panelinden).');
+                throw new Error('NOT_REGISTERED');
+            }
+            return _addRole.call(this, role, rec ? rec.originalName : username);
+        };
+        const _addChRole = window.addChannelRole;
+        window.addChannelRole = async function (ch, role, username) {
+            const rec = await isRegisteredUserSecure(username);
+            if (!rec) { addSystemMessage('⛔ ' + username + ' kayıtlı değil. Kayıtsız kullanıcılara yalnızca süreli geçici + verilebilir.'); return; }
+            return _addChRole.call(this, ch, role, rec.originalName);
+        };
+        window.setRegisteredRole = async function (name, role) {
+            const rec = await isRegisteredUserSecure(name);
+            if (rec) await registeredUsersRef.child(rec.originalName).update({ role: role });
+        };
+
+        /* ================= 9) Nick koruması ================= */
+        window.nickSuggestionText = async function (base) {
+            base = String(base).replace(/[^\p{L}\p{N}_]/gu, '').slice(0, 14) || 'Misafir';
+            const taken = new Set();
+            try { Object.keys((await registeredUsersRef.once('value')).val() || {}).forEach(n => taken.add(nk(n))); } catch (_) {}
+            try { Object.keys((await usersRef.once('value')).val() || {}).forEach(n => taken.add(nk(n))); } catch (_) {}
+            const r2 = () => String(10 + Math.floor(Math.random() * 90));
+            const cand = [base + '1', base + '_', base + r2(), base + r2(), base + '07', 'Mr' + base, base + 'x', base + '_' + r2()];
+            const free = [...new Set(cand)].filter(c => c.length <= 20 && !taken.has(nk(c))).slice(0, 3);
+            return free.length ? '💡 Önerilen nickler: ' + free.join(', ') : '';
+        };
+        window.guestNickClash = async function (raw) {
+            try {
+                const all = (await usersRef.once('value')).val() || {};
+                for (const [k, u] of Object.entries(all)) {
+                    if (k !== raw && nk(k) === nk(raw) && u && u.isOnline && Date.now() - (u.lastSeen || 0) < ONLINE_THRESHOLD) return k;
+                }
+            } catch (_) {}
+            return null;
+        };
+        function wireLoginNick() {
+            const input = $('login-nick'); if (!input || input.dataset.v5) return; input.dataset.v5 = '1';
+            let hint = document.createElement('div'); hint.style.cssText = 'font-size:12px;color:#8b6cff;margin-top:4px;min-height:14px';
+            input.parentNode.insertBefore(hint, input.nextSibling);
+            let tmr = null;
+            const check = async () => {
+                const v = input.value.trim(); hint.textContent = '';
+                if (v.length < 2) return;
+                const rec = await isRegisteredUserSecure(v);
+                if (rec) { if (input.value.trim() !== rec.originalName) input.value = rec.originalName; hint.textContent = '🔒 Kayıtlı nick — şifrenizi girin'; }
+            };
+            input.addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(check, 500); });
+            input.addEventListener('blur', check);
+            // Şifremi unuttum
+            const btn = $('login-btn');
+            if (btn && !$('forgotBtn')) {
+                const f = document.createElement('button'); f.type = 'button'; f.id = 'forgotBtn'; f.className = 'forgot-link'; f.textContent = 'Şifremi unuttum';
+                f.onclick = openForgot; btn.parentNode.insertBefore(f, btn.nextSibling);
+            }
+        }
+
+        /* ================= 10-11) E-posta + şifre kurtarma / sıfırlama ================= */
+        function openForgot() {
+            if ($('forgotModal')) return;
+            const m = document.createElement('div'); m.id = 'forgotModal';
+            m.innerHTML = '<div class="card"><h3 style="margin:0 0 6px">🔑 Şifre kurtarma</h3><div style="font-size:13px;color:#aaa">Kayıt sırasında verilen kullanıcı adı ve e-posta adresini girin. Bilgiler eşleşirse talebiniz yöneticilere iletilir.</div>' +
+                '<input id="fgNick" placeholder="Kullanıcı adı" autocomplete="off"><input id="fgMail" type="email" placeholder="E-posta" autocomplete="off"><div class="msg" id="fgMsg"></div>' +
+                '<div style="display:flex;gap:8px"><button type="button" id="fgSend" class="chp-btn primary" style="flex:1">Talep gönder</button><button type="button" id="fgCancel" class="chp-btn">Vazgeç</button></div></div>';
+            document.body.appendChild(m);
+            $('fgCancel').onclick = () => m.remove();
+            $('fgSend').onclick = async () => {
+                const nick = $('fgNick').value.trim(), mail = trl($('fgMail').value.trim()), msg = $('fgMsg');
+                if (!nick || !EMAIL_RE.test(mail)) { msg.textContent = '❌ Kullanıcı adı ve geçerli e-posta girin.'; return; }
+                msg.textContent = 'Kontrol ediliyor…';
+                try {
+                    const rec = await isRegisteredUserSecure(nick);
+                    if (rec && rec.email && trl(rec.email) === mail && nk(rec.originalName) !== nk(OWNER())) {
+                        const ref = database.ref('passwordResets/' + dbKey(rec.originalName));
+                        const old = (await ref.once('value')).val();
+                        if (!old || Date.now() - (old.ts || 0) > 10 * 60 * 1000) {
+                            await ref.set({ nick: rec.originalName, email: rec.email, ts: Date.now(), status: 'pending' });
+                            await database.ref('channelMessages/admin_channel_global').push({ sender: 'Sistem', text: '🔑 ŞİFRE KURTARMA TALEBİ: ' + rec.originalName + ' (' + rec.email + ') • /sifresifirla ' + rec.originalName,
+                                type: 'supervisor', isBotMessage: true, timestamp: Date.now(), time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), avatar: null, channel: 'admin_channel_global' });
+                        }
+                    }
+                    msg.textContent = '✅ Bilgiler doğruysa talebiniz yöneticilere iletildi. Yeni geçici şifre size bir yönetici tarafından bildirilecektir.';
+                } catch (e) { msg.textContent = '❌ Talep gönderilemedi.'; }
+            };
+        }
+        function tempPassword() {
+            const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789', b = new Uint32Array(10);
+            crypto.getRandomValues(b); return Array.from(b, x => a[x % a.length]).join('');
+        }
+        window.V5Cmd = {
+            async handle(cmd, args) {
+                const adm = isOwner || hasRole('admin');
+                if (cmd === 'email' || cmd === 'eposta') {
+                    if (!currentUser || !currentUser.isRegistered) { addSystemMessage('🔒 E-posta yalnızca kayıtlı hesaplara eklenir.'); return true; }
+                    const mail = trl(args[0] || '');
+                    if (!EMAIL_RE.test(mail)) { addSystemMessage('Kullanım: /email adres@ornek.com (şifre kurtarma için)'); return true; }
+                    await registeredUsersRef.child(currentUser.name).update({ email: mail }); incrementWriteCount();
+                    addSystemMessage('✅ E-posta kaydedildi: ' + mail); return true;
+                }
+                if (cmd === 'sifretalepleri') {
+                    if (!adm) { addSystemMessage('⛔ Yetkiniz yok!'); return true; }
+                    const v = (await database.ref('passwordResets').once('value')).val() || {};
+                    const list = Object.values(v).filter(x => x && x.status === 'pending').sort((a, b) => a.ts - b.ts);
+                    addSystemMessage(list.length ? '🔑 <strong>Bekleyen şifre talepleri:</strong><br>' + list.map(x => '• ' + escapeHtml(x.nick) + ' — ' + escapeHtml(x.email) + ' (' + new Date(x.ts).toLocaleString('tr-TR') + ')').join('<br>') + '<br>Sıfırlamak için: /sifresifirla kullanıcı' : 'Bekleyen şifre talebi yok.');
+                    return true;
+                }
+                if (cmd === 'sifresifirla') {
+                    if (!adm) { addSystemMessage('⛔ Bu komut yalnızca Owner ve Admin içindir!'); return true; }
+                    if (!args[0]) { addSystemMessage('Kullanım: /sifresifirla kullanıcı'); return true; }
+                    if (nk(args[0]) === nk(OWNER())) { addSystemMessage('⛔ Owner şifresi sıfırlanamaz.'); return true; }
+                    const rec = await isRegisteredUserSecure(args[0]);
+                    if (!rec) { addSystemMessage('❌ ' + args[0] + ' kayıtlı değil.'); return true; }
+                    const targetIsAdmin = rec.role === 'admin' || adminList.some(x => nk(x) === nk(rec.originalName)) || SECURE_CONFIG.DEFAULT_ADMINS.some(x => nk(x) === nk(rec.originalName));
+                    if (targetIsAdmin && !isOwner) { addSystemMessage('⛔ Admin şifresini yalnızca Owner sıfırlayabilir.'); return true; }
+                    const tmp = tempPassword();
+                    await registeredUsersRef.child(rec.originalName).update({ password: tmp, passwordResetAt: Date.now(), passwordResetBy: currentUser.name });
+                    try { await database.ref('passwordResets/' + dbKey(rec.originalName)).remove(); } catch (_) {}
+                    incrementWriteCount();
+                    addSystemMessage('🔑 <strong>' + escapeHtml(rec.originalName) + '</strong> için geçici şifre: <strong>' + tmp + '</strong><br>Kullanıcıya güvenli şekilde iletin ve girişten sonra Profil → şifre değiştir demesini isteyin. Bu şifre bir daha gösterilmez.');
+                    logAdmin('🔑 ŞİFRE SIFIRLANDI: ' + rec.originalName + ' • Yetkili: ' + currentUser.name);
+                    return true;
+                }
+                return false;
+            }
+        };
+
+        /* ================= 12) Reklam: Daha fazla bilgi ================= */
+        window.openAdInfo = function () {
+            try {
+                const ad = cachedBannerAds[currentBannerAdIndex]; if (!ad) return;
+                $('adInfoModal') && $('adInfoModal').remove();
+                const m = document.createElement('div'); m.id = 'adInfoModal';
+                const card = document.createElement('div'); card.className = 'card';
+                const img = document.createElement('img'); img.alt = ''; img.src = ad.image || '';
+                const h = document.createElement('h3'); h.textContent = ad.title || '';
+                const p = document.createElement('p'); p.textContent = ad.description || '';
+                const u = document.createElement('div'); u.style.cssText = 'font-size:12px;color:var(--text-muted);word-break:break-all'; u.textContent = ad.displayUrl || ad.url || '';
+                const row = document.createElement('div'); row.className = 'row';
+                const go = document.createElement('a'); go.className = 'chp-btn primary'; go.style.cssText = 'text-decoration:none;flex:1;text-align:center'; go.textContent = 'Siteye git'; go.target = '_blank'; go.rel = 'noopener noreferrer';
+                if (/^https?:\/\//i.test(ad.url || '')) go.href = ad.url;
+                const cl = document.createElement('button'); cl.type = 'button'; cl.className = 'chp-btn'; cl.textContent = 'Kapat'; cl.onclick = () => m.remove();
+                row.append(go, cl); card.append(img, h, p, u, row); m.appendChild(card);
+                m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+                document.body.appendChild(m);
+            } catch (_) {}
+        };
+
+        /* ================= 13) Üst arama: Kanal / Nick ================= */
+        function buildSearch() {
+            const hdr = document.querySelector('.youtube-header'), right = hdr && hdr.querySelector('.header-right');
+            if (!hdr || !right || $('hdrSearch')) return;
+            const box = document.createElement('div'); box.id = 'hdrSearch';
+            box.innerHTML = '<div class="hs-bar"><select id="hsMode" aria-label="Arama türü"><option value="channel">Kanal</option><option value="nick">Nick</option></select>' +
+                '<input id="hsInput" type="search" autocomplete="off" placeholder="Kanal ara…" maxlength="40"><button id="hsGo" type="button" aria-label="Ara"><i class="fas fa-search"></i></button></div><div id="hsResults" hidden></div>';
+            hdr.insertBefore(box, right);
+            const tg = document.createElement('button'); tg.id = 'hsToggle'; tg.type = 'button'; tg.className = 'icon-btn'; tg.title = 'Ara'; tg.innerHTML = '<i class="fas fa-search"></i>';
+            right.insertBefore(tg, right.firstChild);
+            const mode = $('hsMode'), inp = $('hsInput'), res = $('hsResults');
+            const close = () => { res.hidden = true; box.classList.remove('open'); };
+            const row = (icon, name, sub, dot, fn) => {
+                const b = document.createElement('button'); b.type = 'button'; b.className = 'hs-row';
+                b.innerHTML = '<i class="fas ' + icon + '"></i>' + (dot === undefined ? '' : '<span class="hs-dot' + (dot ? '' : ' off') + '"></span>') + '<span class="hs-name"></span><span class="hs-sub"></span>';
+                b.querySelector('.hs-name').textContent = name; b.querySelector('.hs-sub').textContent = sub || '';
+                b.onclick = () => { fn(); close(); inp.value = ''; }; return b;
+            };
+            function run() {
+                const q = trl(inp.value.trim()), m = mode.value; res.innerHTML = '';
+                let rows = [];
+                if (m === 'channel') {
+                    rows = Object.entries(cachedChannels || {}).filter(([n]) => canAccessHiddenChannel(n))
+                        .filter(([n, c]) => !q || trl(n + ' ' + (c.label || '') + ' ' + (c.description || '')).includes(q))
+                        .sort((a, b) => (a[1].order || 0) - (b[1].order || 0)).slice(0, 12)
+                        .map(([n, c]) => row('fa-hashtag', c.label || n, c.description || ('#' + n), undefined, () => switchChannel(n)));
+                } else {
+                    if (!q) { res.innerHTML = '<div class="hs-empty">Aramak istediğiniz nicki yazın</div>'; res.hidden = false; return; }
+                    const map = new Map(), now = Date.now();
+                    const add = (n, p) => { const k = nk(n); if (!k || (k === nk(OWNER()) && !isOwner)) return; map.set(k, Object.assign(map.get(k) || { name: n }, p)); };
+                    Object.keys(cachedRegisteredUsers || {}).forEach(n => add(n, { reg: true, name: n }));
+                    Object.entries(cachedOnlineUsers || {}).forEach(([n, u]) => add(n, { online: !!(u && u.isOnline !== false && now - (u.lastSeen || 0) < ONLINE_THRESHOLD) }));
+                    Object.keys(userProfiles || {}).forEach(n => add(n, {}));
+                    rows = [...map.values()].filter(u => trl(u.name).includes(q))
+                        .sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0) || trl(a.name).localeCompare(trl(b.name), 'tr')).slice(0, 15)
+                        .map(u => { let bd = ''; try { bd = (ROLES[getUserRoleInChannel(u.name, activeChannelName)] || {}).badge || ''; } catch (_) {}
+                            return row('fa-user', (bd ? bd + ' ' : '') + u.name, (u.reg ? 'kayıtlı' : 'misafir') + (u.online ? ' • çevrimiçi' : ''), !!u.online,
+                                () => { if (currentUser && nk(u.name) === nk(currentUser.name)) addSystemMessage('Bu sizsiniz 🙂'); else openPrivateChat(u.name); }); });
+                }
+                if (!rows.length) res.innerHTML = '<div class="hs-empty">Sonuç bulunamadı</div>'; else rows.forEach(r => res.appendChild(r));
+                res.hidden = false;
+            }
+            let t = null;
+            inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(run, 150); });
+            inp.addEventListener('focus', run);
+            inp.addEventListener('keydown', e => { if (e.key === 'Enter') { const f = res.querySelector('.hs-row'); if (f) f.click(); } if (e.key === 'Escape') close(); });
+            $('hsGo').onclick = run;
+            mode.addEventListener('change', () => { inp.placeholder = mode.value === 'channel' ? 'Kanal ara…' : 'Nick ara…'; inp.value = ''; run(); inp.focus(); });
+            tg.onclick = e => { e.stopPropagation(); box.classList.toggle('open'); if (box.classList.contains('open')) { inp.focus(); run(); } else close(); };
+            document.addEventListener('click', e => { if (!box.contains(e.target) && e.target !== tg && !tg.contains(e.target)) { res.hidden = true; if (window.innerWidth <= 768) box.classList.remove('open'); } });
+        }
+
+        /* ================= 3-6) Kanal Yönetim Paneli ================= */
+        let sel = null, pinCache = null;
+        const SYS_CH = ['genel', 'help', 'admin_channel_global', 'ai'];
+        const canPin = n => { try { return !!(window.canPinInChannel && window.canPinInChannel(n)); } catch (_) { return false; } };
+        const canMan = n => { try { return !!currentUser && canManageChannel(n); } catch (_) { return false; } };
+        function myChannels() {
+            return Object.entries(cachedChannels || {}).filter(([n]) => canAccessHiddenChannel(n) && (canMan(n) || canPin(n)))
+                .sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+        }
+        function buildPanel() {
+            if ($('channelAdminPanel')) return;
+            const p = document.createElement('div'); p.className = 'role-panel'; p.id = 'channelAdminPanel';
+            p.innerHTML = '<div class="role-panel-header"><div class="header-left"><div class="role-icon" style="color:#8b6cff;border-color:#8b6cff;background:rgba(139,108,255,.12)"><i class="fas fa-sliders-h"></i></div>' +
+                '<span class="role-title" style="color:#8b6cff">Kanal Yönetimi</span></div><button class="icon-btn" style="width:30px;height:30px;" id="chpClose"><i class="fas fa-times"></i></button></div>' +
+                '<div class="chp"><div class="chp-list" id="chpList"></div><div class="chp-detail" id="chpDetail"></div></div>';
+            document.body.appendChild(p);
+            $('chpClose').onclick = toggle;
+            p.addEventListener('click', onAct);
+        }
+        window.toggleChannelAdminPanel = toggle;
+        function toggle() {
+            buildPanel(); const p = $('channelAdminPanel');
+            if (p.classList.contains('active')) { p.classList.remove('active'); return; }
+            closeOtherPanels('channelAdminPanel'); p.classList.add('active');
+            if (!sel || !cachedChannels[sel]) { const l = myChannels(); sel = (l.find(([n]) => n === activeChannelName) || l[0] || [])[0] || null; }
+            loadPin().then(render);
+        }
+        window.toggleChannelManageArea = toggle;
+        const _cop = window.closeOtherPanels;
+        window.closeOtherPanels = function (id) { _cop.apply(this, arguments); if (id !== 'channelAdminPanel') { const p = $('channelAdminPanel'); if (p) p.classList.remove('active'); } };
+        async function loadPin() { pinCache = null; if (!sel) return; try { pinCache = (await database.ref('channelPins/' + sel).once('value')).val(); } catch (_) {} }
+        function render() {
+            const p = $('channelAdminPanel'); if (!p) return;
+            const list = $('chpList'), det = $('chpDetail'), chs = myChannels();
+            list.innerHTML = '';
+            if (isOwner || hasRole('admin')) { const b = document.createElement('button'); b.className = 'chp-btn primary'; b.style.cssText = 'width:100%;margin-bottom:8px'; b.dataset.act = 'new'; b.innerHTML = '<i class="fas fa-plus"></i> Yeni kanal'; list.appendChild(b); }
+            chs.forEach(([n, c]) => {
+                const b = document.createElement('button'); b.className = 'chp-item' + (n === sel ? ' sel' : ''); b.dataset.act = 'pick'; b.dataset.ch = n;
+                b.innerHTML = '<i class="fas fa-hashtag"></i><span class="n"></span>' + (c.isHidden ? '<i class="fas fa-eye-slash" style="color:#ffaa33"></i>' : '') + (c.isLocked ? '<i class="fas fa-volume-mute" style="color:#ff4444"></i>' : '');
+                b.querySelector('.n').textContent = c.label || n; list.appendChild(b);
+            });
+            if (!sel || !cachedChannels[sel]) { det.innerHTML = '<div class="chp-meta">Yönetebileceğiniz kanal yok.</div>'; return; }
+            const c = cachedChannels[sel], man = canMan(sel), pin = canPin(sel);
+            const mayTransfer = isOwner || nk(c.owner) === nk(currentUser && currentUser.name);
+            const subs = Object.keys((cachedChannelSubscribers || {})[sel] || {}).length;
+            det.innerHTML = '';
+            const h = document.createElement('div');
+            h.innerHTML = '<h3 style="margin:0;color:var(--text-primary)"></h3><div class="chp-meta"></div>';
+            h.querySelector('h3').textContent = '#' + sel + (c.label && c.label !== sel ? ' — ' + c.label : '');
+            h.querySelector('.chp-meta').textContent = 'Sahibi: ' + (c.owner || OWNER()) + ' • ' + subs + ' abone';
+            det.appendChild(h);
+            const sec = (title, html) => { const d = document.createElement('div'); d.className = 'chp-sec'; d.innerHTML = '<h4>' + title + '</h4>' + html; det.appendChild(d); return d; };
+            const d1 = sec('📝 Kanal açıklaması', '<textarea id="chpDesc" maxlength="200" placeholder="Kanalın ne için olduğunu yazın…"' + (man ? '' : ' disabled') + '></textarea><div class="chp-count" id="chpDescN"></div>' +
+                '<div class="chp-btns"><button class="chp-btn primary" data-act="saveDesc"' + (man ? '' : ' disabled') + '>Kaydet</button><button class="chp-btn danger" data-act="delDesc"' + (man ? '' : ' disabled') + '>Sil</button></div>');
+            const ta = d1.querySelector('#chpDesc'); ta.value = c.description || '';
+            const cnt = () => { d1.querySelector('#chpDescN').textContent = ta.value.length + '/200'; }; cnt(); ta.addEventListener('input', cnt);
+            const d2 = sec('📌 Sabit mesaj', '<textarea id="chpPin" maxlength="400" placeholder="Kanalın en üstünde görünecek mesaj…"' + (pin ? '' : ' disabled') + '></textarea>' +
+                '<div class="chp-btns"><button class="chp-btn primary" data-act="savePin"' + (pin ? '' : ' disabled') + '>Sabitle</button><button class="chp-btn danger" data-act="delPin"' + (pin ? '' : ' disabled') + '>Kaldır</button></div>');
+            d2.querySelector('#chpPin').value = (pinCache && pinCache.text) || '';
+            if (man) sec('⚙️ Kanal ayarları', '<div class="chp-btns" style="margin-top:0">' +
+                '<button class="chp-btn" data-act="hide">' + (c.isHidden ? '👁 Görünür yap' : '🙈 Gizle') + '</button>' +
+                '<button class="chp-btn" data-act="lock">' + (c.isLocked ? '🔊 Sessizi aç' : '🔇 Sessize al') + '</button>' +
+                (mayTransfer ? '<button class="chp-btn" data-act="transfer">🔁 Sahipliği devret</button>' : '') +
+                (SYS_CH.includes(sel) ? '' : '<button class="chp-btn danger" data-act="delete">🗑 Kanalı sil</button>') + '</div>');
+            sec('', '<div class="chp-btns" style="margin-top:0"><button class="chp-btn" data-act="go">#' + sel + ' kanalına git</button></div>');
+        }
+        async function onAct(e) {
+            const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+            const act = b.dataset.act; const again = async () => { await sleep(700); await loadPin(); render(); };
+            try {
+                if (act === 'pick') { sel = b.dataset.ch; await loadPin(); render(); return; }
+                if (act === 'new') { createChannelPrompt(); await sleep(1500); render(); return; }
+                if (!sel) return;
+                if (act === 'go') { switchChannel(sel); toggle(); return; }
+                if (act === 'saveDesc') {
+                    if (!canMan(sel)) return; const t = $('chpDesc').value.replace(/[<>]/g, '').trim().slice(0, 200);
+                    await channelsRef.child(sel).update(t ? { description: t, descriptionBy: currentUser.name } : { description: null, descriptionBy: null });
+                    incrementWriteCount(); addSystemMessage(t ? '✅ Kanal açıklaması kaydedildi.' : '🗑️ Kanal açıklaması silindi.'); logAdmin('📝 KANAL AÇIKLAMASI: #' + sel + ' • Yetkili: ' + currentUser.name); await again(); return;
+                }
+                if (act === 'delDesc') { if (!canMan(sel)) return; await channelsRef.child(sel).update({ description: null, descriptionBy: null }); incrementWriteCount(); addSystemMessage('🗑️ Kanal açıklaması silindi.'); logAdmin('🗑️ KANAL AÇIKLAMASI SİLİNDİ: #' + sel + ' • Yetkili: ' + currentUser.name); await again(); return; }
+                if (act === 'savePin') {
+                    if (!canPin(sel)) return; const t = $('chpPin').value.replace(/[<>]/g, '').trim().slice(0, 400);
+                    if (!t) { addSystemMessage('❌ Sabitlenecek metin boş!'); return; }
+                    await database.ref('channelPins/' + sel).set({ text: t, sender: currentUser.name, by: currentUser.name, ts: Date.now() }); incrementWriteCount();
+                    addSystemMessage('📌 Mesaj sabitlendi.'); logAdmin('📌 SABİT MESAJ: #' + sel + ' • Yetkili: ' + currentUser.name); await again(); return;
+                }
+                if (act === 'delPin') { if (!canPin(sel)) return; await database.ref('channelPins/' + sel).remove(); incrementWriteCount(); addSystemMessage('📌 Sabit mesaj kaldırıldı.'); logAdmin('📌 SABİT KALDIRILDI: #' + sel + ' • Yetkili: ' + currentUser.name); await again(); return; }
+                if (act === 'hide') { await toggleChannelHidden(sel); await again(); return; }
+                if (act === 'lock') { await toggleChannelLocked(sel); await again(); return; }
+                if (act === 'transfer') { await transferChannelPrompt(sel); await again(); return; }
+                if (act === 'delete') { await deleteChannel(sel); sel = null; await sleep(700); const l = myChannels(); sel = l[0] ? l[0][0] : null; await loadPin(); render(); return; }
+            } catch (err) { addSystemMessage('❌ İşlem başarısız: ' + (err && err.message)); }
+        }
+        function buildIcons() {
+            const panel = document.querySelector('.icon-panel');
+            if (panel && !$('channelPanelIcon')) {
+                const b = document.createElement('button'); b.className = 'role-icon-btn'; b.id = 'channelPanelIcon'; b.type = 'button'; b.title = 'Kanal Yönetimi';
+                b.style.cssText = 'display:none;color:#8b6cff;border-color:#8b6cff;background:rgba(139,108,255,.12)'; b.innerHTML = '<i class="fas fa-sliders-h"></i>'; b.onclick = toggle; panel.appendChild(b);
+            }
+            const ref = document.querySelector('.mobile-menu-item[onclick="closeChatPanelFromMenu()"]');
+            if (ref && !$('mobileChannelPanelIcon')) {
+                const d = document.createElement('div'); d.className = 'mobile-menu-item'; d.id = 'mobileChannelPanelIcon'; d.style.display = 'none';
+                d.innerHTML = '<div class="menu-icon" style="color:#8b6cff;border-color:#8b6cff;background:rgba(139,108,255,.12)"><i class="fas fa-sliders-h"></i></div><div class="menu-text">Kanal Yönetimi</div>';
+                d.onclick = () => { const m = $('mobileMenu'); if (m) m.classList.remove('active'); toggle(); }; ref.parentNode.insertBefore(d, ref);
+            }
+        }
+        setInterval(() => {
+            try {
+                buildSearch(); buildIcons(); wireLoginNick();
+                const show = !!currentUser && (isOwner || hasRole('admin') || Object.keys(cachedChannels || {}).some(n => canMan(n) || canPin(n)));
+                const a = $('channelPanelIcon'), m = $('mobileChannelPanelIcon');
+                if (a) a.style.display = show ? '' : 'none'; if (m) m.style.display = show ? '' : 'none';
+            } catch (_) {}
+        }, 1000);
+    })();
+    </script>
 </body>
 </html>
