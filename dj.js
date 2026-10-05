@@ -1,9 +1,9 @@
 // ============================================================
-// DJ BOT 🎧 — v3.0 (API Anahtarsız)
+// DJ BOT 🎧 — v3.1 (API Anahtarsız — Temiz Sürüm)
 // Kanal: radyo | Sahip: mateky
 // ============================================================
 // Özellikler:
-//   • API anahtarı GEREKMEZ
+//   • API anahtarı GEREKMEZ (YouTube scraping + CORS proxy)
 //   • !cal [şarkı adı] — YouTube'da arar, playlist'e ekler
 //   • !cal [link/ID] — Direkt ekler
 //   • !atla / !kuyruk / !durdur / !devam
@@ -12,34 +12,36 @@
 (function () {
     'use strict';
 
-    if (window.__DJ_BOT_LOADED__) return;
-    window.__DJ_BOT_LOADED__ = true;
+    // ============================================================
+    // TEK YÜKLEME KİLİDİ
+    // ============================================================
+    if (window.__DJ_BOT_LOADED_V3__) {
+        console.warn('🎧 DJ Bot zaten yüklü, atlanıyor.');
+        return;
+    }
+    window.__DJ_BOT_LOADED_V3__ = true;
 
-    // ------------------------------------------------------------
+    // ============================================================
     // AYARLAR
-    // ------------------------------------------------------------
+    // ============================================================
     const CHANNEL = 'radyo';
     const BOT_NAME = 'DJ';
     const BOT_ICON = '🎧';
 
-    // Kota koruması
     const BOT_MSG_DEDUPE_MS = 5000;
-    const SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 saat
-    const SEARCH_COOLDOWN_MS = 3000;              // 3 sn arayla max 1 arama
-    const MAX_SEARCH_PER_DAY = 300;               // Scraping kotası yok ama IP ban yememek için
+    const SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
+    const SEARCH_COOLDOWN_MS = 3000;
+    const MAX_SEARCH_PER_DAY = 300;
 
-    // YouTube arama proxy'leri (biri çalışmazsa diğeri denenir)
-    // Not: CORS nedeniyle tarayıcıda doğrudan youtube.com'a fetch edilemez,
-    // bu yüzden açık kaynak CORS proxy'leri kullanılır.
     const CORS_PROXIES = [
         'https://api.allorigins.win/raw?url=',
         'https://corsproxy.io/?',
         'https://api.codetabs.com/v1/proxy?quest='
     ];
 
-    // ------------------------------------------------------------
+    // ============================================================
     // DURUM
-    // ------------------------------------------------------------
+    // ============================================================
     let _initialized = false;
     let _listenerBound = false;
     let _listenerRef = null;
@@ -47,14 +49,14 @@
     const _seenMsgKeys = new Set();
     let _lastBotMsg = { text: '', time: 0 };
 
-    const _searchCache = {};      // { query: { videoId, title, ts } }
+    const _searchCache = {};
     let _lastSearchTime = 0;
     let _dailySearchCount = 0;
     let _dailySearchDate = new Date().toISOString().slice(0, 10);
 
-    // ------------------------------------------------------------
+    // ============================================================
     // YARDIMCILAR
-    // ------------------------------------------------------------
+    // ============================================================
     function getDB() { return window.database || null; }
     function timeNow() {
         return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
@@ -71,28 +73,28 @@
         return _dailySearchCount < MAX_SEARCH_PER_DAY;
     }
 
-    // ------------------------------------------------------------
-    // VIDEO ID ÇIKAR (link veya direkt ID)
-    // ------------------------------------------------------------
+    // ============================================================
+    // VIDEO ID ÇIKAR
+    // ============================================================
     function extractVideoId(text) {
         if (!text) return null;
-        if (/^[a-zA-Z0-9_-]{11}$/.test(text.trim())) return text.trim();
-        let m = text.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+        const s = text.trim();
+        if (/^[a-zA-Z0-9_-]{11}$/.test(s)) return s;
+        let m = s.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
         if (m) return m[1];
-        m = text.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+        m = s.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
         if (m) return m[1];
-        m = text.match(/embed\/([a-zA-Z0-9_-]{11})/);
+        m = s.match(/embed\/([a-zA-Z0-9_-]{11})/);
         if (m) return m[1];
-        m = text.match(/shorts\/([a-zA-Z0-9_-]{11})/);
+        m = s.match(/shorts\/([a-zA-Z0-9_-]{11})/);
         if (m) return m[1];
         return null;
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // YOUTUBE ARAMA — API ANAHTARSIZ (Scraping + CORS Proxy)
-    // ------------------------------------------------------------
+    // ============================================================
     async function searchYouTube(query) {
-        // 1) Cache kontrolü
         const cacheKey = query.toLowerCase().trim();
         const cached = _searchCache[cacheKey];
         if (cached && (Date.now() - cached.ts) < SEARCH_CACHE_TTL) {
@@ -100,23 +102,19 @@
             return { id: cached.videoId, title: cached.title, fromCache: true };
         }
 
-        // 2) Cooldown
         const now = Date.now();
         if (now - _lastSearchTime < SEARCH_COOLDOWN_MS) {
             await sleep(SEARCH_COOLDOWN_MS - (now - _lastSearchTime));
         }
         _lastSearchTime = Date.now();
 
-        // 3) Kota kontrolü
         if (!checkSearchQuota()) {
             console.warn('🎧 Günlük arama limiti doldu.');
             return { quotaExceeded: true };
         }
 
-        // 4) YouTube arama sayfası
         const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D`;
 
-        // 5) CORS proxy'leri sırayla dene
         for (const proxy of CORS_PROXIES) {
             try {
                 const url = proxy + encodeURIComponent(ytUrl);
@@ -124,60 +122,39 @@
                 if (!res.ok) continue;
                 const html = await res.text();
 
-                // Video ID'lerini çıkar (birden fazla regex dene)
                 const ids = extractVideoIdsFromHTML(html);
                 if (ids.length === 0) continue;
 
-                // İlk geçerli videoyu al
                 const videoId = ids[0];
-                // Başlığı da çıkarmayı dene
                 const title = extractTitleFromHTML(html, videoId) || query;
 
                 _dailySearchCount++;
-
-                // Cache'e kaydet
-                _searchCache[cacheKey] = {
-                    videoId: videoId,
-                    title: title,
-                    ts: Date.now()
-                };
+                _searchCache[cacheKey] = { videoId, title, ts: Date.now() };
 
                 console.log(`🎧 Bulundu: ${title} (${videoId})`);
-                return { id: videoId, title: title };
-
+                return { id: videoId, title };
             } catch (e) {
                 console.warn('🎧 Proxy hatası:', proxy, e.message);
                 continue;
             }
         }
-
         return null;
     }
 
-    // HTML'den video ID'lerini ayıkla
     function extractVideoIdsFromHTML(html) {
         const ids = new Set();
-
-        // Yöntem 1: videoId alanı
-        const re1 = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
         let m;
+        const re1 = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
         while ((m = re1.exec(html)) !== null) ids.add(m[1]);
-
-        // Yöntem 2: watch?v= linkleri
         const re2 = /\/watch\?v=([a-zA-Z0-9_-]{11})/g;
         while ((m = re2.exec(html)) !== null) ids.add(m[1]);
-
-        // Yöntem 3: youtu.be linkleri
         const re3 = /youtu\.be\/([a-zA-Z0-9_-]{11})/g;
         while ((m = re3.exec(html)) !== null) ids.add(m[1]);
-
         return Array.from(ids);
     }
 
-    // HTML'den başlık ayıkla
     function extractTitleFromHTML(html, videoId) {
         try {
-            // videoId'nin yanındaki title alanını bul
             const re = new RegExp(`"videoId":"${videoId}"[^}]*?"title":\\{"runs":\\[\\{"text":"([^"]+)"`, 's');
             const m = html.match(re);
             if (m) return decodeHTMLEntities(m[1]);
@@ -189,20 +166,18 @@
 
     function decodeHTMLEntities(s) {
         if (!s) return '';
-        return s.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
-            String.fromCharCode(parseInt(hex, 16))
-        ).replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+        return s.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+            .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // PLAYLIST'E EKLE
-    // ------------------------------------------------------------
+    // ============================================================
     async function addToRadioPlaylist(videoId, title, requester) {
         const db = getDB();
         if (!db) return { error: true };
 
         try {
-            // Aynı video zaten playlist'te mi?
             const snap = await db.ref('channelPlaylists/' + CHANNEL).once('value');
             const data = snap.val() || {};
             const exists = Object.values(data).some(item => item.id === videoId);
@@ -222,9 +197,9 @@
         }
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // BOT MESAJ
-    // ------------------------------------------------------------
+    // ============================================================
     async function botSend(text) {
         const db = getDB();
         if (!db) return null;
@@ -255,9 +230,9 @@
         }
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // KOMUTLAR
-    // ------------------------------------------------------------
+    // ============================================================
     async function handleCommand(cmd, args, user) {
         switch (cmd) {
             case '!cal': {
@@ -365,9 +340,9 @@
         }
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // DİNLEYİCİ (Filtreli)
-    // ------------------------------------------------------------
+    // ============================================================
     function attachListener() {
         const db = getDB();
         if (!db) return;
@@ -381,7 +356,7 @@
             if (msg.sender === BOT_NAME) return;
             if (msg.type === 'system' || msg.type === 'supervisor') return;
             if (msg.isBotMessage) return;
-            if (!msg.text || !msg.text.startsWith('!')) return; // Sadece komutlar
+            if (!msg.text || !msg.text.startsWith('!')) return;
 
             const key = snap.key;
             if (_seenMsgKeys.has(key)) return;
@@ -399,9 +374,9 @@
         console.log('🎧 DJ Bot dinleyicisi bağlandı (filtreli).');
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // BAŞLATMA
-    // ------------------------------------------------------------
+    // ============================================================
     async function init() {
         if (_initialized) return;
         _initialized = true;
@@ -459,9 +434,9 @@
         console.log('✅ DJ Bot hazır! (API anahtarsız)');
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // DIŞA AÇIK API
-    // ------------------------------------------------------------
+    // ============================================================
     window.DJ = {
         search: searchYouTube,
         add: addToRadioPlaylist,
