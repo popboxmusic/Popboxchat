@@ -1338,6 +1338,31 @@
             border-left: 4px solid var(--youtube-red);
             background: rgba(255, 0, 0, 0.1);
         }
+
+        /* ---- Playlist kilit sistemi ---- */
+        .playlist-lock-btn {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: none;               /* yetkisizlere (kilit açıkken) gizli */
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .playlist-lock-btn.visible { display: inline-flex; }
+        .playlist-lock-btn:hover { border-color: var(--youtube-red); }
+        .playlist-lock-btn.is-locked {
+            background: rgba(255, 0, 0, 0.15);
+            border-color: var(--youtube-red);
+            color: var(--youtube-red);
+        }
+        .playlist-lock-btn.readonly { cursor: default; pointer-events: none; }
+        .playlist-item.list-locked { cursor: not-allowed; opacity: 0.65; }
+        .playlist-item.list-locked:hover { transform: none; box-shadow: none; border-color: var(--border-color); }
+        .playlist-item.list-locked.active { opacity: 1; }
         
         .playlist-thumb {
             width: 36px;
@@ -4957,6 +4982,7 @@
                 <div class="playlist-header">
                     <h3><i class="fas fa-list"></i> <span id="playlistHeading">Oynatma Listesi</span></h3>
                     <div class="playlist-header-actions">
+                        <button class="playlist-lock-btn" data-playlist-lock onclick="togglePlaylistLock()" title="Listeyi Kilitle"><i class="fas fa-lock-open"></i></button>
                         <button class="icon-btn" style="width:36px;height:36px;" onclick="togglePlaylistDrawer()" title="Listeyi Aç"><i class="fas fa-chevron-up"></i></button>
                     </div>
                 </div>
@@ -5070,7 +5096,10 @@
     <div class="playlist-drawer" id="playlistDrawer">
         <div class="playlist-header">
             <h3><i class="fas fa-list"></i> Oynatma Listesi</h3>
-            <button class="close-drawer" onclick="closePlaylistDrawer()"><i class="fas fa-times"></i></button>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <button class="playlist-lock-btn" data-playlist-lock onclick="togglePlaylistLock()" title="Listeyi Kilitle"><i class="fas fa-lock-open"></i></button>
+                <button class="close-drawer" onclick="closePlaylistDrawer()"><i class="fas fa-times"></i></button>
+            </div>
         </div>
         <div class="playlist-add-form" style="padding: 0 16px 16px 16px;">
             <input type="text" id="playlistVideoTitleMobile" class="playlist-title-input-small" placeholder="Başlık">
@@ -6511,6 +6540,7 @@
     let activeChannelPlaybackRef = null;
     let activeChannelPlaybackListener = null;
     let activeChannelVideoId = null;
+    let channelPlaylistLocked = false;   // true: kanaldaki herkes yetkilinin seçtiği videoyu izler
     
     let cameraStream = null;
     let currentCameraFacingMode = 'environment';
@@ -6917,6 +6947,9 @@
             if (currentChannel === channelName) {
                 updateAllRoleVisibilityUI();
                 renderChannelManageList();
+                updatePlaylistLockUI();
+                updatePlaylistUIWeb();
+                updatePlaylistDrawer();
             }
         });
     }
@@ -11975,18 +12008,62 @@
             const div = document.createElement('div');
             div.className = 'playlist-item';
             if (item.id === currentVideoId) div.classList.add('active');
+            if (channelPlaylistLocked && !canControlPlaylistLock()) div.classList.add('list-locked');
             div.onclick = () => playVideo(item.id);
             div.innerHTML = `
                 <div class="playlist-thumb"><i class="fas fa-film"></i></div>
                 <div class="playlist-info"><div class="playlist-title">${item.title}</div></div>
-                <button class="playlist-delete" onclick="removeFromPlaylist('${item.id}', event)"><i class="fas fa-trash"></i></button>
+                ${canAddVideoToChannel(currentChannel) ? `<button class="playlist-delete" onclick="removeFromPlaylist('${item.id}', event)"><i class="fas fa-trash"></i></button>` : ''}
             `;
             container.appendChild(div);
         });
+        updatePlaylistLockUI();
     }
 
     function loadGeneralPlaylist() {
         if (cachedChannels[currentChannel]) loadChannelMedia(currentChannel);
+    }
+
+    // Playlist'i kilitleyip açabilen / kilitliyken video seçebilen kişiler:
+    // Owner, Admin (tüm kanallar), Co-Admin (kendi kanalı)
+    function canControlPlaylistLock(channelName) {
+        const ch = channelName || currentChannel;
+        if (!currentUser || !ch) return false;
+        if (isOwner) return true;
+        if (can('playlist', ch)) return true;
+        const cr = channelRoles[ch];
+        const me = normalizeNick(currentUser.name);
+        return !!(cr && cr.coadmin && cr.coadmin.some(u => normalizeNick(u) === me));
+    }
+
+    function updatePlaylistLockUI() {
+        const canControl = canControlPlaylistLock();
+        document.querySelectorAll('[data-playlist-lock]').forEach(btn => {
+            const icon = btn.querySelector('i');
+            if (icon) icon.className = 'fas ' + (channelPlaylistLocked ? 'fa-lock' : 'fa-lock-open');
+            btn.classList.toggle('is-locked', channelPlaylistLocked);
+            btn.classList.toggle('visible', canControl || channelPlaylistLocked);
+            btn.classList.toggle('readonly', !canControl);
+            btn.title = !canControl
+                ? 'Liste kilitli: video seçimini yetkili yapıyor'
+                : (channelPlaylistLocked ? 'Kilidi Aç (herkes kendi videosunu seçer)' : 'Listeyi Kilitle (herkes aynı videoyu izler)');
+        });
+    }
+
+    function togglePlaylistLock() {
+        if (!canControlPlaylistLock()) {
+            addSystemMessage('⛔ Playlist kilidini sadece Owner, Admin ve kanalın Co-Admin\'i değiştirebilir.');
+            return;
+        }
+        if (!activeChannelPlaybackRef) return;
+        const newState = !channelPlaylistLocked;
+        const update = { locked: newState, updatedBy: currentUser?.name || 'system', updatedAt: Date.now() };
+        // Kilitlenirken yetkilinin o an izlediği video herkese yayılır
+        if (newState) update.videoId = currentVideoId || '';
+        activeChannelPlaybackRef.update(update);
+        addSystemMessage(newState
+            ? '🔒 Playlist kilitlendi: artık herkes yetkilinin seçtiği videoyu izliyor.'
+            : '🔓 Playlist kilidi açıldı: herkes kendi seçtiği videoyu izleyebilir.');
     }
 
     function setChannelVideo(videoId, updateRemote = true) {
@@ -11998,7 +12075,9 @@
         else if (player && player.stopVideo) player.stopVideo();
         updatePlaylistUIWeb();
         updatePlaylistDrawer();
-        if (updateRemote && activeChannelPlaybackRef) {
+        // Uzak kayda SADECE kilitliyken ve yetkili biri seçtiğinde yazılır.
+        // Kilit açıkken seçim yalnızca o kullanıcının kendi sayfasında kalır.
+        if (updateRemote && channelPlaylistLocked && canControlPlaylistLock() && activeChannelPlaybackRef) {
             activeChannelPlaybackRef.update({
                 videoId: currentVideoId || '',
                 updatedBy: currentUser?.name || 'system',
@@ -12022,9 +12101,13 @@
         playlistRef = activeChannelPlaylistRef;
         activeChannelPlaybackRef = database.ref(`channelPlayback/${channelName}`);
         activeChannelVideoId = null;
+        channelPlaylistLocked = false;
+        updatePlaylistLockUI();
 
         const playbackSnapshot = await activeChannelPlaybackRef.once('value');
         if (currentChannel !== channelName) return;
+        channelPlaylistLocked = !!playbackSnapshot.val()?.locked;
+        updatePlaylistLockUI();
         const savedVideoId = playbackSnapshot.val()?.videoId || '';
         let hasPickedInitialVideo = Boolean(savedVideoId);
         if (savedVideoId) setChannelVideo(savedVideoId, false);
@@ -12033,8 +12116,15 @@
 
         activeChannelPlaybackListener = snapshot => {
             if (currentChannel !== channelName) return;
-            const videoId = snapshot.val()?.videoId || null;
-            if (videoId !== currentVideoId) setChannelVideo(videoId, false);
+            const val = snapshot.val() || {};
+            channelPlaylistLocked = !!val.locked;
+            // Kilitliyse herkes yetkilinin videosunu izler; kilit açıksa kendi seçimi bozulmaz
+            if (channelPlaylistLocked) {
+                const videoId = val.videoId || null;
+                if (videoId !== currentVideoId) setChannelVideo(videoId, false);
+            }
+            updatePlaylistUIWeb();
+            updatePlaylistDrawer();
         };
         activeChannelPlaybackRef.on('value', activeChannelPlaybackListener);
 
@@ -12064,16 +12154,18 @@
             const div = document.createElement('div');
             div.className = 'playlist-item';
             if (item.id === currentVideoId) div.classList.add('active');
+            if (channelPlaylistLocked && !canControlPlaylistLock()) div.classList.add('list-locked');
             div.onclick = () => playVideo(item.id);
             div.innerHTML = `
                 <div class="playlist-thumb"><i class="fas fa-film"></i></div>
                 <div class="playlist-info">
                     <div class="playlist-title">${item.title || 'Başlıksız Video'}</div>
                 </div>
-                <button class="playlist-delete" onclick="removeFromPlaylist('${item.id}', event)"><i class="fas fa-trash"></i></button>
+                ${canAddVideoToChannel(currentChannel) ? `<button class="playlist-delete" onclick="removeFromPlaylist('${item.id}', event)"><i class="fas fa-trash"></i></button>` : ''}
             `;
             container.appendChild(div);
         });
+        updatePlaylistLockUI();
     }
 
     function removeFromPlaylist(videoId, event) {
@@ -12102,6 +12194,11 @@
 
     function playVideo(videoId) {
         if (!videoId) return;
+        // Kilitliyken sadece yetkili seçebilir
+        if (channelPlaylistLocked && !canControlPlaylistLock()) {
+            addSystemMessage('🔒 Playlist kilitli: videoyu kanal yetkilisi seçiyor.');
+            return;
+        }
         setChannelVideo(videoId);
     }
 
@@ -12126,6 +12223,8 @@
 
     function playNextVideo() {
         if (!playlist || playlist.length === 0) return;
+        // Kilitliyken sıradaki videoya sadece yetkili geçirir, diğerleri onu takip eder
+        if (channelPlaylistLocked && !canControlPlaylistLock()) return;
         const currentIndex = playlist.findIndex(item => item.id === currentVideoId);
         if (currentIndex === -1) { playVideo(playlist[0].id); return; }
         const nextIndex = (currentIndex + 1) % playlist.length;
