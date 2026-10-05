@@ -15281,7 +15281,10 @@
         const isStaff = () => !!(isOwner || hasRole('admin'));
         const BOTS = () => new Set(['proxy', 'ai', 'sistem', 'system', 'akıl küpü', 'akilkupu', nk(OWNER())]);
         const today = () => new Date().toISOString().slice(0, 10);
-        const iAmReg = () => !!(currentUser && currentUser.isRegistered && !isOwner);
+        // XP'den muaf: Owner, Admin, Co-Admin, Süpervizör, Op, Half-Op, Onaylı (genel ya da bu kanalda) + botlar
+        const roleOf = n => { try { return getUserRoleInChannel(n, (typeof xpCh !== 'undefined' && xpCh) || activeChannelName); } catch (_) { return 'user'; } };
+        const exempt = n => BOTS().has(trl(n)) || roleOf(n) !== 'user' || !!(currentUser && nk(n) === nk(currentUser.name) && currentUser.role && currentUser.role !== 'user');
+        const iAmReg = () => !!(currentUser && currentUser.isRegistered && !isOwner && !exempt(currentUser.name));
 
         /* ================= 2) ÖZEL MESAJ SAYACI ================= */
         function paintPM() {
@@ -15312,8 +15315,8 @@
         let xpCh = null, xpRef = null, metaRef = null, xpMap = {}, metaMap = {}, pending = {}, lastMsgAt = 0, lastText = '', lastActive = Date.now(), flushing = false;
         const enabled = ch => !!ch && !EXCLUDED.includes(ch);
         const alive = k => { const m = metaMap[k]; return !m || !m.login || Date.now() - m.login <= EXPIRE; };
-        const xpUser = n => { const r = xpMap[key(n)]; return !!(r && r.r === 1 && alive(key(n))) || !!(currentUser && nk(n) === nk(currentUser.name) && iAmReg()); };
-        const ptsOf = n => { const k = key(n), r = xpMap[k]; return r && r.r === 1 && alive(k) ? (r.p || 0) : 0; };
+        const xpUser = n => { if (exempt(n)) return false; const r = xpMap[key(n)]; return !!(r && r.r === 1 && alive(key(n))) || !!(currentUser && nk(n) === nk(currentUser.name) && iAmReg()); };
+        const ptsOf = n => { const k = key(n), r = xpMap[k]; return !exempt(n) && r && r.r === 1 && alive(k) ? (r.p || 0) : 0; };
         window.XP = { isUser: xpUser, pts: ptsOf, level: n => lvlOf(ptsOf(n)), tier: n => tierOf(lvlOf(ptsOf(n))) };
 
         function bindChannel(ch) {
@@ -15401,7 +15404,7 @@
         /* ---- görünüm: mesajlarda rozet + nick stili, çevrimiçi listesinde rozet ---- */
         function chipHtml(n) {
             const p = ptsOf(n), l = lvlOf(p), t = tierOf(l);
-            return '<span class="xp-chip t' + l + '" title="' + esc(t[0]) + ' • Seviye ' + l + ' • ' + p + ' puan">' + t[1] + l + '</span>';
+            return '<span class="xp-chip t' + l + '" title="#' + esc(xpCh || '') + ' • ' + esc(t[0]) + ' • Seviye ' + l + ' • ' + p + ' puan">' + t[1] + l + '</span>';
         }
         function decorate(root) {
             if (!enabled(xpCh)) { document.querySelectorAll('.xp-chip').forEach(e => e.remove()); return; }
@@ -15424,7 +15427,7 @@
                 if (c) { if (c.outerHTML !== nc.outerHTML) c.replaceWith(nc); } else st.appendChild(nc);
             });
         }
-        function paint() { try { decorate(); pill(); } catch (_) {} }
+        function paint() { try { decorate(); decoratePrivate(); pill(); } catch (_) {} }
         let mo = null;
         function watch() {
             const msgs = $('messages'); if (!msgs || mo) return;
@@ -15445,7 +15448,7 @@
             p.innerHTML = '<span>' + t[1] + ' ' + l + '</span><span style="color:var(--text-muted)">' + pts + ' XP</span><span class="bar" style="width:' + pct + '%"></span>';
         }
         function board() {
-            return Object.entries(xpMap).filter(([k, r]) => r && r.r === 1 && r.n && alive(k) && !BOTS().has(trl(r.n))).map(([k, r]) => ({ n: r.n, p: r.p || 0 })).sort((a, b) => b.p - a.p || trl(a.n).localeCompare(trl(b.n), 'tr'));
+            return Object.entries(xpMap).filter(([k, r]) => r && r.r === 1 && r.n && alive(k) && !exempt(r.n)).map(([k, r]) => ({ n: r.n, p: r.p || 0 })).sort((a, b) => b.p - a.p || trl(a.n).localeCompare(trl(b.n), 'tr'));
         }
         function openModal() {
             if ($('xpModal')) $('xpModal').remove(); if (!currentUser) return;
@@ -15456,7 +15459,7 @@
                 '<div><strong>' + pts + ' XP</strong>' + (nx ? ' <span style="color:var(--text-muted)">• sonraki seviye: ' + nx + ' XP</span>' : ' <span style="color:var(--text-muted)">• en üst seviye</span>') + '</div>' +
                 '<div class="prog"><i style="width:' + (nx ? Math.round((pts - lo) / (nx - lo) * 100) : 100) + '%"></i></div>' +
                 '<h4 style="margin:14px 0 4px">🏆 Bu kanalda ilk 10</h4><table>' + (top.length ? top.map((r, i) => '<tr><td>' + (i + 1) + '.</td><td>' + esc(r.n) + '</td><td>' + tierOf(lvlOf(r.p))[1] + ' ' + lvlOf(r.p) + '</td><td style="text-align:right">' + r.p + ' XP</td></tr>').join('') : '<tr><td>Henüz kimse puan kazanmadı.</td></tr>') + '</table>' +
-                '<div class="rules"><strong>Nasıl puan kazanılır?</strong> <span style="color:var(--text-muted)">(yalnızca kayıtlı kullanıcılar)</span><br>• Mesaj yaz: +' + RULE.msg + ' XP (en az 3 karakter, ' + (RULE.msgGap / 1000) + ' sn arayla)<br>• Kanalda aktif kal: +' + RULE.presence + ' XP / 5 dk<br>• Günlük ilk giriş: +' + RULE.daily + ' XP<br>• Günlük üst sınır: ' + RULE.cap + ' XP / kanal<br>⚠️ 3 gün giriş yapmazsan tüm puanların silinir.<br><br><strong>Seviyeler:</strong> ' + TIERS.map((x, i) => x[1] + ' ' + (i + 1) + ' (' + LV[i] + ')').join(' • ') + '<br>Seviye yükseldikçe adın daha belirgin renk/parıltıyla görünür ve yanında rozet çıkar.</div>' +
+                '<div class="rules"><strong>Nasıl puan kazanılır?</strong> <span style="color:var(--text-muted)">(yalnızca kayıtlı, yetkisiz kullanıcılar)</span><br>• Mesaj yaz: +' + RULE.msg + ' XP (en az 3 karakter, ' + (RULE.msgGap / 1000) + ' sn arayla)<br>• Kanalda aktif kal: +' + RULE.presence + ' XP / 5 dk<br>• Günlük ilk giriş: +' + RULE.daily + ' XP<br>• Günlük üst sınır: ' + RULE.cap + ' XP / kanal<br>⚠️ 3 gün giriş yapmazsan tüm puanların silinir.<br>Owner, Admin, Co-Admin, Süpervizör, Operatör, Half-Op ve Onaylı kullanıcılar XP\'den muaftır.<br><br><strong>Seviyeler:</strong> ' + TIERS.map((x, i) => x[1] + ' ' + (i + 1) + ' (' + LV[i] + ')').join(' • ') + '<br>Seviye yükseldikçe adın daha belirgin renk/parıltıyla görünür ve yanında rozet çıkar.</div>' +
                 '<div style="margin-top:14px;text-align:right"><button class="cmdp-go" id="xpClose">Kapat</button></div></div>';
             document.body.appendChild(m); $('xpClose').onclick = () => m.remove(); m.addEventListener('click', e => { if (e.target === m) m.remove(); });
         }
@@ -15466,7 +15469,8 @@
                 const ch = xpCh || activeChannelName;
                 if (cmd === 'xp' || cmd === 'seviye') {
                     if (!enabled(ch)) { addSystemMessage('ℹ️ Bu kanalda XP sistemi yok.'); return true; }
-                    if (isOwner) { addSystemMessage('♛ Owner puan kazanmaz.'); return true; }
+                    if (!args[0] && (isOwner || exempt(currentUser.name))) { addSystemMessage('⭐ Yetkili roller (Owner, Admin, Co-Admin, Süpervizör, Operatör, Half-Op, Onaylı) XP\'den muaftır.'); return true; }
+                    if (args[0] && exempt(args[0])) { addSystemMessage('⭐ ' + esc(args[0]) + ' yetkili bir roldedir; XP\'den muaftır.'); return true; }
                     if (!args[0] && !iAmReg()) { addSystemMessage('🔒 XP yalnızca kayıtlı kullanıcılar içindir. Kayıt için bir yöneticiyle iletişime geçin.'); return true; }
                     const who = args[0] || currentUser.name, p = ptsOf(who), l = lvlOf(p), t = tierOf(l);
                     addSystemMessage(t[1] + ' <strong>' + esc(who) + '</strong> — #' + esc(ch) + ': Seviye ' + l + ' (' + t[0] + '), ' + p + ' XP' + (LV[l] ? ' • sonraki: ' + LV[l] + ' XP' : '')); return true;
@@ -15482,7 +15486,7 @@
                     let name = args[0]; if (!name) { addSystemMessage(cmd === 'xpver' ? 'Kullanım: /xpver kullanıcı miktar' : 'Kullanım: /xpsifirla kullanıcı [tum]'); return true; }
                     const rec = await isRegisteredUserSecure(name);
                     if (!rec) { addSystemMessage('❌ ' + esc(name) + ' kayıtlı değil; XP yalnızca kayıtlı kullanıcılar içindir.'); return true; }
-                    name = rec.originalName; const k = key(name);
+                    name = rec.originalName; if (exempt(name)) { addSystemMessage('⭐ ' + esc(name) + ' yetkili bir roldedir; XP\'den muaftır.'); return true; } const k = key(name);
                     if (cmd === 'xpver') {
                         const amt = parseInt(args[1], 10); if (!Number.isFinite(amt) || amt === 0 || Math.abs(amt) > 5000) { addSystemMessage('❌ Miktar -5000 ile 5000 arasında, 0 dışında bir sayı olmalı.'); return true; }
                         await database.ref('xp/' + ch + '/' + k).transaction(c => ({ n: name, p: Math.max(0, ((c && c.p) || 0) + amt), d: (c && c.d) || null, dp: (c && c.dp) || 0, r: 1, bd: (c && c.bd) || null }));
@@ -15507,7 +15511,7 @@
             ['help', '', 'Yetkine göre komut yardımını gösterir (/yardım)', 'all'], ['kullanıcılar', '', 'Çevrimiçi kullanıcıları listeler (/users, /online)', 'all'],
             ['kurallar', '', 'Topluluk kurallarını açar (/rules)', 'all'], ['ping', '', 'Bağlantı testi', 'all'], ['çıkış', '', 'Oturumu kapatır (/logout)', 'all'],
             ['email', 'adres@ornek.com', 'Hesabına şifre kurtarma e-postası ekler', 'all', 'kayıtlı hesap'], ['komutlar', '', 'Özel komutları listeler', 'all'],
-            ['xp', '[kullanıcı]', 'Bu kanaldaki XP / seviyeni gösterir (/seviye)', 'all', 'kayıtlı kullanıcılar'], ['top', '', 'Bu kanalın ilk 10 XP sıralaması (/siralama)', 'all'],
+            ['xp', '[kullanıcı]', 'Bu kanaldaki XP / seviyeni gösterir (/seviye)', 'all', 'kayıtlı, yetkisiz kullanıcılar'], ['top', '', 'Bu kanalın ilk 10 XP sıralaması (/siralama)', 'all'],
             ['konu', '[metin]', 'Kanal açıklamasını gösterir; kanal sahibi/Admin değiştirir', 'all', 'değiştirmek için yetki'],
             ['oyun', '', 'Akıl Küpü oyun botu komutları (/oyun-yardim, /katil, /skor, /istatistik)', 'all', 'oyun botu'],
             ['verifiedpanel', '', '+ Onaylı kullanıcı panelini açar (/vpanel)', 'verified'],
@@ -15578,11 +15582,90 @@
             h += '<br>🖥️ Tüm komutlar ayrıca rol panelindeki <strong>Tüm Komutlar</strong> sekmesinde.'; addSystemMessage(h);
         };
 
+
+        /* ---- Profil paneli + özel sohbet penceresi ---- */
+        async function allFor(n) {
+            const k = key(n), rows = [];
+            if (BOTS().has(trl(n))) return rows;
+            let live = true;
+            try { const m = (await database.ref('xpMeta/' + k).once('value')).val(); live = !m || !m.login || Date.now() - m.login <= EXPIRE; } catch (_) {}
+            if (!live) return rows;
+            for (const [c, info] of Object.entries(cachedChannels || {})) {
+                if (!enabled(c) || !canAccessHiddenChannel(c)) continue;
+                let role = 'user'; try { role = getUserRoleInChannel(n, c); } catch (_) {}
+                if (role !== 'user') continue;
+                try { const r = (await database.ref('xp/' + c + '/' + k).once('value')).val(); if (r && r.r === 1 && (r.p || 0) > 0) rows.push({ ch: c, label: (info && info.label) || c, p: r.p || 0 }); } catch (_) {}
+            }
+            return rows.sort((a, b) => b.p - a.p);
+        }
+        function rowsHtml(rows) {
+            if (!rows.length) return '<div class="rules">Henüz hiçbir kanalda puan yok.</div>';
+            return '<table>' + rows.map(r => { const l = lvlOf(r.p), t = tierOf(l), lo = LV[l - 1], nx = LV[l], pct = nx ? Math.round((r.p - lo) / (nx - lo) * 100) : 100;
+                return '<tr><td>#' + esc(r.label) + '</td><td><span class="xp-chip t' + l + '" style="margin:0">' + t[1] + ' ' + l + '</span> <span style="color:var(--text-muted);font-size:11px">' + esc(t[0]) + '</span></td><td style="text-align:right">' + r.p + ' XP</td></tr>' +
+                    '<tr><td colspan="3" style="border:0;padding:0 4px 6px"><div class="prog" style="margin:0"><i style="width:' + pct + '%"></i></div></td></tr>'; }).join('') + '</table>';
+        }
+        function statusFor(n) {
+            if (BOTS().has(trl(n))) return 'bot';
+            let role = 'user'; try { role = getUserRoleInChannel(n, xpCh || activeChannelName); } catch (_) {}
+            if (role !== 'user') return 'exempt';
+            return null;
+        }
+        async function xpCard(n) {
+            if ($('xpModal')) $('xpModal').remove();
+            const m = document.createElement('div'); m.id = 'xpModal';
+            m.innerHTML = '<div class="card"><h3>⭐ ' + esc(n) + ' — XP rozetleri</h3><div class="sub">Puanlar her kanalda ayrı tutulur.</div><div id="xpCardBody" class="rules">Yükleniyor…</div><div style="margin-top:14px;text-align:right"><button class="cmdp-go" id="xpClose">Kapat</button></div></div>';
+            document.body.appendChild(m); $('xpClose').onclick = () => m.remove(); m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+            const st = statusFor(n); let html;
+            if (st === 'bot') html = 'Botlar XP kazanmaz.';
+            else if (st === 'exempt') html = '⭐ Yetkili bir rolde; XP\'den muaf.';
+            else html = rowsHtml(await allFor(n));
+            const b = $('xpCardBody'); if (b) b.innerHTML = html;
+        }
+        window.XP.card = xpCard;
+
+        let profFilled = false;
+        function profileXp() {
+            const modal = $('profileModal'); if (!modal) return;
+            const open = modal.style.display === 'flex';
+            if (!open) { profFilled = false; return; }
+            if (profFilled || !currentUser) return; profFilled = true;
+            let box = $('profileXp');
+            if (!box) {
+                const anchor = $('profileRole') && $('profileRole').closest('.profile-field'); if (!anchor) return;
+                box = document.createElement('div'); box.id = 'profileXp'; box.className = 'profile-field'; anchor.after(box);
+            }
+            box.innerHTML = '<label>⭐ XP rozetlerim (kanal bazlı)</label><div id="profileXpBody" class="rules" style="margin-top:6px">Yükleniyor…</div>';
+            const set = h => { const b = $('profileXpBody'); if (b) b.innerHTML = h; };
+            if (isOwner || exempt(currentUser.name)) { set('⭐ Yetkili bir roldesiniz; XP\'den muafsınız.'); return; }
+            if (!currentUser.isRegistered) { set('🔒 XP yalnızca kayıtlı kullanıcılar içindir. Kayıt için bir yöneticiyle iletişime geçin.'); return; }
+            allFor(currentUser.name).then(rows => set(rowsHtml(rows) + '<div class="rules" style="margin-top:4px">⚠️ 3 gün giriş yapmazsanız tüm puanlar silinir.</div>')).catch(() => set('Puanlar yüklenemedi.'));
+        }
+        function decoratePrivate() {
+            const pm = $('privateModal'); if (!pm || pm.style.display !== 'flex') return;
+            const peer = (typeof privateChatWith !== 'undefined') ? privateChatWith : null;
+            const pw = $('privateWith');
+            if (pw && peer) {
+                let c = pw.querySelector('.xp-chip');
+                if (!enabled(xpCh) || !xpUser(peer)) { if (c) c.remove(); }
+                else {
+                    const tmp = document.createElement('template'); tmp.innerHTML = chipHtml(peer); const nc = tmp.content.firstChild; nc.style.cursor = 'pointer'; nc.onclick = () => xpCard(peer);
+                    if (c) { if (c.title !== nc.title || c.textContent !== nc.textContent) c.replaceWith(nc); } else pw.appendChild(nc);
+                }
+            }
+            pm.querySelectorAll('#privateMessages .message-user').forEach(u => {
+                let nick = u.dataset.xpn; if (!nick) { nick = u.textContent.trim(); u.dataset.xpn = nick; }
+                const old = u.querySelector('.xp-chip');
+                if (!nick || !enabled(xpCh) || !xpUser(nick)) { if (old) old.remove(); return; }
+                const tmp = document.createElement('template'); tmp.innerHTML = chipHtml(nick); const nc = tmp.content.firstChild;
+                if (old) { if (old.title !== nc.title || old.textContent !== nc.textContent) old.replaceWith(nc); } else u.appendChild(nc);
+            });
+        }
+
         /* ---------- giriş sonrası kurulum ---------- */
         let boundUser = null, lastCh = null;
         setInterval(() => {
             try {
-                buildCmdTabs(); watch();
+                buildCmdTabs(); watch(); profileXp(); decoratePrivate();
                 if (typeof currentUser === 'undefined' || !currentUser || !database) return;
                 if (boundUser !== currentUser.name) { boundUser = currentUser.name; onLogin(); }
                 const ch = activeChannelName; if (ch && ch !== xpCh) { const old = xpCh; if (old) flush(old); bindChannel(ch); dailyBonus(ch); }
