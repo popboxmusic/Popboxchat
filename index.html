@@ -10050,6 +10050,7 @@
         }
         
         if (['konu','topic','konusil','sabitle','pin','sabitkaldir','unpin'].includes(command)) { if (window.ChInfo && await window.ChInfo.handle(command, args)) return; }
+        if (['xp','seviye','top','siralama','xpver','xpsifirla'].includes(command)) { if (window.XPCmd && await window.XPCmd.handle(command, args)) return; }
         if (['sifresifirla','sifretalepleri','email','eposta'].includes(command)) { if (window.V5Cmd && await window.V5Cmd.handle(command, args)) return; }
         if (command === 'join') {
             if (args.length >= 1) {
@@ -15217,6 +15218,374 @@
                 const show = !!currentUser && (isOwner || hasRole('admin') || Object.keys(cachedChannels || {}).some(n => canMan(n) || canPin(n)));
                 const a = $('channelPanelIcon'), m = $('mobileChannelPanelIcon');
                 if (a) a.style.display = show ? '' : 'none'; if (m) m.style.display = show ? '' : 'none';
+            } catch (_) {}
+        }, 1000);
+    })();
+    </script>
+    <!-- ============================================================
+         v6 — Kanal bazlı XP/Seviye + Özel mesaj sayacı + Panellerde komut listesi
+         ============================================================ -->
+    <style>
+        /* ---------- Özel mesaj sayacı (zil gibi) ---------- */
+        .pm-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: #ff3b3b; color: #fff; font-size: 11px; font-weight: 700; line-height: 1; box-shadow: 0 0 0 2px rgba(255,59,59,.25); animation: pmPop .35s ease; }
+        .online-list-btn { position: relative; }
+        .online-list-btn .pm-badge { position: absolute; top: -4px; right: -4px; margin: 0; }
+        .mobile-menu-item .pm-badge { margin-left: auto; }
+        @keyframes pmPop { 0% { transform: scale(.3); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
+        /* ---------- XP rozet + nick görünürlüğü ---------- */
+        .xp-chip { display: inline-flex; align-items: center; gap: 2px; margin-left: 5px; padding: 0 5px; height: 16px; border-radius: 8px; font-size: 10px; font-weight: 700; line-height: 16px; vertical-align: middle; background: rgba(255,255,255,.08); color: var(--text-secondary); white-space: nowrap; }
+        .xp-chip.t5 { background: rgba(255,200,60,.16); color: #ffc83c; } .xp-chip.t4 { background: rgba(190,200,215,.16); color: #cfd8e6; }
+        .xp-chip.t3 { background: rgba(205,127,50,.18); color: #e0944a; } .xp-chip.t6 { background: rgba(70,170,255,.16); color: #5ab4ff; }
+        .xp-chip.t7 { background: rgba(120,230,255,.16); color: #7ae8ff; } .xp-chip.t8 { background: rgba(255,110,50,.18); color: #ff7a3c; }
+        .xp-chip.t9 { background: rgba(255,230,60,.2); color: #ffe23c; } .xp-chip.t10 { background: linear-gradient(90deg,rgba(255,80,120,.25),rgba(255,200,60,.25)); color: #fff; }
+        .message-item.user .message-user.xpn3 { font-weight: 600; }
+        .message-item.user .message-user.xpn4 { font-weight: 700; color: #cfd8e6; }
+        .message-item.user .message-user.xpn5 { font-weight: 700; color: #ffc83c; }
+        .message-item.user .message-user.xpn6 { font-weight: 700; color: #5ab4ff; text-shadow: 0 0 8px rgba(90,180,255,.45); }
+        .message-item.user .message-user.xpn7 { font-weight: 800; color: #7ae8ff; text-shadow: 0 0 10px rgba(122,232,255,.6); }
+        .message-item.user .message-user.xpn8 { font-weight: 800; color: #ff7a3c; text-shadow: 0 0 10px rgba(255,122,60,.65); }
+        .message-item.user .message-user.xpn9 { font-weight: 800; color: #ffe23c; text-shadow: 0 0 12px rgba(255,226,60,.75); }
+        .message-item.user .message-user.xpn10 { font-weight: 900; background: linear-gradient(90deg,#ff5078,#ffc83c,#7ae8ff,#b98cff,#ff5078); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: xpFlow 4s linear infinite; }
+        @keyframes xpFlow { to { background-position: 300% 0; } }
+        #xpPill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; margin: 0 6px; border-radius: 15px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); font: inherit; font-size: 12px; cursor: pointer; flex: 0 0 auto; position: relative; overflow: hidden; }
+        #xpPill .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: #8b6cff; transition: width .4s; }
+        #xpModal { position: fixed; inset: 0; z-index: 4300; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.7); padding: 14px; }
+        #xpModal .card { width: min(420px, 100%); max-height: 88%; overflow: auto; background: var(--bg-secondary); border: 1px solid var(--border-strong); border-radius: 16px; padding: 18px; color: var(--text-primary); }
+        #xpModal h3 { margin: 0 0 4px; font-size: 17px; } #xpModal .sub { color: var(--text-muted); font-size: 12.5px; margin-bottom: 12px; }
+        #xpModal .prog { height: 8px; border-radius: 4px; background: var(--bg-tertiary); overflow: hidden; margin: 6px 0 4px; } #xpModal .prog > i { display: block; height: 100%; background: linear-gradient(90deg,#8b6cff,#ffc83c); }
+        #xpModal table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 12px; } #xpModal td { padding: 5px 4px; border-bottom: 1px solid var(--border-color); }
+        #xpModal .rules { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+        /* ---------- Panellerde komut listesi ---------- */
+        .cmdp-search { width: 100%; box-sizing: border-box; margin: 4px 0 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); font: inherit; font-size: 14px; }
+        .cmdp-note { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+        .cmdp-letter { margin: 12px 0 4px; font-weight: 800; font-size: 13px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
+        .cmdp-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 4px; border-bottom: 1px solid rgba(255,255,255,.04); }
+        .cmdp-main { flex: 1; min-width: 0; }
+        .cmdp-use { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: var(--text-primary); word-break: break-word; }
+        .cmdp-use b { color: #8b6cff; } .cmdp-desc { font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
+        .cmdp-chip { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 700; background: var(--bg-tertiary); color: var(--text-muted); vertical-align: middle; }
+        .cmdp-go { flex: 0 0 auto; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); font: inherit; font-size: 12px; cursor: pointer; }
+        .cmdp-go:hover { border-color: #8b6cff; }
+    </style>
+    <script>
+    (function () {
+        'use strict';
+        const $ = id => document.getElementById(id);
+        const nk = n => normalizeNick(n);
+        const key = n => nk(n).replace(/[.#$\[\]\/]/g, '_');
+        const DAY = 86400000, EXPIRE = 3 * DAY;
+        const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+        const trl = s => String(s == null ? '' : s).toLocaleLowerCase('tr');
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        const OWNER = () => SECURE_CONFIG.OWNER_CONFIG.username;
+        const isStaff = () => !!(isOwner || hasRole('admin'));
+        const BOTS = () => new Set(['proxy', 'ai', 'sistem', 'system', 'akıl küpü', 'akilkupu', nk(OWNER())]);
+        const today = () => new Date().toISOString().slice(0, 10);
+        const iAmReg = () => !!(currentUser && currentUser.isRegistered && !isOwner);
+
+        /* ================= 2) ÖZEL MESAJ SAYACI ================= */
+        function paintPM() {
+            let total = 0;
+            try { total = Object.values(privateUnreadCounts || {}).reduce((a, b) => a + (+b || 0), 0); } catch (_) {}
+            const set = (host, id) => {
+                if (!host) return; let b = host.querySelector('.pm-badge[data-pm="' + id + '"]');
+                if (!total) { if (b) b.remove(); return; }
+                if (!b) { b = document.createElement('span'); b.className = 'pm-badge'; b.dataset.pm = id; host.appendChild(b); }
+                const t = total > 99 ? '99+' : String(total); if (b.textContent !== t) { b.textContent = t; b.style.animation = 'none'; void b.offsetWidth; b.style.animation = ''; }
+            };
+            set(document.querySelector('.users-tab-btn[data-user-list-tab="private"]'), 'tab');
+            set(document.querySelector('.online-list-btn'), 'btn');
+            set(document.querySelector('.mobile-menu-item[onclick="toggleUserListFromMenu()"]'), 'menu');
+            const base = (document.title || '').replace(/^\(\d+\+?\)\s*/, '');
+            const nt = total ? '(' + (total > 99 ? '99+' : total) + ') ' + base : base; if (document.title !== nt) document.title = nt;
+        }
+        setInterval(paintPM, 500);
+
+        /* ================= 1) KANAL BAZLI XP ================= */
+        const LV = [0, 30, 100, 250, 500, 900, 1500, 2400, 3800, 6000];
+        const TIERS = [['Yeni', '🌱'], ['Üye', '🌿'], ['Bronz', '🥉'], ['Gümüş', '🥈'], ['Altın', '🥇'], ['Platin', '🔷'], ['Elmas', '💎'], ['Efsane', '🔥'], ['Usta', '⚡'], ['Kral', '👑']];
+        const EXCLUDED = ['admin_channel_global', 'help'];
+        const RULE = { msg: 5, msgGap: 15000, presence: 2, presenceEvery: 300000, daily: 10, cap: 250 };
+        const lvlOf = p => { let l = 1; for (let i = 0; i < LV.length; i++) if (p >= LV[i]) l = i + 1; return l; };
+        const tierOf = l => TIERS[Math.min(TIERS.length, Math.max(1, l)) - 1];
+
+        let xpCh = null, xpRef = null, metaRef = null, xpMap = {}, metaMap = {}, pending = {}, lastMsgAt = 0, lastText = '', lastActive = Date.now(), flushing = false;
+        const enabled = ch => !!ch && !EXCLUDED.includes(ch);
+        const alive = k => { const m = metaMap[k]; return !m || !m.login || Date.now() - m.login <= EXPIRE; };
+        const xpUser = n => { const r = xpMap[key(n)]; return !!(r && r.r === 1 && alive(key(n))) || !!(currentUser && nk(n) === nk(currentUser.name) && iAmReg()); };
+        const ptsOf = n => { const k = key(n), r = xpMap[k]; return r && r.r === 1 && alive(k) ? (r.p || 0) : 0; };
+        window.XP = { isUser: xpUser, pts: ptsOf, level: n => lvlOf(ptsOf(n)), tier: n => tierOf(lvlOf(ptsOf(n))) };
+
+        function bindChannel(ch) {
+            if (xpRef) { try { xpRef.off(); } catch (_) {} } xpRef = null; xpMap = {}; xpCh = ch;
+            if (!enabled(ch) || !database) { paint(); return; }
+            xpRef = database.ref('xp/' + ch);
+            xpRef.on('value', s => { if (xpCh === ch) { xpMap = s.val() || {}; paint(); } });
+        }
+        function bindMeta() {
+            if (metaRef) return; metaRef = database.ref('xpMeta');
+            metaRef.on('value', s => { metaMap = s.val() || {}; paint(); });
+        }
+
+        async function flush(ch) {
+            const add = pending[ch] || 0; if (!add || !iAmReg() || !enabled(ch)) return;
+            pending[ch] = 0;
+            try {
+                const k = key(currentUser.name), prev = ptsOf(currentUser.name);
+                await database.ref('xp/' + ch + '/' + k).transaction(cur => {
+                    cur = cur || { p: 0 }; const d = today(); let dp = cur.d === d ? (cur.dp || 0) : 0;
+                    const g = Math.max(0, Math.min(add, RULE.cap - dp)); if (g <= 0 && cur.n) return;
+                    return { n: currentUser.name, p: (cur.p || 0) + g, d: d, dp: dp + g, r: 1, bd: cur.bd || null };
+                });
+                incrementWriteCount();
+                const now = ptsOf(currentUser.name) + 0;
+                setTimeout(() => { const after = ptsOf(currentUser.name); if (lvlOf(after) > lvlOf(prev) && ch === xpCh) { const t = tierOf(lvlOf(after)); addSystemMessage('🎉 Tebrikler! #' + ch + ' kanalında <strong>Seviye ' + lvlOf(after) + '</strong> oldun — ' + t[1] + ' ' + t[0] + '!'); } }, 1200);
+            } catch (e) { pending[ch] = (pending[ch] || 0) + add; }
+        }
+        async function flushAll() { if (flushing) return; flushing = true; try { for (const ch of Object.keys(pending)) await flush(ch); } finally { flushing = false; } }
+        const gain = (ch, n) => { if (!iAmReg() || !enabled(ch)) return; pending[ch] = (pending[ch] || 0) + n; };
+
+        // mesaj gönderimi: gerçekten gönderildiyse (kutu temizlendiyse) puan ver
+        const _send = window.sendMessage;
+        if (typeof _send === 'function') window.sendMessage = async function () {
+            const inp = $('message-input'), before = inp ? inp.value.trim() : '', ch = (typeof activeChannelName !== 'undefined' && activeChannelName) || currentChannel;
+            const r = await _send.apply(this, arguments);
+            try {
+                lastActive = Date.now();
+                if (before && !before.startsWith('/') && inp && inp.value.trim() === '' && before.length >= 3 && enabled(ch)) {
+                    const now = Date.now();
+                    if (now - lastMsgAt >= RULE.msgGap && before !== lastText) { lastMsgAt = now; lastText = before; gain(ch, RULE.msg); }
+                }
+            } catch (_) {}
+            return r;
+        };
+        ['mousemove', 'keydown', 'touchstart', 'click'].forEach(e => document.addEventListener(e, () => { lastActive = Date.now(); }, { passive: true }));
+        setInterval(() => {
+            try { if (currentUser && enabled(xpCh) && document.visibilityState === 'visible' && Date.now() - lastActive < 600000) gain(xpCh, RULE.presence); } catch (_) {}
+        }, RULE.presenceEvery);
+        setInterval(() => { try { flushAll(); } catch (_) {} }, 45000);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
+        window.addEventListener('pagehide', flushAll);
+
+        // giriş: 3 gün kuralı + günlük bonus
+        async function onLogin() {
+            bindMeta(); const k = key(currentUser.name); if (!iAmReg()) return;
+            try {
+                const snap = await database.ref('xpMeta/' + k).once('value'), prev = snap.val(), now = Date.now();
+                if (prev && prev.login && now - prev.login > EXPIRE) {
+                    await wipeUser(k);
+                    addSystemMessage('⚠️ 3 günden uzun süre giriş yapmadığın için tüm kanal puanların sıfırlandı. Yeniden kazanmaya başla!');
+                }
+                await database.ref('xpMeta/' + k).set({ n: currentUser.name, login: now });
+                setInterval(() => { try { database.ref('xpMeta/' + k + '/login').set(Date.now()); } catch (_) {} }, 600000);
+                if (isStaff()) setTimeout(sweepExpired, 8000);
+            } catch (_) {}
+        }
+        async function wipeUser(k) {
+            const chs = new Set(Object.keys(cachedChannels || {})); ['genel', 'ai'].forEach(c => chs.add(c));
+            for (const c of chs) { if (enabled(c)) { try { await database.ref('xp/' + c + '/' + k).remove(); } catch (_) {} } }
+        }
+        async function sweepExpired() {
+            let n = 0;
+            for (const [k, m] of Object.entries(metaMap)) {
+                if (n >= 20) break; if (m && m.login && Date.now() - m.login > EXPIRE) { await wipeUser(k); try { await database.ref('xpMeta/' + k).remove(); } catch (_) {} n++; }
+            }
+        }
+        const dailyDone = new Set();
+        function dailyBonus(ch) {
+            if (!iAmReg() || !enabled(ch)) return; const id = today() + ch; if (dailyDone.has(id)) return; dailyDone.add(id);
+            const k = key(currentUser.name);
+            database.ref('xp/' + ch + '/' + k).once('value').then(s => { const v = s.val(); if (!v || v.bd !== today()) { gain(ch, RULE.daily); database.ref('xp/' + ch + '/' + k + '/bd').set(today()).catch(() => {}); } }).catch(() => {});
+        }
+
+        /* ---- görünüm: mesajlarda rozet + nick stili, çevrimiçi listesinde rozet ---- */
+        function chipHtml(n) {
+            const p = ptsOf(n), l = lvlOf(p), t = tierOf(l);
+            return '<span class="xp-chip t' + l + '" title="' + esc(t[0]) + ' • Seviye ' + l + ' • ' + p + ' puan">' + t[1] + l + '</span>';
+        }
+        function decorate(root) {
+            if (!enabled(xpCh)) { document.querySelectorAll('.xp-chip').forEach(e => e.remove()); return; }
+            (root || document).querySelectorAll('#messages .message-item .message-user').forEach(u => {
+                const item = u.closest('.message-item'); if (!item || item.classList.contains('system')) return;
+                let nick = u.dataset.xpn; if (!nick) { nick = u.textContent.trim(); u.dataset.xpn = nick; }
+                if (!nick || BOTS().has(trl(nick))) return;
+                if (!xpUser(nick)) { u.className = u.className.replace(/\s?xpn\d+/g, ''); const oc = u.nextElementSibling; if (oc && oc.classList.contains('xp-chip')) oc.remove(); return; }
+                const l = lvlOf(ptsOf(nick)); u.className = u.className.replace(/\s?xpn\d+/g, '') + (l >= 3 ? ' xpn' + l : '');
+                let c = u.nextElementSibling && u.nextElementSibling.classList.contains('xp-chip') ? u.nextElementSibling : null;
+                const html = chipHtml(nick), tmp = document.createElement('template'); tmp.innerHTML = html; const nc = tmp.content.firstChild;
+                if (c) { if (c.outerHTML !== nc.outerHTML) c.replaceWith(nc); } else u.after(nc);
+            });
+            document.querySelectorAll('#userListContainer .user-item').forEach(it => {
+                const m = (it.getAttribute('onclick') || '').match(/openPrivateChat\('([^']+)'\)/); if (!m) return; const nick = m[1];
+                const st = it.querySelector('strong'); if (!st || BOTS().has(trl(nick))) return;
+                if (!xpUser(nick)) { const oc = st.querySelector('.xp-chip'); if (oc) oc.remove(); return; }
+                const html = chipHtml(nick); let c = st.querySelector('.xp-chip');
+                const tmp = document.createElement('template'); tmp.innerHTML = html; const nc = tmp.content.firstChild;
+                if (c) { if (c.outerHTML !== nc.outerHTML) c.replaceWith(nc); } else st.appendChild(nc);
+            });
+        }
+        function paint() { try { decorate(); pill(); } catch (_) {} }
+        let mo = null;
+        function watch() {
+            const msgs = $('messages'); if (!msgs || mo) return;
+            mo = new MutationObserver(() => { clearTimeout(watch.t); watch.t = setTimeout(() => decorate(), 60); });
+            mo.observe(msgs, { childList: true });
+            const ul = $('userListContainer'); if (ul) new MutationObserver(() => { clearTimeout(watch.u); watch.u = setTimeout(() => decorate(), 60); }).observe(ul, { childList: true });
+        }
+
+        /* ---- üst çubukta kendi seviyen ---- */
+        function pill() {
+            const hdr = $('chatHeader'); if (!hdr) return;
+            let p = $('xpPill');
+            if (!iAmReg() || !enabled(xpCh)) { if (p) p.style.display = 'none'; return; }
+            if (!p) { p = document.createElement('button'); p.id = 'xpPill'; p.type = 'button'; p.onclick = openModal; const acts = hdr.querySelector('.chat-header-actions'); hdr.insertBefore(p, acts || null); }
+            const pts = ptsOf(currentUser.name), l = lvlOf(pts), t = tierOf(l), lo = LV[l - 1], hi = LV[l] == null ? lo : LV[l];
+            const pct = hi === lo ? 100 : Math.round((pts - lo) / (hi - lo) * 100);
+            p.style.display = ''; p.title = 'Bu kanaldaki puanın: ' + pts + ' XP';
+            p.innerHTML = '<span>' + t[1] + ' ' + l + '</span><span style="color:var(--text-muted)">' + pts + ' XP</span><span class="bar" style="width:' + pct + '%"></span>';
+        }
+        function board() {
+            return Object.entries(xpMap).filter(([k, r]) => r && r.r === 1 && r.n && alive(k) && !BOTS().has(trl(r.n))).map(([k, r]) => ({ n: r.n, p: r.p || 0 })).sort((a, b) => b.p - a.p || trl(a.n).localeCompare(trl(b.n), 'tr'));
+        }
+        function openModal() {
+            if ($('xpModal')) $('xpModal').remove(); if (!currentUser) return;
+            const ch = xpCh, pts = ptsOf(currentUser.name), l = lvlOf(pts), t = tierOf(l), lo = LV[l - 1], nx = LV[l];
+            const top = board().slice(0, 10);
+            const m = document.createElement('div'); m.id = 'xpModal';
+            m.innerHTML = '<div class="card"><h3>' + t[1] + ' #' + esc(ch) + ' — Seviye ' + l + ' (' + t[0] + ')</h3><div class="sub">Puanlar her kanalda ayrı tutulur; başka kanalda geçerli olmaz.</div>' +
+                '<div><strong>' + pts + ' XP</strong>' + (nx ? ' <span style="color:var(--text-muted)">• sonraki seviye: ' + nx + ' XP</span>' : ' <span style="color:var(--text-muted)">• en üst seviye</span>') + '</div>' +
+                '<div class="prog"><i style="width:' + (nx ? Math.round((pts - lo) / (nx - lo) * 100) : 100) + '%"></i></div>' +
+                '<h4 style="margin:14px 0 4px">🏆 Bu kanalda ilk 10</h4><table>' + (top.length ? top.map((r, i) => '<tr><td>' + (i + 1) + '.</td><td>' + esc(r.n) + '</td><td>' + tierOf(lvlOf(r.p))[1] + ' ' + lvlOf(r.p) + '</td><td style="text-align:right">' + r.p + ' XP</td></tr>').join('') : '<tr><td>Henüz kimse puan kazanmadı.</td></tr>') + '</table>' +
+                '<div class="rules"><strong>Nasıl puan kazanılır?</strong> <span style="color:var(--text-muted)">(yalnızca kayıtlı kullanıcılar)</span><br>• Mesaj yaz: +' + RULE.msg + ' XP (en az 3 karakter, ' + (RULE.msgGap / 1000) + ' sn arayla)<br>• Kanalda aktif kal: +' + RULE.presence + ' XP / 5 dk<br>• Günlük ilk giriş: +' + RULE.daily + ' XP<br>• Günlük üst sınır: ' + RULE.cap + ' XP / kanal<br>⚠️ 3 gün giriş yapmazsan tüm puanların silinir.<br><br><strong>Seviyeler:</strong> ' + TIERS.map((x, i) => x[1] + ' ' + (i + 1) + ' (' + LV[i] + ')').join(' • ') + '<br>Seviye yükseldikçe adın daha belirgin renk/parıltıyla görünür ve yanında rozet çıkar.</div>' +
+                '<div style="margin-top:14px;text-align:right"><button class="cmdp-go" id="xpClose">Kapat</button></div></div>';
+            document.body.appendChild(m); $('xpClose').onclick = () => m.remove(); m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+        }
+
+        window.XPCmd = {
+            async handle(cmd, args) {
+                const ch = xpCh || activeChannelName;
+                if (cmd === 'xp' || cmd === 'seviye') {
+                    if (!enabled(ch)) { addSystemMessage('ℹ️ Bu kanalda XP sistemi yok.'); return true; }
+                    if (isOwner) { addSystemMessage('♛ Owner puan kazanmaz.'); return true; }
+                    if (!args[0] && !iAmReg()) { addSystemMessage('🔒 XP yalnızca kayıtlı kullanıcılar içindir. Kayıt için bir yöneticiyle iletişime geçin.'); return true; }
+                    const who = args[0] || currentUser.name, p = ptsOf(who), l = lvlOf(p), t = tierOf(l);
+                    addSystemMessage(t[1] + ' <strong>' + esc(who) + '</strong> — #' + esc(ch) + ': Seviye ' + l + ' (' + t[0] + '), ' + p + ' XP' + (LV[l] ? ' • sonraki: ' + LV[l] + ' XP' : '')); return true;
+                }
+                if (cmd === 'top' || cmd === 'siralama') {
+                    if (!enabled(ch)) { addSystemMessage('ℹ️ Bu kanalda XP sistemi yok.'); return true; }
+                    const b = board().slice(0, 10);
+                    addSystemMessage(b.length ? '🏆 <strong>#' + esc(ch) + ' ilk 10:</strong><br>' + b.map((r, i) => (i + 1) + '. ' + esc(r.n) + ' — ' + tierOf(lvlOf(r.p))[1] + ' ' + lvlOf(r.p) + ' • ' + r.p + ' XP').join('<br>') : 'Bu kanalda henüz puan yok.'); return true;
+                }
+                if (cmd === 'xpver' || cmd === 'xpsifirla') {
+                    if (!isStaff()) { addSystemMessage('⛔ Bu komut yalnızca Owner ve Admin içindir!'); return true; }
+                    if (!enabled(ch)) { addSystemMessage('ℹ️ Bu kanalda XP sistemi yok.'); return true; }
+                    let name = args[0]; if (!name) { addSystemMessage(cmd === 'xpver' ? 'Kullanım: /xpver kullanıcı miktar' : 'Kullanım: /xpsifirla kullanıcı [tum]'); return true; }
+                    const rec = await isRegisteredUserSecure(name);
+                    if (!rec) { addSystemMessage('❌ ' + esc(name) + ' kayıtlı değil; XP yalnızca kayıtlı kullanıcılar içindir.'); return true; }
+                    name = rec.originalName; const k = key(name);
+                    if (cmd === 'xpver') {
+                        const amt = parseInt(args[1], 10); if (!Number.isFinite(amt) || amt === 0 || Math.abs(amt) > 5000) { addSystemMessage('❌ Miktar -5000 ile 5000 arasında, 0 dışında bir sayı olmalı.'); return true; }
+                        await database.ref('xp/' + ch + '/' + k).transaction(c => ({ n: name, p: Math.max(0, ((c && c.p) || 0) + amt), d: (c && c.d) || null, dp: (c && c.dp) || 0, r: 1, bd: (c && c.bd) || null }));
+                        addSystemMessage('✅ ' + esc(name) + ' kullanıcısına #' + esc(ch) + ' kanalında ' + (amt > 0 ? '+' : '') + amt + ' XP verildi.');
+                        try { sendToAdminChannel('⭐ XP: ' + name + ' ' + (amt > 0 ? '+' : '') + amt + ' • #' + ch + ' • Yetkili: ' + currentUser.name); } catch (_) {}
+                    } else {
+                        if ((args[1] || '').toLowerCase() === 'tum') await wipeUser(k); else await database.ref('xp/' + ch + '/' + k).remove();
+                        addSystemMessage('✅ ' + esc(name) + ' kullanıcısının ' + ((args[1] || '').toLowerCase() === 'tum' ? 'tüm kanal' : '#' + esc(ch)) + ' puanları sıfırlandı.');
+                        try { sendToAdminChannel('⭐ XP SIFIRLANDI: ' + name + ' • Yetkili: ' + currentUser.name); } catch (_) {}
+                    }
+                    incrementWriteCount(); return true;
+                }
+                return false;
+            }
+        };
+
+        /* ================= 3) KOMUT KAYDI + PANELLERDE KOMUT LİSTESİ ================= */
+        // [komut, kullanım(args), açıklama, en düşük rol, not]
+        const R = { all: 0, verified: 1, halfoperator: 2, operator: 3, coadmin: 4, admin: 5, owner: 6 };
+        const RN = { all: 'Herkes', verified: '+ Onaylı', halfoperator: '% Half-Op', operator: '@ Operatör', coadmin: '& Co-Admin', admin: '⬟ Admin', owner: '♛ Owner' };
+        const CMDS = [
+            ['help', '', 'Yetkine göre komut yardımını gösterir (/yardım)', 'all'], ['kullanıcılar', '', 'Çevrimiçi kullanıcıları listeler (/users, /online)', 'all'],
+            ['kurallar', '', 'Topluluk kurallarını açar (/rules)', 'all'], ['ping', '', 'Bağlantı testi', 'all'], ['çıkış', '', 'Oturumu kapatır (/logout)', 'all'],
+            ['email', 'adres@ornek.com', 'Hesabına şifre kurtarma e-postası ekler', 'all', 'kayıtlı hesap'], ['komutlar', '', 'Özel komutları listeler', 'all'],
+            ['xp', '[kullanıcı]', 'Bu kanaldaki XP / seviyeni gösterir (/seviye)', 'all', 'kayıtlı kullanıcılar'], ['top', '', 'Bu kanalın ilk 10 XP sıralaması (/siralama)', 'all'],
+            ['konu', '[metin]', 'Kanal açıklamasını gösterir; kanal sahibi/Admin değiştirir', 'all', 'değiştirmek için yetki'],
+            ['oyun', '', 'Akıl Küpü oyun botu komutları (/oyun-yardim, /katil, /skor, /istatistik)', 'all', 'oyun botu'],
+            ['verifiedpanel', '', '+ Onaylı kullanıcı panelini açar (/vpanel)', 'verified'],
+            ['halfoperatorpanel', '', 'Half-Operatör panelini açar (/hopanel)', 'halfoperator'], ['sessizeal', '', 'Kanalı sessize alır / açar', 'halfoperator'],
+            ['gecici', 'kullanıcı dakika', 'Süreli geçici + onay verir (/tempverified)', 'halfoperator'], ['kanalverified', 'kullanıcı', 'Bu kanalda onaylı (+) yapar', 'halfoperator', 'kanal yetkisi'],
+            ['operatorpanel', '', 'Operatör panelini açar (/opanel)', 'operator'], ['mute', 'kullanıcı [dk]', 'Kullanıcıyı susturur', 'operator', 'kanal yetkisi'], ['unmute', 'kullanıcı', 'Susturmayı kaldırır', 'operator', 'kanal yetkisi'],
+            ['kick', 'kullanıcı [dk] [sebep]', 'Kanaldan süreli uzaklaştırır (/süreliban)', 'operator', 'kanal yetkisi'], ['unban', 'kullanıcı', 'Kanal yasağını kaldırır', 'operator', 'kanal yetkisi'],
+            ['banlist', '', 'Yasaklı listesini gösterir', 'operator'], ['sil', 'kullanıcı', 'Kullanıcının mesajlarını siler', 'operator', 'kanal yetkisi'], ['temizle', '', 'Kanal mesajlarını temizler', 'operator', 'kanal yetkisi'],
+            ['sabitle', 'metin', 'Kanalda mesaj sabitler (veya mesajın yanındaki 📌)', 'operator', 'kanal yetkisi'], ['sabitkaldir', '', 'Sabit mesajı kaldırır (/unpin)', 'operator', 'kanal yetkisi'],
+            ['coadminpanel', '', 'Co-Admin panelini açar (/cap)', 'coadmin'], ['info', 'kullanıcı mesaj', 'Kullanıcıya özel bildirim gönderir', 'coadmin'],
+            ['kanalop', 'kullanıcı', 'Bu kanalda operatör yapar', 'coadmin', 'kanal yetkisi'], ['kanalopcikar', 'kullanıcı', 'Kanal operatörlüğünü alır', 'coadmin', 'kanal yetkisi'],
+            ['kanalhalfop', 'kullanıcı', 'Bu kanalda half-op yapar', 'coadmin', 'kanal yetkisi'], ['kanalhalfopcikar', 'kullanıcı', 'Kanal half-op yetkisini alır', 'coadmin', 'kanal yetkisi'],
+            ['kanalverifiedcikar', 'kullanıcı', 'Kanal onaylı (+) yetkisini alır', 'coadmin', 'kanal yetkisi'],
+            ['adminpanel', '', 'Admin panelini açar (/ap)', 'admin'], ['reg', '', 'Kullanıcı kayıt penceresini açar (ad, şifre, e-posta)', 'admin'],
+            ['verified', 'kullanıcı', 'Kalıcı onaylı (+) yapar (/onayla)', 'admin', 'kayıtlı olmalı'], ['unverified', 'kullanıcı', 'Onaylı yetkisini alır (/onaykaldir)', 'admin'],
+            ['coadmin', 'kullanıcı', 'Co-Admin yapar', 'admin', 'kayıtlı olmalı'], ['removecoadmin', 'kullanıcı', 'Co-Admin yetkisini alır', 'admin'],
+            ['halfop', 'kullanıcı', 'Global half-operatör yapar', 'admin', 'kayıtlı olmalı'], ['removehalfop', 'kullanıcı', 'Half-operatörlüğü alır', 'admin'],
+            ['opglobal', 'kullanıcı', 'Global operatör yapar (/operatorglobal)', 'admin', 'kayıtlı olmalı'], ['deopglobal', 'kullanıcı', 'Global operatörlüğü alır', 'admin'],
+            ['globalban', 'kullanıcı [süre] [sebep]', 'Tüm sistemden yasaklar', 'admin'], ['removeglobalban', 'kullanıcı', 'Global yasağı kaldırır', 'admin'],
+            ['sikayetler', '', 'Şikayet listesini gösterir (/reports)', 'admin'], ['join', '#kanal [nick]', 'Kullanıcıyı kanala alır', 'admin'], ['unjoin', '#kanal [nick]', 'Kullanıcıyı kanaldan çıkarıp önceki kanalına döndürür', 'admin'],
+            ['konusil', '', 'Kanal açıklamasını siler', 'admin', 'kanal sahibi de'], ['sifresifirla', 'kullanıcı', 'Geçici şifre üretir (Admin şifresini yalnızca Owner)', 'admin'], ['sifretalepleri', '', 'Bekleyen şifre kurtarma taleplerini listeler', 'admin'],
+            ['xpver', 'kullanıcı miktar', 'Bu kanalda XP verir/düşer (±5000)', 'admin', 'kayıtlı olmalı'], ['xpsifirla', 'kullanıcı [tum]', 'Bu kanalda (veya tüm kanallarda) XP sıfırlar', 'admin'],
+            ['ownerpanel', '', 'Owner panelini açar (/op)', 'owner'], ['admin', 'kullanıcı', 'Admin yapar', 'owner', 'kayıtlı olmalı'], ['removeadmin', 'kullanıcı', 'Admin yetkisini alır', 'owner'],
+            ['sifregoster', 'kullanıcı', 'Kullanıcı şifresini açılır pencerede gösterir', 'owner'], ['ozelokuma', '', 'Özel sohbetleri izler', 'owner'], ['ozelara', 'kullanıcı', 'Özel sohbet arar', 'owner'], ['ozeltemizle', '', 'Özel sohbet kayıtlarını temizler', 'owner'],
+            ['komut', '', 'Özel komut oluşturma penceresini açar', 'owner'],
+            ['proxy', '', 'Proxy bot bilgisi (/proxy-yardim ile tümü)', 'owner'], ['proxy-durum', '', 'Strike raporu', 'owner'], ['proxy-sifirla', 'kullanıcı', 'Strike sıfırlar', 'owner'], ['proxy-kapat', '', 'Proxy botu duraklatır', 'owner'], ['proxy-baslat', '', 'Proxy botu başlatır', 'owner']
+        ];
+        window.CMD_REGISTRY = CMDS;
+        const myLevel = () => isOwner ? 6 : ['admin', 'coadmin', 'operator', 'halfoperator', 'verified'].reduce((a, r) => a || (hasRole(r) ? R[r] : 0), 0);
+        function listFor(level) {
+            const out = CMDS.filter(c => R[c[3]] <= level).map(c => ({ n: c[0], a: c[1], d: c[2], r: c[3], note: c[4] }));
+            try { Object.entries(customCommands || {}).forEach(([n, d]) => { if (d && R[d.role] != null && R[d.role] <= level && !out.some(o => o.n === n)) out.push({ n: n, a: '', d: 'Özel komut', r: d.role, note: 'özel' }); }); } catch (_) {}
+            return out.sort((a, b) => a.n.localeCompare(b.n, 'tr'));
+        }
+        function buildCmdTab(panel, level, roleName) {
+            if (panel.querySelector('[data-cmdtab]')) return;
+            const tabs = panel.querySelector('.role-panel-tabs'), content = panel.querySelector('.role-panel-content'); if (!tabs || !content) return;
+            const btn = document.createElement('button'); btn.className = 'role-tab'; btn.dataset.cmdtab = '1'; btn.innerHTML = '<i class="fas fa-terminal"></i> Tüm Komutlar'; tabs.appendChild(btn);
+            const pane = document.createElement('div'); pane.className = 'role-tab-content'; pane.dataset.cmdpane = '1'; content.appendChild(pane);
+            const draw = () => {
+                const q = trl(pane.querySelector('.cmdp-search') ? pane.querySelector('.cmdp-search').value : ''); const list = listFor(level).filter(c => !q || trl(c.n + ' ' + c.d).includes(q));
+                let h = '<input class="cmdp-search" type="search" placeholder="Komut ara…" value="' + esc(q) + '"><div class="cmdp-note">' + roleName + ' yetkisiyle kullanabildiğin <strong>' + listFor(level).length + '</strong> komut (A → Z). Düğmeye basınca komut yazma kutusuna eklenir; argüman gerektirmeyenler hemen çalışır.</div>'; let last = '';
+                list.forEach(c => {
+                    const L = c.n[0].toLocaleUpperCase('tr'); if (L !== last) { h += '<div class="cmdp-letter">' + L + '</div>'; last = L; }
+                    h += '<div class="cmdp-row"><div class="cmdp-main"><div class="cmdp-use"><b>/' + esc(c.n) + '</b> ' + esc(c.a) + '<span class="cmdp-chip">' + RN[c.r] + '</span>' + (c.note ? '<span class="cmdp-chip">' + esc(c.note) + '</span>' : '') + '</div><div class="cmdp-desc">' + esc(c.d) + '</div></div>' +
+                        '<button class="cmdp-go" data-cmd="' + esc(c.n) + '" data-args="' + (c.a ? '1' : '') + '">' + (c.a ? 'Ekle' : 'Çalıştır') + '</button></div>';
+                });
+                if (!list.length) h += '<div class="cmdp-note">Sonuç yok.</div>';
+                const keep = pane.querySelector('.cmdp-search') === document.activeElement; pane.innerHTML = h; const s = pane.querySelector('.cmdp-search'); s.oninput = draw; if (keep) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+            };
+            pane.addEventListener('click', e => {
+                const b = e.target.closest('.cmdp-go'); if (!b) return; const inp = $('message-input'); if (!inp) return;
+                if (b.dataset.args) { inp.value = '/' + b.dataset.cmd + ' '; inp.focus(); panel.classList.remove('active'); }
+                else { try { handleCommand('/' + b.dataset.cmd); } catch (_) {} }
+            });
+            btn.addEventListener('click', () => { panel.querySelectorAll('.role-tab').forEach(t => t.classList.remove('active')); panel.querySelectorAll('.role-tab-content').forEach(c => c.classList.remove('active')); btn.classList.add('active'); pane.classList.add('active'); draw(); });
+            panel.addEventListener('click', e => { const t = e.target.closest('.role-tab'); if (t && !t.dataset.cmdtab) { pane.classList.remove('active'); btn.classList.remove('active'); } });
+        }
+        function buildCmdTabs() {
+            [['verifiedPanel', 'verified', '+ Onaylı'], ['halfoperatorPanel', 'halfoperator', '% Half-Operatör'], ['operatorPanel', 'operator', '@ Operatör'],
+             ['coadminPanel', 'coadmin', '& Co-Admin'], ['adminPanel', 'admin', '⬟ Admin'], ['ownerPanel', 'owner', '♛ Owner']].forEach(([id, role, label]) => { const p = $(id); if (p) buildCmdTab(p, R[role], label); });
+        }
+
+        // /help artık aynı kayıttan üretiliyor
+        window.showHelp = function () {
+            const lv = myLevel(), list = listFor(lv); let h = '📖 <strong>KOMUTLAR</strong> <span style="opacity:.6">(' + list.length + ' komut, A→Z, yetkine göre)</span><br>'; let last = '';
+            list.forEach(c => { const L = c.n[0].toLocaleUpperCase('tr'); if (L !== last) { h += '<br><strong style="color:#8b6cff">' + L + '</strong><br>'; last = L; } h += '• /' + esc(c.n) + (c.a ? ' <em>' + esc(c.a) + '</em>' : '') + ' — ' + esc(c.d) + (c.note ? ' <span style="opacity:.55">(' + esc(c.note) + ')</span>' : '') + '<br>'; });
+            h += '<br>🖥️ Tüm komutlar ayrıca rol panelindeki <strong>Tüm Komutlar</strong> sekmesinde.'; addSystemMessage(h);
+        };
+
+        /* ---------- giriş sonrası kurulum ---------- */
+        let boundUser = null, lastCh = null;
+        setInterval(() => {
+            try {
+                buildCmdTabs(); watch();
+                if (typeof currentUser === 'undefined' || !currentUser || !database) return;
+                if (boundUser !== currentUser.name) { boundUser = currentUser.name; onLogin(); }
+                const ch = activeChannelName; if (ch && ch !== xpCh) { const old = xpCh; if (old) flush(old); bindChannel(ch); dailyBonus(ch); }
             } catch (_) {}
         }, 1000);
     })();
