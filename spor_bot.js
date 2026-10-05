@@ -10,15 +10,20 @@
      devre arası, bitiş → sohbette mesaj + açılır bildirim.
    • Kurulum: bu dosyayı oyun_bot.js'nin yanına koy; HTML'de
      <script src="spor_bot.js"></script> yeterli.
-   • İsteğe bağlı ayar (spor_bot.js'den ÖNCE tanımla):
+   • Çalışmıyorsa sohbete /spor test yaz: neyin bozuk olduğunu gösterir.
+   • En sağlam kurulum: spor-worker.js'yi Cloudflare Worker olarak yayınla ve
        window.SPOR_CONFIG = { BASE: 'https://SENIN-WORKER.workers.dev/soccer' };
+     (spor_bot.js'den ÖNCE tanımla). Worker, ESPN'i 15 sn önbellekler.
    ============================================================ */
 (function () {
     'use strict';
     if (window.__sporBot) return; window.__sporBot = true;
 
+    const VERSION = '2.0';
+    const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
     const CFG = Object.assign({
-        BASE: 'https://site.api.espn.com/apis/site/v2/sports/soccer',
+        BASE: ESPN,
+        FALLBACKS: ['https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?url='],   // doğrudan erişim engellenirse (yalnız herkese açık skor verisi)
         LIVE_MS: 30000,      // canlı maç varken yenileme
         SOON_MS: 60000,      // maça 15 dk kala
         IDLE_MS: 300000,     // diğer zamanlar
@@ -55,18 +60,38 @@
 
     /* ---------- ESPN veri çekme ---------- */
     const cache = new Map();
+    const net = { route: null, errs: {}, ok: 0, fail: 0 };
+    async function getJSON(url, ms) {
+        const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = setTimeout(() => ctl && ctl.abort(), ms || 9000);
+        try {
+            const r = await fetch(url, { signal: ctl ? ctl.signal : undefined });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const j = await r.json();
+            if (!j || !Array.isArray(j.events)) throw new Error('Beklenmeyen yanıt biçimi');
+            return j;
+        } finally { clearTimeout(to); }
+    }
+    function routes(path) {            // path: '/tur.1/scoreboard?limit=200'
+        const list = [{ name: CFG.BASE === ESPN ? 'doğrudan' : 'özel adres', url: CFG.BASE + path }];
+        if (CFG.BASE !== ESPN) list.push({ name: 'doğrudan', url: ESPN + path });
+        (CFG.FALLBACKS || []).forEach(p => list.push({ name: p.replace(/^https?:\/\/([^/]+).*/, '$1'), url: p + encodeURIComponent(ESPN + path) }));
+        if (net.route) { const i = list.findIndex(r => r.name === net.route); if (i > 0) list.unshift(list.splice(i, 1)[0]); }
+        return list;
+    }
     async function fetchBoard(lg, dates, ttl) {
         const key = lg + '|' + (dates || ''), hit = cache.get(key);
         if (hit && Date.now() - hit.t < (ttl == null ? CFG.TTL_MS : ttl)) return hit.v;
-        const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = setTimeout(() => ctl && ctl.abort(), 10000);
-        try {
-            const url = CFG.BASE + '/' + lg + '/scoreboard?limit=200' + (dates ? '&dates=' + dates : '');
-            const r = await fetch(url, { signal: ctl ? ctl.signal : undefined, cache: 'no-store' });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            const j = await r.json();
-            const v = (j.events || []).map(e => parseEvent(e, lg));
-            cache.set(key, { t: Date.now(), v }); return v;
-        } finally { clearTimeout(to); }
+        const path = '/' + lg + '/scoreboard?limit=200' + (dates ? '&dates=' + dates : '');
+        let last = null;
+        for (const r of routes(path)) {
+            try {
+                const j = await getJSON(r.url);
+                net.route = r.name; net.ok++;
+                const v = (j.events || []).map(e => parseEvent(e, lg));
+                cache.set(key, { t: Date.now(), v }); return v;
+            } catch (e) { last = e; net.errs[r.name] = (e && e.name === 'AbortError') ? 'zaman aşımı' : String((e && e.message) || e); }
+        }
+        net.fail++; throw last || new Error('Bağlantı kurulamadı');
     }
     function parseEvent(ev, lg) {
         const comp = (ev.competitions || [])[0] || {}, cs = comp.competitors || [];
@@ -75,6 +100,15 @@
         const side = c => ({ id: String((c.team || {}).id || c.id || ''), name: (c.team || {}).shortDisplayName || (c.team || {}).displayName || c.name || '?', full: (c.team || {}).displayName || '', score: parseInt(c.score, 10) || 0 });
         return { id: String(ev.id), lg: lg, date: Date.parse(ev.date) || 0, state: tp.state || 'pre', sname: String(tp.name || ''), clock: st.displayClock || '', period: st.period || 0,
             home: side(h), away: side(a), details: comp.details || [], venue: ((comp.venue || {}).fullName) || '' };
+    }
+    async function fetchRange(lgs, from, to) {
+        try { return await fetchMany(lgs, ymd(from) + '-' + ymd(to)); }
+        catch (_) {
+            const days = []; for (let d = new Date(from); d <= to; d = addDays(d, 1)) days.push(ymd(d));
+            const parts = await Promise.allSettled(days.map(x => fetchMany(lgs, x)));
+            const ok = parts.filter(p => p.status === 'fulfilled'); if (!ok.length) throw new Error('Skor servisine ulaşılamadı');
+            return dedupe(ok.flatMap(p => p.value));
+        }
     }
     const dedupe = list => { const m = new Map(); list.forEach(e => m.set(e.lg + e.id, e)); return [...m.values()]; };
     async function fetchMany(lgs, dates) {
@@ -128,7 +162,7 @@
             if (live.length) { say(groupHtml('🔴 <strong>CANLI MAÇLAR</strong> (' + live.length + ')', live)); return; }
             const next = evs.filter(e => e.state === 'pre' && e.date > Date.now()).sort((a, b) => a.date - b.date).slice(0, 5);
             say('😴 Şu an canlı maç yok.' + (next.length ? '<br><br><strong>Sıradakiler:</strong><br>' + next.map(e => fmtDay(e.date) + ' ' + fmtTime(e.date) + ' — <strong>' + esc(e.home.name) + ' - ' + esc(e.away.name) + '</strong> <span style="opacity:.6">(' + LEAGUES[e.lg] + ')</span>').join('<br>') : ''));
-        } catch (e) { say('⚠️ ' + esc(e.message)); }
+        } catch (e) { say('⚠️ ' + esc(e.message) + '. Sorunu görmek için <strong>/spor test</strong> yaz.'); }
     }
     async function cmdToday() {
         say('⏳ Bugünün maçları getiriliyor…');
@@ -137,12 +171,12 @@
             const evs = (await fetchMany(ALL, ymd(now))).filter(e => sameDay(e.date, now));
             if (!evs.length) { say('📅 Bugün Süper Lig / Avrupa futbolunda maç görünmüyor.'); return; }
             say(groupHtml('📅 <strong>BUGÜNÜN MAÇLARI</strong> — ' + fmtDay(now) + ' (' + evs.length + ')', evs));
-        } catch (e) { say('⚠️ ' + esc(e.message)); }
+        } catch (e) { say('⚠️ ' + esc(e.message) + '. Sorunu görmek için <strong>/spor test</strong> yaz.'); }
     }
     async function cmdScore(q) {
         say('⏳ "' + esc(q) + '" aranıyor…');
         try {
-            const now = new Date(), evs = (await fetchMany(ALL, ymd(addDays(now, -3)) + '-' + ymd(addDays(now, 7)))).filter(e => matchTeam(e, q));
+            const now = new Date(), evs = (await fetchRange(ALL, addDays(now, -3), addDays(now, 7))).filter(e => matchTeam(e, q));
             if (!evs.length) { say('🤷 "' + esc(q) + '" için yakın tarihli maç bulunamadı. Takım adını (örn. galatasaray, fb, real madrid) dene.'); return; }
             const live = evs.filter(e => e.state === 'in'), today = evs.filter(e => sameDay(e.date, now)), past = evs.filter(e => e.state === 'post').sort((a, b) => b.date - a.date), fut = evs.filter(e => e.state === 'pre').sort((a, b) => a.date - b.date);
             const main = live[0] || today[0] || past[0] || fut[0], extra = main === fut[0] || main.state === 'pre' ? null : fut[0];
@@ -151,16 +185,33 @@
             const inc = incidents(main); if (inc) h += '<br>' + inc;
             if (extra) h += '<br><br>⏭️ Sıradaki: ' + fmtDay(extra.date) + ' ' + fmtTime(extra.date) + ' — ' + esc(extra.home.name) + ' - ' + esc(extra.away.name);
             say(h);
-        } catch (e) { say('⚠️ ' + esc(e.message)); }
+        } catch (e) { say('⚠️ ' + esc(e.message) + '. Sorunu görmek için <strong>/spor test</strong> yaz.'); }
+    }
+    async function cmdTest() {
+        const ok = '✅', no = '❌';
+        say('🔧 <strong>Spor botu testi</strong> (v' + VERSION + ') çalışıyor…');
+        const rows = [];
+        rows.push(ok + ' spor_bot.js yüklendi');
+        rows.push((window.sendMessage && window.sendMessage.__spor ? ok : no) + ' komut kancası ' + (window.sendMessage && window.sendMessage.__spor ? 'kurulu' : 'KURULU DEĞİL (sendMessage bulunamadı)'));
+        rows.push((typeof window.addSystemMessage === 'function' ? ok : no) + ' sohbete yazma');
+        rows.push((logged() ? ok : no) + ' giriş yapılmış');
+        let n = null;
+        try { cache.delete('tur.1|'); const ev = await fetchBoard('tur.1', null, 0); n = ev.length; rows.push(ok + ' ESPN Süper Lig: ' + n + ' maç okundu (yol: ' + esc(net.route) + ')'); }
+        catch (e) { rows.push(no + ' ESPN\'e ulaşılamadı'); }
+        Object.keys(net.errs).forEach(k => rows.push('&nbsp;&nbsp;↳ ' + esc(k) + ': ' + esc(net.errs[k])));
+        if (n === null) rows.push('💡 Tarayıcı ESPN\'e erişemiyor (büyük olasılıkla CORS). Çözüm: spor-worker.js dosyasını Cloudflare Worker olarak yayınla ve window.SPOR_CONFIG = { BASE: \'https://SENIN.workers.dev/soccer\' } ekle.');
+        rows.push('🔔 Bildirimler: ' + (prefs.alerts ? 'açık' : 'kapalı') + ' • takip: ' + (prefs.teams.length ? prefs.teams.map(esc).join(', ') : 'yok'));
+        say(rows.join('<br>'));
     }
     function cmdSpor(args) {
         const sub = (args[0] || '').toLowerCase(), rest = args.slice(1).join(' ');
+        if (sub === 'test') { cmdTest(); return; }
         if (sub === 'kapat') { prefs.alerts = false; savePrefs(); say('🔕 Canlı spor bildirimleri kapatıldı. (/spor ac ile açabilirsin)'); return; }
         if (sub === 'ac' || sub === 'aç') { prefs.alerts = true; savePrefs(); say('🔔 Canlı spor bildirimleri açıldı: Süper Lig + Avrupa kupaları' + (prefs.teams.length ? ' + takip ettiğin takımlar' : '') + '.'); return; }
         if (sub === 'takip' && rest) { const t = norm(ALIAS[norm(rest)] || rest); if (t && !prefs.teams.includes(t)) prefs.teams.push(t); savePrefs(); say('⭐ Takip: <strong>' + esc(t) + '</strong> — bu takımın (hangi ligde olursa olsun) gol/maç bildirimlerini alacaksın.'); return; }
         if ((sub === 'takipsil' || sub === 'sil') && rest) { const t = norm(ALIAS[norm(rest)] || rest); prefs.teams = prefs.teams.filter(x => x !== t); savePrefs(); say('🗑️ Takipten çıkarıldı: ' + esc(t)); return; }
         if (sub === 'liste') { say('⭐ Takip ettiklerin: ' + (prefs.teams.length ? prefs.teams.map(esc).join(', ') : 'yok')); return; }
-        say('⚽ <strong>SPOR BOTU</strong> — Süper Lig + Avrupa futbolu<br>• /canli — şu an oynanan maçlar<br>• /bugun — bugünün maç programı<br>• /skor takım — örn. /skor galatasaray, /skor fb, /skor real madrid<br>• /spor ac | kapat — canlı bildirimler (şu an: ' + (prefs.alerts ? 'AÇIK' : 'KAPALI') + ')<br>• /spor takip takım | takipsil takım | liste<br><span style="opacity:.6">Otomatik bildirim: Süper Lig, Şampiyonlar/Avrupa/Konferans Ligi + takip ettiğin takımlar. Veriler ESPN\'den, sunucuna yük bindirmez.</span>');
+        say('⚽ <strong>SPOR BOTU</strong> — Süper Lig + Avrupa futbolu<br>• /canli — şu an oynanan maçlar<br>• /bugun — bugünün maç programı<br>• /skor takım — örn. /skor galatasaray, /skor fb, /skor real madrid<br>• /spor ac | kapat — canlı bildirimler (şu an: ' + (prefs.alerts ? 'AÇIK' : 'KAPALI') + ')<br>• /spor takip takım | takipsil takım | liste<br>• /spor test — çalışmıyorsa tanılama<br><span style="opacity:.6">Otomatik bildirim: Süper Lig, Şampiyonlar/Avrupa/Konferans Ligi + takip ettiğin takımlar. Veriler ESPN\'den, sunucuna yük bindirmez.</span>');
     }
 
     /* ---------- açılır bildirim ---------- */
@@ -256,6 +307,7 @@
         R.push(['canli', '', 'Şu an oynanan Süper Lig / Avrupa maçları (spor botu)', 'all', 'spor botu'], ['bugun', '', 'Bugünün maç programı (spor botu)', 'all', 'spor botu'],
             ['skor', 'takım', 'Takımın canlı/son/sıradaki maçı; argümansız /skor oyun botunundur', 'all', 'spor botu'], ['spor', '[ac|kapat|takip takım]', 'Spor botu yardımı ve canlı bildirim ayarları', 'all', 'spor botu']);
     }
-    setInterval(() => { hook(); registry(); }, 1000);
-    window.SporBot = { live: cmdLive, today: cmdToday, score: cmdScore, _parse: parseEvent, _detect: detect, _match: matchTeam, _snap: snap };
+    let hello = false;
+    setInterval(() => { hook(); registry(); if (!hello && logged() && window.sendMessage && window.sendMessage.__spor) { hello = true; try { console.info('[spor_bot] v' + VERSION + ' hazır'); } catch (_) {} say('⚽ Spor botu hazır — <strong>/canli</strong> • <strong>/bugun</strong> • <strong>/skor takım</strong> • /spor'); } }, 1000);
+    window.SporBot = { _cache: cache, version: VERSION, test: cmdTest, net: net, live: cmdLive, today: cmdToday, score: cmdScore, _parse: parseEvent, _detect: detect, _match: matchTeam, _snap: snap };
 })();
