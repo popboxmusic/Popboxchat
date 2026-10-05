@@ -1,13 +1,13 @@
 // ============================================================
-// DJ BOT 🎧 — v2.0 (Firebase Kotası Dostu)
+// DJ BOT 🎧 — v3.0 (API Anahtarsız)
 // Kanal: radyo | Sahip: mateky
 // ============================================================
-// 🔧 v2.0 Firebase Korumaları:
-//   • Mesaj dinleme filtresi (sadece "!" ile başlayanları işle)
-//   • Duplicate komut koruması (aynı mesaj iki kez işlenmez)
-//   • Bot mesaj dedupe (aynı mesaj 5 sn içinde 2. kez yazılmaz)
-//   • Aynı şarkıyı tekrar aramaz (cache)
-//   • Kota kontrolü: günlük arama sayısı takip edilir
+// Özellikler:
+//   • API anahtarı GEREKMEZ
+//   • !cal [şarkı adı] — YouTube'da arar, playlist'e ekler
+//   • !cal [link/ID] — Direkt ekler
+//   • !atla / !kuyruk / !durdur / !devam
+//   • Firebase kotası dostu (filtreli dinleyici, dedupe, cache)
 // ============================================================
 (function () {
     'use strict';
@@ -21,12 +21,21 @@
     const CHANNEL = 'radyo';
     const BOT_NAME = 'DJ';
     const BOT_ICON = '🎧';
-    const YOUTUBE_API_KEY = 'YOUTUBE_API_ANAHTARINI_BURAYA_YAPISTIR';
 
     // Kota koruması
-    const MAX_SEARCH_PER_DAY = 80;   // Günde max arama (kota = 100, tampon bırak)
-    const BOT_MSG_DEDUPE_MS = 5000;  // Aynı bot mesajı 5 sn içinde tekrar yazılmaz
-    const SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000; // Arama cache'i 24 saat geçerli
+    const BOT_MSG_DEDUPE_MS = 5000;
+    const SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 saat
+    const SEARCH_COOLDOWN_MS = 3000;              // 3 sn arayla max 1 arama
+    const MAX_SEARCH_PER_DAY = 300;               // Scraping kotası yok ama IP ban yememek için
+
+    // YouTube arama proxy'leri (biri çalışmazsa diğeri denenir)
+    // Not: CORS nedeniyle tarayıcıda doğrudan youtube.com'a fetch edilemez,
+    // bu yüzden açık kaynak CORS proxy'leri kullanılır.
+    const CORS_PROXIES = [
+        'https://api.allorigins.win/raw?url=',
+        'https://corsproxy.io/?',
+        'https://api.codetabs.com/v1/proxy?quest='
+    ];
 
     // ------------------------------------------------------------
     // DURUM
@@ -35,14 +44,11 @@
     let _listenerBound = false;
     let _listenerRef = null;
 
-    // Duplicate koruma
     const _seenMsgKeys = new Set();
     let _lastBotMsg = { text: '', time: 0 };
 
-    // Arama cache (Firebase kotası + YouTube kotası korur)
-    const _searchCache = {};       // { query: { videoId, title, ts } }
-
-    // Kota takibi
+    const _searchCache = {};      // { query: { videoId, title, ts } }
+    let _lastSearchTime = 0;
     let _dailySearchCount = 0;
     let _dailySearchDate = new Date().toISOString().slice(0, 10);
 
@@ -56,9 +62,6 @@
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     function today() { return new Date().toISOString().slice(0, 10); }
 
-    // ------------------------------------------------------------
-    // KOTA KONTROLÜ
-    // ------------------------------------------------------------
     function checkSearchQuota() {
         const t = today();
         if (_dailySearchDate !== t) {
@@ -68,66 +71,8 @@
         return _dailySearchCount < MAX_SEARCH_PER_DAY;
     }
 
-    function incrementSearchCount() {
-        _dailySearchCount++;
-    }
-
     // ------------------------------------------------------------
-    // YOUTUBE ARAMA — Cache'li
-    // ------------------------------------------------------------
-    async function searchYouTube(query) {
-        if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'YOUTUBE_API_ANAHTARINI_BURAYA_YAPISTIR') {
-            console.warn('🎧 YouTube API anahtarı ayarlanmamış.');
-            return null;
-        }
-
-        // 1) Cache kontrolü (0 kota)
-        const cached = _searchCache[query.toLowerCase()];
-        if (cached && (Date.now() - cached.ts) < SEARCH_CACHE_TTL) {
-            console.log('🎧 Cache\'den alındı:', query);
-            return { id: cached.videoId, title: cached.title, channel: cached.channel, fromCache: true };
-        }
-
-        // 2) Günlük kota kontrolü
-        if (!checkSearchQuota()) {
-            console.warn('🎧 Günlük arama kotası doldu.');
-            return { quotaExceeded: true };
-        }
-
-        // 3) API çağrısı
-        try {
-            const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`;
-            const res = await fetch(url);
-            if (!res.ok) return null;
-            const data = await res.json();
-            const item = data.items?.[0];
-            if (!item) return null;
-
-            incrementSearchCount();
-
-            const result = {
-                id: item.id.videoId,
-                title: item.snippet.title,
-                channel: item.snippet.channelTitle
-            };
-
-            // Cache'e kaydet
-            _searchCache[query.toLowerCase()] = {
-                videoId: result.id,
-                title: result.title,
-                channel: result.channel,
-                ts: Date.now()
-            };
-
-            return result;
-        } catch (e) {
-            console.error('🎧 YouTube arama hatası:', e);
-            return null;
-        }
-    }
-
-    // ------------------------------------------------------------
-    // VIDEO ID ÇIKAR
+    // VIDEO ID ÇIKAR (link veya direkt ID)
     // ------------------------------------------------------------
     function extractVideoId(text) {
         if (!text) return null;
@@ -138,7 +83,115 @@
         if (m) return m[1];
         m = text.match(/embed\/([a-zA-Z0-9_-]{11})/);
         if (m) return m[1];
+        m = text.match(/shorts\/([a-zA-Z0-9_-]{11})/);
+        if (m) return m[1];
         return null;
+    }
+
+    // ------------------------------------------------------------
+    // YOUTUBE ARAMA — API ANAHTARSIZ (Scraping + CORS Proxy)
+    // ------------------------------------------------------------
+    async function searchYouTube(query) {
+        // 1) Cache kontrolü
+        const cacheKey = query.toLowerCase().trim();
+        const cached = _searchCache[cacheKey];
+        if (cached && (Date.now() - cached.ts) < SEARCH_CACHE_TTL) {
+            console.log('🎧 Cache:', query);
+            return { id: cached.videoId, title: cached.title, fromCache: true };
+        }
+
+        // 2) Cooldown
+        const now = Date.now();
+        if (now - _lastSearchTime < SEARCH_COOLDOWN_MS) {
+            await sleep(SEARCH_COOLDOWN_MS - (now - _lastSearchTime));
+        }
+        _lastSearchTime = Date.now();
+
+        // 3) Kota kontrolü
+        if (!checkSearchQuota()) {
+            console.warn('🎧 Günlük arama limiti doldu.');
+            return { quotaExceeded: true };
+        }
+
+        // 4) YouTube arama sayfası
+        const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D`;
+
+        // 5) CORS proxy'leri sırayla dene
+        for (const proxy of CORS_PROXIES) {
+            try {
+                const url = proxy + encodeURIComponent(ytUrl);
+                const res = await fetch(url);
+                if (!res.ok) continue;
+                const html = await res.text();
+
+                // Video ID'lerini çıkar (birden fazla regex dene)
+                const ids = extractVideoIdsFromHTML(html);
+                if (ids.length === 0) continue;
+
+                // İlk geçerli videoyu al
+                const videoId = ids[0];
+                // Başlığı da çıkarmayı dene
+                const title = extractTitleFromHTML(html, videoId) || query;
+
+                _dailySearchCount++;
+
+                // Cache'e kaydet
+                _searchCache[cacheKey] = {
+                    videoId: videoId,
+                    title: title,
+                    ts: Date.now()
+                };
+
+                console.log(`🎧 Bulundu: ${title} (${videoId})`);
+                return { id: videoId, title: title };
+
+            } catch (e) {
+                console.warn('🎧 Proxy hatası:', proxy, e.message);
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    // HTML'den video ID'lerini ayıkla
+    function extractVideoIdsFromHTML(html) {
+        const ids = new Set();
+
+        // Yöntem 1: videoId alanı
+        const re1 = /"videoId":"([a-zA-Z0-9_-]{11})"/g;
+        let m;
+        while ((m = re1.exec(html)) !== null) ids.add(m[1]);
+
+        // Yöntem 2: watch?v= linkleri
+        const re2 = /\/watch\?v=([a-zA-Z0-9_-]{11})/g;
+        while ((m = re2.exec(html)) !== null) ids.add(m[1]);
+
+        // Yöntem 3: youtu.be linkleri
+        const re3 = /youtu\.be\/([a-zA-Z0-9_-]{11})/g;
+        while ((m = re3.exec(html)) !== null) ids.add(m[1]);
+
+        return Array.from(ids);
+    }
+
+    // HTML'den başlık ayıkla
+    function extractTitleFromHTML(html, videoId) {
+        try {
+            // videoId'nin yanındaki title alanını bul
+            const re = new RegExp(`"videoId":"${videoId}"[^}]*?"title":\\{"runs":\\[\\{"text":"([^"]+)"`, 's');
+            const m = html.match(re);
+            if (m) return decodeHTMLEntities(m[1]);
+            return null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function decodeHTMLEntities(s) {
+        if (!s) return '';
+        return s.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+            String.fromCharCode(parseInt(hex, 16))
+        ).replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
     }
 
     // ------------------------------------------------------------
@@ -146,19 +199,16 @@
     // ------------------------------------------------------------
     async function addToRadioPlaylist(videoId, title, requester) {
         const db = getDB();
-        if (!db) return false;
+        if (!db) return { error: true };
 
         try {
-            // Aynı video zaten playlist'te mi? (Firebase yazma koruması)
+            // Aynı video zaten playlist'te mi?
             const snap = await db.ref('channelPlaylists/' + CHANNEL).once('value');
             const data = snap.val() || {};
             const exists = Object.values(data).some(item => item.id === videoId);
-            if (exists) {
-                return { alreadyExists: true };
-            }
+            if (exists) return { alreadyExists: true };
 
-            const ref = db.ref('channelPlaylists/' + CHANNEL);
-            await ref.push({
+            await db.ref('channelPlaylists/' + CHANNEL).push({
                 id: videoId,
                 title: title || videoId,
                 url: `https://youtu.be/${videoId}`,
@@ -173,16 +223,14 @@
     }
 
     // ------------------------------------------------------------
-    // BOT MESAJ — Duplicate korumalı
+    // BOT MESAJ
     // ------------------------------------------------------------
     async function botSend(text) {
         const db = getDB();
         if (!db) return null;
 
-        // Aynı mesaj 5 sn içinde tekrar yazılmaz
         const now = Date.now();
         if (_lastBotMsg.text === text && (now - _lastBotMsg.time) < BOT_MSG_DEDUPE_MS) {
-            console.warn('🎧 Duplicate bot mesajı engellendi.');
             return null;
         }
         _lastBotMsg = { text, time: now };
@@ -223,19 +271,18 @@
                 let title = query;
 
                 if (!videoId) {
-                    // API anahtarı yoksa uyar
-                    if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'YOUTUBE_API_ANAHTARINI_BURAYA_YAPISTIR') {
-                        await botSend(`${BOT_ICON} ⚠️ Şarkı adıyla arama için YouTube API anahtarı gerekli. Şimdilik **link** veya **video ID** gönder.`);
-                        return true;
-                    }
-
+                    await botSend(`${BOT_ICON} 🔍 Aranıyor: **${query}**...`);
                     const result = await searchYouTube(query);
+
                     if (!result) {
-                        await botSend(`${BOT_ICON} ❌ Şarkı bulunamadı: **${query}**`);
+                        await botSend(
+                            `${BOT_ICON} ❌ Bulunamadı: **${query}**\n` +
+                            `💡 YouTube linkini direkt yapıştırmayı dene: **!cal https://youtu.be/...**`
+                        );
                         return true;
                     }
                     if (result.quotaExceeded) {
-                        await botSend(`${BOT_ICON} ⚠️ Günlük arama kotası doldu. Link veya video ID gönder.`);
+                        await botSend(`${BOT_ICON} ⚠️ Günlük arama limiti doldu. Link gönder.`);
                         return true;
                     }
                     videoId = result.id;
@@ -243,6 +290,7 @@
                 }
 
                 const res = await addToRadioPlaylist(videoId, title, user);
+
                 if (res.ok) {
                     await botSend(
                         `${BOT_ICON} ✅ **${user}** tarafından eklendi:\n` +
@@ -272,7 +320,7 @@
                 const data = snap.val() || {};
                 const items = Object.values(data);
                 if (!items.length) {
-                    await botSend(`${BOT_ICON} 📭 Playlist boş. **!cal [şarkı]** ile şarkı ekle.`);
+                    await botSend(`${BOT_ICON} 📭 Kuyruk boş. **!cal [şarkı]** ile ekle.`);
                     return true;
                 }
                 let msg = `${BOT_ICON} **RADYO KUYRUĞU** (${items.length} şarkı)\n━━━━━━━━━━━━━━\n`;
@@ -286,13 +334,13 @@
 
             case '!durdur': {
                 if (window.player && window.player.pauseVideo) window.player.pauseVideo();
-                await botSend(`${BOT_ICON} ⏸️ Müzik durduruldu.`);
+                await botSend(`${BOT_ICON} ⏸️ Durduruldu.`);
                 return true;
             }
 
             case '!devam': {
                 if (window.player && window.player.playVideo) window.player.playVideo();
-                await botSend(`${BOT_ICON} ▶️ Müzik devam ediyor.`);
+                await botSend(`${BOT_ICON} ▶️ Devam ediyor.`);
                 return true;
             }
 
@@ -300,13 +348,14 @@
             case '!yardim': {
                 await botSend(
                     `${BOT_ICON} **DJ BOT KOMUTLARI**\n━━━━━━━━━━━━━━\n` +
-                    `• **!cal [şarkı]** — YouTube'da ara ve ekle\n` +
+                    `• **!cal [şarkı]** — Ara ve ekle\n` +
                     `• **!cal [link/ID]** — Direkt ekle\n` +
-                    `• **!atla** — Sıradaki şarkıya geç\n` +
+                    `• **!atla** — Sıradaki şarkı\n` +
                     `• **!kuyruk** — Kuyruğu göster\n` +
-                    `• **!durdur** — Müziği durdur\n` +
-                    `• **!devam** — Müziği devam ettir\n` +
-                    `• **!dj-yardim** — Bu mesaj`
+                    `• **!durdur** — Durdur\n` +
+                    `• **!devam** — Devam et\n` +
+                    `• **!dj-yardim** — Bu mesaj\n\n` +
+                    `🔑 API anahtarı GEREKMEZ!`
                 );
                 return true;
             }
@@ -317,7 +366,7 @@
     }
 
     // ------------------------------------------------------------
-    // DİNLEYİCİ — Mesaj filtresiyle
+    // DİNLEYİCİ (Filtreli)
     // ------------------------------------------------------------
     function attachListener() {
         const db = getDB();
@@ -329,16 +378,11 @@
         _listenerRef.on('child_added', async (snap) => {
             const msg = snap.val();
             if (!msg) return;
-
-            // 🚫 Botun kendi mesajlarını atla
             if (msg.sender === BOT_NAME) return;
             if (msg.type === 'system' || msg.type === 'supervisor') return;
             if (msg.isBotMessage) return;
+            if (!msg.text || !msg.text.startsWith('!')) return; // Sadece komutlar
 
-            // 🚫 "!" ile başlamayan mesajları HİÇ işleme (sohbet mesajları)
-            if (!msg.text || !msg.text.startsWith('!')) return;
-
-            // 🚫 Duplicate mesaj koruması (aynı key iki kez işlenmez)
             const key = snap.key;
             if (_seenMsgKeys.has(key)) return;
             _seenMsgKeys.add(key);
@@ -370,7 +414,7 @@
             tries++;
         }
         if (!getDB()) {
-            console.error('❌ Firebase bağlantısı yok, DJ Bot başlatılamadı.');
+            console.error('❌ Firebase yok, DJ Bot başlatılamadı.');
             return;
         }
 
@@ -412,7 +456,7 @@
         } catch (e) {}
 
         attachListener();
-        console.log('✅ DJ Bot hazır!');
+        console.log('✅ DJ Bot hazır! (API anahtarsız)');
     }
 
     // ------------------------------------------------------------
@@ -421,8 +465,8 @@
     window.DJ = {
         search: searchYouTube,
         add: addToRadioPlaylist,
-        quota: () => ({ used: _dailySearchCount, max: MAX_SEARCH_PER_DAY, date: _dailySearchDate }),
-        cache: () => ({ ..._searchCache })
+        cache: () => ({ ..._searchCache }),
+        quota: () => ({ used: _dailySearchCount, max: MAX_SEARCH_PER_DAY, date: _dailySearchDate })
     };
 
     if (document.readyState === 'loading') {
