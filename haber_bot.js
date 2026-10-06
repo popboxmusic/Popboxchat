@@ -18,7 +18,8 @@
     const WORKER_URL = 'https://haber-worker.kyazar07.workers.dev';
     // ▲▲▲ ------------------------ ▲▲▲
 
-    const VERSION = '1.0';
+    const VERSION = '1.1';
+    const HOME_CHANNEL = 'haber';   // bot SADECE bu kanalda yazar / haber çeker
     const CHECK_MS = 60000;      // 60 saniyede bir kontrol
     const MAX_CACHE = 300;       // son 300 haber ID'sini hafızada tut
     const INITIAL_BACKFILL = 5;  // ilk açılışta en yeni 5 haberi göster
@@ -71,7 +72,10 @@
         return Math.floor(diff / 86400) + ' gün önce';
     };
     const logged = () => { try { return typeof currentUser !== 'undefined' && !!currentUser; } catch (_) { return false; } };
-    const say = html => { try { if (typeof window.addSystemMessage === 'function') window.addSystemMessage(html); } catch (_) {} };
+    // Şu an #haber kanalında mıyız?
+    const inHome = () => { try { return typeof currentChannel !== 'undefined' && currentChannel === HOME_CHANNEL; } catch (_) { return false; } };
+    // Mesaj sadece #haber kanalındayken yazılır (diğer kanallara asla)
+    const say = html => { try { if (inHome() && typeof window.addSystemMessage === 'function') window.addSystemMessage(html); } catch (_) {} };
 
     /* ---------- veri çekme ---------- */
     async function fetchNews(categories) {
@@ -101,10 +105,11 @@
 
     /* ---------- haber işleme ---------- */
     async function checkNews(isInitial) {
-        if (!logged() || !prefs.enabled || !prefs.categories.length) return;
+        if (!logged() || !inHome() || !prefs.enabled || !prefs.categories.length) return;
         try {
             const items = await fetchNews(prefs.categories);
             if (!items.length) return;
+            if (!inHome()) return;   // beklerken kanaldan çıkıldıysa haberleri kaçırma, sonra gösterilir
 
             const seenSet = new Set(prefs.lastSeenIds);
             const fresh = items.filter(it => it.id && !seenSet.has(it.id));
@@ -246,7 +251,7 @@
     let initialDone = false;
 
     async function tick() {
-        if (busy || !logged() || document.hidden || !prefs.enabled) return;
+        if (busy || !logged() || !inHome() || document.hidden || !prefs.enabled) return;
         busy = true;
         try {
             await checkNews(!initialDone);
@@ -287,9 +292,13 @@
     }
 
     let hello = false;
+    let wasHome = false;
     setInterval(() => {
         registry();
-        if (!hello && logged()) {
+        const nowHome = inHome();
+        if (nowHome && !wasHome) setTimeout(tick, 300);   // #haber kanalına girilince hemen haberleri getir
+        wasHome = nowHome;
+        if (!hello && logged() && nowHome) {
             hello = true;
             try { console.info('[haber_bot] v' + VERSION + ' hazır'); } catch (_) {}
             say('📰 Haber botu hazır — <strong>/haber</strong> ile ayarları görebilirsin.');
