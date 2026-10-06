@@ -18,38 +18,48 @@
     const WORKER_URL = 'https://haber-worker.kyazar07.workers.dev';
     // ▲▲▲ ------------------------ ▲▲▲
 
-    const VERSION = '1.1';
+    const VERSION = '2.0';
     const HOME_CHANNEL = 'haber';   // bot SADECE bu kanalda yazar / haber çeker
     const CHECK_MS = 60000;      // 60 saniyede bir kontrol
     const MAX_CACHE = 300;       // son 300 haber ID'sini hafızada tut
     const INITIAL_BACKFILL = 5;  // ilk açılışta en yeni 5 haberi göster
+    const PER_TICK = 5;          // her kontrolde en fazla kaç haber yazılsın (spam olmasın)
+    const MAX_AGE_MS = 3 * 3600 * 1000;  // 3 saatten eski haberler 'yeni' sayılmaz
 
     const CATEGORIES = {
-        'gundem':    '🇹🇷 Gündem',
+        'hepsi':     '🗞️ Hepsi (tüm kaynaklar)',
         'sondakika': '🔴 Son Dakika',
-        'dunya':     '🌍 Dünya',
-        'ekonomi':   '💰 Ekonomi',
-        'teknoloji': '💻 Teknoloji',
-        'spor':      '⚽ Spor',
-        'bilim':     '🔬 Bilim',
-        'saglik':    '🏥 Sağlık',
-        'eglence':   '🎬 Eğlence',
+        'gundem':    '🇹🇷 Gündem',
         'siyaset':   '🏛️ Siyaset',
-        'world_en':  '🌐 World',
-        'tech_en':   '💻 Tech'
+        'ekonomi':   '💰 Ekonomi',
+        'dunya':     '🌍 Dünya',
+        'spor':      '⚽ Spor',
+        'teknoloji': '💻 Teknoloji',
+        'saglik':    '🏥 Sağlık',
+        'magazin':   '🎬 Magazin',
+        'yasam':     '🌱 Yaşam',
+        'kultur':    '🎭 Kültür-Sanat',
+        'egitim':    '📚 Eğitim',
+        'kripto':    '🪙 Kripto',
+        'yerel':     '📍 Yerel'
     };
 
     /* ---------- ayarlar (sadece bu cihazda) ---------- */
     const PK = 'cety_haber_prefs';
     let prefs = {
         enabled: true,
-        categories: ['gundem', 'sondakika', 'dunya'],  // varsayılan
+        categories: ['sondakika', 'gundem'],  // varsayılan
+        sources: [],      // boş = tüm kaynaklar
         lastSeenIds: []  // son görülen haber ID'leri (dedupe için)
     };
     try {
         const saved = JSON.parse(localStorage.getItem(PK) || '{}');
         prefs = Object.assign(prefs, saved);
         if (!Array.isArray(prefs.lastSeenIds)) prefs.lastSeenIds = [];
+        if (!Array.isArray(prefs.sources)) prefs.sources = [];
+        // eski sürümden kalan geçersiz kategorileri temizle
+        prefs.categories = (prefs.categories || []).filter(k => CATEGORIES[k]);
+        if (!prefs.categories.length) prefs.categories = ['sondakika', 'gundem'];
     } catch (_) {}
     const savePrefs = () => {
         try {
@@ -79,7 +89,8 @@
 
     /* ---------- veri çekme ---------- */
     async function fetchNews(categories) {
-        const url = WORKER_URL.replace(/\/+$/, '') + '/haber?kategori=' + categories.join(',');
+        let url = WORKER_URL.replace(/\/+$/, '') + '/haber?kategori=' + categories.join(',');
+        if (prefs.sources && prefs.sources.length) url += '&kaynak=' + prefs.sources.join(',');
         const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const to = setTimeout(() => ctl && ctl.abort(), 12000);
         try {
@@ -112,22 +123,33 @@
             if (!inHome()) return;   // beklerken kanaldan çıkıldıysa haberleri kaçırma, sonra gösterilir
 
             const seenSet = new Set(prefs.lastSeenIds);
-            const fresh = items.filter(it => it.id && !seenSet.has(it.id));
+            const unseen = items.filter(it => it.id && !seenSet.has(it.id));
+            const now = Date.now();
+            const recent = unseen.filter(it => now - it.pubTs < MAX_AGE_MS);
+            const stale = unseen.filter(it => now - it.pubTs >= MAX_AGE_MS);
+            const mark = list => {
+                prefs.lastSeenIds = [...new Set([...list.map(i => i.id), ...prefs.lastSeenIds])];
+            };
 
             if (isInitial) {
-                // İlk açılışta son N haberi göster, geri kalanını "görülmüş" olarak işaretle
-                const toShow = fresh.slice(0, INITIAL_BACKFILL);
+                // İlk açılışta en yeni N haberi göster, geri kalanını "görülmüş" say (eski yığın akıtılmasın)
+                const toShow = recent.slice(0, INITIAL_BACKFILL);
                 if (toShow.length) {
-                    showNewsGroup(toShow, '📢 <strong>Haber botu aktif</strong> — son ' + toShow.length + ' haber:');
+                    showNewsGroup(toShow, '📢 <strong>Haber botu aktif</strong> — son ' + toShow.length + ' haber:', 0);
                 } else {
                     say('📢 <strong>Haber botu aktif</strong> — ' + prefs.categories.map(c => CATEGORIES[c] || c).join(', ') + '. Yeni haberler otomatik gelecek.');
                 }
-                prefs.lastSeenIds = [...new Set([...fresh.map(i => i.id), ...prefs.lastSeenIds])];
-            } else if (fresh.length) {
-                showNewsGroup(fresh, '🔔 <strong>' + fresh.length + ' yeni haber</strong>');
-                prefs.lastSeenIds = [...new Set([...fresh.map(i => i.id), ...prefs.lastSeenIds])];
+                mark(unseen);
+            } else {
+                // Eski haberleri sessizce işaretle; yeni olanlardan sadece PER_TICK kadarını yaz.
+                // Gösterilmeyenler "görülmedi" kalır ve sonraki turda gelir (kaybolmaz).
+                mark(stale);
+                const toShow = recent.slice(0, PER_TICK);
+                if (toShow.length) {
+                    showNewsGroup(toShow, '🔔 <strong>' + recent.length + ' yeni haber</strong>', recent.length - toShow.length);
+                    mark(toShow);
+                }
             }
-
             savePrefs();
         } catch (e) {
             // Sessiz hata — kullanıcıyı rahatsız etme
@@ -135,15 +157,11 @@
         }
     }
 
-    function showNewsGroup(items, header) {
-        // Grup başlığı
+    function showNewsGroup(items, header, remaining) {
         say(header);
-        // En fazla 5 haber göster (spam olmasın)
-        items.slice(0, 5).forEach(it => {
-            say(formatNews(it));
-        });
-        if (items.length > 5) {
-            say('<span style="opacity:.6">… ve ' + (items.length - 5) + ' haber daha (sonraki turda gelecek)</span>');
+        items.forEach(it => say(formatNews(it)));
+        if (remaining > 0) {
+            say('<span style="opacity:.6">… ' + remaining + ' haber daha sırada (sonraki turda gelecek)</span>');
         }
     }
 
@@ -185,24 +203,24 @@
             return;
         }
 
-        if (sub === 'kategoriler' || sub === 'kategori') {
+        if ((sub === 'kategoriler' || sub === 'kategori') && !args[1]) {
             const list = Object.entries(CATEGORIES)
                 .map(([k, v]) => '• <code>' + k + '</code> — ' + v)
                 .join('<br>');
             say('📁 <strong>Kategoriler:</strong><br>' + list +
                 '<br><br>Aktif: ' + prefs.categories.map(c => CATEGORIES[c] || c).join(', ') +
-                '<br>Değiştir: <strong>/haber kategoriler gundem,teknoloji,dunya</strong>');
+                '<br>Değiştir: <strong>/haber kategoriler gundem,teknoloji,dunya</strong>' +
+                '<br>Tüm kaynaklardan: <strong>/haber kategoriler hepsi</strong>');
             return;
         }
 
-        if (sub === 'kategoriler' && args[1]) { /* aşağıda */ }
 
         // /haber kategoriler gundem,teknoloji,dunya
         if (args[0] && CATEGORIES[args[0].toLowerCase()] === undefined && args.join(' ').includes(',')) {
             // args[0] bir kategori değil ve virgül içeriyor → kategori listesi olarak yorumla
         }
 
-        if (sub === 'ayarla' || (args.length >= 2 && args[0] === 'kategoriler')) {
+        if (sub === 'ayarla' || (args.length >= 2 && (args[0] === 'kategoriler' || args[0] === 'kategori'))) {
             const list = (args[1] || args.slice(1).join(',')).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
             const valid = list.filter(k => CATEGORIES[k]);
             const invalid = list.filter(k => !CATEGORIES[k]);
@@ -218,10 +236,50 @@
             return;
         }
 
+        if (sub === 'kaynak' || sub === 'kaynaklar') {
+            let info = null;
+            try {
+                const r = await fetch(WORKER_URL.replace(/\/+$/, '') + '/');
+                info = await r.json();
+            } catch (e) {
+                say('❌ Kaynak listesi alınamadı — ' + esc(String(e.message || e)));
+                return;
+            }
+            const all = info.sources || {};
+            if (args[1]) {
+                const wanted = args.slice(1).join(',').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+                if (wanted.includes('hepsi')) {
+                    prefs.sources = [];
+                    prefs.lastSeenIds = [];
+                    savePrefs();
+                    say('✅ Tüm kaynaklar açık.');
+                    return;
+                }
+                const valid = wanted.filter(k => all[k]);
+                const invalid = wanted.filter(k => !all[k]);
+                if (!valid.length) {
+                    say('❌ Geçerli kaynak yok. <strong>/haber kaynaklar</strong> yazarak listeyi gör.');
+                    return;
+                }
+                prefs.sources = valid;
+                prefs.lastSeenIds = [];
+                savePrefs();
+                say('✅ Aktif kaynaklar: ' + valid.map(k => all[k]).join(', ') +
+                    (invalid.length ? '<br>⚠️ Geçersiz: ' + invalid.join(', ') : ''));
+                return;
+            }
+            const list = Object.entries(all).map(([k, v]) => '<code>' + k + '</code> ' + v).join(' · ');
+            say('🗞️ <strong>Kaynaklar:</strong><br>' + list +
+                '<br><br>Aktif: ' + (prefs.sources.length ? prefs.sources.map(k => all[k] || k).join(', ') : 'hepsi') +
+                '<br>Seç: <strong>/haber kaynak cnnturk,trt,sozcu</strong> · Hepsi: <strong>/haber kaynak hepsi</strong>');
+            return;
+        }
+
         if (sub === 'durum') {
             say('📊 <strong>Haber botu durumu</strong><br>' +
                 '• Durum: ' + (prefs.enabled ? '🟢 AÇIK' : '🔴 KAPALI') + '<br>' +
                 '• Kategoriler: ' + (prefs.categories.length ? prefs.categories.map(c => CATEGORIES[c]).join(', ') : 'yok') + '<br>' +
+                '• Kaynaklar: ' + (prefs.sources.length ? prefs.sources.join(', ') : 'hepsi') + '<br>' +
                 '• Önbellek: ' + prefs.lastSeenIds.length + ' haber<br>' +
                 '• Kontrol sıklığı: her ' + (CHECK_MS / 1000) + ' saniye');
             return;
@@ -241,6 +299,8 @@
             '• /haber ac | kapat — botu aç/kapat<br>' +
             '• /haber kategoriler — kategori listesi<br>' +
             '• /haber kategoriler gundem,teknoloji,dunya — kategori seç<br>' +
+            '• /haber kaynaklar — haber siteleri listesi<br>' +
+            '• /haber kaynak cnnturk,trt,sozcu — belirli siteleri seç (hepsi: /haber kaynak hepsi)<br>' +
             '• /haber temizle — önbelleği sıfırla (tüm haberler yeniden gösterilir)<br>' +
             '• /haber test — bağlantı testi<br>' +
             '<span style="opacity:.6">Haberler her ' + (CHECK_MS / 1000) + ' saniyede bir otomatik kontrol edilir.</span>');
@@ -288,7 +348,7 @@
     function registry() {
         const R = window.CMD_REGISTRY;
         if (!Array.isArray(R) || R.some(c => c[0] === 'haber')) return;
-        R.push(['haber', '[ac|kapat|durum|kategoriler|test]', 'Haber botu kontrolü', 'all', 'haber botu']);
+        R.push(['haber', '[ac|kapat|durum|kategoriler|kaynaklar|test]', 'Haber botu kontrolü', 'all', 'haber botu']);
     }
 
     let hello = false;
