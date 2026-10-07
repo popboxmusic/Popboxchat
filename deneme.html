@@ -10876,7 +10876,7 @@
 
     function pickVideoMime() {
         if (typeof MediaRecorder === 'undefined') return '';
-        const c = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4'];
+        const c = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'];
         return c.find(t => MediaRecorder.isTypeSupported(t)) || '';
     }
 
@@ -10938,10 +10938,11 @@
         if (!chatId || !privateChatWith || !currentUser) throw new Error('Önce özel sohbet açın.');
         if (!res || !res.blob || !res.blob.size) throw new Error('Video boş.');
         if (res.blob.size > PRIVATE_VIDEO_MAX_BYTES) throw new Error('Video çok büyük, daha kısa çekin.');
-        const dataUrl = await readBlobAsDataUrl(res.blob);
+        const baseMime = (res.mime || res.blob.type || 'video/webm').split(';')[0];
+        const dataUrl = await readBlobAsDataUrl(new Blob([res.blob], { type: baseMime }));
         const videoId = database.ref('privateMedia').push().key;
         const dur = Math.max(1, Math.round(res.duration));
-        const where = await storePrivateVideo(chatId, videoId, { data: dataUrl, mime: res.mime, duration: dur, createdAt: Date.now(), sender: currentUser.name });
+        const where = await storePrivateVideo(chatId, videoId, { data: dataUrl, mime: baseMime, duration: dur, createdAt: Date.now(), sender: currentUser.name });
         const ok = await sendPrivateAttachment({ video: true, videoId, videoDb: where, videoDuration: dur, videoPoster: res.poster || null }, '🎬 Video gönderdi');
         if (!ok) await removePrivateMedia(chatId, [videoId]);
         return ok;
@@ -11111,6 +11112,17 @@
         return `<div class="pm-video" data-chat="${currentPrivateChatId}" data-vid="${message.videoId}" data-db="${message.videoDb || 'main'}" onclick="playPrivateVideo(this)">${poster}<span class="pm-play"><i class="fas fa-play"></i></span><span class="pm-vdur">${fmtVideoDur(message.videoDuration)}</span></div>`;
     }
 
+    // "data:video/webm;codecs=vp8,opus;base64,XXXX" gibi bozuk başlıkları da çözer
+    function dataUrlToVideoBlob(data) {
+        const i = data.indexOf(';base64,');
+        if (i < 0) throw new Error('bozuk veri');
+        const mime = (data.slice(5, i).split(';')[0]) || 'video/webm';
+        const bin = atob(data.slice(i + 8));
+        const bytes = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+        return new Blob([bytes], { type: mime });
+    }
+
     async function playPrivateVideo(el) {
         if (el.dataset.loading) return;
         el.dataset.loading = '1';
@@ -11121,7 +11133,7 @@
             if (!ref) throw new Error('yok');
             const data = (await ref.child('data').once('value')).val();
             if (!data) throw new Error('silinmiş');
-            const blob = await (await fetch(data)).blob();
+            const blob = dataUrlToVideoBlob(data);
             const v = document.createElement('video');
             v.className = 'pm-video-player';
             v.src = URL.createObjectURL(blob);
