@@ -4770,6 +4770,94 @@
         @media (orientation: landscape) and (max-height: 520px) {
             #mcSheet { height: calc(var(--app-h) * 0.92); }
         }
+       /* ==================== SESSİZ TOAST BİLDİRİMİ ==================== */
+#silenceToast {
+    position: fixed;
+    top: 76px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-30px);
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: rgba(var(--surface-rgb), 0.98);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-strong);
+    border-left: 4px solid var(--ban);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(var(--shadow-rgb), 0.18),
+                0 0 0 1px rgba(var(--shadow-rgb), 0.03);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+    max-width: min(520px, calc(100vw - 32px));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#silenceToast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+}
+#silenceToast.unmute {
+    border-left-color: var(--operator);
+}
+#silenceToast .st-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    background: var(--ban-bg);
+    color: var(--ban);
+}
+#silenceToast.unmute .st-icon {
+    background: var(--operator-bg);
+    color: var(--operator);
+}
+#silenceToast .st-text {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+}
+#silenceToast .st-text b {
+    color: var(--youtube-red);
+    font-weight: 700;
+}
+#silenceToast .st-close {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    transition: all 0.15s ease;
+}
+#silenceToast .st-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+@media (max-width: 768px) {
+    #silenceToast {
+        top: calc(var(--hdr-h, 52px) + 12px);
+        padding: 12px 16px;
+        font-size: 13px;
+        gap: 10px;
+    }
+    #silenceToast .st-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 15px;
+    }
+} 
     </style>
 </head>
 <body>
@@ -6771,7 +6859,7 @@
                         const hideBtn = document.createElement('button');
                         hideBtn.className = 'channel-tab-action-btn';
                         hideBtn.title = channel.isHidden ? 'Görünür Yap' : 'Gizle';
-                        hideBtn.innerHTML = `<i class="far fa-eye${channel.isHidden ? '' : '-slash'}"></i>`;
+                        hideBtn.innerHTML = `<i class="far fa-eye${channel.isHidden ? '-slash' : ''}"></i>`;
                         hideBtn.onclick = (e) => { e.stopPropagation(); toggleChannelHidden(name); };
                         actions.appendChild(hideBtn);
                         
@@ -7167,11 +7255,28 @@
     if (normalizeNick(user) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return true;
     if (adminList.some(u => normalizeNick(u) === normalizeNick(user)) || 
         SECURE_CONFIG.DEFAULT_ADMINS.some(a => normalizeNick(a) === normalizeNick(user))) return true;
+    
+    const un = normalizeNick(user);
+    
+    // 🆕 Kanal sahibi her zaman görür
+    if (channel.owner && normalizeNick(channel.owner) === un) return true;
+    
+    // 🆕 Kanal bazlı rolü olanlar görür (coadmin, operator, halfoperator, verified)
+    const cr = channelRoles[name];
+    if (cr) {
+        const inRole = (arr) => Array.isArray(arr) && arr.some(u => normalizeNick(u) === un);
+        if (inRole(cr.coadmin) || inRole(cr.operator) ||
+            inRole(cr.halfoperator) || inRole(cr.verified)) return true;
+    }
+    
+    // 🆕 Geçici onaylı (+) yetkisi olan görür
+    if (tempVerifiedUsers[un] && tempVerifiedUsers[un] > Date.now()) return true;
+    
     // 🆕 allowedUsers listesindekiler
     if (channel.allowedUsers && 
         Object.keys(channel.allowedUsers).some(k => 
-            channel.allowedUsers[k] && normalizeNick(k) === normalizeNick(user))) return true;
-    if (channel.owner && normalizeNick(channel.owner) === normalizeNick(user)) return true;
+            channel.allowedUsers[k] && normalizeNick(k) === un)) return true;
+    
     return false;
 }
     // 🆕 ŞİFRE GÖSTERME POPUP — Sohbete kaydedilmez, log'lanmaz
@@ -8217,7 +8322,7 @@
         }
         
         if (canManage) {
-            html += `<button class="channel-action-btn" onclick="toggleChannelHidden('${currentChannel}')" title="${channel.isHidden ? 'Görünür Yap' : 'Gizle'}"><i class="far fa-eye${channel.isHidden ? '' : '-slash'}"></i></button>`;
+            html += `<button class="channel-action-btn" onclick="toggleChannelHidden('${currentChannel}')" title="${channel.isHidden ? 'Görünür Yap' : 'Gizle'}"><i class="far fa-eye${channel.isHidden ? '-slash' : ''}"></i></button>`;
         }
         if (canLock) {
             html += `<button class="channel-action-btn" onclick="toggleChannelLocked('${currentChannel}')" title="${channel.isLocked ? 'Sessizi Aç' : 'Sessize Al'}"><i class="fas fa-volume-${channel.isLocked ? 'mute' : 'up'}"></i></button>`;
@@ -12415,7 +12520,7 @@
             if (manageable) {
                 controls = `
                     <button class="role-list-btn" onclick="event.stopPropagation(); toggleChannelHidden('${name}')" title="${channel.isHidden ? 'Görünür Yap' : 'Gizle'}">
-                        <i class="far fa-eye${channel.isHidden ? '' : '-slash'}"></i>
+                        <i class="far fa-eye${channel.isHidden ? '-slash' : ''}"></i>
                     </button>
                     <button class="role-list-btn" onclick="event.stopPropagation(); toggleChannelLocked('${name}')" title="${channel.isLocked ? 'Sessizi Aç' : 'Sessize Al'}">
                         <i class="fas fa-volume-${channel.isLocked ? 'mute' : 'up'}"></i>
@@ -12511,31 +12616,75 @@
         addSystemMessage(newHidden
             ? `🙈 #${name} gizlendi: yalnızca Owner, Admin, kanal sahibi ve izinli kullanıcılar görür/yazar.`
             : `👁 #${name} görünür yapıldı: herkes görebilir.`);
+        showHideToast(name, newHidden);
     }
 
-    async function toggleChannelLocked(name) {
-        if (!can('lockChannel', name)) {
-            addSystemMessage('⛔ Bu kanalı sessize alma yetkiniz yok!');
-            return;
-        }
-        const newLocked = !cachedChannels[name].isLocked;
-        await channelsRef.child(name).update({ isLocked: newLocked });
-        incrementWriteCount();
-        // Kanaldaki herkes görsün
-        try {
-            const target = name === 'genel' ? messagesRef : database.ref('channelMessages/' + name);
-            await target.push({
-                sender: 'Sistem', type: 'supervisor', isBotMessage: true, isRoleEntry: false, channel: name, avatar: null,
-                text: newLocked ? '🔇 Kanal sessize alındı: şu an yalnızca yetkililer yazabilir.' : '🔊 Kanal konuşmaya açıldı: herkes yazabilir.',
-                timestamp: Date.now(),
-                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-            });
-        } catch (e) {}
-        if (name === currentChannel) {
-            const inp = document.getElementById('message-input');
-            if (inp) inp.placeholder = (newLocked && !canWriteInLockedChannel(name)) ? 'Bu kanal sessize alındı' : 'Sohbet...';
-        }
+async function toggleChannelLocked(name) {
+    if (!can('lockChannel', name)) {
+        addSystemMessage('⛔ Bu kanalı sessize alma yetkiniz yok!');
+        return;
     }
+    const newLocked = !cachedChannels[name].isLocked;
+    await channelsRef.child(name).update({ isLocked: newLocked });
+    incrementWriteCount();
+    // Kanaldaki herkes görsün
+    try {
+        const target = name === 'genel' ? messagesRef : database.ref('channelMessages/' + name);
+        await target.push({
+            sender: 'Sistem', type: 'supervisor', isBotMessage: true, isRoleEntry: false, channel: name, avatar: null,
+            text: newLocked ? '🔇 Kanal sessize alındı: şu an yalnızca yetkililer yazabilir.' : '🔊 Kanal konuşmaya açıldı: herkes yazabilir.',
+            timestamp: Date.now(),
+            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+        });
+    } catch (e) {}
+    if (name === currentChannel) {
+        const inp = document.getElementById('message-input');
+        if (inp) inp.placeholder = (newLocked && !canWriteInLockedChannel(name)) ? 'Bu kanal sessize alındı' : 'Sohbet...';
+    }
+    // 🆕 Görsel toast bildirimi
+    showSilenceToast(name, newLocked);
+}
+
+// 🆕 Kanal toast bildirimi (sessiz / gizleme)
+let silenceToastTimer = null;
+function showChannelToast(channelName, on, kind) {
+    let toast = document.getElementById('silenceToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'silenceToast';
+        document.body.appendChild(toast);
+    }
+    const channelLabel = escapeChannelHtml(cachedChannels[channelName]?.label || channelName);
+    let icon, text;
+    if (kind === 'hide') {
+        icon = on ? 'fa-eye-slash' : 'fa-eye';
+        text = on
+            ? `<b>#${channelLabel}</b> kanalı <b>gizlendi</b>. Yalnızca yetkililer görür.`
+            : `<b>#${channelLabel}</b> kanalı <b>görünür yapıldı</b>. Herkes görebilir.`;
+    } else {
+        icon = on ? 'fa-volume-mute' : 'fa-volume-up';
+        text = on
+            ? `<b>#${channelLabel}</b> kanalı <b>sessize alındı</b>. Şu an yalnızca yetkililer yazabilir.`
+            : `<b>#${channelLabel}</b> kanalı <b>konuşmaya açıldı</b>. Herkes yazabilir.`;
+    }
+    toast.className = on ? 'show' : 'show unmute';
+    toast.innerHTML = `
+        <div class="st-icon"><i class="fas ${icon}"></i></div>
+        <div class="st-text">${text}</div>
+        <button class="st-close" type="button" aria-label="Kapat"><i class="fas fa-times"></i></button>
+    `;
+    toast.querySelector('.st-close').onclick = () => {
+        toast.classList.remove('show');
+        if (silenceToastTimer) { clearTimeout(silenceToastTimer); silenceToastTimer = null; }
+    };
+    if (silenceToastTimer) clearTimeout(silenceToastTimer);
+    silenceToastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+        silenceToastTimer = null;
+    }, 5000);
+}
+function showSilenceToast(channelName, isLocked) { showChannelToast(channelName, isLocked, 'mute'); }
+function showHideToast(channelName, isHidden) { showChannelToast(channelName, isHidden, 'hide'); }
 
     async function transferChannelPrompt(name) {
         const channel = cachedChannels[name];
@@ -16950,5 +17099,199 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     window.addEventListener('scroll', qmHide, true);
 })();
 </script>
+<!-- ============================================================
+     VİTRİN (ANASAYFA) — kanal kartları + sol panel
+     ============================================================ -->
+<style id="vitrin-style">
+#login-screen{background:rgba(var(--surface-rgb),.28)!important;backdrop-filter:blur(16px) saturate(1.1);-webkit-backdrop-filter:blur(16px) saturate(1.1)}
+#vitrin{position:fixed;inset:0;z-index:1500;background:var(--bg-primary);color:var(--text-primary);display:none;flex-direction:column}
+#vitrin.show{display:flex}
+.vt-top{flex:0 0 auto;height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color)}
+.vt-logo{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.08em;font-size:18px}
+.vt-btn{border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);border-radius:10px;height:36px;padding:0 12px;font:inherit;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.vt-btn:hover{border-color:var(--youtube-red)}
+#vtMenuBtn{display:none}
+.vt-search{flex:1;max-width:520px;margin:0 auto;position:relative}
+.vt-search input{width:100%;height:38px;border-radius:20px;border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);padding:0 16px 0 38px;font:inherit;font-size:14px;outline:none}
+.vt-search input:focus{border-color:var(--border-strong)}
+.vt-search i{position:absolute;left:14px;top:12px;color:var(--text-muted);font-size:13px}
+.vt-body{flex:1;display:flex;min-height:0}
+#vtSide{flex:0 0 250px;width:250px;overflow:auto;background:var(--bg-panel);border-right:1px solid var(--border-color);padding:12px;display:flex;flex-direction:column;gap:4px}
+.vt-me{display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:var(--bg-tertiary);cursor:pointer;margin-bottom:6px}
+.vt-ava{width:38px;height:38px;border-radius:50%;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 38px;color:var(--text-muted)}
+.vt-ava img{width:100%;height:100%;object-fit:cover}
+.vt-me b{display:block;font-size:14px}.vt-me small{color:var(--text-muted);font-size:11.5px}
+.vt-sec{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:12px 8px 4px}
+.vt-row{display:flex;align-items:center;gap:9px;width:100%;padding:8px;border:0;border-radius:9px;background:transparent;color:var(--text-primary);font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.vt-row:hover{background:var(--bg-hover)}
+.vt-row .vt-ava{width:28px;height:28px;flex-basis:28px;font-size:12px}
+.vt-row span.n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vt-dot{width:8px;height:8px;border-radius:50%;background:#777;flex:0 0 8px}.vt-dot.on{background:var(--online)}
+.vt-unread{background:var(--youtube-red);color:#fff;border-radius:10px;font-size:11px;padding:1px 6px}
+.vt-empty{color:var(--text-muted);font-size:12.5px;padding:4px 8px}
+#vtMain{flex:1;min-width:0;overflow:auto;padding:20px}
+#vtGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;max-width:1500px;margin:0 auto}
+.vt-card{cursor:pointer;border-radius:14px;transition:transform .25s ease}
+.vt-thumb{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:var(--bg-tertiary) center/cover no-repeat;box-shadow:var(--shadow);transition:transform .3s ease,box-shadow .3s ease}
+.vt-card:hover .vt-thumb{transform:scale(1.045);box-shadow:var(--shadow-xl)}
+.vt-thumb .vt-none{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--text-dim)}
+.vt-live{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.65);color:#fff;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:12px}
+.vt-view{position:absolute;right:10px;bottom:10px;background:rgba(0,0,0,.65);color:#fff;font-size:11.5px;padding:3px 9px;border-radius:12px}
+.vt-info{padding:10px 4px 0}.vt-info b{font-size:15px}.vt-info small{display:block;color:var(--text-muted);font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vt-nores{grid-column:1/-1;text-align:center;color:var(--text-muted);padding:40px}
+.vt-zoom{position:fixed;z-index:1800;background:#000 center/cover no-repeat;border-radius:14px;overflow:hidden;transition:all .85s cubic-bezier(.2,.8,.2,1);box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.vt-zoom iframe{position:absolute;inset:0;width:100%;height:100%;border:0;opacity:0;transition:opacity .4s}
+.vt-zoom.out{opacity:0;transition:opacity .35s}
+.vt-back{display:none}
+.vt-home-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}
+@media(max-width:768px){
+ #vtMenuBtn{display:inline-flex}
+ #vtSide{position:fixed;top:56px;bottom:0;left:0;z-index:1510;width:min(84vw,300px);transform:translateX(-100%);transition:transform .25s;box-shadow:var(--shadow-xl)}
+ #vitrin.side #vtSide{transform:none}
+ #vitrin.side .vt-back{display:block;position:fixed;inset:56px 0 0 0;background:rgba(0,0,0,.4);z-index:1505}
+ #vtGrid{grid-template-columns:1fr;gap:18px}
+ #vtMain{padding:12px}.vt-logo span{display:none}
+}
+</style>
+<div id="vitrin" class="show">
+ <div class="vt-top">
+  <button class="vt-btn" id="vtMenuBtn" onclick="vtToggleSide()" aria-label="Menü"><i class="fas fa-bars"></i></button>
+  <div class="vt-logo"><i class="far fa-comments logo-icon"></i><span>CETCETY</span></div>
+  <div class="vt-search"><i class="fas fa-search"></i><input id="vtSearch" type="search" placeholder="Kanal ara..." autocomplete="off" oninput="vtRenderGrid()"></div>
+ </div>
+ <div class="vt-body">
+  <aside id="vtSide"></aside>
+  <div class="vt-back" onclick="vtToggleSide(false)"></div>
+  <main id="vtMain"><div id="vtGrid"></div></main>
+ </div>
+</div>
+<script id="vitrin-script">
+(function(){
+  var V=document.getElementById('vitrin'), chans={}, playback={}, firstVid={}, presence={}, opening=false, lastSide='';
+  var DEF_GENEL='i75BZYOAPl4';
+  function $(id){return document.getElementById(id)}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function me(){return window.currentUser||null}
+  function g(n,d){try{return (0,eval)('typeof '+n+'!=="undefined"?'+n+':null')||d}catch(e){return d}}
+  function canSee(n,c){
+    if(!c||n==='help')return false;
+    if(!c.isHidden&&!c.systemChannel)return true;
+    if(c.systemChannel)return false;
+    return !!(me()&&window.canAccessHiddenChannel&&window.canAccessHiddenChannel(n));
+  }
+  function vidOf(n){return (playback[n]&&playback[n].videoId)||firstVid[n]||(n==='genel'?DEF_GENEL:null)}
+  function viewers(n){
+    var p=presence[n]||{},now=Date.now(),c=0;
+    Object.keys(p).forEach(function(u){var s=p[u]&&p[u].lastSeen;if(!s||now-s<120000)c++});
+    return c;
+  }
+  function list(){
+    var q=($('vtSearch').value||'').trim().toLowerCase();
+    return Object.keys(chans).filter(function(n){return canSee(n,chans[n])}).filter(function(n){
+      if(!q)return true;var c=chans[n];
+      return (n+' '+(c.label||'')+' '+(c.description||'')).toLowerCase().indexOf(q)>-1;
+    }).sort(function(a,b){return (chans[a].order||0)-(chans[b].order||0)});
+  }
+  window.vtRenderGrid=function(){
+    var grid=$('vtGrid'),ns=list();
+    if(!ns.length){grid.innerHTML='<div class="vt-nores">Kanal bulunamadı.</div>';return}
+    grid.innerHTML=ns.map(function(n){
+      var c=chans[n],v=vidOf(n),cnt=viewers(n);
+      return '<div class="vt-card" data-ch="'+esc(n)+'"><div class="vt-thumb"'+(v?' style="background-image:url(https://i.ytimg.com/vi/'+esc(v)+'/hqdefault.jpg)"':'')+'>'
+        +(v?'<span class="vt-live">🔴 CANLI</span>':'<div class="vt-none"><i class="fas fa-tv"></i></div>')
+        +'<span class="vt-view">👥 '+cnt+' izliyor</span></div>'
+        +'<div class="vt-info"><b>#'+esc(n)+'</b>'+(c.description?'<small>'+esc(c.description)+'</small>':'')+'</div></div>';
+    }).join('');
+  };
+  function fetchFirst(n){
+    if(firstVid[n]!==undefined||!window.database)return;
+    firstVid[n]=null;
+    var ref=n==='genel'?'playlist':'channelPlaylists/'+n;
+    window.database.ref(ref).limitToFirst(1).once('value',function(s){
+      var o=s.val()||{},k=Object.keys(o)[0];
+      if(k&&o[k]&&o[k].id){firstVid[n]=o[k].id;vtRenderGrid()}
+    },function(){});
+  }
+  function init(){
+    var db=window.database;
+    if(!db){setTimeout(init,300);return}
+    db.ref('channels').on('value',function(s){chans=s.val()||{};Object.keys(chans).forEach(fetchFirst);vtRenderGrid()},function(){});
+    db.ref('channelPlayback').on('value',function(s){playback=s.val()||{};vtRenderGrid()},function(){});
+    db.ref('channelPresence').on('value',function(s){presence=s.val()||{};vtRenderGrid()},function(){});
+  }
+  function avatarHtml(u,isMe){
+    var a=null;try{a=((g('userProfiles',{})[u]||{}).avatar)||(isMe?g('currentProfileAvatar',null):null)||((g('cachedOnlineUsers',{})[u]||{}).avatar)}catch(e){}
+    return '<div class="vt-ava">'+(a?'<img src="'+esc(a)+'" alt="">':'<i class="far fa-user"></i>')+'</div>';
+  }
+  function renderSide(){
+    var u=me(),s=$('vtSide');
+    if(!u){s.innerHTML='';return}
+    var follows=g('cachedFollows',{}),followers=g('cachedFollowers',{}),contacts=g('privateContacts',[]),unread=g('privateUnreadCounts',{}),online=g('cachedOnlineUsers',{}),th=g('ONLINE_THRESHOLD',60000);
+    var set={};contacts.forEach(function(x){set[x]=1});
+    Object.keys(follows).forEach(function(x){if(followers[x])set[x]=1});
+    var dms=Object.keys(set),subs=g('cachedChannelSubscribers',{}),now=Date.now();
+    var mySubs=Object.keys(subs).filter(function(c){return subs[c]&&subs[c][u.name]&&chans[c]&&canSee(c,chans[c])});
+    var h='<div class="vt-me" data-act="profile">'+avatarHtml(u.name,true)+'<div><b>'+esc(u.name)+'</b><small>Profilim</small></div></div>'
+     +'<button class="vt-row" data-act="home"><i class="fas fa-house"></i><span class="n">Anasayfa</span></button>'
+     +'<div class="vt-sec">Mesajlar</div>'
+     +(dms.length?dms.map(function(x){var o=online[x],on=o&&now-(o.lastSeen||0)<th,n=unread[x]||0;
+        return '<button class="vt-row" data-dm="'+esc(x)+'">'+avatarHtml(x)+'<span class="n">'+esc(x)+'</span>'+(n?'<span class="vt-unread">'+n+'</span>':'')+'<span class="vt-dot'+(on?' on':'')+'"></span></button>'}).join(''):'<div class="vt-empty">Henüz sohbet yok.</div>')
+     +'<div class="vt-sec">Aboneliklerim</div>'
+     +(mySubs.length?mySubs.map(function(c){return '<button class="vt-row" data-ch="'+esc(c)+'"><i class="fas fa-hashtag"></i><span class="n">'+esc(c)+'</span></button>'}).join(''):'<div class="vt-empty">Abone olduğun kanal yok.</div>')
+     +'<div class="vt-sec">Ayarlar</div>'
+     +'<button class="vt-row" data-act="theme"><i class="fas fa-moon"></i><span class="n">Gece / Gündüz</span></button>'
+     +'<button class="vt-row" data-act="logout"><i class="fas fa-right-from-bracket"></i><span class="n">Çıkış</span></button>';
+    if(h!==lastSide){s.innerHTML=h;lastSide=h}
+  }
+  window.vtToggleSide=function(f){V.classList.toggle('side',typeof f==='boolean'?f:!V.classList.contains('side'))};
+  window.vtShow=function(){
+    V.classList.add('show');V.classList.remove('side');renderSide();vtRenderGrid();
+  };
+  function hide(){V.classList.remove('show','side');window.dispatchEvent(new Event('resize'));try{var p=g('player',null);p&&p.playVideo&&p.playVideo()}catch(e){}}
+  window.vtOpenChannel=function(n,card){
+    if(!me()||opening||!chans[n])return;
+    opening=true;
+    try{window.switchChannel(n)}catch(e){console.error(e)}
+    if(!card){hide();opening=false;return}
+    var t=card.querySelector('.vt-thumb'),r=t.getBoundingClientRect(),v=vidOf(n);
+    var z=document.createElement('div');z.className='vt-zoom';
+    z.style.cssText='top:'+r.top+'px;left:'+r.left+'px;width:'+r.width+'px;height:'+r.height+'px;background-image:'+(t.style.backgroundImage||'none');
+    document.body.appendChild(z);
+    requestAnimationFrame(function(){requestAnimationFrame(function(){z.style.top='0';z.style.left='0';z.style.width='100vw';z.style.height='100vh';z.style.borderRadius='0'})});
+    setTimeout(function(){
+      if(v){var f=document.createElement('iframe');f.allow='autoplay';f.src='https://www.youtube.com/embed/'+encodeURIComponent(v)+'?autoplay=1&mute=1&controls=0&rel=0&modestbranding=1&playsinline=1';z.appendChild(f);setTimeout(function(){f.style.opacity=1},300)}
+      setTimeout(function(){hide();z.classList.add('out');setTimeout(function(){z.remove();opening=false},380)},v?1100:200);
+    },880);
+  };
+  document.addEventListener('click',function(e){
+    var el=e.target.closest&&e.target.closest('#vitrin [data-ch],#vitrin [data-dm],#vitrin [data-act]');
+    if(!el)return;
+    if(el.dataset.dm){window.openPrivateChat&&window.openPrivateChat(el.dataset.dm);vtToggleSide(false);return}
+    if(el.dataset.ch){vtOpenChannel(el.dataset.ch,el.classList.contains('vt-card')?el:null);vtToggleSide(false);return}
+    var a=el.dataset.act;
+    if(a==='home')vtToggleSide(false);
+    else if(a==='profile')window.openProfileModal&&window.openProfileModal();
+    else if(a==='theme')window.toggleTheme&&window.toggleTheme();
+    else if(a==='logout')window.logout&&window.logout();
+  });
+  // Mevcut arayüze 🏠 Anasayfa sekmeleri
+  function addHome(){
+    var hl=document.querySelector('.header-left'),logo=hl&&hl.querySelector('.logo');
+    if(hl&&!hl.querySelector('.vt-home-btn')){var b=document.createElement('button');b.className='icon-btn vt-home-btn';b.title='Anasayfa';b.innerHTML='<i class="fas fa-house"></i><span style="font-size:13px">Anasayfa</span>';b.style.width='auto';b.style.padding='0 10px';b.onclick=vtShow;logo?logo.after(b):hl.appendChild(b)}
+    var ip=document.querySelector('.icon-panel');
+    if(ip&&!ip.querySelector('.vt-home-btn')){var c=document.createElement('button');c.className='profile-icon-btn vt-home-btn';c.title='Anasayfa';c.innerHTML='<i class="fas fa-house"></i>';c.onclick=vtShow;ip.insertBefore(c,ip.firstChild)}
+    var mm=$('mobileMenu');
+    if(mm&&!mm.querySelector('.vt-home-btn')){var d=document.createElement('div');d.className='mobile-menu-item vt-home-btn';d.innerHTML='<div class="menu-icon"><i class="fas fa-house"></i></div><div class="menu-text">Anasayfa</div>';d.onclick=function(){if(window.toggleMobileMenu)toggleMobileMenu();vtShow()};var hd=mm.querySelector('.mobile-menu-header');hd?hd.after(d):mm.prepend(d)}
+  }
+  // Vitrin açıkken arka plandaki videoyu sustur, paneli güncel tut
+  setInterval(function(){
+    if(!V.classList.contains('show'))return;
+    renderSide();
+    try{var p=g('player',null);if(p&&p.getPlayerState&&p.getPlayerState()===1&&!opening)p.pauseVideo()}catch(e){}
+  },1000);
+  addHome();init();
+})();
+</script>
+
 </body>
 </html>
