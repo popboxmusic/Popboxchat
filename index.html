@@ -6859,7 +6859,7 @@
                         const hideBtn = document.createElement('button');
                         hideBtn.className = 'channel-tab-action-btn';
                         hideBtn.title = channel.isHidden ? 'Görünür Yap' : 'Gizle';
-                        hideBtn.innerHTML = `<i class="far fa-eye${channel.isHidden ? '' : '-slash'}"></i>`;
+                        hideBtn.innerHTML = `<i class="far fa-eye${channel.isHidden ? '-slash' : ''}"></i>`;
                         hideBtn.onclick = (e) => { e.stopPropagation(); toggleChannelHidden(name); };
                         actions.appendChild(hideBtn);
                         
@@ -8322,7 +8322,7 @@
         }
         
         if (canManage) {
-            html += `<button class="channel-action-btn" onclick="toggleChannelHidden('${currentChannel}')" title="${channel.isHidden ? 'Görünür Yap' : 'Gizle'}"><i class="far fa-eye${channel.isHidden ? '' : '-slash'}"></i></button>`;
+            html += `<button class="channel-action-btn" onclick="toggleChannelHidden('${currentChannel}')" title="${channel.isHidden ? 'Görünür Yap' : 'Gizle'}"><i class="far fa-eye${channel.isHidden ? '-slash' : ''}"></i></button>`;
         }
         if (canLock) {
             html += `<button class="channel-action-btn" onclick="toggleChannelLocked('${currentChannel}')" title="${channel.isLocked ? 'Sessizi Aç' : 'Sessize Al'}"><i class="fas fa-volume-${channel.isLocked ? 'mute' : 'up'}"></i></button>`;
@@ -12520,7 +12520,7 @@
             if (manageable) {
                 controls = `
                     <button class="role-list-btn" onclick="event.stopPropagation(); toggleChannelHidden('${name}')" title="${channel.isHidden ? 'Görünür Yap' : 'Gizle'}">
-                        <i class="far fa-eye${channel.isHidden ? '' : '-slash'}"></i>
+                        <i class="far fa-eye${channel.isHidden ? '-slash' : ''}"></i>
                     </button>
                     <button class="role-list-btn" onclick="event.stopPropagation(); toggleChannelLocked('${name}')" title="${channel.isLocked ? 'Sessizi Aç' : 'Sessize Al'}">
                         <i class="fas fa-volume-${channel.isLocked ? 'mute' : 'up'}"></i>
@@ -12616,6 +12616,7 @@
         addSystemMessage(newHidden
             ? `🙈 #${name} gizlendi: yalnızca Owner, Admin, kanal sahibi ve izinli kullanıcılar görür/yazar.`
             : `👁 #${name} görünür yapıldı: herkes görebilir.`);
+        showHideToast(name, newHidden);
     }
 
 async function toggleChannelLocked(name) {
@@ -12644,42 +12645,46 @@ async function toggleChannelLocked(name) {
     showSilenceToast(name, newLocked);
 }
 
-// 🆕 Sessiz/aç toast bildirimi
+// 🆕 Kanal toast bildirimi (sessiz / gizleme)
 let silenceToastTimer = null;
-function showSilenceToast(channelName, isLocked) {
+function showChannelToast(channelName, on, kind) {
     let toast = document.getElementById('silenceToast');
     if (!toast) {
         toast = document.createElement('div');
         toast.id = 'silenceToast';
         document.body.appendChild(toast);
     }
-    
-    const icon = isLocked ? 'fa-volume-mute' : 'fa-volume-up';
     const channelLabel = escapeChannelHtml(cachedChannels[channelName]?.label || channelName);
-    const text = isLocked
-        ? `<div class="st-text"><b>#${channelLabel}</b> kanalı <b>sessize alındı</b>. Şu an yalnızca yetkililer yazabilir.</div>`
-        : `<div class="st-text"><b>#${channelLabel}</b> kanalı <b>konuşmaya açıldı</b>. Herkes yazabilir.</div>`;
-    
-    toast.className = isLocked ? 'show' : 'show unmute';
+    let icon, text;
+    if (kind === 'hide') {
+        icon = on ? 'fa-eye-slash' : 'fa-eye';
+        text = on
+            ? `<b>#${channelLabel}</b> kanalı <b>gizlendi</b>. Yalnızca yetkililer görür.`
+            : `<b>#${channelLabel}</b> kanalı <b>görünür yapıldı</b>. Herkes görebilir.`;
+    } else {
+        icon = on ? 'fa-volume-mute' : 'fa-volume-up';
+        text = on
+            ? `<b>#${channelLabel}</b> kanalı <b>sessize alındı</b>. Şu an yalnızca yetkililer yazabilir.`
+            : `<b>#${channelLabel}</b> kanalı <b>konuşmaya açıldı</b>. Herkes yazabilir.`;
+    }
+    toast.className = on ? 'show' : 'show unmute';
     toast.innerHTML = `
         <div class="st-icon"><i class="fas ${icon}"></i></div>
-        ${text}
+        <div class="st-text">${text}</div>
         <button class="st-close" type="button" aria-label="Kapat"><i class="fas fa-times"></i></button>
     `;
-    
-    // Kapatma butonu
     toast.querySelector('.st-close').onclick = () => {
         toast.classList.remove('show');
         if (silenceToastTimer) { clearTimeout(silenceToastTimer); silenceToastTimer = null; }
     };
-    
-    // 5 saniye sonra otomatik kapan
     if (silenceToastTimer) clearTimeout(silenceToastTimer);
     silenceToastTimer = setTimeout(() => {
         toast.classList.remove('show');
         silenceToastTimer = null;
     }, 5000);
 }
+function showSilenceToast(channelName, isLocked) { showChannelToast(channelName, isLocked, 'mute'); }
+function showHideToast(channelName, isHidden) { showChannelToast(channelName, isHidden, 'hide'); }
 
     async function transferChannelPrompt(name) {
         const channel = cachedChannels[name];
