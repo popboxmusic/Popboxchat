@@ -4770,6 +4770,94 @@
         @media (orientation: landscape) and (max-height: 520px) {
             #mcSheet { height: calc(var(--app-h) * 0.92); }
         }
+       /* ==================== SESSİZ TOAST BİLDİRİMİ ==================== */
+#silenceToast {
+    position: fixed;
+    top: 76px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-30px);
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: rgba(var(--surface-rgb), 0.98);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-strong);
+    border-left: 4px solid var(--ban);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(var(--shadow-rgb), 0.18),
+                0 0 0 1px rgba(var(--shadow-rgb), 0.03);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+    max-width: min(520px, calc(100vw - 32px));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#silenceToast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+}
+#silenceToast.unmute {
+    border-left-color: var(--operator);
+}
+#silenceToast .st-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    background: var(--ban-bg);
+    color: var(--ban);
+}
+#silenceToast.unmute .st-icon {
+    background: var(--operator-bg);
+    color: var(--operator);
+}
+#silenceToast .st-text {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+}
+#silenceToast .st-text b {
+    color: var(--youtube-red);
+    font-weight: 700;
+}
+#silenceToast .st-close {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    transition: all 0.15s ease;
+}
+#silenceToast .st-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+@media (max-width: 768px) {
+    #silenceToast {
+        top: calc(var(--hdr-h, 52px) + 12px);
+        padding: 12px 16px;
+        font-size: 13px;
+        gap: 10px;
+    }
+    #silenceToast .st-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 15px;
+    }
+} 
     </style>
 </head>
 <body>
@@ -7167,11 +7255,28 @@
     if (normalizeNick(user) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return true;
     if (adminList.some(u => normalizeNick(u) === normalizeNick(user)) || 
         SECURE_CONFIG.DEFAULT_ADMINS.some(a => normalizeNick(a) === normalizeNick(user))) return true;
+    
+    const un = normalizeNick(user);
+    
+    // 🆕 Kanal sahibi her zaman görür
+    if (channel.owner && normalizeNick(channel.owner) === un) return true;
+    
+    // 🆕 Kanal bazlı rolü olanlar görür (coadmin, operator, halfoperator, verified)
+    const cr = channelRoles[name];
+    if (cr) {
+        const inRole = (arr) => Array.isArray(arr) && arr.some(u => normalizeNick(u) === un);
+        if (inRole(cr.coadmin) || inRole(cr.operator) ||
+            inRole(cr.halfoperator) || inRole(cr.verified)) return true;
+    }
+    
+    // 🆕 Geçici onaylı (+) yetkisi olan görür
+    if (tempVerifiedUsers[un] && tempVerifiedUsers[un] > Date.now()) return true;
+    
     // 🆕 allowedUsers listesindekiler
     if (channel.allowedUsers && 
         Object.keys(channel.allowedUsers).some(k => 
-            channel.allowedUsers[k] && normalizeNick(k) === normalizeNick(user))) return true;
-    if (channel.owner && normalizeNick(channel.owner) === normalizeNick(user)) return true;
+            channel.allowedUsers[k] && normalizeNick(k) === un)) return true;
+    
     return false;
 }
     // 🆕 ŞİFRE GÖSTERME POPUP — Sohbete kaydedilmez, log'lanmaz
@@ -12513,29 +12618,68 @@
             : `👁 #${name} görünür yapıldı: herkes görebilir.`);
     }
 
-    async function toggleChannelLocked(name) {
-        if (!can('lockChannel', name)) {
-            addSystemMessage('⛔ Bu kanalı sessize alma yetkiniz yok!');
-            return;
-        }
-        const newLocked = !cachedChannels[name].isLocked;
-        await channelsRef.child(name).update({ isLocked: newLocked });
-        incrementWriteCount();
-        // Kanaldaki herkes görsün
-        try {
-            const target = name === 'genel' ? messagesRef : database.ref('channelMessages/' + name);
-            await target.push({
-                sender: 'Sistem', type: 'supervisor', isBotMessage: true, isRoleEntry: false, channel: name, avatar: null,
-                text: newLocked ? '🔇 Kanal sessize alındı: şu an yalnızca yetkililer yazabilir.' : '🔊 Kanal konuşmaya açıldı: herkes yazabilir.',
-                timestamp: Date.now(),
-                time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-            });
-        } catch (e) {}
-        if (name === currentChannel) {
-            const inp = document.getElementById('message-input');
-            if (inp) inp.placeholder = (newLocked && !canWriteInLockedChannel(name)) ? 'Bu kanal sessize alındı' : 'Sohbet...';
-        }
+async function toggleChannelLocked(name) {
+    if (!can('lockChannel', name)) {
+        addSystemMessage('⛔ Bu kanalı sessize alma yetkiniz yok!');
+        return;
     }
+    const newLocked = !cachedChannels[name].isLocked;
+    await channelsRef.child(name).update({ isLocked: newLocked });
+    incrementWriteCount();
+    // Kanaldaki herkes görsün
+    try {
+        const target = name === 'genel' ? messagesRef : database.ref('channelMessages/' + name);
+        await target.push({
+            sender: 'Sistem', type: 'supervisor', isBotMessage: true, isRoleEntry: false, channel: name, avatar: null,
+            text: newLocked ? '🔇 Kanal sessize alındı: şu an yalnızca yetkililer yazabilir.' : '🔊 Kanal konuşmaya açıldı: herkes yazabilir.',
+            timestamp: Date.now(),
+            time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+        });
+    } catch (e) {}
+    if (name === currentChannel) {
+        const inp = document.getElementById('message-input');
+        if (inp) inp.placeholder = (newLocked && !canWriteInLockedChannel(name)) ? 'Bu kanal sessize alındı' : 'Sohbet...';
+    }
+    // 🆕 Görsel toast bildirimi
+    showSilenceToast(name, newLocked);
+}
+
+// 🆕 Sessiz/aç toast bildirimi
+let silenceToastTimer = null;
+function showSilenceToast(channelName, isLocked) {
+    let toast = document.getElementById('silenceToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'silenceToast';
+        document.body.appendChild(toast);
+    }
+    
+    const icon = isLocked ? 'fa-volume-mute' : 'fa-volume-up';
+    const channelLabel = escapeChannelHtml(cachedChannels[channelName]?.label || channelName);
+    const text = isLocked
+        ? `<div class="st-text"><b>#${channelLabel}</b> kanalı <b>sessize alındı</b>. Şu an yalnızca yetkililer yazabilir.</div>`
+        : `<div class="st-text"><b>#${channelLabel}</b> kanalı <b>konuşmaya açıldı</b>. Herkes yazabilir.</div>`;
+    
+    toast.className = isLocked ? 'show' : 'show unmute';
+    toast.innerHTML = `
+        <div class="st-icon"><i class="fas ${icon}"></i></div>
+        ${text}
+        <button class="st-close" type="button" aria-label="Kapat"><i class="fas fa-times"></i></button>
+    `;
+    
+    // Kapatma butonu
+    toast.querySelector('.st-close').onclick = () => {
+        toast.classList.remove('show');
+        if (silenceToastTimer) { clearTimeout(silenceToastTimer); silenceToastTimer = null; }
+    };
+    
+    // 5 saniye sonra otomatik kapan
+    if (silenceToastTimer) clearTimeout(silenceToastTimer);
+    silenceToastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+        silenceToastTimer = null;
+    }, 5000);
+}
 
     async function transferChannelPrompt(name) {
         const channel = cachedChannels[name];
