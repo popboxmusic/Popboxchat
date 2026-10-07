@@ -6162,9 +6162,6 @@
                     <div class="attach-option" onclick="event.stopPropagation(); closeAttachMenu(); openCameraDirect();">
                         <span><i class="fas fa-camera"></i></span> Kameradan Çek
                     </div>
-                    <div class="attach-option" onclick="event.stopPropagation(); closeAttachMenu(); startAudioRecording();">
-                        <span><i class="fas fa-microphone"></i></span> Sesli Mesaj
-                    </div>
                 </div>
             </div>
             <input type="file" id="galleryUpload" accept="image/*" style="display: none;" multiple>
@@ -6184,10 +6181,11 @@
                 id="private-input" 
                 placeholder="Özel mesaj yaz..."
                 rows="1"
-                oninput="autoResize(this); emitTyping();"
+                oninput="autoResize(this); emitTyping(); updatePrivateActionBtn();"
                 onkeydown="handleEnterKey(event, 'sendPrivateMessage')"
             ></textarea>
-            <button class="send-button" onclick="sendPrivateMessage()"><i class="far fa-paper-plane"></i></button>
+            <button class="send-button" id="privateSendBtn" onclick="sendPrivateMessage()" title="Gönder"><i class="far fa-paper-plane"></i></button>
+            <button class="private-mic-btn" id="privateMicBtn" type="button" onclick="startAudioRecording()" title="Sesli mesaj"><i class="fas fa-microphone"></i></button>
         </div>
     </div>
     
@@ -12902,6 +12900,7 @@
         const previousContact = privateChatWith;
         if (privateChatWith && currentPrivateChatId && privateChatsRef) {
             privateChatsRef.child(currentPrivateChatId).off('child_added');
+            privateChatsRef.child(currentPrivateChatId).off('child_changed');
             if (typingRef) typingRef.child(currentPrivateChatId).off('value');
             if (typingTimeout[currentPrivateChatId]) clearTimeout(typingTimeout[currentPrivateChatId]);
         }
@@ -12912,6 +12911,8 @@
         document.getElementById('privateWith').innerHTML = `<i class="fas fa-lock"></i> ${username}`;
         document.getElementById('privateModal').style.display = 'flex';
         document.getElementById('overlay').style.display = 'block';
+        positionPrivateModal();
+        updatePrivateActionBtn();
         privateUnreadCounts[username] = 0;
         if (currentUserListTab === 'private') updatePrivateContactListUI();
         rememberPrivateContact(username, false);
@@ -12942,6 +12943,12 @@
             updatePrivateMessages(messages);
 
             chatRef.off('child_added');
+            chatRef.off('child_changed');
+            chatRef.on('child_changed', (snap) => {
+                if (currentPrivateChatId !== chatId) return;
+                const m = snap.val();
+                if (m && m.sender === currentUser.name) updatePrivateTick(snap.key, !!m.isRead);
+            });
             chatRef.on('child_added', (snapshot) => {
                 if (currentPrivateChatId !== chatId || existingMessageIds.has(snapshot.key)) return;
                 existingMessageIds.add(snapshot.key);
@@ -12994,51 +13001,109 @@
         if (readUpdates.length > 0) Promise.all(readUpdates).catch(err => console.warn("Okundu güncelleme hatası:", err));
     }
 
+    function privateTicksHtml(isRead) {
+        return `<span class="pm-ticks${isRead ? ' read' : ''}" title="${isRead ? 'Okundu' : 'İletildi'}"><i class="fas fa-check-double"></i></span>`;
+    }
+
+    function updatePrivateTick(messageId, isRead) {
+        const el = document.querySelector(`#private_msg_${messageId} .pm-ticks`);
+        if (!el) return;
+        el.classList.toggle('read', !!isRead);
+        el.title = isRead ? 'Okundu' : 'İletildi';
+    }
+
     function appendPrivateMessageToUI(message) {
         const container = document.getElementById('privateMessages');
         if (document.getElementById(`private_msg_${message.id}`)) return;
         const emptyState = container.querySelector('.private-empty-state');
         if (emptyState) emptyState.remove();
         
+        const isMine = !!(currentUser && message.sender === currentUser.name);
+        const isSystem = message.sender === 'System' || message.isNotification;
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'message-item private-msg';
         messageDiv.id = `private_msg_${message.id}`;
+
+        if (isSystem) {
+            messageDiv.className = 'message-item private-msg pm-system';
+            messageDiv.innerHTML = `<div class="pm-system-text">${message.text || ''}</div>`;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+            return;
+        }
+
+        messageDiv.className = `message-item private-msg ${isMine ? 'pm-out' : 'pm-in'}`;
         
         let deleteButton = '';
-        if (currentUser && message.sender === currentUser.name) {
-            deleteButton = `<button class="delete-btn" onclick="deletePrivateMessage('${message.id}', '${currentPrivateChatId}')"><i class="far fa-trash-alt"></i></button>`;
+        if (isMine) {
+            deleteButton = `<button class="delete-btn pm-delete" title="Sil" onclick="deletePrivateMessage('${message.id}', '${currentPrivateChatId}')"><i class="far fa-trash-alt"></i></button>`;
         }
         
-        let content = message.text || '';
-        if (message.image) content += `<br><img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
-        else if (message.audio) content += `<br><audio src="${message.audio}" controls style="max-width: 200px;"></audio>`;
+        const hasMedia = !!(message.image || message.audio);
+        let content = hasMedia ? '' : (message.text || '');
+        if (message.image) content += `<img src="${message.image}" class="message-image" onclick="showImageModal('${message.image}')">`;
+        else if (message.audio) content += `<audio src="${message.audio}" controls class="pm-audio"></audio>`;
         
-        const userAvatar = message.avatar || (userProfiles[message.sender]?.avatar || null);
-        const avatarHtml = userAvatar ? `<img src="${userAvatar}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;">` : '';
-        
-        let readStatus = '';
-        if (message.sender === currentUser.name) {
-            readStatus = message.isRead 
-                ? ' <span style="color: var(--operator); margin-left: 4px;"><i class="fas fa-check-double"></i></span>'
-                : ' <span style="color: var(--text-muted); margin-left: 4px;"><i class="fas fa-check"></i></span>';
-        }
+        const readStatus = isMine ? privateTicksHtml(!!message.isRead) : '';
         
         messageDiv.innerHTML = `
-            <div class="message-header">
-                <span class="message-user">
-                    ${avatarHtml ? `<span class="user-avatar-small">${avatarHtml}</span>` : '<span class="user-avatar-small"><i class="far fa-user"></i></span>'}
-                    ${message.sender}
-                </span>
-                <div>
-                    <span class="message-time">${message.time || '--:--'}${readStatus}</span>
+            <div class="pm-bubble">
+                <div class="message-content pm-content">${content}</div>
+                <div class="pm-meta">
                     ${deleteButton}
+                    <span class="pm-time">${message.time || '--:--'}</span>
+                    ${readStatus}
                 </div>
             </div>
-            <div class="message-content">${content}</div>
         `;
         container.appendChild(messageDiv);
         container.scrollTop = container.scrollHeight;
     }
+
+    function updatePrivateActionBtn() {
+        const area = document.querySelector('#privateModal .private-input-area');
+        const input = document.getElementById('private-input');
+        if (!area || !input) return;
+        area.classList.toggle('has-text', input.value.trim().length > 0);
+    }
+
+    function positionPrivateModal() {
+        const modal = document.getElementById('privateModal');
+        if (!modal) return;
+        const props = ['top', 'left', 'width', 'height', 'right', 'bottom'];
+        const desktop = window.matchMedia('(min-width: 769px)').matches;
+        if (!desktop || modal.style.display !== 'flex') {
+            props.forEach(p => modal.style.removeProperty(p));
+            modal.classList.remove('pm-over-chat');
+            document.body.classList.remove('dm-over-chat');
+            return;
+        }
+        const chat = document.getElementById('chatContainer');
+        const r = chat ? chat.getBoundingClientRect() : null;
+        modal.classList.add('pm-over-chat');
+        document.body.classList.add('dm-over-chat');
+        if (r && r.width > 120 && r.height > 120) {
+            modal.style.left = r.left + 'px';
+            modal.style.top = r.top + 'px';
+            modal.style.width = r.width + 'px';
+            modal.style.height = r.height + 'px';
+            modal.style.right = 'auto';
+            modal.style.bottom = 'auto';
+        } else {
+            // Genel sohbet kapalıysa sağ tarafta sohbet boyutunda aç
+            const hdr = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hdr-h')) || 60;
+            modal.style.left = 'auto';
+            modal.style.right = '0px';
+            modal.style.top = hdr + 'px';
+            modal.style.width = 'min(480px, 100%)';
+            modal.style.height = `calc(100% - ${hdr}px)`;
+            modal.style.bottom = 'auto';
+        }
+    }
+    window.addEventListener('resize', positionPrivateModal);
+    (function () {
+        const chat = document.getElementById('chatContainer');
+        if (chat && typeof ResizeObserver !== 'undefined') new ResizeObserver(positionPrivateModal).observe(chat);
+    })();
 
     let isSendingPrivateMessage = false;
     async function sendPrivateMessage() {
@@ -13078,6 +13143,7 @@
                 incrementWriteCount();
                 input.value = '';
                 autoResize(input);
+                updatePrivateActionBtn();
                 
                 if (typingTimeout[currentPrivateChatId]) clearTimeout(typingTimeout[currentPrivateChatId]);
                 if (typingRef) typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
@@ -13132,6 +13198,7 @@
         
         if (privateChatsRef && currentPrivateChatId) {
             privateChatsRef.child(currentPrivateChatId).off('child_added');
+            privateChatsRef.child(currentPrivateChatId).off('child_changed');
         }
         if (typingRef && currentPrivateChatId) typingRef.child(currentPrivateChatId).off('value');
         if (typingTimeout[currentPrivateChatId]) {
@@ -13144,6 +13211,8 @@
         document.getElementById('privateModal').style.display = 'none';
         document.getElementById('overlay').style.display = 'none';
         document.getElementById('private-input').value = '';
+        positionPrivateModal();
+        updatePrivateActionBtn();
         if (closedContact) startPrivateContactListener(closedContact);
         if (currentUserListTab === 'private') updatePrivateContactListUI();
     }
@@ -13253,7 +13322,7 @@
             incrementWriteCount();
             addNotification(recipient, text, 'private');
             await archiveAndTrimPrivateChat(chatId);
-            addSystemMessage('✅ Medya gönderildi.');
+            // addSystemMessage('✅ Medya gönderildi.');  // Yanıltıcı: genel sohbete yazıyor, özel sohbete değil
             return true;
         } catch (error) {
             console.error('Özel medya gönderilemedi:', error);
@@ -13280,6 +13349,8 @@
     }
 
     function setAttachButtonRecordingState(isRecording, mode = 'media') {
+        const area = document.querySelector('#privateModal .private-input-area');
+        if (area) area.classList.toggle('recording-active', Boolean(isRecording));
         const btn = document.querySelector('.attach-btn');
         if (!btn) return;
         btn.classList.toggle('recording', Boolean(isRecording));
@@ -13459,7 +13530,7 @@
         if (audioRecordingInterval) { clearInterval(audioRecordingInterval); audioRecordingInterval = null; }
         audioRecordingSeconds = 0;
         audioChunks = [];
-        addSystemMessage('❌ Ses kaydı iptal edildi.');
+        // addSystemMessage('❌ Ses kaydı iptal edildi.');  // Genel sohbete yazmasın
     }
 
     // ============================================================
@@ -16078,6 +16149,87 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
 
 :root[data-theme="dark"] .icon-btn::after { background: var(--text-primary); color: var(--bg-primary); }
 :root[data-theme="dark"] .playlist-item.list-locked { opacity: 0.55; }
+</style>
+
+<style id="dm-whatsapp-style">
+/* ============================================================
+   ÖZEL SOHBET — WhatsApp tarzı baloncuklar, çift tık, mikrofon
+   ============================================================ */
+#privateMessages { display: flex; flex-direction: column; gap: 4px; }
+#privateMessages .private-empty-state { margin: auto; }
+#privateMessages .message-item.private-msg { display: flex; width: 100%; padding: 0; margin: 0; }
+#privateMessages .pm-out { justify-content: flex-end; }
+#privateMessages .pm-in  { justify-content: flex-start; }
+
+.pm-bubble {
+    position: relative; max-width: 78%; min-width: 64px;
+    padding: 7px 10px 5px; border-radius: 14px;
+    box-shadow: 0 1px 1px rgba(0,0,0,.08);
+    word-break: break-word;
+}
+.pm-out .pm-bubble { background: var(--youtube-red-light, rgba(201,100,66,.16)); border-bottom-right-radius: 4px; }
+.pm-in  .pm-bubble { background: var(--bg-tertiary); border-bottom-left-radius: 4px; }
+.pm-bubble .pm-content { font-size: 15px; line-height: 1.45; white-space: pre-wrap; }
+.pm-bubble .pm-content:empty { display: none; }
+.pm-bubble .message-image { margin-top: 0; max-width: 100%; max-height: 220px; border-radius: 10px; }
+.pm-bubble .pm-audio { display: block; width: 230px; max-width: 100%; height: 40px; }
+
+.pm-meta {
+    display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+    margin-top: 2px; line-height: 1; user-select: none;
+}
+.pm-time { font-size: 11px; color: var(--text-muted); }
+.pm-ticks { font-size: 12px; color: var(--text-muted); opacity: .85; display: inline-flex; }
+.pm-ticks.read { color: #34B7F1; opacity: 1; }          /* okundu: renkli çift tık */
+.pm-meta .delete-btn {
+    display: none; background: transparent; border: 0; padding: 0 2px;
+    color: var(--text-muted); font-size: 11px; cursor: pointer;
+}
+.pm-meta .delete-btn:hover { color: var(--ban, #c0392b); }
+.pm-bubble:hover .pm-meta .delete-btn { display: inline-block; }
+@media (hover: none) { .pm-meta .delete-btn { display: inline-block; opacity: .55; } }
+
+#privateMessages .pm-system { justify-content: center; margin: 6px 0; }
+.pm-system-text {
+    font-size: 12px; color: var(--text-muted); background: var(--bg-tertiary);
+    padding: 4px 12px; border-radius: 12px; text-align: center; max-width: 85%;
+}
+
+/* yazı satırı: [+]  [yazı kutusu]  [mikrofon | gönder] */
+.private-input-area { flex-wrap: nowrap; align-items: flex-end; }
+.private-input-area .attach-btn, .private-input-area .send-button, .private-mic-btn { margin-bottom: 1px; }
+.private-input-area #private-input { min-width: 0; }
+.private-mic-btn {
+    width: 46px; height: 46px; border-radius: 50%; flex: 0 0 auto;
+    background: var(--youtube-red); border: none; color: #fff; font-size: 19px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    transition: all .2s ease; box-shadow: 0 4px 12px rgba(201,100,66,.15);
+    touch-action: manipulation;
+}
+.private-mic-btn:hover { background: #B5573A; transform: scale(1.06); }
+.private-input-area.has-text #privateMicBtn { display: none; }
+.private-input-area:not(.has-text) #privateSendBtn { display: none; }
+@media (max-width: 768px) {
+    .private-mic-btn { width: 42px; height: 42px; }
+    .pm-bubble { max-width: 85%; }
+}
+
+/* kayıt sırasında satır tek şerit olur (WhatsApp gibi) */
+.private-input-area.recording-active #private-input,
+.private-input-area.recording-active #privateMicBtn,
+.private-input-area.recording-active #privateSendBtn,
+.private-input-area.recording-active .private-attach-container { display: none !important; }
+.private-input-area.recording-active .audio-recording-indicator { order: 0; flex: 1 1 auto; width: auto; }
+.private-input-area.recording-active { align-items: center; }
+
+/* MASAÜSTÜ: özel pencere kanalın genel sohbetinin üstüne, onun ölçüsünde açılır */
+@media (min-width: 769px) {
+    .private-modal.pm-over-chat {
+        max-height: none; border-left: 1px solid var(--border-color);
+        box-shadow: -8px 0 28px rgba(0,0,0,.18);
+    }
+    body.dm-over-chat #overlay { background: rgba(0,0,0,.22); backdrop-filter: none; }
+}
 </style>
 </body>
 </html>
