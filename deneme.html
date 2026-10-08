@@ -21699,7 +21699,400 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
   }
 }
 </script>
+    
+<script id="live-studio-improvements-script">
+/* ============================================================
+   CANLI YAYIN STÜDYOSU — İYİLEŞTİRMELER
+   ------------------------------------------------------------
+   • Yayıncı yayında değilken "Bitir" butonu otomatik disable
+   • Stüdyo açıkken kanal sohbetine bağlanma (yan panel)
+   • Yayıncı stüdyoyu kapatırsa yayın DEVAM eder uyarısı
+   • Stüdyo başlığındaki "Canlı" etiketi doğru durumda
+   • Yayıncı sekmesi kapalıysa otomatik yayını durdurma
+   ============================================================ */
+(function () {
+    'use strict';
+    const $ = id => document.getElementById(id);
+    const db = () => window.database || null;
+    const me = () => window.currentUser || null;
 
+    // ============================================================
+    // 1) YAYINCI — STÜDYO AÇIKKEN KANAL SOHBETİ YAN PANELİ
+    // ============================================================
+    function injectChatSidebar() {
+        const studio = $('liveStudio');
+        if (!studio) return;
+        const side = studio.querySelector('.ls-side');
+        if (!side || side.querySelector('.ls-chat-panel')) return;
+
+        const panel = document.createElement('div');
+        panel.className = 'ls-chat-panel';
+        panel.style.cssText = `
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--bg-tertiary);
+            display: flex;
+            flex-direction: column;
+            height: 260px;
+            overflow: hidden;
+            margin-top: 4px;
+        `;
+        panel.innerHTML = `
+            <div style="padding:8px 12px;border-bottom:1px solid var(--border-color);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;display:flex;justify-content:space-between;align-items:center;">
+                <span><i class="fas fa-comments"></i> Yayın Sohbeti</span>
+                <span class="ls-chat-count" style="color:var(--youtube-red);">0</span>
+            </div>
+            <div class="ls-chat-messages" style="flex:1;overflow-y:auto;padding:8px 10px;font-size:13px;line-height:1.4;"></div>
+            <div style="display:flex;gap:6px;padding:8px;border-top:1px solid var(--border-color);">
+                <input type="text" class="ls-chat-input" placeholder="Yayına yaz..." maxlength="200" style="
+                    flex:1;padding:8px 10px;border-radius:16px;border:1px solid var(--border-color);
+                    background:var(--bg-secondary);color:var(--text-primary);font:inherit;font-size:13px;outline:none;
+                ">
+                <button type="button" class="ls-chat-send" style="
+                    width:34px;height:34px;border-radius:50%;border:0;background:var(--youtube-red);
+                    color:#fff;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;
+                "><i class="fas fa-paper-plane"></i></button>
+            </div>
+        `;
+        side.appendChild(panel);
+
+        // Mesajları dinle
+        const input = panel.querySelector('.ls-chat-input');
+        const send = panel.querySelector('.ls-chat-send');
+        const msgs = panel.querySelector('.ls-chat-messages');
+        const count = panel.querySelector('.ls-chat-count');
+
+        let chatRef = null;
+        let lastMsgCount = 0;
+
+        function bindChat(channelName) {
+            if (chatRef && chatRef.off) chatRef.off();
+            const d = db();
+            if (!d || !channelName) return;
+            chatRef = d.ref(`liveStreams/${channelName}/chat`).limitToLast(60);
+            chatRef.on('child_added', (snap) => {
+                const m = snap.val();
+                if (!m) return;
+                const isMe = m.sender === me()?.name;
+                const el = document.createElement('div');
+                el.style.cssText = `padding:3px 4px;border-radius:6px;${isMe ? 'background:rgba(201,100,66,.1);' : ''}`;
+                el.innerHTML = `<b style="color:${isMe ? 'var(--operator)' : 'var(--youtube-red)'};">${escapeHtml(m.sender)}:</b> ${escapeHtml(m.text)}`;
+                msgs.appendChild(el);
+                lastMsgCount++;
+                count.textContent = lastMsgCount > 99 ? '99+' : lastMsgCount;
+                // Alt sınır: fazla mesaj varsa temizle
+                while (msgs.children.length > 100) msgs.firstChild.remove();
+                msgs.scrollTop = msgs.scrollHeight;
+            });
+        }
+
+        function doSend() {
+            const text = (input.value || '').trim();
+            if (!text) return;
+            const ch = window.LiveStudio && window.LiveStudio.currentChannel;
+            if (!ch) return;
+            const d = db();
+            if (!d) return;
+            d.ref(`liveStreams/${ch}/chat`).push({
+                sender: me()?.name || 'Anonim',
+                text: text.slice(0, 200),
+                timestamp: Date.now()
+            });
+            input.value = '';
+        }
+        send.onclick = doSend;
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+        });
+
+        // LiveStudio.currentChannel değişince bağla
+        const origOpen = window.LiveStudio.open.bind(window.LiveStudio);
+        window.LiveStudio.open = async function (ch) {
+            await origOpen(ch);
+            bindChat(this.currentChannel);
+        };
+        const origClose = window.LiveStudio.close.bind(window.LiveStudio);
+        window.LiveStudio.close = function () {
+            if (chatRef && chatRef.off) { try { chatRef.off(); } catch (e) {} chatRef = null; }
+            lastMsgCount = 0;
+            count.textContent = '0';
+            msgs.innerHTML = '';
+            return origClose.apply(this, arguments);
+        };
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        }[c]));
+    }
+
+    // ============================================================
+    // 2) STÜDYO AÇILDIĞINDA "BİTİR" BUTONU BAŞLANGIÇTA DISABLE
+    // ============================================================
+    function fixInitialButtons() {
+        const btn = $('lsStopBtn');
+        if (btn) btn.disabled = true;
+        const micBtn = $('lsMicBtn');
+        if (micBtn) micBtn.disabled = true;
+        const camBtn = $('lsCamBtn');
+        if (camBtn) camBtn.disabled = true;
+        const flipBtn = $('lsFlipBtn');
+        if (flipBtn) flipBtn.disabled = true;
+    }
+
+    // Her açılışta butonları sıfırla
+    const _origStudioOpen = window.LiveStudio && window.LiveStudio.open;
+    if (_origStudioOpen) {
+        window.LiveStudio.open = async function (ch) {
+            const r = await _origStudioOpen.apply(this, arguments);
+            setTimeout(fixInitialButtons, 100);
+            return r;
+        };
+    }
+
+    // ============================================================
+    // 3) STÜDYO KAPATILIRKEN "YAYIN DEVAM EDİYOR" UYARISI
+    // ============================================================
+    // LiveStudio.close fonksiyonunu sarmala — yayın aktifken onay iste
+    const _origStudioClose = window.LiveStudio && window.LiveStudio.close;
+    if (_origStudioClose) {
+        window.LiveStudio.close = function () {
+            const ch = this.currentChannel;
+            const state = ch && (window.__liveStatesCache || {})[ch];
+            const isLive = state && state.active && state.hostName === me()?.name;
+
+            if (isLive) {
+                const choice = confirm(
+                    '⚠️ Yayın DEVAM EDİYOR!\n\n' +
+                    '• Tamam → Yayını da bitir ve stüdyoyu kapat\n' +
+                    '• İptal → Sadece stüdyoyu kapat (yayın arka planda devam eder)\n\n' +
+                    'Not: Stüdyoyu kapatsanız bile yayın başkaları tarafından izlenmeye devam eder.'
+                );
+                if (choice) {
+                    // Yayını da bitir
+                    try { this._doStop(ch); } catch (e) {}
+                    // 800ms sonra kapat
+                    setTimeout(() => { _origStudioClose.apply(this, arguments); }, 900);
+                    return;
+                }
+                // Sadece stüdyoyu kapat, yayın devam
+                // Yerel stream'i durdurmadan kamera çalışmaya devam eder
+                // AMA: kullanıcı sekmeyi kapatırsa yayın biter (tracks durur)
+                // Uyarı göster
+                if (!window.__liveKeepAliveWarned) {
+                    window.__liveKeepAliveWarned = true;
+                    alert(
+                        '🎥 Yayın ARKA PLANDA DEVAM EDİYOR!\n\n' +
+                        '• Bu sekmeyi KAPATMAYIN\n' +
+                        '• Tarayıcıyı kapatmayın\n' +
+                        '• Uyku moduna almayın\n\n' +
+                        'Yayını bitirmek için sohbet başlığındaki "Yayını Bitir" butonunu kullanın.'
+                    );
+                }
+                // Arka planda yayın için mini bir gösterge ekle
+                addBackgroundLiveIndicator(ch);
+                // Asıl kapatma fonksiyonunu çağır (yerel stream kapatılmasın)
+                closeStudioKeepLive();
+                return;
+            }
+            return _origStudioClose.apply(this, arguments);
+        };
+    }
+
+    /**
+     * Stüdyoyu kapat ama yayını devam ettir
+     */
+    function closeStudioKeepLive() {
+        const studio = $('liveStudio');
+        if (studio) studio.classList.remove('show');
+        document.body.style.overflow = '';
+        // Butonların durumunu sıfırla
+        const stopBtn = $('lsStopBtn');
+        if (stopBtn) stopBtn.disabled = false;
+    }
+
+    /**
+     * Arka plan yayın göstergesi (sağ altta mini kart)
+     */
+    function addBackgroundLiveIndicator(channelName) {
+        let indicator = $('liveBgIndicator');
+        if (indicator) indicator.remove();
+
+        indicator = document.createElement('div');
+        indicator.id = 'liveBgIndicator';
+        indicator.style.cssText = `
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 4500;
+            background: linear-gradient(135deg, #d32f2f, #b71c1c);
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(211, 47, 47, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            animation: luPulse 1.6s infinite;
+            max-width: min(340px, calc(100vw - 32px));
+        `;
+        indicator.innerHTML = `
+            <i class="fas fa-circle" style="font-size:8px;"></i>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;opacity:.85;text-transform:uppercase;letter-spacing:.05em;">CANLI YAYINDA</div>
+                <div style="font-size:14px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">#${escapeHtml(channelName)}</div>
+            </div>
+            <button type="button" id="liveBgReturn" style="
+                background: rgba(255,255,255,.25);
+                color: #fff;
+                border: 0;
+                border-radius: 8px;
+                padding: 6px 12px;
+                font: inherit;
+                font-size: 12px;
+                font-weight: 700;
+                cursor: pointer;
+            ">Aç</button>
+            <button type="button" id="liveBgStop" style="
+                background: rgba(0,0,0,.35);
+                color: #fff;
+                border: 0;
+                border-radius: 8px;
+                width: 30px;
+                height: 30px;
+                cursor: pointer;
+                font-size: 12px;
+            " title="Yayını Bitir"><i class="fas fa-stop"></i></button>
+        `;
+        document.body.appendChild(indicator);
+
+        // Tıklamalar
+        indicator.querySelector('#liveBgReturn').onclick = (e) => {
+            e.stopPropagation();
+            $('liveStudio').classList.add('show');
+            document.body.style.overflow = 'hidden';
+            indicator.remove();
+        };
+        indicator.querySelector('#liveBgStop').onclick = async (e) => {
+            e.stopPropagation();
+            if (!confirm('Canlı yayını sonlandırmak istediğinize emin misiniz?')) return;
+            const ch = window.LiveStudio.currentChannel;
+            await window.LiveStudio._doStop(ch, false);
+            indicator.remove();
+        };
+        indicator.onclick = (e) => {
+            if (e.target.closest('button')) return;
+            $('liveStudio').classList.add('show');
+            document.body.style.overflow = 'hidden';
+            indicator.remove();
+        };
+
+        // Yayın durduğunda kaldır
+        const checkInt = setInterval(() => {
+            const st = (window.__liveStatesCache || {})[channelName];
+            if (!st || !st.active) {
+                indicator.remove();
+                clearInterval(checkInt);
+            }
+        }, 3000);
+    }
+
+    // Yayın sona erdiğinde arka plan göstergesini kaldır
+    const _origDoStop = window.LiveStudio && window.LiveStudio._doStop;
+    if (_origDoStop) {
+        window.LiveStudio._doStop = async function (ch, byOwner) {
+            const ind = $('liveBgIndicator');
+            if (ind) ind.remove();
+            return _origDoStop.apply(this, arguments);
+        };
+    }
+
+    // ============================================================
+    // 4) STÜDYO AÇIKKEN İZLEYİCİ SAYISINI CANLI GÜNCELLE
+    // ============================================================
+    function startViewerCountSync() {
+        if (window.__viewerCountSyncStarted) return;
+        window.__viewerCountSyncStarted = true;
+        setInterval(() => {
+            const studio = $('liveStudio');
+            if (!studio || !studio.classList.contains('show')) return;
+            const ch = window.LiveStudio.currentChannel;
+            const st = (window.__liveStatesCache || {})[ch] || {};
+            const c1 = $('lsViewerCount');
+            const c2 = $('lsViewerCount2');
+            const viewers = st.viewerCount || 0;
+            if (c1) c1.textContent = viewers;
+            if (c2) c2.textContent = viewers;
+            // "Canlı" etiketi
+            const lbl = $('lsPreviewLabel');
+            if (lbl) lbl.style.display = st.active ? 'block' : 'none';
+            // Durum metni
+            const txt = $('lsStatusText');
+            if (txt) txt.textContent = st.active ? 'Yayında' : 'Kapalı';
+            // Buton durumu
+            const stopBtn = $('lsStopBtn');
+            if (stopBtn) stopBtn.disabled = !st.active || st.hostName !== me()?.name;
+        }, 2000);
+    }
+
+    // ============================================================
+    // 5) SAYFA KAPATILIRKEN OTOMATİK YAYIN DURDURMA
+    // ============================================================
+    function installBeforeUnload() {
+        window.addEventListener('beforeunload', (e) => {
+            const studio = $('liveStudio');
+            const ch = window.LiveStudio && window.LiveStudio.currentChannel;
+            const st = ch && (window.__liveStatesCache || {})[ch];
+            if (st && st.active && st.hostName === me()?.name) {
+                // Kullanıcıyı uyar
+                const msg = '🎥 CANLI YAYIN DEVAM EDİYOR!\n\nSekmeyi kapatırsanız yayın sona erecek.';
+                e.preventDefault();
+                e.returnValue = msg;
+                return msg;
+            }
+        });
+    }
+
+    // ============================================================
+    // 6) YAYINCI SEKMESİ KAPANDIĞINDA YAYINI DURDUR
+    // ============================================================
+    function installVisibilityWatcher() {
+        document.addEventListener('visibilitychange', () => {
+            // Sekme gizlenince yayını durdurma! Kullanıcı arka planda tutabilir.
+            // Ancak sayfa kapanırsa (beforeunload) yayın durur (stream tracks kapanır).
+        });
+    }
+
+    // ============================================================
+    // 7) BAŞLATMA
+    // ============================================================
+    function boot() {
+        let tries = 0;
+        const t = setInterval(() => {
+            tries++;
+            if (window.LiveStudio && $('liveStudio')) {
+                injectChatSidebar();
+                fixInitialButtons();
+                startViewerCountSync();
+                installBeforeUnload();
+                installVisibilityWatcher();
+                clearInterval(t);
+                console.log('[LiveStudio-Improvements] ✅ Hazır');
+            }
+            if (tries > 60) clearInterval(t);
+        }, 500);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+    } else {
+        boot();
+    }
+})();
+</script>
 <!-- ============================================================
      KURULUM KILAVUZU & TEST SENARYOLARI (HTML'de yorum olarak)
      ============================================================ -->
