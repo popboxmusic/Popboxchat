@@ -12194,7 +12194,19 @@
         if (currentChannel !== channelName) return;
         channelPlaylistLocked = !!playbackSnapshot.val()?.locked;
         updatePlaylistLockUI();
-        const savedVideoId = playbackSnapshot.val()?.videoId || '';
+        let savedVideoId = playbackSnapshot.val()?.videoId || '';
+        if (savedVideoId) {
+            // Silinmiş (artık playlistte olmayan) video askıda kalmasın
+            try {
+                const plSnap = await activeChannelPlaylistRef.once('value');
+                if (currentChannel !== channelName) return;
+                const stillThere = Object.values(plSnap.val() || {}).some(v => v && v.id === savedVideoId);
+                if (!stillThere) {
+                    savedVideoId = '';
+                    if (canAddVideoToChannel(channelName)) { try { await activeChannelPlaybackRef.child('videoId').remove(); } catch (e) {} }
+                }
+            } catch (e) {}
+        }
         let hasPickedInitialVideo = Boolean(savedVideoId);
         if (savedVideoId) setChannelVideo(savedVideoId, false);
         else if (channelName === 'genel') setChannelVideo('i75BZYOAPl4', false);
@@ -17174,9 +17186,9 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
 .adm-st{font-size:11px;padding:2px 7px;border-radius:9px;background:var(--bg-hover)}.adm-st.on{background:rgba(79,138,91,.25)}
 @media(max-width:768px){
  #vtMenuBtn{display:inline-flex}
- #vtSide{position:fixed;top:56px;bottom:0;left:0;z-index:1510;width:min(84vw,300px);transform:translateX(-100%);transition:transform .25s;box-shadow:var(--shadow-xl)}
+ #vtSide{position:absolute;top:56px;bottom:0;left:0;z-index:1510;width:min(84vw,300px);transform:translateX(-100%);transition:transform .25s;box-shadow:var(--shadow-xl)}
  #vitrin.side #vtSide{transform:none}
- #vitrin.side .vt-back{display:block;position:fixed;inset:56px 0 0 0;background:rgba(0,0,0,.4);z-index:1505}
+ #vitrin.side .vt-back{display:block;position:absolute;inset:56px 0 0 0;background:rgba(0,0,0,.4);z-index:1505}
  .vt-grid,.vt-grid.one{grid-template-columns:1fr;gap:18px}
  #vtMain{padding:12px}.vt-logo span{display:none}.vt-hero{aspect-ratio:16/9}
 }
@@ -17198,7 +17210,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
 .vt-adbtn:hover{background:var(--youtube-red-hover)}
 .adm-card select,.adm-card textarea{width:100%;margin:0 0 8px;padding:9px 10px;border-radius:9px;border:1px solid var(--border-color);background:var(--input-bg);color:var(--text-primary);font:inherit;font-size:14px}
 @media(max-width:768px){
- #vitrin{inset:auto;top:0;left:0;width:100%;height:var(--app-h,100dvh);overflow:hidden}
+ #vitrin{overflow:hidden}
  #vtMain{overflow-x:hidden}.vt-body{min-width:0}
  .vt-grid,.vt-grid.one{grid-template-columns:minmax(0,1fr)}
  .vt-top{gap:8px;padding:0 8px}.vt-search{min-width:0}
@@ -17231,6 +17243,50 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
 }
 @media(max-width:560px){.header-left .logo>span{display:none}}
 </style>
+<style id="vitrin-style4">
+#vitrin{inset:auto;top:var(--app-top,0px);left:0;width:100%;height:var(--app-h,100dvh)}
+.private-modal.pm-dock{border:1px solid var(--border-strong);border-radius:14px 14px 0 0;box-shadow:var(--shadow-xl);animation:none}
+.pl-home{border:0;background:transparent;color:var(--text-muted);cursor:pointer;width:30px;height:30px;border-radius:8px;flex:0 0 auto}
+.pl-home:hover{background:var(--bg-hover);color:var(--text-primary)}
+.pl-home.on{color:var(--youtube-red)}
+.vt-down{position:absolute;right:14px;z-index:30;width:40px;height:40px;border-radius:50%;border:1px solid var(--border-strong);background:var(--bg-elevated);color:var(--text-primary);box-shadow:var(--shadow-lg);cursor:pointer;display:none;align-items:center;justify-content:center}
+.vt-down.show{display:flex}
+@media(max-width:768px){
+ html.ios-pad .youtube-header{box-sizing:border-box;padding-top:6px!important}
+ html.ios-pad .vt-top{box-sizing:border-box;padding-top:6px}
+ .vt-search input{font-size:16px}
+}
+@media(max-width:380px){
+ .vt-top{gap:6px;padding:0 6px}.vt-btn{padding:0 9px}#vtMain{padding:10px}.vt-grid{gap:14px}.vt-adinfo h3{font-size:16px}
+ .header-right .icon-btn{width:32px!important;height:32px!important}
+}
+</style>
+<style id="vitrin-style5">
+@media(min-width:901px){.vt-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:769px) and (max-width:900px){.vt-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.vt-info2{display:flex;gap:12px;padding:12px 4px 0;align-items:flex-start}
+.vt-chava{flex:0 0 38px;width:38px;height:38px;border-radius:50%;overflow:hidden;background:var(--youtube-red);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center}
+.vt-chava img{width:100%;height:100%;object-fit:cover}
+.vt-meta{min-width:0;flex:1}
+.vt-title{font-size:16px;font-weight:600;line-height:1.3;color:var(--text-primary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.vt-sub{font-size:13px;color:var(--text-muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vt-railwrap{position:relative}
+.vt-rail{display:flex;gap:20px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;scrollbar-width:none;padding:6px 4px 14px;cursor:grab;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.vt-rail::-webkit-scrollbar{display:none}
+.vt-rail.drag{cursor:grabbing;scroll-snap-type:none;user-select:none}
+.vt-rail .vt-card{flex:0 0 calc((100% - 40px)/3);scroll-snap-align:start;min-width:0}
+.vt-arrow{position:absolute;top:calc(28% - 10px);z-index:6;width:44px;height:44px;border-radius:50%;border:1px solid var(--border-strong);background:var(--bg-elevated);color:var(--text-primary);box-shadow:var(--shadow-lg);cursor:pointer;display:none;align-items:center;justify-content:center}
+.vt-arrow.l{left:-10px}.vt-arrow.r{right:-10px}.vt-arrow.show{display:flex}
+@media(hover:none){.vt-arrow.show{display:none}}
+@media(max-width:900px){.vt-rail .vt-card{flex-basis:calc((100% - 20px)/2)}}
+@media(max-width:600px){.vt-rail{gap:14px}.vt-rail .vt-card{flex-basis:84%}}
+</style>
+<style id="vitrin-style6">
+.vt-s2 .vt-s2h{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:12px}
+.vt-s2 .vt-s2h h2{margin:0}.vt-s2 .vt-s2h p{margin:2px 0 0}
+.vt-seeall{flex:0 0 auto;background:transparent;border:1px solid var(--border-color);border-radius:18px;padding:6px 14px;color:var(--text-primary);cursor:pointer;font:inherit;font-size:13px;white-space:nowrap}
+.vt-seeall:hover{border-color:var(--youtube-red);color:var(--youtube-red)}
+</style>
 <div id="vitrin" class="show">
  <div class="vt-top">
   <button class="vt-btn" id="vtMenuBtn" onclick="vtToggleSide()" aria-label="Menü"><i class="fas fa-bars"></i></button>
@@ -17248,11 +17304,11 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
 <input type="file" id="vtThumbFile" accept="image/*" style="display:none">
 <script id="vitrin-script">
 (function(){
-  var V=document.getElementById('vitrin'),chans={},playback={},firstVid={},presence={},thumbs={},ads={},lastSide='',lastHero='',hoverCard=null,hoverT=null,dirty=false,rT=null,followsOn=false,thumbTarget=null;
+  var V=document.getElementById('vitrin'),expanded={},showcase={},heads={},avatars={},reqAv={},listsX={},genelList=[],plReady=false,genelReady=false,chans={},playback={},firstVid={},presence={},thumbs={},ads={},lastSide='',lastHero='',hoverCard=null,hoverT=null,dirty=false,rT=null,followsOn=false,thumbTarget=null;
   var DEF_GENEL='i75BZYOAPl4';
   function $(id){return document.getElementById(id)}
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-  function me(){return window.currentUser||null}
+  function me(){return window.currentUser||g('currentUser',null)}
   function g(n,d){try{var v=(0,eval)('typeof '+n+'!=="undefined"?'+n+':null');return v==null?d:v}catch(e){return d}}
   function isOwn(){return !!g('isOwner',false)}
   function canSee(n,c){
@@ -17266,7 +17322,28 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     if(chans[n]&&chans[n].owner===u.name)return true;
     try{return !!(window.canAddVideoToChannel&&window.canAddVideoToChannel(n))}catch(e){return false}
   }
-  function vidOf(n){return (playback[n]&&playback[n].videoId)||firstVid[n]||(n==='genel'?DEF_GENEL:null)}
+  function toList(o){
+    var e=Object.keys(o||{}).map(function(k){return [k,o[k]]}).filter(function(x){return x[1]&&x[1].id&&x[1].title});
+    e.sort(function(a,b){var ao=typeof a[1].order==='number',bo=typeof b[1].order==='number';if(ao&&bo)return a[1].order-b[1].order;if(ao!==bo)return ao?-1:1;return a[0]<b[0]?-1:1});
+    return e.map(function(x){return {id:x[1].id,title:x[1].title}});
+  }
+  function plOf(n){return n==='genel'?genelList:listsX[n]}
+  function vidOf(n){
+    var l=plOf(n)||[],ready=n==='genel'?genelReady:plReady;
+    function ok(id){return !ready||l.some(function(x){return x.id===id})}
+    var sc=showcase[n]&&showcase[n].videoId;if(sc&&ok(sc))return sc;
+    var pb=playback[n]&&playback[n].videoId;if(pb&&ok(pb))return pb;
+    if(l.length)return l[0].id;
+    return n==='genel'?DEF_GENEL:null;
+  }
+  function vtitleOf(n,id){var l=plOf(n)||[];for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i].title;return (showcase[n]&&showcase[n].videoId===id&&showcase[n].title)||''}
+  function chTitle(n){var c=chans[n]||{},v=vidOf(n);return heads[n]||c.description||(v&&vtitleOf(n,v))||('#'+n)}
+  function chAvatar(n){var o=(chans[n]||{}).owner,a=o&&avatars[o];return '<div class="vt-chava">'+(a?'<img src="'+esc(a)+'" alt="">':'<span>'+esc(String(o||n).charAt(0).toUpperCase())+'</span>')+'</div>'}
+  function fetchAvatars(){
+    var db=window.database;if(!db)return;
+    Object.keys(chans).forEach(function(n){var o=chans[n]&&chans[n].owner;if(!o||reqAv[o])return;reqAv[o]=1;
+      db.ref('profiles/'+o+'/avatar').once('value',function(s){avatars[o]=s.val()||'';vtRenderGrid()},function(){delete reqAv[o]})});
+  }
   function viewers(n){var p=presence[n]||{},now=Date.now(),c=0;Object.keys(p).forEach(function(u){var s=p[u]&&p[u].lastSeen;if(!s||now-s<120000)c++});return c}
   function subCount(n){var s=g('cachedChannelSubscribers',{})[n];return s?Object.keys(s).length:0}
   function parseSrc(u){
@@ -17285,37 +17362,57 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
       if(!q)return true;var c=chans[n];return (n+' '+(c.label||'')+' '+(c.description||'')).toLowerCase().indexOf(q)>-1;
     }).sort(function(a,b){return (chans[a].order||0)-(chans[b].order||0)});
   }
-  function card(n,big){
-    var c=chans[n],v=vidOf(n),t=thumbs[n],img=t||(v?'https://i.ytimg.com/vi/'+v+'/hqdefault.jpg':null),ed=canEdit(n);
+  function card(n){
+    var v=vidOf(n),t=thumbs[n],img=t||(v?'https://i.ytimg.com/vi/'+v+'/hqdefault.jpg':null);
     return '<div class="vt-card" data-ch="'+esc(n)+'" data-vid="'+esc(v||'')+'"><div class="vt-thumb"'+(img?' style="background-image:url('+esc(img)+')"':'')+'>'
       +(v?'<span class="vt-live">🔴 CANLI</span>':'<div class="vt-none"><i class="fas fa-tv"></i></div>')
-      +'<span class="vt-view">👥 '+viewers(n)+' izliyor</span>'
-      
-      +'</div><div class="vt-info"><b>#'+esc(n)+'</b>'+(c.description?'<small>'+esc(c.description)+'</small>':'')+'</div></div>';
+      +'<span class="vt-view">👥 '+viewers(n)+' izliyor</span></div>'
+      +'<div class="vt-info2">'+chAvatar(n)+'<div class="vt-meta"><div class="vt-title">'+esc(chTitle(n))+'</div><div class="vt-sub">#'+esc(n)+'</div></div></div></div>';
   }
-  function sec(t,sub,ns,one){
+  function sec(t,sub,ns,one,rid){
     if(!ns.length)return '';
-    return '<section class="vt-s2"><h2>'+t+'</h2>'+(sub?'<p>'+sub+'</p>':'')+'<div class="vt-grid'+(one?' one':'')+'">'+ns.map(function(n){return card(n)}).join('')+'</div></section>';
+    var cards=ns.map(function(n){return card(n)}).join('');
+    function head(btn){return '<div class="vt-s2h"><div><h2>'+t+'</h2>'+(sub?'<p>'+sub+'</p>':'')+'</div>'+btn+'</div>'}
+    if(one)return '<section class="vt-s2">'+head('')+'<div class="vt-grid one">'+cards+'</div></section>';
+    if(rid==='grid')return '<section class="vt-s2">'+head('')+'<div class="vt-grid">'+cards+'</div></section>';
+    var open=!!expanded[rid],btn=ns.length>2?'<button class="vt-seeall" data-seeall="'+rid+'">'+(open?'Daralt ▲':'Tümünü gör ›')+'</button>':'';
+    if(open)return '<section class="vt-s2">'+head(btn)+'<div class="vt-grid">'+cards+'</div></section>';
+    return '<section class="vt-s2">'+head(btn)+'<div class="vt-railwrap"><button class="vt-arrow l" data-rail="-1" aria-label="Geri"><i class="fas fa-chevron-left"></i></button><div class="vt-rail" data-rid="'+rid+'">'+cards+'</div><button class="vt-arrow r" data-rail="1" aria-label="İleri"><i class="fas fa-chevron-right"></i></button></div></section>';
   }
-  var lastSec='';function setBox(h){if(h===lastSec)return;lastSec=h;$('vtSections').innerHTML=h;setupIO()}
+  var lastSec='';
+  function updArrows(){
+    document.querySelectorAll('#vtSections .vt-railwrap').forEach(function(w){
+      var r=w.querySelector('.vt-rail'),l=w.querySelector('.vt-arrow.l'),x=w.querySelector('.vt-arrow.r');
+      l.classList.toggle('show',r.scrollLeft>8);x.classList.toggle('show',r.scrollLeft+r.clientWidth<r.scrollWidth-8);
+    });
+  }
+  function setBox(h){
+    if(h===lastSec)return;lastSec=h;
+    var box=$('vtSections'),pos={};
+    box.querySelectorAll('.vt-rail').forEach(function(r){pos[r.dataset.rid]=r.scrollLeft});
+    box.innerHTML=h;
+    box.querySelectorAll('.vt-rail').forEach(function(r){if(pos[r.dataset.rid])r.scrollLeft=pos[r.dataset.rid]});
+    setupIO();updArrows();
+  }
   function feature(n){
-    var c=chans[n],v=vidOf(n),t=thumbs[n],img=t||(v?'https://i.ytimg.com/vi/'+v+'/hqdefault.jpg':null);
+    var v=vidOf(n),t=thumbs[n],img=t||(v?'https://i.ytimg.com/vi/'+v+'/hqdefault.jpg':null);
     return '<div class="vt-adrow vt-feature"><div class="vt-card" data-ch="'+esc(n)+'" data-vid="'+esc(v||'')+'"><div class="vt-thumb"'+(img?' style="background-image:url('+esc(img)+')"':'')+'>'
       +(v?'<span class="vt-live">🔴 CANLI</span>':'<div class="vt-none"><i class="fas fa-tv"></i></div>')+'<span class="vt-view">👥 '+viewers(n)+' izliyor</span></div></div>'
-      +'<div class="vt-adinfo"><span class="vt-adlbl">⭐ Günün Kanalı</span><h3>#'+esc(n)+'</h3><p>'+esc(c.description||'Bugünün seçimi — her gün değişir.')+'</p>'
+      +'<div class="vt-adinfo"><span class="vt-adlbl">⭐ Günün Kanalı</span><h3>'+esc(chTitle(n))+'</h3>'
+      +'<div class="vt-info2" style="padding:0;align-items:center">'+chAvatar(n)+'<div class="vt-meta"><div class="vt-sub" style="margin:0">#'+esc(n)+' · 👥 '+viewers(n)+' izliyor</div></div></div>'
       +'<a class="vt-adbtn" data-ch="'+esc(n)+'">Kanala gir <i class="fas fa-arrow-right"></i></a></div></div>';
   }
   function render(){
     if(hoverCard){dirty=true;return}
     var q=($('vtSearch').value||'').trim().toLowerCase(),all=list(q),u=me(),h='';
     if(!all.length){setBox('<div class="vt-nores">Kanal bulunamadı.</div>');return}
-    if(q){setBox(sec('🔎 Arama sonuçları','',all));return}
+    if(q){setBox(sec('🔎 Arama sonuçları','',all,false,'grid'));return}
     var withV=all.filter(function(n){return vidOf(n)}),pool=(withV.length?withV:all).slice().sort(),day=Math.floor(Date.now()/864e5),pick=pool[day%pool.length];
     h+=currentHome()?sec('⭐ Günün Kanalı','Bugünün seçimi — her gün değişir.',[pick],true):feature(pick);
     var subs=g('cachedChannelSubscribers',{}),pop=all.filter(function(n){return all.length<3||n!==pick}).map(function(n){return {n:n,s:viewers(n)*3+subCount(n)+((u&&subs[n]&&subs[n][u.name])?5:0)}}).sort(function(a,b){return b.s-a.s}).slice(0,6).map(function(x){return x.n});
-    h+=sec('🔥 Senin İçin Popüler Kanallar','Şu an en çok izlenen ve en çok abonesi olanlar.',pop);
-    if(u){var mine=all.filter(function(n){return subs[n]&&subs[n][u.name]});h+=sec('📌 Aboneliklerim','',mine)}
-    h+=sec('📺 Tüm Kanallar','',all);
+    h+=sec('🔥 Senin İçin Popüler Kanallar','Şu an en çok izlenen ve en çok abonesi olanlar.',pop,false,'pop');
+    if(u){var mine=all.filter(function(n){return subs[n]&&subs[n][u.name]});h+=sec('📌 Aboneliklerim','',mine,false,'mine')}
+    h+=sec('📺 Tüm Kanallar','',all,false,'all');
     setBox(h);
   }
   window.vtRenderGrid=function(){clearTimeout(rT);rT=setTimeout(render,120)};
@@ -17515,8 +17612,14 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     var b=$('vtChBtns');
     if(!b){
       b=document.createElement('span');b.id='vtChBtns';b.className='vt-chbtns';
-      b.innerHTML='<button type="button" class="vt-chb" id="vtChUp" title="Kanal kapak görseli yükle"><i class="fas fa-camera"></i></button><button type="button" class="vt-chb" id="vtChDel" title="Kapak görselini kaldır"><i class="fas fa-xmark"></i></button>';
+      b.innerHTML='<button type="button" class="vt-chb" id="vtChHead" title="Kanal başlığı (Anasayfada görünür)"><i class="fas fa-pen"></i></button><button type="button" class="vt-chb" id="vtChUp" title="Kanal kapak görseli yükle"><i class="fas fa-camera"></i></button><button type="button" class="vt-chb" id="vtChDel" title="Kapak görselini kaldır"><i class="fas fa-xmark"></i></button>';
       grp.appendChild(b);
+      $('vtChHead').onclick=function(){
+        var n=g('activeChannelName',null);if(!n||!window.database)return;
+        var t=prompt('Kanal başlığı — Anasayfada kartta büyük görünür (en fazla 100 karakter). Boş bırakıp Tamam dersen kaldırılır:',heads[n]||'');
+        if(t===null)return;t=t.trim().slice(0,100);
+        window.database.ref('channelHeadlines/'+n)[t?'set':'remove'](t||undefined).catch(function(){alert('Başlık kaydedilemedi (yetki?).')});
+      };
       $('vtChUp').onclick=function(){thumbTarget=g('activeChannelName',null);if(thumbTarget)$('vtThumbFile').click()};
       $('vtChDel').onclick=function(){var n=g('activeChannelName',null);if(n&&confirm('Kapak görseli kaldırılsın mı? (Videodan otomatik alınır)'))window.database.ref('channelThumbs/'+n).remove()};
     }
@@ -17547,8 +17650,8 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     if(h!==lastSide){s.innerHTML=h;lastSide=h}
   }
   window.vtToggleSide=function(f){V.classList.toggle('side',typeof f==='boolean'?f:!V.classList.contains('side'))};
-  window.vtShow=function(){closeAd(false);lastSec='';V.classList.add('show');V.classList.remove('side');renderSide();render();renderHero(true)};
-  function hide(){stopPrev();stopAuto();clearHero();V.classList.remove('show','side');window.dispatchEvent(new Event('resize'));try{var p=g('player',null);p&&p.playVideo&&p.playVideo()}catch(e){}}
+  window.vtShow=function(){closeAd(false);lastSec='';V.classList.add('show');V.classList.remove('side');renderSide();render();renderHero(true);if(window.positionPrivateModal)window.positionPrivateModal()};
+  function hide(){stopPrev();stopAuto();clearHero();V.classList.remove('show','side');if(window.positionPrivateModal)setTimeout(window.positionPrivateModal,50);window.dispatchEvent(new Event('resize'));try{var p=g('player',null);p&&p.playVideo&&p.playVideo()}catch(e){}}
   window.vtOpenChannel=function(n){
     if(!me()||!chans[n])return;
     try{window.switchChannel(n)}catch(e){console.error(e)}
@@ -17599,23 +17702,136 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
   function init(){
     var db=window.database;if(!db){setTimeout(init,300);return}
     var er=function(){};
-    db.ref('channels').on('value',function(s){chans=s.val()||{};Object.keys(chans).forEach(function(n){
-      if(firstVid[n]!==undefined)return;firstVid[n]=null;
-      db.ref(n==='genel'?'playlist':'channelPlaylists/'+n).limitToFirst(1).once('value',function(x){var o=x.val()||{},k=Object.keys(o)[0];if(k&&o[k]&&o[k].id){firstVid[n]=o[k].id;vtRenderGrid()}},er);
-    });vtRenderGrid()},er);
+    db.ref('channels').on('value',function(s){chans=s.val()||{};fetchAvatars();vtRenderGrid()},er);
+    db.ref('channelPlaylists').on('value',function(s){var o=s.val()||{};listsX={};Object.keys(o).forEach(function(n){listsX[n]=toList(o[n])});plReady=true;vtRenderGrid()},er);
+    db.ref('playlist').on('value',function(s){genelList=toList(s.val());genelReady=true;vtRenderGrid()},er);
+    db.ref('channelHeadlines').on('value',function(s){heads=s.val()||{};vtRenderGrid()},er);
     db.ref('channelPlayback').on('value',function(s){playback=s.val()||{};vtRenderGrid()},er);
     db.ref('channelPresence').on('value',function(s){presence=s.val()||{};vtRenderGrid()},er);
+    db.ref('channelShowcase').on('value',function(s){showcase=s.val()||{};decoratePlaylists();vtRenderGrid()},er);
     db.ref('channelThumbs').on('value',function(s){thumbs=s.val()||{};vtRenderGrid()},er);
     db.ref('ads').on('value',function(s){ads=s.val()||{};adsChanged()},er);
   }
   setInterval(function(){
     if(me()&&!followsOn&&window.loadFollows){followsOn=true;try{window.loadFollows()}catch(e){}}
     $('vtAdBtn').style.display=isOwn()?'inline-flex':'none';
-    addOwnerTab();updateThumbBtn();
+    addOwnerTab();updateThumbBtn();decoratePlaylists();attachDown('messages');attachDown('privateMessages');downs.forEach(function(f){f()});
     if(!V.classList.contains('show'))return;
-    renderSide();renderHero(false);vtRenderGrid();
+    if(dockMode())applyDock();
+    renderSide();renderHero(false);vtRenderGrid();if(me())fetchAvatars();
     try{var p=g('player',null);if(p&&p.getPlayerState&&p.getPlayerState()===1)p.pauseVideo()}catch(e){}
   },2000);
+
+  document.addEventListener('click',function(e){
+    var b=e.target.closest&&e.target.closest('[data-seeall]');if(!b)return;
+    var r=b.dataset.seeall,open=!(expanded[r]);expanded[r]=open;lastSec='';render();
+    var nb=document.querySelector('[data-seeall="'+r+'"]'),sec=nb&&nb.closest('section');
+    if(sec)sec.scrollIntoView({block:'start',behavior:'smooth'});
+  });
+  /* ---- Kategori satırları: ok + fare sürükleme (mobilde parmakla kaydır) ---- */
+  document.addEventListener('click',function(e){
+    var b=e.target.closest&&e.target.closest('.vt-arrow');if(!b)return;
+    var r=b.parentElement.querySelector('.vt-rail');r.scrollBy({left:(+b.dataset.rail)*r.clientWidth*.9,behavior:'smooth'});
+  });
+  document.addEventListener('scroll',function(e){if(e.target&&e.target.classList&&e.target.classList.contains('vt-rail'))updArrows()},true);
+  window.addEventListener('resize',updArrows);
+  document.addEventListener('pointerdown',function(e){
+    if(e.pointerType!=='mouse'||e.button!==0)return;
+    var r=e.target.closest&&e.target.closest('.vt-rail');if(!r||e.target.closest('.vt-arrow'))return;
+    var x0=e.clientX,s0=r.scrollLeft,moved=false;
+    function mv(ev){var dx=ev.clientX-x0;if(!moved&&Math.abs(dx)>6){moved=true;r.classList.add('drag');stopPrev()}if(moved){r.scrollLeft=s0-dx;ev.preventDefault()}}
+    function up(){
+      document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);r.classList.remove('drag');
+      if(moved){var sw=function(ev){ev.stopPropagation();ev.preventDefault()};window.addEventListener('click',sw,true);setTimeout(function(){window.removeEventListener('click',sw,true)},150)}
+    }
+    document.addEventListener('pointermove',mv,{passive:false});document.addEventListener('pointerup',up);
+  });
+  /* ---- iPhone Chrome: üst bar tarayıcı çubuğunun altında kalmasın ---- */
+  try{if(/iPhone|iPod/.test(navigator.userAgent)&&/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent))document.documentElement.classList.add('ios-pad')}catch(e){}
+  /* ---- Playlist: 🏠 Anasayfada göster ---- */
+  function decoratePlaylists(){
+    var ch=g('currentChannel',null);if(!ch||!me())return;
+    var ok=false;try{ok=!!(window.canAddVideoToChannel&&window.canAddVideoToChannel(ch))}catch(e){}
+    ['playlistItemsWeb','playlistDrawerItems'].forEach(function(id){
+      var c=$(id);if(!c)return;
+      if(!c.dataset.vtobs&&window.MutationObserver){c.dataset.vtobs='1';new MutationObserver(function(){decoratePlaylists()}).observe(c,{childList:true})}
+      c.querySelectorAll('.playlist-item').forEach(function(it){
+        var b=it.querySelector('.pl-home');
+        if(!ok){if(b)b.remove();return}
+        var on=!!(showcase[ch]&&showcase[ch].videoId===it.dataset.id);
+        if(!b){
+          b=document.createElement('button');b.type='button';b.className='pl-home';b.innerHTML='<i class="fas fa-house"></i>';
+          b.onclick=function(ev){
+            ev.stopPropagation();var cc=g('currentChannel',null),vid=it.dataset.id;if(!cc||!window.database)return;
+            if(showcase[cc]&&showcase[cc].videoId===vid){window.database.ref('channelShowcase/'+cc).remove()}
+            else{var t=(it.querySelector('.playlist-title')||{}).textContent||'';window.database.ref('channelShowcase/'+cc).set({videoId:vid,title:t,by:me().name,at:Date.now()})}
+          };
+          var top=it.querySelector('.pl-top');top?it.insertBefore(b,top):it.appendChild(b);
+        }
+        b.classList.toggle('on',on);b.title=on?'Anasayfada gösteriliyor (kaldırmak için tıkla)':'Bu videoyu Anasayfada göster';
+      });
+    });
+  }
+  /* ---- Playlist sürükle-bırak (fare + dokunmatik) düzeltmesi ---- */
+  document.addEventListener('pointerdown',function(e){
+    var h=e.target.closest&&e.target.closest('.pl-handle');if(!h)return;
+    var item=h.closest('.playlist-item'),container=item&&item.parentElement;if(!item||!container)return;
+    e.preventDefault();e.stopPropagation();item.classList.add('dragging');
+    function move(ev){
+      var y=ev.clientY,others=[].slice.call(container.querySelectorAll('.playlist-item:not(.dragging)')),before=null;
+      for(var i=0;i<others.length;i++){var r=others[i].getBoundingClientRect();if(y<r.top+r.height/2){before=others[i];break}}
+      if(before!==item.nextSibling)container.insertBefore(item,before);
+      var cr=container.getBoundingClientRect();if(y<cr.top+30)container.scrollTop-=12;else if(y>cr.bottom-30)container.scrollTop+=12;
+      if(ev.cancelable)ev.preventDefault();
+    }
+    function up(){
+      document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up);
+      item.classList.remove('dragging');
+      var sw=function(ev){ev.stopPropagation();ev.preventDefault()};window.addEventListener('click',sw,true);setTimeout(function(){window.removeEventListener('click',sw,true)},200);
+      var ids=[].map.call(container.querySelectorAll('.playlist-item'),function(x){return x.dataset.id});
+      var ap=g('applyPlaylistOrder',null);if(ap)ap(ids);
+    }
+    document.addEventListener('pointermove',move,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',up);
+  },true);
+  /* ---- Video silinince Anasayfada askıda kalmasın ---- */
+  var _rm=window.removeFromPlaylist;
+  if(_rm)window.removeFromPlaylist=function(id,ev){
+    var ch=g('currentChannel',null),r=_rm.apply(this,arguments);
+    try{
+      if(ch&&showcase[ch]&&showcase[ch].videoId===id)window.database.ref('channelShowcase/'+ch).remove();
+      if(ch&&playback[ch]&&playback[ch].videoId===id)setTimeout(function(){var pl=g('playlist',[]),sv=g('setChannelVideo',null);if(sv)sv(pl.length?pl[0].id:null)},500);
+    }catch(e){}
+    return r;
+  };
+  /* ---- Sohbette "en alta in" oku ---- */
+  var downs=[];
+  function attachDown(id){
+    var el=$(id);if(!el||el.dataset.vtdown)return;el.dataset.vtdown='1';
+    var par=el.parentElement;if(getComputedStyle(par).position==='static')par.style.position='relative';
+    var b=document.createElement('button');b.type='button';b.className='vt-down';b.title='En alta in';b.innerHTML='<i class="fas fa-chevron-down"></i>';par.appendChild(b);
+    function upd(){
+      var far=el.scrollHeight-el.scrollTop-el.clientHeight>300&&el.offsetParent!==null;b.classList.toggle('show',far);
+      if(far){var pr=par.getBoundingClientRect(),er=el.getBoundingClientRect();b.style.bottom=Math.max(8,Math.round(pr.bottom-er.bottom+12))+'px'}
+    }
+    el.addEventListener('scroll',upd,{passive:true});window.addEventListener('resize',upd);
+    b.onclick=function(){el.scrollTo({top:el.scrollHeight,behavior:'smooth'})};
+    downs.push(upd);
+  }
+  /* ---- Masaüstü Anasayfada özel sohbet: sağ altta sabit pencere ---- */
+  var _pp=window.positionPrivateModal;
+  function dockMode(){var m=$('privateModal');return !!(m&&V.classList.contains('show')&&matchMedia('(min-width:769px)').matches&&m.style.display==='flex')}
+  function applyDock(){
+    var m=$('privateModal');if(!m)return false;
+    if(!dockMode()){m.classList.remove('pm-dock');return false}
+    m.classList.remove('pm-over-chat');m.classList.add('pm-dock');document.body.classList.remove('dm-over-chat');
+    m.style.left='auto';m.style.top='auto';m.style.right='24px';m.style.bottom='0';m.style.width='400px';m.style.height='min(580px,calc(100% - 80px))';
+    var o=$('overlay');if(o)o.style.display='none';
+    return true;
+  }
+  if(_pp){
+    window.positionPrivateModal=function(){if(applyDock())return;return _pp.apply(this,arguments)};
+    window.addEventListener('resize',function(){applyDock()});
+  }
   addHome();init();
 })();
 </script>
