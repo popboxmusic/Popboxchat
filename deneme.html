@@ -17499,11 +17499,16 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     clearInterval(adTimer);if(adEl){adEl.remove()}adEl=null;adCh=null;adCfg=null;
     if(resume){try{var p=g('player',null);p&&p.playVideo&&p.playVideo()}catch(e){}}
   }
-  function showChannelAd(n){
+  function showChannelAd(n,periodic){
     if(!me()||V.classList.contains('show'))return;
     if(adEl&&adCh===n)return;
+    var a0=resolveAd(n);if(!a0)return;
+    var iv=Math.max(0,+a0.intervalMin||0),lk='cc_adlast_'+n;
+    if(periodic&&iv<=0)return;
+    if(iv>0){var last=0;try{last=+localStorage.getItem(lk)||0}catch(e){}if(Date.now()-last<iv*60000)return}
+    try{localStorage.setItem(lk,String(Date.now()))}catch(e){}
     closeAd(false);
-    var a=resolveAd(n);if(!a)return;
+    var a=a0;
     var wrap=document.querySelector('.video-wrapper');if(!wrap)return;
     if(getComputedStyle(wrap).position==='static')wrap.style.position='relative';
     var s=parseSrc(a.url),loop=!!a.loop,skip=a.skipAfter==null?5:Math.max(0,+a.skipAfter||0);
@@ -17544,8 +17549,8 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
   function admRender(skipRead){
     if(skipRead!==true)readForm();
     var al=ads.channelAll,chs=ads.channels||{},st=ads.settings||{},paused=!!st.channelsPaused,names=Object.keys(chans).filter(function(n){return n!=='help'&&!chans[n].systemChannel}).sort(function(a,b){return (chans[a].order||0)-(chans[b].order||0)});
-    var keep={};['admCU','admCT','admCS','admCsel'].forEach(function(i){var e=$(i);if(e)keep[i]=e.value});var kl=$('admCLoop')?$('admCLoop').checked:false;
-    function li(label,a,key){return '<div class="adm-li"><span>'+esc(label)+' — '+esc(a.url||'')+'</span><span class="adm-st'+(a.active!==false?' on':'')+'" style="flex:0 0 auto">'+(a.active!==false?'Yayında':'Durdu')+'</span><button class="vt-btn" data-adm="tog" data-k="'+esc(key)+'">'+(a.active!==false?'Durdur':'Başlat')+'</button><button class="vt-btn" data-adm="del" data-k="'+esc(key)+'"><i class="fas fa-trash"></i></button></div>'}
+    var keep={};['admCU','admCT','admCS','admCI','admCsel'].forEach(function(i){var e=$(i);if(e)keep[i]=e.value});var kl=$('admCLoop')?$('admCLoop').checked:false;
+    function li(label,a,key){return '<div class="adm-li"><span>'+esc(label)+' — '+esc(a.url||'')+' · '+(a.intervalMin>0?a.intervalMin+' dk’da bir':'her girişte')+'</span><span class="adm-st'+(a.active!==false?' on':'')+'" style="flex:0 0 auto">'+(a.active!==false?'Yayında':'Durdu')+'</span><button class="vt-btn" data-adm="tog" data-k="'+esc(key)+'">'+(a.active!==false?'Durdur':'Başlat')+'</button><button class="vt-btn" data-adm="del" data-k="'+esc(key)+'"><i class="fas fa-trash"></i></button></div>'}
     var items=(al?li('Tüm kanallar',al,'channelAll'):'')+Object.keys(chs).map(function(k){return li('#'+k,chs[k],'channels/'+k)}).join('');
     var hs=homeItems(),iv=+st.homeInterval||5;
     var hl=hs.map(function(a){return '<div class="adm-li"><span>'+(a.type==='banner'?'🖼 ':'🎬 ')+esc(a.title||a.url.slice(0,40))+'</span><span class="adm-st'+(a.active!==false?' on':'')+'" style="flex:0 0 auto">'+(a.active!==false?'Yayında':'Durdu')+'</span><button class="vt-btn" data-adm="hedit" data-k="'+esc(a._id)+'"><i class="fas fa-pen"></i></button><button class="vt-btn" data-adm="htog" data-k="'+esc(a._id)+'">'+(a.active!==false?'Durdur':'Başlat')+'</button><button class="vt-btn" data-adm="hdel" data-k="'+esc(a._id)+'"><i class="fas fa-trash"></i></button></div>'}).join('');
@@ -17561,8 +17566,8 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
      +'<input type="hidden" id="admHLoopHolder"><label><input type="checkbox" id="admHLoop"'+(F.loop===false?'':' checked')+'> Video döngü (sürekli tekrar)</label>'
      +'<div class="adm-acts" style="margin-top:8px"><button class="vt-btn" data-adm="homesave">'+(admEdit?'Güncelle':'Listeye ekle ve yayınla')+'</button>'+(admEdit?'<button class="vt-btn" data-adm="hcancel">Vazgeç</button>':'')+'</div></div>'
      +'<div class="adm-box"><h4>📺 Kanal video reklamı (videonun üzerinde, “Reklamı atla” ile)</h4><select id="admCsel"><option value="_all">Tüm kanallar</option>'+names.map(function(n){return '<option value="'+esc(n)+'">#'+esc(n)+'</option>'}).join('')+'</select>'
-     +'<input type="text" id="admCU" placeholder="YouTube linki / video ID veya .mp4 adresi"><input type="text" id="admCT" placeholder="Tıklayınca açılacak link (isteğe bağlı)"><input type="number" id="admCS" min="0" max="60" value="5" placeholder="Atlama süresi (sn)">'
-     +'<label><input type="checkbox" id="admCLoop"'+(kl?' checked':'')+'> Döngü (atlanana kadar tekrar)</label><div class="adm-acts" style="margin-top:8px"><button class="vt-btn" data-adm="chsave">Yayınla / Güncelle</button><button class="vt-btn" data-adm="allpause">'+(paused?'▶ Tüm kanal reklamlarını BAŞLAT':'⏸ Tüm kanal reklamlarını DURDUR')+'</button></div>'
+     +'<input type="text" id="admCU" placeholder="YouTube linki / video ID veya .mp4 adresi"><input type="text" id="admCT" placeholder="Tıklayınca açılacak link (isteğe bağlı)"><label class="adm-lb">Atlama süresi (sn) — bu süre sonra “Reklamı atla” açılır</label><input type="number" id="admCS" min="0" max="60" value="5"><label class="adm-lb">Sıklık (dk) — 0 = yalnızca kanala her girişte; 5 = en fazla 5 dakikada bir (kanalda kalırken de tekrar gösterilir)</label><input type="number" id="admCI" min="0" max="240" value="0">'
+     +'<label><input type="checkbox" id="admCLoop"'+(kl?' checked':'')+'> Döngü: reklam videosu bitince başa sarıp atlanana kadar tekrar oynasın</label><div class="adm-acts" style="margin-top:8px"><button class="vt-btn" data-adm="chsave">Yayınla / Güncelle</button><button class="vt-btn" data-adm="allpause">'+(paused?'▶ Tüm kanal reklamlarını BAŞLAT':'⏸ Tüm kanal reklamlarını DURDUR')+'</button></div>'
      +'<div class="adm-list" style="margin-top:10px">'+(items||'<div class="vt-empty">Henüz kanal reklamı yok.</div>')+'</div></div>';
     Object.keys(keep).forEach(function(i){if($(i))$(i).value=keep[i]});
   }
@@ -17584,7 +17589,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     else if(a==='htog'){var it2=homeItems().filter(function(x){return x._id===k})[0];if(it2)db.ref(hpath(k)+'/active').set(it2.active===false)}
     else if(a==='hdel'){if(confirm('Bu Anasayfa reklamı silinsin mi?')){if(admEdit===k)clearForm();db.ref(hpath(k)).remove()}}
     else if(a==='hpause'){db.ref('ads/settings/homePaused').set(!(ads.settings||{}).homePaused)}
-    else if(a==='chsave'){var u2=admVal('admCU');if(!chk(u2))return;var t=$('admCsel').value,o2={url:u2,link:admVal('admCT'),skipAfter:Math.max(0,+$('admCS').value||0),loop:$('admCLoop').checked,active:true,updatedAt:Date.now()};db.ref(t==='_all'?'ads/channelAll':'ads/channels/'+t).set(o2)}
+    else if(a==='chsave'){var u2=admVal('admCU');if(!chk(u2))return;var t=$('admCsel').value,o2={url:u2,link:admVal('admCT'),skipAfter:Math.max(0,+$('admCS').value||0),intervalMin:Math.max(0,+$('admCI').value||0),loop:$('admCLoop').checked,active:true,updatedAt:Date.now()};db.ref(t==='_all'?'ads/channelAll':'ads/channels/'+t).set(o2)}
     else if(a==='allpause'){db.ref('ads/settings/channelsPaused').set(!(ads.settings||{}).channelsPaused)}
     else if(a==='tog'){var cur=k==='channelAll'?ads.channelAll:(ads.channels||{})[k.split('/')[1]];if(cur)db.ref('ads/'+k+'/active').set(cur.active===false)}
     else if(a==='del'){if(confirm('Bu reklam silinsin mi?'))db.ref('ads/'+k).remove()}
@@ -17710,7 +17715,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
   setInterval(function(){
     if(me()&&!followsOn&&window.loadFollows){followsOn=true;try{window.loadFollows()}catch(e){}}
     $('vtAdBtn').style.display=isOwn()?'inline-flex':'none';
-    addOwnerTab();updateThumbBtn();decoratePlaylists();attachDown('messages');attachDown('privateMessages');downs.forEach(function(f){f()});
+    addOwnerTab();updateThumbBtn();decoratePlaylists();if(me()&&!adEl&&!V.classList.contains('show')){var _ac=g('activeChannelName',null);if(_ac)showChannelAd(_ac,true)}attachDown('messages');attachDown('privateMessages');downs.forEach(function(f){f()});
     if(!V.classList.contains('show'))return;
     if(dockMode())applyDock();
     renderSide();renderHero(false);vtRenderGrid();if(me())fetchAvatars();
@@ -17907,6 +17912,15 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
  #vtChHead,#vtChUp,#mdStudioBtn{display:none!important}
  #mdMoreBtn{display:inline-flex!important;width:36px;height:36px;flex:0 0 36px;border-radius:50%;border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);align-items:center;justify-content:center;cursor:pointer}
 }
+.adm-lb{display:block;font-size:12px;color:var(--text-muted);margin:6px 0 2px}
+
+.reg-modal.active{z-index:100070!important}
+.md-reg{display:flex;align-items:center;gap:12px;padding:12px 14px;margin:10px 0;border:1px solid var(--border-color);border-left:4px solid var(--owner,#B5452F);border-radius:12px;background:var(--bg-secondary)}
+.md-reg>i{font-size:22px;color:var(--owner,#B5452F)}
+.md-reg .t{flex:1;min-width:0;font-size:13px;color:var(--text-muted);line-height:1.4}.md-reg .t b{display:block;color:var(--text-primary);font-size:14px}
+.md-reg .md-b{flex:0 0 auto;white-space:nowrap}
+@media(max-width:520px){.md-reg{flex-wrap:wrap}.md-reg .md-b{width:100%}}
+#vitrin .vt-top .md-regtop{display:none}
 </style>
 <script id="media-script">
 (function(){
@@ -18141,6 +18155,7 @@ document.addEventListener('click',function(e){
   else if(A==='coversave'&&ST.cover){db().ref('channelThumbs/'+n).set(ST.cover).then(function(){ST.cover=null;closeM('mdCover');toast('Kapak kaydedildi')},function(){toast('Kapak kaydedilemedi (yetki?)')})}
   else if(A==='coverdel'){db().ref('channelThumbs/'+n).remove().then(function(){closeM('mdCover');toast('Kapak kaldırıldı — videodan otomatik alınır')})}
   else if(A==='lprev'){getStream().then(function(){$('mdLSt').textContent='Önizleme hazır.'},function(er){toast('Kamera/ekran açılamadı: '+er.message)})}
+  else if(A==='reg'){closeM('mdAvLock');window.mdRegister()}
   else if(A==='lstart')liveStart();
   else if(A==='lstop'){if(confirm('Yayın bitirilsin mi?'))liveStop('Yayın bitti.')}
   else if(A==='upgo')upload();
@@ -18163,6 +18178,65 @@ function morePop(btn){
   p.onclick=function(e){var b=e.target.closest('[data-p]');if(!b)return;p.remove();var k=b.dataset.p;k==='head'?mdOpenHead():k==='cover'?mdOpenCover():mdStudio()};
   setTimeout(function(){document.addEventListener('click',function f(e){if(!p.contains(e.target)){p.remove();document.removeEventListener('click',f)}})},0);
 }
+/* ---------- Kayıt Ol (misafirler için) ---------- */
+function isReg(){
+  if(isOwn())return true;var u=me();if(!u)return true;if(u.isRegistered)return true;
+  try{return (SECURE_CONFIG.DEFAULT_ADMINS||[]).some(function(a){return normalizeNick(a)===normalizeNick(u.name)})}catch(e){return false}
+}
+var regAt=0;
+window.mdRegister=function(){
+  var u=me();if(!u||isReg())return;
+  var pm=$('profileModal');if(pm)pm.style.display='none';
+  if(window.openRegisterModal)window.openRegisterModal();
+  regAt=Date.now();var rn=$('regNick');if(rn&&/^[\p{L}\p{N}_-]{2,20}$/u.test(u.name))rn.value=u.name;
+};
+var _lg=window.login;
+if(_lg)window.login=function(){
+  if(me()&&regAt&&Date.now()-regAt<6e5&&$('login-password')&&$('login-password').value){
+    try{sessionStorage.setItem('cc_autologin',JSON.stringify({n:$('login-nick').value,p:$('login-password').value}))}catch(e){}
+    regAt=0;location.reload();return;
+  }
+  return _lg.apply(this,arguments);
+};
+(function autoLogin(){
+  var d;try{d=JSON.parse(sessionStorage.getItem('cc_autologin')||'null')}catch(e){}if(!d)return;
+  try{sessionStorage.removeItem('cc_autologin')}catch(e){}
+  var tries=0;(function go(){
+    var n=$('login-nick'),p=$('login-password');
+    if(n&&p&&typeof _lg==='function'&&g('isFirebaseConnected',false)){n.value=d.n;p.value=d.p;_lg()}
+    else if(++tries<40)setTimeout(go,500);
+  })();
+})();
+function regCard(cls){return '<div class="md-reg '+cls+'"><i class="fas fa-user-plus"></i><div class="t"><b>Kayıt ol</b>Abone ol, takip et, kanal aç ve profil resmi yükle. Kayıt olana kadar bu bilgi görünür.</div><button class="md-b pri" data-a="reg">Kayıt Ol</button></div>'}
+function regUI(){
+  var u=me(),reg=isReg(),show=!!u&&!reg;
+  // profil paneli
+  var f=$('profileRegistered');f=f&&f.closest('.profile-field');
+  if(f&&!$('mdRegProf')){var d=document.createElement('div');d.id='mdRegProf';d.innerHTML=regCard('');f.after(d)}
+  if($('mdRegProf'))$('mdRegProf').style.display=show?'':'none';
+  // Anasayfa / kanallar sayfası
+  var hero=$('vtHero');
+  if(hero&&!$('mdRegHome')){var h=document.createElement('div');h.id='mdRegHome';h.style.padding='0 4px';h.innerHTML=regCard('');hero.parentNode.insertBefore(h,hero)}
+  if($('mdRegHome'))$('mdRegHome').style.display=show?'':'none';
+  var top=document.querySelector('#vitrin .vt-top');
+  if(top&&!$('mdRegTop')){var b=document.createElement('button');b.id='mdRegTop';b.className='vt-btn';b.innerHTML='<i class="fas fa-user-plus"></i> Kayıt Ol';b.onclick=window.mdRegister;top.appendChild(b)}
+  if($('mdRegTop'))$('mdRegTop').style.display=show?'inline-flex':'none';
+  // mobil menü
+  var mm=$('mobileMenu');
+  if(mm&&!mm.querySelector('.md-regi')){var m=document.createElement('div');m.className='mobile-menu-item md-regi';m.innerHTML='<div class="menu-icon"><i class="fas fa-user-plus"></i></div><div class="menu-text">Kayıt Ol</div>';m.onclick=function(){try{toggleMobileMenu()}catch(e){}window.mdRegister()};var hd=mm.querySelector('.mobile-menu-header');hd?hd.after(m):mm.prepend(m)}
+  var mi=mm&&mm.querySelector('.md-regi');if(mi)mi.style.display=show?'':'none';
+  // profil resmi kilidi
+  document.querySelectorAll('.avatar-upload-btn').forEach(function(x){x.classList.toggle('md-locked',show);if(show&&!x.dataset.lk){x.dataset.lk=1;x.innerHTML='<i class="fas fa-lock"></i> Resim yüklemek için kayıt ol'}});
+}
+function avatarGuard(e){
+  if(isReg())return;
+  var t=e.target;if(!(t.closest&&t.closest('#avatarPreview,.avatar-upload-btn,#avatarUpload')))return;
+  e.preventDefault();e.stopImmediatePropagation();
+  var inp=$('avatarUpload');if(inp)inp.value='';
+  if(e.type==='click')modal('mdAvLock','<div class="md-h"><b>🔒 Profil resmi</b><button class="md-x" data-c="mdAvLock">✕</button></div><div class="md-lock"><i class="fas fa-user-lock"></i><p>Profil resmi yalnızca kayıtlı kullanıcılar tarafından yüklenebilir.</p></div><div class="md-act"><button class="md-b" data-c="mdAvLock">Vazgeç</button><button class="md-b pri" data-a="reg">Kayıt Ol</button></div>');
+}
+document.addEventListener('click',avatarGuard,true);
+document.addEventListener('change',avatarGuard,true);
 /* ---------- döngü + veri ---------- */
 function tick(){
   var u=me();if(!u)return;
@@ -18173,6 +18247,7 @@ function tick(){
   if(ab)ab.style.display=isOwn()?'inline-flex':'none';
   var sb=$('mdStudioBtn');if(sb)sb.style.display=canStudio(cur())?'':'none';
   var grp=$('vtChBtns');if(grp&&!$('mdMoreBtn')){var mb=document.createElement('button');mb.type='button';mb.id='mdMoreBtn';mb.title='Kanal ayarları';mb.innerHTML='<i class="fas fa-ellipsis"></i>';mb.onclick=function(e){e.stopPropagation();morePop(mb)};grp.appendChild(mb)}
+  regUI();
   mountTabs();renderArch();syncStage();
   if(ST.live&&!(S.live[ST.live.ch]&&S.live[ST.live.ch].active)&&Date.now()-ST.live.startedAt>8000){endLocal();toast('⛔ Yayın bir yönetici tarafından durduruldu.');if($('mdStudio')&&$('mdStudio').classList.contains('show'))renderStudio()}
 }
