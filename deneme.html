@@ -14,7 +14,7 @@
         })();
     </script>
     <meta name="color-scheme" content="light dark">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <title>CETCETY</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -17951,6 +17951,21 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
  #mdChatPLItems{flex:1 1 0;min-height:0;overflow-y:auto;padding:4px 10px 14px;display:flex;flex-direction:column;gap:8px}
  #mdChatPL .md-arch{flex:1 1 0;min-height:0}
 }
+
+/* ---- mobil klavye: video üstte küçük, sohbet altta, yazı alanı klavyenin üstünde ---- */
+html,body{overscroll-behavior:none}
+@media(max-width:768px){
+ body.mobile-chat-keyboard-open{--hdr-h:0px;overflow:hidden}
+ body.mobile-chat-keyboard-open .youtube-header,
+ body.mobile-chat-keyboard-open .chat-notice,
+ body.mobile-chat-keyboard-open .channel-manage-area,
+ body.mobile-chat-keyboard-open .banner-ad-container{display:none!important}
+ body.mobile-chat-keyboard-open .drag-handle{height:14px!important}
+ body.mobile-chat-keyboard-open .video-container{height:clamp(96px,calc(var(--app-h) * .30),190px)!important;aspect-ratio:auto!important;flex:0 0 auto!important}
+ body.mobile-chat-keyboard-open .chat-container:not(.chat-expanded){flex:1 1 0!important;min-height:0!important;height:auto!important}
+ body.mobile-chat-keyboard-open .chat-input-area{padding-bottom:8px!important;flex:0 0 auto}
+ body.mobile-chat-keyboard-open #messages{flex:1 1 0;min-height:0}
+}
 </style>
 <script id="media-script">
 (function(){
@@ -18351,6 +18366,25 @@ function makeThumb(f,cb){
   v.onseeked=function(){try{var c=document.createElement('canvas');c.width=320;c.height=180;var x=c.getContext('2d'),k=Math.max(320/v.videoWidth,180/v.videoHeight),w=v.videoWidth*k,h=v.videoHeight*k;x.drawImage(v,(320-w)/2,(180-h)/2,w,h);fin(c.toDataURL('image/jpeg',.6))}catch(e){fin()}URL.revokeObjectURL(u)};
   v.onerror=function(){fin()};setTimeout(fin,6000);
 }
+/* ---------- mobil klavye düzeltmesi ---------- */
+var KB={was:false};
+function kbFix(){
+  var c=$('chatContainer');if(!c||window.innerWidth>768)return;
+  var open=document.body.classList.contains('mobile-chat-keyboard-open');
+  if(open){
+    if(!KB.was&&c.classList.contains('chat-expanded'))c.classList.remove('chat-expanded');
+    window.scrollTo(0,0);if(document.scrollingElement)document.scrollingElement.scrollTop=0;
+    var m=$('messages');if(m)m.scrollTop=m.scrollHeight;
+  }
+}
+function kbMount(){
+  var c=$('chatContainer');if(!c||c.dataset.mdkb)return;c.dataset.mdkb='1';
+  var rec=function(e){if(e.target&&e.target.id==='message-input')KB.was=c.classList.contains('chat-expanded')};
+  document.addEventListener('pointerdown',rec,true);document.addEventListener('touchstart',rec,true);
+  if(window.MutationObserver){new MutationObserver(kbFix).observe(c,{attributes:true,attributeFilter:['class']});new MutationObserver(kbFix).observe(document.body,{attributes:true,attributeFilter:['class']})}
+  if(window.visualViewport){window.visualViewport.addEventListener('resize',kbFix,{passive:true});window.visualViewport.addEventListener('scroll',kbFix,{passive:true})}
+  document.addEventListener('focusout',function(e){if(e.target&&e.target.id==='message-input')setTimeout(function(){window.scrollTo(0,0)},200)});
+}
 /* ---------- döngü + veri ---------- */
 function tick(){
   var u=me();if(!u)return;
@@ -18361,7 +18395,7 @@ function tick(){
   if(ab)ab.style.display=isOwn()?'inline-flex':'none';
   var sb=$('mdStudioBtn');if(sb)sb.style.display=canStudio(cur())?'':'none';
   var grp=$('vtChBtns');if(grp&&!$('mdMoreBtn')){var mb=document.createElement('button');mb.type='button';mb.id='mdMoreBtn';mb.title='Kanal ayarları';mb.innerHTML='<i class="fas fa-ellipsis"></i>';mb.onclick=function(e){e.stopPropagation();morePop(mb)};grp.appendChild(mb)}
-  regUI();mountPL();renderChatPL();applyForms();
+  kbMount();regUI();mountPL();renderChatPL();applyForms();
   mountTabs();renderArch();syncStage();
   if(ST.live&&!(S.live[ST.live.ch]&&S.live[ST.live.ch].active)&&Date.now()-ST.live.startedAt>8000){endLocal();toast('⛔ Yayın bir yönetici tarafından durduruldu.');if($('mdStudio')&&$('mdStudio').classList.contains('show'))renderStudio()}
 }
