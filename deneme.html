@@ -17395,6 +17395,21 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     if(!l.length)return null;var iv=Math.max(1,+st.homeInterval||5)*60000;return l[Math.floor(Date.now()/iv)%l.length];
   }
   function sideHtml(a){return '<div class="vt-sbn"'+(/^https?:/i.test(a.link||'')?' data-adlink="'+esc(a.link)+'"':'')+'><div class="vt-sbt"><img src="'+esc(a.url)+'" alt="" loading="lazy"><span class="vt-adtag">Reklam</span></div><div class="vt-sbi">'+esc(a.title||'Sponsorlu içerik')+'</div></div>'}
+  function shelves(){
+    var st=ads.settings||{};if(st.shelfPaused)return [];var out=[],o=ads.shelves||{};
+    Object.keys(o).forEach(function(k){var x=o[k];if(x&&x.active!==false&&parr(x.products).length)out.push({id:k,title:x.title||'Sponsorlu',link:x.link,products:x.products,t:x.createdAt||0})});
+    homeItems().forEach(function(a){if(a.active!==false&&parr(a.products).length)out.push({id:'legacy:'+a._id,title:a.title||'Sponsorlu',link:a.link,products:a.products,t:a.createdAt||a.updatedAt||0})});
+    return out.sort(function(a,b){return a.t-b.t});
+  }
+  function shelfPick(i){var l=shelves();if(l.length<=i)return null;var iv=Math.max(1,+(ads.settings||{}).homeInterval||5)*60000;return l[(Math.floor(Date.now()/iv)+i)%l.length]}
+  function shelfAt(i){
+    var sh=shelfPick(i);if(!sh)return '';
+    var p=parr(sh.products).filter(function(x){return !x.img||okImg(x.img)});if(!p.length)return '';
+    return '<section class="vt-s2 vt-shelf"><div class="vt-shh"><h2>🛍 '+esc(sh.title)+'</h2><span class="vt-shtag">Reklam</span>'+(/^https?:/i.test(sh.link||'')?'<a class="vt-shmore" data-adlink="'+esc(sh.link)+'">Mağazayı gör ›</a>':'')+'</div><div class="vt-pwrap"><button class="vt-pa l" data-pscroll="-1" aria-label="Geri"><i class="fas fa-chevron-left"></i></button><div class="vt-ptrack">'
+      +p.map(function(x){return '<a class="vt-shot"'+(/^https?:/i.test(x.link||'')?' data-adlink="'+esc(x.link)+'"':'')+(x.img?' style="background-image:url(\''+esc(x.img)+'\')"':'')+'><div class="in"><div class="t">'+esc(x.title)+'</div>'+(x.price?'<div class="p">'+esc(x.price)+'</div>':'')+'</div></a>'}).join('')
+      +'</div><button class="vt-pa r" data-pscroll="1" aria-label="İleri"><i class="fas fa-chevron-right"></i></button></div></section>';
+  }
+  function shelfKey(){return [0,1].map(function(i){var x=shelfPick(i);return x?x.id:''}).join(',')}
   var lastSB='';
   function sec(t,sub,ns,one,rid,extra){
     if(!ns.length)return '';
@@ -17438,7 +17453,9 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     var sbn=sideBn();h+=(currentHome()||sbn)?sec('⭐ Günün Kanalı','Bugünün seçimi — her gün değişir.',[pick],true,null,sbn?sideHtml(sbn):''):feature(pick);
     var subs=g('cachedChannelSubscribers',{}),pop=all.filter(function(n){return all.length<3||n!==pick}).map(function(n){return {n:n,s:viewers(n)*3+subCount(n)+((u&&subs[n]&&subs[n][u.name])?5:0)}}).sort(function(a,b){return b.s-a.s}).slice(0,6).map(function(x){return x.n});
     h+=sec('🔥 Senin İçin Popüler Kanallar','Şu an en çok izlenen ve en çok abonesi olanlar.',pop,false,'pop');
+    h+=shelfAt(0);
     if(u){var mine=all.filter(function(n){return subs[n]&&subs[n][u.name]});h+=sec('📌 Aboneliklerim','',mine,false,'mine')}
+    h+=shelfAt(1);
     h+=sec('📺 Tüm Kanallar','',all,false,'all');
     setBox(h);
   }
@@ -17511,7 +17528,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     box.innerHTML='<div class="vt-adrow '+ty+'"><div class="vt-hero">'+media+'<span class="vt-adtag">Reklam</span>'+(a.link?'<div class="vt-lnk" data-adlink="'+esc(a.link)+'"></div>':'')
       +(ty==='video'?'<button class="vt-mute" data-act="heromute" title="Ses"><i class="fas fa-volume-xmark"></i></button>':'')+'</div>'
       +'<div class="vt-adinfo"><span class="vt-adlbl">Reklam</span><h3>'+esc(a.title||'Sponsorlu içerik')+'</h3>'+(a.desc?'<p>'+esc(a.desc)+'</p>':'')
-      +(a.link?'<a class="vt-adbtn" data-adlink="'+esc(a.link)+'">'+esc(a.btn||'Detaya git')+' <i class="fas fa-arrow-up-right-from-square"></i></a>':'')+'</div></div>'+prodHtml(a);
+      +(a.link?'<a class="vt-adbtn" data-adlink="'+esc(a.link)+'">'+esc(a.btn||'Detaya git')+' <i class="fas fa-arrow-up-right-from-square"></i></a>':'')+'</div></div>';
   }
   function clearHero(){$('vtHero').innerHTML='';lastHero=''}
   /* ---- Kanal içi video reklam ---- */
@@ -17742,7 +17759,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
   }
   setInterval(function(){
     if(me()&&!followsOn&&window.loadFollows){followsOn=true;try{window.loadFollows()}catch(e){}}
-    var _sb=sideBn(),_sk=_sb?_sb._id:'';if(_sk!==lastSB){lastSB=_sk;vtRenderGrid()}
+    var _sb=sideBn(),_sk=(_sb?_sb._id:'')+'|'+shelfKey();if(_sk!==lastSB){lastSB=_sk;vtRenderGrid()}
     $('vtAdBtn').style.display=isOwn()?'inline-flex':'none';
     addOwnerTab();updateThumbBtn();decoratePlaylists();if(me()&&!adEl&&!V.classList.contains('show')){var _ac=g('activeChannelName',null);if(_ac)showChannelAd(_ac,true)}attachDown('messages');attachDown('privateMessages');downs.forEach(function(f){f()});
     if(!V.classList.contains('show'))return;
@@ -18049,6 +18066,18 @@ html,body{overscroll-behavior:none}
 .vt-sbi{padding:10px 4px;font-weight:600;font-size:14px;color:var(--text-primary)}
 .vt-grid.one.two{grid-template-columns:repeat(2,minmax(0,620px))}
 @media(max-width:768px){.vt-grid.one.two{grid-template-columns:minmax(0,1fr)}.vt-prod{flex-basis:132px}}
+.vt-shelf{margin:8px 0 28px}
+.vt-shh{display:flex;align-items:center;gap:10px;padding:0 4px 10px}
+.vt-shh h2{margin:0;font-size:18px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vt-shtag{font-size:11px;font-weight:700;padding:2px 9px;border-radius:12px;background:var(--bg-tertiary);color:var(--text-muted);border:1px solid var(--border-color)}
+.vt-shmore{margin-left:auto;font-size:13px;color:var(--text-muted);cursor:pointer;white-space:nowrap}
+.vt-shot{flex:0 0 clamp(148px,15vw,200px);aspect-ratio:9/16;position:relative;border-radius:14px;overflow:hidden;background:var(--bg-tertiary) center/cover no-repeat;scroll-snap-align:start;cursor:pointer;display:block;color:#fff;text-decoration:none}
+.vt-shot::after{content:'';position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.85) 0,rgba(0,0,0,.15) 42%,transparent 68%);pointer-events:none}
+.vt-shot .in{position:absolute;left:10px;right:10px;bottom:10px;z-index:2}
+.vt-shot .t{font-size:13px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vt-shot .p{font-size:13px;font-weight:700;margin-top:4px;color:#FFB693}
+.vt-shelf .vt-pa{top:42%}
+@media(max-width:768px){.vt-shot{flex-basis:140px}}
 .md-pthumb{width:36px;height:36px;border-radius:8px;object-fit:cover;flex:0 0 36px;background:var(--bg-tertiary)}
 </style>
 <script id="media-script">
@@ -18469,9 +18498,10 @@ function kbMount(){
   if(window.visualViewport){window.visualViewport.addEventListener('resize',kbFix,{passive:true});window.visualViewport.addEventListener('scroll',kbFix,{passive:true})}
   document.addEventListener('focusout',function(e){if(e.target&&e.target.id==='message-input')setTimeout(function(){window.scrollTo(0,0)},200)});
 }
-/* ---------- Anasayfa reklam yönetimi: ürün şeridi + yan banner ---------- */
+/* ---------- Anasayfa reklam yönetimi: ürün rafı (Shorts tarzı) + yan banner ---------- */
 var PSel=null,PIMG='',BIMG='';
 function adApi(){return window.vtApi||{}}
+function adsNow(){return (adApi().ads&&adApi().ads())||{}}
 function parr(o){return Object.keys(o||{}).map(function(k){return Object.assign({_k:k},o[k])}).filter(function(x){return x&&x.title}).sort(function(a,b){return (a.o||0)-(b.o||0)})}
 function adImg(f,max,q,cb){
   var r=new FileReader();
@@ -18479,21 +18509,27 @@ function adImg(f,max,q,cb){
   r.onload=function(){var im=new Image();im.onload=function(){var k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);cb(c.toDataURL('image/jpeg',q))};im.src=r.result};r.readAsDataURL(f);
 }
 function homePath(id){return id==='home'?'ads/home':'ads/homeList/'+id}
+function shelfPath(id){return String(id).indexOf('legacy:')===0?homePath(String(id).slice(7)):'ads/shelves/'+id}
+function shelfList(){
+  var A=adsNow(),o=A.shelves||{},out=Object.keys(o).map(function(k){return {id:k,title:o[k].title||'Şerit',active:o[k].active!==false,link:o[k].link,products:o[k].products,legacy:false}});
+  ((adApi().homeItems&&adApi().homeItems())||[]).forEach(function(a){if(parr(a.products).length)out.push({id:'legacy:'+a._id,title:(a.title||'Reklam')+' (eski)',active:a.active!==false,products:a.products,legacy:true})});
+  return out;
+}
 window.mdAdsAdm=function(card){
   if(!card||!isOwn())return;
-  var A=adApi(),ads=(A.ads&&A.ads())||{},hs=(A.homeItems&&A.homeItems())||[],st=ads.settings||{},sb=ads.sideBanners||{};
-  if(!PSel||!hs.some(function(x){return x._id===PSel}))PSel=hs[0]&&hs[0]._id;
-  var cur=hs.filter(function(x){return x._id===PSel})[0],pr=cur?parr(cur.products):[];
-  var h='<div class="adm-box"><h4>🛍 Ürün şeridi — reklam verenin diğer ürünleri</h4><p class="adm-lb">Anasayfa reklamının altında sağa-sola kayan küçük ürün kartları olarak görünür. Bir reklama en fazla 12 ürün.</p>';
-  if(!hs.length)h+='<div class="vt-empty">Önce yukarıdan bir Anasayfa reklamı ekleyin.</div>';
-  else{
-    h+='<select id="mdPAd">'+hs.map(function(x){return '<option value="'+esc(x._id)+'"'+(x._id===PSel?' selected':'')+'>'+esc(x.title||String(x.url).slice(0,40))+'</option>'}).join('')+'</select>';
-    h+='<div class="adm-list" style="margin-bottom:8px">'+(pr.length?pr.map(function(p){return '<div class="adm-li">'+(p.img?'<img class="md-pthumb" src="'+esc(p.img)+'" alt="">':'')+'<span>'+esc(p.title)+(p.price?' · '+esc(p.price):'')+'</span><button class="vt-btn" data-ma="pdel" data-k="'+esc(p._k)+'" title="Sil"><i class="fas fa-trash"></i></button></div>'}).join(''):'<div class="vt-empty">Bu reklamda henüz ürün yok.</div>')+'</div>'
-     +'<div class="adm-acts" style="margin-bottom:8px"><label class="vt-btn" style="cursor:pointer"><i class="fas fa-image"></i> Ürün görseli yükle<input type="file" id="mdPFile" accept="image/*" style="display:none"></label><span class="vt-empty" id="mdPSt">'+(PIMG?'✓ Görsel hazır':'JPG/PNG/GIF (GIF en fazla 300 KB)')+'</span></div>'
-     +'<input type="text" id="mdPImgU" placeholder="veya görsel/GIF adresi (https://...)"><input type="text" id="mdPT" maxlength="70" placeholder="Ürün adı"><input type="text" id="mdPP" maxlength="30" placeholder="Fiyat / kısa bilgi (örn. ₺249 · Ücretsiz kargo)"><input type="text" id="mdPL" placeholder="Ürün linki (https://...)">'
-     +'<div class="adm-acts"><button class="vt-btn" data-ma="padd">➕ Ürün ekle</button></div>';
-  }
-  h+='</div><div class="adm-box"><h4>🖼 Yan banner (Günün Kanalı’nın yanında, video boyutunda 16:9)</h4><p class="adm-lb">Birden fazla banner varsa Anasayfa reklam aralığı (yukarıdaki “Her … dk”) kadar sürede sırayla döner.</p>';
+  var A=adsNow(),st=A.settings||{},sb=A.sideBanners||{},sl=shelfList();
+  if(!PSel||!sl.some(function(x){return x.id===PSel}))PSel=sl[0]&&sl[0].id;
+  var cur=sl.filter(function(x){return x.id===PSel})[0],pr=cur?parr(cur.products):[];
+  var h='<div class="adm-box"><h4>🛍 Ürün şeridi — Shorts tarzı dikey kartlar (sayfanın ortasında)</h4><p class="adm-lb">Videodan bağımsız ayrı bir reklam rafıdır. Birden fazla şerit varsa Anasayfa reklam aralığı kadar sürede sırayla döner; en fazla 2 şerit aynı anda görünür. Bir şeritte en fazla 12 ürün.</p>'
+   +(sl.length?'<select id="mdPAd">'+sl.map(function(x){return '<option value="'+esc(x.id)+'"'+(x.id===PSel?' selected':'')+'>'+esc(x.title)+(x.active?'':' — durdu')+'</option>'}).join('')+'</select>':'<div class="vt-empty">Henüz şerit yok. Aşağıdan oluşturun.</div>')
+   +(cur&&!cur.legacy?'<div class="adm-acts" style="margin-bottom:8px"><button class="vt-btn" data-ma="stog">'+(cur.active?'⏸ Bu şeridi durdur':'▶ Bu şeridi başlat')+'</button><button class="vt-btn" data-ma="sdel"><i class="fas fa-trash"></i> Şeridi sil</button></div>':'')
+   +(cur?'<div class="adm-list" style="margin-bottom:8px">'+(pr.length?pr.map(function(p){return '<div class="adm-li">'+(p.img?'<img class="md-pthumb" src="'+esc(p.img)+'" alt="">':'')+'<span>'+esc(p.title)+(p.price?' · '+esc(p.price):'')+'</span><button class="vt-btn" data-ma="pdel" data-k="'+esc(p._k)+'" title="Sil"><i class="fas fa-trash"></i></button></div>'}).join(''):'<div class="vt-empty">Bu şeritte henüz ürün yok.</div>')+'</div>'
+     +'<div class="adm-acts" style="margin-bottom:8px"><label class="vt-btn" style="cursor:pointer"><i class="fas fa-image"></i> Ürün görseli yükle<input type="file" id="mdPFile" accept="image/*" style="display:none"></label><span class="vt-empty" id="mdPSt">'+(PIMG?'✓ Görsel hazır':'Dikey (9:16) görsel önerilir · GIF en fazla 300 KB')+'</span></div>'
+     +'<input type="text" id="mdPImgU" placeholder="veya görsel/GIF adresi (https://...)"><input type="text" id="mdPT" maxlength="70" placeholder="Ürün adı"><input type="text" id="mdPP" maxlength="30" placeholder="Fiyat / kısa bilgi (örn. 450 TL)"><input type="text" id="mdPL" placeholder="Ürün linki (https://...)">'
+     +'<div class="adm-acts" style="margin-bottom:12px"><button class="vt-btn" data-ma="padd">➕ Ürün ekle</button></div>':'')
+   +'<h4 style="margin-top:6px">➕ Yeni şerit</h4><input type="text" id="mdSName" maxlength="60" placeholder="Reklam veren / şerit adı (örn. Novina Takı)"><input type="text" id="mdSL" placeholder="Mağaza linki (isteğe bağlı, https://...)">'
+   +'<div class="adm-acts"><button class="vt-btn" data-ma="sadd">Şerit oluştur</button><button class="vt-btn" data-ma="spause">'+(st.shelfPaused?'▶ Tüm şeritleri başlat':'⏸ Tüm şeritleri durdur')+'</button></div></div>';
+  h+='<div class="adm-box"><h4>🖼 Yan banner (Günün Kanalı’nın yanında, video boyutunda 16:9)</h4><p class="adm-lb">Birden fazla banner varsa Anasayfa reklam aralığı (yukarıdaki “Her … dk”) kadar sürede sırayla döner.</p>';
   var bk=Object.keys(sb);
   h+='<div class="adm-list" style="margin-bottom:8px">'+(bk.length?bk.map(function(k){var b=sb[k]||{};return '<div class="adm-li"><img class="md-pthumb" src="'+esc(b.url||'')+'" alt=""><span>'+esc(b.title||b.link||'Banner')+'</span><span class="adm-st'+(b.active!==false?' on':'')+'" style="flex:0 0 auto">'+(b.active!==false?'Yayında':'Durdu')+'</span><button class="vt-btn" data-ma="btog" data-k="'+esc(k)+'">'+(b.active!==false?'⏸':'▶')+'</button><button class="vt-btn" data-ma="bdel" data-k="'+esc(k)+'"><i class="fas fa-trash"></i></button></div>'}).join(''):'<div class="vt-empty">Henüz yan banner yok.</div>')+'</div>'
    +'<div class="adm-acts" style="margin-bottom:8px"><label class="vt-btn" style="cursor:pointer"><i class="fas fa-image"></i> Banner görseli yükle<input type="file" id="mdBFile" accept="image/*" style="display:none"></label><span class="vt-empty" id="mdBSt">'+(BIMG?'✓ Görsel hazır':'Önerilen oran 16:9 (GIF en fazla 300 KB)')+'</span></div>'
@@ -18507,33 +18543,42 @@ document.addEventListener('click',function(e){
   var pa=e.target.closest&&e.target.closest('[data-pscroll]');
   if(pa){var tr=pa.parentNode.querySelector('.vt-ptrack');if(tr)tr.scrollBy({left:(+pa.dataset.pscroll)*tr.clientWidth*.8,behavior:'smooth'});return}
   var b=e.target.closest&&e.target.closest('[data-ma]');if(!b||!isOwn())return;
-  var db=window.database,k=b.dataset.k,A=b.dataset.ma;
-  if(A==='padd'){
+  var db=window.database,k=b.dataset.k,A=b.dataset.ma,AD=adsNow();
+  if(A==='sadd'){
+    var nm=adVal('mdSName'),sl=adVal('mdSL');
+    if(!nm)return alert('Şerit adı yazın.');if(!adLink(sl))return alert('Link https:// ile başlamalı.');
+    if(Object.keys(AD.shelves||{}).length>=10)return alert('En fazla 10 şerit olabilir.');
+    PSel=db.ref('ads/shelves').push({title:nm,link:sl,active:true,createdAt:Date.now()}).key;
+  }
+  else if(A==='stog'){var x0=(AD.shelves||{})[PSel];if(x0)db.ref('ads/shelves/'+PSel+'/active').set(x0.active===false)}
+  else if(A==='sdel'){if(confirm('Şerit ve içindeki tüm ürünler silinsin mi?')){db.ref('ads/shelves/'+PSel).remove();PSel=null}}
+  else if(A==='spause'){db.ref('ads/settings/shelfPaused').set(!(AD.settings||{}).shelfPaused)}
+  else if(A==='padd'){
     var img=PIMG||adVal('mdPImgU'),t=adVal('mdPT'),pr=adVal('mdPP'),l=adVal('mdPL');
-    if(!PSel)return alert('Önce bir Anasayfa reklamı seçin.');
+    if(!PSel)return alert('Önce bir şerit seçin veya oluşturun.');
     if(!t)return alert('Ürün adı yazın.');
     if(img&&!/^(https?:|data:image\/)/i.test(img))return alert('Görsel adresi https:// ile başlamalı.');
     if(!adLink(l))return alert('Link https:// ile başlamalı.');
-    var cur=((adApi().homeItems&&adApi().homeItems())||[]).filter(function(x){return x._id===PSel})[0];
-    if(cur&&parr(cur.products).length>=12)return alert('Bir reklamda en fazla 12 ürün olabilir.');
-    db.ref(homePath(PSel)+'/products').push({img:img,title:t,price:pr,link:l,o:Date.now()});PIMG='';
+    var cur=shelfList().filter(function(x){return x.id===PSel})[0];
+    if(cur&&parr(cur.products).length>=12)return alert('Bir şeritte en fazla 12 ürün olabilir.');
+    db.ref(shelfPath(PSel)+'/products').push({img:img,title:t,price:pr,link:l,o:Date.now()});PIMG='';
   }
-  else if(A==='pdel'){if(confirm('Ürün silinsin mi?'))db.ref(homePath(PSel)+'/products/'+k).remove()}
+  else if(A==='pdel'){if(confirm('Ürün silinsin mi?'))db.ref(shelfPath(PSel)+'/products/'+k).remove()}
   else if(A==='badd'){
     var u=BIMG||adVal('mdBImgU'),bl=adVal('mdBL');
     if(!/^(https?:|data:image\/)/i.test(u))return alert('Banner için görsel yükleyin veya https:// adresi girin.');
     if(!adLink(bl))return alert('Link https:// ile başlamalı.');
-    var ex=((adApi().ads&&adApi().ads())||{}).sideBanners||{};if(Object.keys(ex).length>=8)return alert('En fazla 8 yan banner olabilir.');
+    if(Object.keys(AD.sideBanners||{}).length>=8)return alert('En fazla 8 yan banner olabilir.');
     db.ref('ads/sideBanners').push({url:u,title:adVal('mdBT'),link:bl,active:true,createdAt:Date.now()});BIMG='';
   }
-  else if(A==='btog'){var x=(((adApi().ads&&adApi().ads())||{}).sideBanners||{})[k];if(x)db.ref('ads/sideBanners/'+k+'/active').set(x.active===false)}
+  else if(A==='btog'){var x=(AD.sideBanners||{})[k];if(x)db.ref('ads/sideBanners/'+k+'/active').set(x.active===false)}
   else if(A==='bdel'){if(confirm('Banner silinsin mi?'))db.ref('ads/sideBanners/'+k).remove()}
-  else if(A==='bpause'){var s0=(((adApi().ads&&adApi().ads())||{}).settings||{});db.ref('ads/settings/sidePaused').set(!s0.sidePaused)}
+  else if(A==='bpause'){db.ref('ads/settings/sidePaused').set(!(AD.settings||{}).sidePaused)}
 });
 document.addEventListener('change',function(e){
   var t=e.target;if(!t)return;
   if(t.id==='mdPAd'){PSel=t.value;PIMG='';if(window.vtAdmOpen)window.vtAdmOpen();return}
-  if(t.id==='mdPFile'&&t.files[0])adImg(t.files[0],240,.72,function(d){PIMG=d;if($('mdPSt'))$('mdPSt').textContent='✓ Görsel hazır'});
+  if(t.id==='mdPFile'&&t.files[0])adImg(t.files[0],360,.72,function(d){PIMG=d;if($('mdPSt'))$('mdPSt').textContent='✓ Görsel hazır'});
   if(t.id==='mdBFile'&&t.files[0])adImg(t.files[0],800,.75,function(d){BIMG=d;if($('mdBSt'))$('mdBSt').textContent='✓ Görsel hazır'});
 });
 /* ürün şeridi: fare ile sürükleyerek kaydırma */
