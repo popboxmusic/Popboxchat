@@ -12582,16 +12582,28 @@
             addSystemMessage('⛔ Kanal açmak için Co-Admin ve üstü yetki gerekli!');
             return;
         }
-        const cleanName = normalizeNick(name).replace(/[^a-z0-9_]/g, '');
+        // Benzerlik anahtarı: büyük/küçük harf, Türkçe harfler (ç ğ ı ö ş ü), boşluk ve _ yok sayılır
+        const chKey = x => normalizeNick(x).replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u').replace(/[^a-z0-9]/g, '');
+        const cleanName = normalizeNick(name).replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u').replace(/[^a-z0-9_]/g, '');
         if (!cleanName || cleanName.length < 2) { addSystemMessage('❌ Kanal adı en az 2 karakter olmalı!'); return; }
-        if (cachedChannels[cleanName]) { addSystemMessage(`❌ #${cleanName} kanalı zaten var!`); return; }
+        const RESERVED = ['genel', 'help', 'ai', 'admin', 'owner', 'sistem', 'system', 'bot', 'moderator', 'adminchannelglobal'];
+        if (RESERVED.includes(chKey(cleanName)) || RESERVED.includes(chKey(label || ''))) { addSystemMessage('⛔ Bu ad ayrılmış, kullanılamaz!'); return; }
+        const kName = chKey(cleanName), kLabel = chKey(label || '');
+        const clash = Object.entries(cachedChannels).find(([k, c]) => {
+            const ek = chKey(k), el = chKey((c && c.label) || '');
+            return ek === kName || el === kName || (kLabel && (ek === kLabel || el === kLabel));
+        });
+        if (clash) { addSystemMessage(`❌ Bu ad #${clash[0]} kanalıyla aynı/çok benzer (büyük-küçük harf ve Türkçe karakter farkı sayılmaz)!`); return; }
         if (!checkWriteLimit()) return;
-        await channelsRef.child(cleanName).set({
+        // Aynı anda iki kişi açarsa üzerine yazılmasın: atomik işlem
+        const chData = {
             name: cleanName, label: (label || cleanName).trim(),
             createdBy: currentUser.name, owner: currentUser.name,
             createdAt: Date.now(), isHidden: false, isLocked: false,
             order: Object.keys(cachedChannels).length
-        });
+        };
+        const tx = await channelsRef.child(cleanName).transaction(cur => (cur === null ? chData : undefined));
+        if (!tx.committed) { addSystemMessage(`❌ #${cleanName} kanalı zaten var!`); return; }
         incrementWriteCount();
         await addChannelRole(cleanName, 'coadmin', currentUser.name);
         addSystemMessage(`✅ #${cleanName} kanalı açıldı. Otomatik olarak Co-Admin oldunuz.`);
