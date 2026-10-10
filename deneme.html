@@ -1205,6 +1205,11 @@
             flex-shrink: 0;
         }
 
+
+        /* Banner reklam sohbet penceresinde (başlık ikonlarının altında) */
+        .chat-container .banner-ad-container { padding: 6px 10px; border-top: 0; }
+        @media (max-width: 768px) { .banner-ad-container.ba-mob-off { display: none !important; } }
+
         .main-container.channels-collapsed .banner-ad-container {
             padding: 8px 20px 0 20px;
         }
@@ -5027,21 +5032,6 @@
                 </div>
             </div>
             
-            <!-- YENİ BANNER REKLAM ALANI -->
-            <div class="banner-ad-container" id="bannerAdContainer" style="display: none;">
-                <a href="#" class="banner-ad-link" id="bannerAdLink" target="_blank" rel="noopener noreferrer">
-                    <div class="banner-ad-icon">
-                        <img src="" alt="Reklam" id="bannerAdImage">
-                    </div>
-                    <div class="banner-ad-content">
-                        <div class="banner-ad-title" id="bannerAdTitle">Reklam Başlığı</div>
-                        <div class="banner-ad-description" id="bannerAdDescription">Reklam açıklaması</div>
-                        <div class="banner-ad-url" id="bannerAdUrl">www.reklam.com</div>
-                    </div>
-                    <div class="banner-ad-badge">Reklam</div>
-                </a>
-                <button type="button" class="banner-ad-more" onclick="openAdInfo()">Daha fazla bilgi ›</button>
-            </div>
             
             <div class="playlist-section" id="playlistSection">
                 <div class="playlist-header">
@@ -5089,6 +5079,22 @@
                     <button class="chat-menu-action" type="button" onclick="refreshChatMessages()"><i class="fas fa-sync-alt"></i> Sohbeti yenile</button>
                     <button class="chat-menu-action" type="button" onclick="closeChatPanel()"><i class="far fa-eye-slash"></i> Sohbeti gizle</button>
                 </div>
+            </div>
+
+            <!-- BANNER REKLAM: sohbet başlığının altında -->
+            <div class="banner-ad-container" id="bannerAdContainer" style="display: none;">
+                <a href="#" class="banner-ad-link" id="bannerAdLink" target="_blank" rel="noopener noreferrer">
+                    <div class="banner-ad-icon">
+                        <img src="" alt="Reklam" id="bannerAdImage">
+                    </div>
+                    <div class="banner-ad-content">
+                        <div class="banner-ad-title" id="bannerAdTitle">Reklam Başlığı</div>
+                        <div class="banner-ad-description" id="bannerAdDescription">Reklam açıklaması</div>
+                        <div class="banner-ad-url" id="bannerAdUrl">www.reklam.com</div>
+                    </div>
+                    <div class="banner-ad-badge">Reklam</div>
+                </a>
+                <button type="button" class="banner-ad-more" onclick="openAdInfo()">Daha fazla bilgi ›</button>
             </div>
 
             <div class="channel-manage-area" id="channelManageArea" hidden style="max-height: 210px; overflow-y: auto; padding: 8px 12px; border-bottom: 1px solid var(--border-color); background: var(--bg-secondary);">
@@ -5559,6 +5565,21 @@
                             </div>
                         </div>
                         
+                        <div class="banner-ad-form" style="margin-bottom:12px">
+                            <div class="role-section-title" style="margin:0 0 6px">📱 Mobil gösterim aralığı</div>
+                            <label>
+                                <span>Her kaç saniyede bir gösterilsin (0 = hep açık)</span>
+                                <input type="number" id="bannerMobIntervalInput" min="0" max="3600" value="60">
+                            </label>
+                            <label>
+                                <span>Ekranda kalma süresi (saniye)</span>
+                                <input type="number" id="bannerMobShowInput" min="3" max="300" value="12">
+                            </label>
+                            <div class="banner-ad-form-actions">
+                                <button type="button" class="primary" onclick="saveBannerAdSettings()"><i class="fas fa-save"></i> Kaydet</button>
+                            </div>
+                        </div>
+
                         <div class="banner-ad-list" id="bannerAdList"></div>
                         
                         <div class="banner-ad-empty" id="bannerAdEmpty" style="display: none;">
@@ -10647,15 +10668,54 @@
         if (urlEl) urlEl.textContent = ad.displayUrl || ad.url.replace(/^https?:\/\//, '').split('/')[0];
     }
 
+    // Mobil aralıklı gösterim: her X sn'de bir Y sn göster (X=0 → hep açık)
+    let bannerAdSettings = { mobInterval: 60, mobShow: 12 };
+    let bannerMobTimer = null;
+    function applyBannerMobCycle() {
+        if (bannerMobTimer) { clearTimeout(bannerMobTimer); bannerMobTimer = null; }
+        const c = document.getElementById('bannerAdContainer');
+        if (!c) return;
+        const every = Math.max(0, +bannerAdSettings.mobInterval || 0) * 1000;
+        const show = Math.max(3, +bannerAdSettings.mobShow || 10) * 1000;
+        if (!every) { c.classList.remove('ba-mob-off'); return; }
+        const step = (visible) => {
+            c.classList.toggle('ba-mob-off', !visible);
+            bannerMobTimer = setTimeout(() => step(!visible), visible ? show : Math.max(1000, every - show));
+        };
+        step(true);
+    }
+    function loadBannerAdSettings() {
+        if (!database) return;
+        database.ref('bannerAdSettings').on('value', (snap) => {
+            const v = snap.val() || {};
+            bannerAdSettings = { mobInterval: v.mobInterval != null ? +v.mobInterval : 60, mobShow: v.mobShow != null ? +v.mobShow : 12 };
+            const a = document.getElementById('bannerMobIntervalInput'), b = document.getElementById('bannerMobShowInput');
+            if (a && document.activeElement !== a) a.value = bannerAdSettings.mobInterval;
+            if (b && document.activeElement !== b) b.value = bannerAdSettings.mobShow;
+            applyBannerMobCycle();
+        });
+    }
+    function saveBannerAdSettings() {
+        if (!isOwner || !database) return;
+        const iv = Math.min(3600, Math.max(0, parseInt(document.getElementById('bannerMobIntervalInput').value, 10) || 0));
+        const sh = Math.min(300, Math.max(3, parseInt(document.getElementById('bannerMobShowInput').value, 10) || 12));
+        database.ref('bannerAdSettings').set({ mobInterval: iv, mobShow: sh })
+            .then(() => { if (typeof showToast === 'function') showToast('Mobil reklam aralığı kaydedildi'); })
+            .catch(() => alert('Kaydedilemedi (yetki?)'));
+    }
+
     function rotateBannerAd() {
         if (!cachedBannerAds.length) return;
         currentBannerAdIndex = (currentBannerAdIndex + 1) % cachedBannerAds.length;
         renderBannerAd(cachedBannerAds[currentBannerAdIndex]);
     }
 
+    let bannerAdsLoaded = false;
     function loadBannerAds() {
-        if (!database) return;
+        if (!database || bannerAdsLoaded) return;
+        bannerAdsLoaded = true;
         
+        loadBannerAdSettings();
         bannerAdsRef = database.ref('bannerAds');
         bannerAdsRef.on('value', (snapshot) => {
             const data = snapshot.val();
@@ -18082,8 +18142,7 @@ html,body{overscroll-behavior:none}
 <script id="media-script">
 (function(){
 var CFG=window.CETCETY_MEDIA=Object.assign({uploadUrl:'',whipUrl:'',hlsBase:'',recordUrl:'',minSubs:50},window.CETCETY_MEDIA||{});
-var MSG='Geçici süre kapalı veya aktif değil. Lütfen adminlerle iletişime geçin.';
-var S={set:{},blk:{},live:{},vods:{},prefs:{}},ST={tab:'live',stream:null,pc:null,live:null,file:null,cover:null},tabs={},lastCh=null,stageKey='',vodSel=null,sig={};
+var S={live:{},vods:{},prefs:{}},ST={tab:'live',stream:null,pc:null,live:null,file:null,cover:null},tabs={},lastCh=null,stageKey='',vodSel=null,sig={};
 function $(i){return document.getElementById(i)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function g(n,d){try{var v=(0,eval)('typeof '+n+'!=="undefined"?'+n+':null');return v==null?d:v}catch(e){return d}}
@@ -18103,12 +18162,8 @@ function modal(id,html,wide){var o=$(id);if(!o){o=document.createElement('div');
 function stopPrev(){if(!ST.live&&ST.stream){ST.stream.getTracks().forEach(function(t){t.stop()});ST.stream=null}}
 function closeM(id){var o=$(id);if(o)o.classList.remove('show');if(id==='mdStudio')stopPrev()}
 function fmtDur(ms){var m=Math.round(ms/60000);return m>=60?Math.floor(m/60)+' sa '+(m%60)+' dk':m+' dk'}
-function blocked(k,n){var b=(S.blk[k]||{})[n];return (!b||(b.until&&b.until<=Date.now()))?null:b}
 function gate(k,n){
   if(isOwn())return '';
-  if(!S.set[k+'On'])return MSG;
-  var b=blocked(k,n);
-  if(b)return (k==='live'?'Bu kanalda canlı yayın':'Bu kanalda video yükleme')+' durduruldu'+(b.until?' ('+new Date(b.until).toLocaleDateString('tr-TR')+' tarihine kadar)':'')+'. Lütfen adminlerle iletişime geçin.';
   if(k==='live'&&subs(n)<CFG.minSubs)return 'Canlı yayın için kanalın en az '+CFG.minSubs+' abonesi olmalı (şu an '+subs(n)+').';
   return '';
 }
@@ -18277,31 +18332,13 @@ function renderArch(){
   });
 }
 /* ---------- 4) Owner: Medya yönetimi ---------- */
-var AQ='';
 window.mdAdmOpen=function(){if(isOwn())renderAdm(true)};
-function remain(t){var d=t-Date.now(),h=Math.ceil(d/36e5);return h>=24?Math.ceil(h/24)+' gün':h+' sa'}
-function pill(k,n){
-  if(!S.set[k+'On'])return '<span class="md-pill off">Genel kapalı</span>';
-  var b=blocked(k,n);return b?'<span class="md-pill off">'+(b.until?'Durdu · '+remain(b.until):'Süresiz durdu')+'</span>':'<span class="md-pill on">Aktif</span>';
-}
 function renderAdm(force){
   var o=$('mdAdm');if(!force&&(!o||!o.classList.contains('show')))return;
-  if(o&&document.activeElement&&(document.activeElement.tagName==='SELECT'||document.activeElement.id==='mdAQ')&&!force)return;
-  var C=chans(),names=Object.keys(C).filter(function(n){return n!=='help'&&!C[n].systemChannel&&(!AQ||n.toLowerCase().indexOf(AQ)>-1)}).sort();
-  function opts(k){return '<select data-bk="'+k+'"><option value="">İşlem seç…</option><option value="1">⏸ 1 gün dur</option><option value="5">⏸ 5 gün dur</option><option value="7">⏸ 7 gün dur</option><option value="30">⏸ 1 ay dur</option><option value="0">⏸ Süresiz dur</option><option value="open">▶ Aç</option></select>'}
   var live=Object.keys(S.live).filter(function(n){return S.live[n]&&S.live[n].active});
-  var h='<div class="md-h"><b>🎛 Medya Yönetimi</b><button class="md-x" data-c="mdAdm">✕</button></div><div class="md-sw">'
-   +[['live','🔴 Tüm canlı yayınlar'],['upload','⬆ Tüm video yüklemeleri']].map(function(a){var on=!!S.set[a[0]+'On'];return '<div class="md-card"><b>'+a[1]+'</b><small>'+(on?'Aktif':'Kapalı — kullanıcıya “Geçici süre kapalı” iletisi çıkar')+'</small><button class="md-b '+(on?'red':'pri')+'" data-a="gset" data-k="'+a[0]+'">'+(on?'⏸ Dur':'▶ Aktifleştir')+'</button></div>'}).join('')+'</div>'
-   +(live.length?'<div class="md-p"><b>Şu an canlı</b></div>'+live.map(function(n){return '<div class="md-it"><div class="t"><b>#'+esc(n)+'</b><span>'+esc(S.live[n].title||'')+' · '+esc(S.live[n].by||'')+'</span></div><button class="md-b red" data-a="fstop" data-k="'+esc(n)+'">⛔ Durdur</button></div>'}).join(''):'')
-   +'<div class="md-p" style="margin-top:12px"><b>Kanal bazlı</b> — süreli veya süresiz durdur / aç</div><input type="text" id="mdAQ" placeholder="Kanal ara…" value="'+esc(AQ)+'">'
-   +'<div class="md-row" style="border:0;font-size:12px;color:var(--text-muted)"><span>Kanal</span><span>🔴 Canlı yayın</span><span>⬆ Video yükleme</span></div>'
-   +names.map(function(n){return '<div class="md-row" data-ch="'+esc(n)+'"><b>#'+esc(n)+'</b><div>'+pill('live',n)+opts('live')+'</div><div>'+pill('upload',n)+opts('upload')+'</div></div>'}).join('');
-  var wasQ=document.activeElement&&document.activeElement.id==='mdAQ';
-  modal('mdAdm',h,true);if(wasQ){var q=$('mdAQ');q.focus();q.setSelectionRange(q.value.length,q.value.length)}
-}
-function applyBlock(k,n,v){
-  if(v==='open')return db().ref('mediaBlocks/'+k+'/'+n).remove();
-  var d=+v;db().ref('mediaBlocks/'+k+'/'+n).set({until:d?Date.now()+d*864e5:0,by:me().name,at:Date.now()});
+  var h='<div class="md-h"><b>🔴 Canlı yayınlar</b><button class="md-x" data-c="mdAdm">✕</button></div><div class="md-sw">'
+   +(live.length?live.map(function(n){return '<div class="md-it"><div class="t"><b>#'+esc(n)+'</b><span>'+esc(S.live[n].title||'')+' · '+esc(S.live[n].by||'')+'</span></div><button class="md-b red" data-a="fstop" data-k="'+esc(n)+'">⛔ Durdur</button></div>'}).join(''):'<div class="md-p">Şu an canlı yayın yok. Canlı yayın ve video yükleme her zaman aktiftir.</div>')+'</div>';
+  modal('mdAdm',h,true);
 }
 /* ---------- tıklamalar ---------- */
 document.addEventListener('click',function(e){
@@ -18325,14 +18362,11 @@ document.addEventListener('click',function(e){
   else if(A==='upgo')upload();
   else if(A==='fstop')forceStop(k||n);
   else if(A==='stageclose'){vodSel=null;clearStage()}
-  else if(A==='gset'){db().ref('mediaSettings/'+k+'On').set(!S.set[k+'On'])}
   else if(A==='archvis'){db().ref('channelMediaPrefs/'+n+'/archivePublic').set((S.prefs[n]||{}).archivePublic===false)}
   else if(A==='vvis'){var it=(S.vods[n]||{})[k];if(it)db().ref('channelVods/'+n+'/'+k+'/vis').set(it.vis==='hidden'?'public':'hidden')}
   else if(A==='vdel'){if(confirm('Bu kayıt silinsin mi?'))db().ref('channelVods/'+n+'/'+k).remove()}
   else if(A==='vplay'){var v2=(S.vods[n]||{})[k];if(v2&&v2.url){vodSel={src:v2.url,title:v2.title};syncStage()}}
 });
-document.addEventListener('change',function(e){var s=e.target;if(s&&s.dataset&&s.dataset.bk&&s.value!==''&&isOwn()){applyBlock(s.dataset.bk,s.closest('[data-ch]').dataset.ch,s.value);s.value=''}});
-document.addEventListener('input',function(e){if(e.target&&e.target.id==='mdAQ'){AQ=e.target.value.trim().toLowerCase();renderAdm(true)}});
 /* ---------- mobil: tek '⋯' menüsü ---------- */
 function morePop(btn){
   var old=$('mdPop');if(old){old.remove();return}
@@ -18590,9 +18624,9 @@ document.addEventListener('click',function(e){if(window.__mdDrag&&e.target.close
 function tick(){
   var u=me();if(!u)return;
   var tabsEl=document.querySelector('#ownerPanel .role-panel-tabs');
-  if(tabsEl&&!tabsEl.querySelector('.md-tab')){var b=document.createElement('button');b.className='role-tab md-tab';b.innerHTML='<i class="fas fa-video"></i> Medya';b.onclick=window.mdAdmOpen;tabsEl.appendChild(b)}
+  if(tabsEl&&!tabsEl.querySelector('.md-tab')){var b=document.createElement('button');b.className='role-tab md-tab';b.innerHTML='<i class="fas fa-video"></i> Canlı';b.onclick=window.mdAdmOpen;tabsEl.appendChild(b)}
   var top=document.querySelector('#vitrin .vt-top'),ab=$('mdAdmBtn');
-  if(top&&!ab){ab=document.createElement('button');ab.id='mdAdmBtn';ab.className='vt-btn';ab.innerHTML='<i class="fas fa-video"></i> Medya';ab.onclick=window.mdAdmOpen;top.appendChild(ab)}
+  if(top&&!ab){ab=document.createElement('button');ab.id='mdAdmBtn';ab.className='vt-btn';ab.innerHTML='<i class="fas fa-video"></i> Canlı';ab.onclick=window.mdAdmOpen;top.appendChild(ab)}
   if(ab)ab.style.display=isOwn()?'inline-flex':'none';
   var sb=$('mdStudioBtn');if(sb)sb.style.display=canStudio(cur())?'':'none';
   var grp=$('vtChBtns');if(grp&&!$('mdMoreBtn')){var mb=document.createElement('button');mb.type='button';mb.id='mdMoreBtn';mb.title='Kanal ayarları';mb.innerHTML='<i class="fas fa-ellipsis"></i>';mb.onclick=function(e){e.stopPropagation();morePop(mb)};grp.appendChild(mb)}
@@ -18603,8 +18637,6 @@ function tick(){
 function init(){
   var d=db();if(!d){setTimeout(init,300);return}
   var er=function(){};
-  d.ref('mediaSettings').on('value',function(s){S.set=s.val()||{};renderAdm()},er);
-  d.ref('mediaBlocks').on('value',function(s){S.blk=s.val()||{};renderAdm()},er);
   d.ref('channelLive').on('value',function(s){S.live=s.val()||{};renderAdm();syncStage()},er);
   var vch=null,vref=null;
   setInterval(function(){var n=cur();if(n&&n!==vch&&!document.hidden){if(vref)vref.off();vch=n;vref=d.ref('channelVods/'+n);vref.on('value',function(sn){S.vods[n]=sn.val()||{}},er)}},1500);
