@@ -1325,7 +1325,11 @@
         
         /* ==================== PLAYLIST ==================== */
         .playlist-section {
-            height: 250px;
+            height: var(--pl-h, 250px);
+            min-height: 250px;
+            max-height: 75%;
+            flex: 0 0 auto;
+            position: relative;
             display: flex;
             flex-direction: column;
             border-top: 1px solid var(--border-color);
@@ -1333,6 +1337,9 @@
             padding: 12px;
         }
         
+        .pl-split { position:absolute; top:-6px; left:0; right:0; height:12px; cursor:row-resize; z-index:5; touch-action:none; }
+        .pl-split::after { content:''; position:absolute; left:50%; top:4px; width:44px; height:4px; margin-left:-22px; border-radius:2px; background:var(--border-color); transition:background .15s; }
+        .pl-split:hover::after, .pl-split.drag::after { background:#A8782A; }
         .playlist-header {
             display: flex;
             align-items: center;
@@ -18598,5 +18605,35 @@ init();
 })();
 </script>
 
+<script>
+// Video ile oynatma listesi arasındaki ayırıcı: sürükleyerek yükseklik ayarlanır (masaüstü), seçim hatırlanır
+(function () {
+    function init() {
+        var sec = document.getElementById('playlistSection');
+        if (!sec) return setTimeout(init, 500);
+        if (sec.querySelector('.pl-split')) return;
+        var root = document.documentElement;
+        try { var v = parseInt(localStorage.getItem('plH'), 10); if (v >= 250) root.style.setProperty('--pl-h', v + 'px'); else root.style.setProperty('--pl-h', '44vh'); } catch (e) { root.style.setProperty('--pl-h', '44vh'); }
+        var h = document.createElement('div'); h.className = 'pl-split'; h.title = 'Sürükleyerek boyutlandır';
+        sec.insertBefore(h, sec.firstChild);
+        h.addEventListener('pointerdown', function (e) {
+            e.preventDefault(); h.classList.add('drag'); try { h.setPointerCapture(e.pointerId); } catch (_) {}
+            var panel = sec.parentNode, last = 0;
+            var mv = function (ev) {
+                var r = panel.getBoundingClientRect();
+                last = Math.round(Math.max(250, Math.min(r.height - 200, r.bottom - ev.clientY)));
+                root.style.setProperty('--pl-h', last + 'px');
+            };
+            var up = function () {
+                h.classList.remove('drag');
+                h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+                if (last) try { localStorage.setItem('plH', String(last)); } catch (_) {}
+            };
+            h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+        });
+    }
+    init();
+})();
+</script>
 </body>
 </html>
