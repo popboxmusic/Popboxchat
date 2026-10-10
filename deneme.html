@@ -1197,6 +1197,10 @@
         .video-placeholder-sub { font-size: 14px; color: var(--text-muted); }
         
         /* ==================== YENİ BANNER REKLAM ALANI ==================== */
+        .chat-ad-item { margin: 8px 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-color); border-left: 3px solid #A8782A; background: var(--bg-tertiary); cursor: pointer; }
+        .chat-ad-item:hover { background: var(--bg-hover); }
+        @media (max-width: 768px) { .chat-ad-item { margin: 6px 8px; } .chat-ad-item img { max-height: 120px !important; } }
+
         .banner-ad-container {
             padding: 8px 16px 0 16px;
             background: var(--bg-secondary);
@@ -1206,15 +1210,6 @@
         }
 
 
-        /* Banner reklam artık oynatma listesinin ilk satırı */
-        .pl-ad-item { display:flex; align-items:center; gap:12px; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); border-left:3px solid #A8782A; background:var(--bg-tertiary); cursor:pointer; position:relative; flex:0 0 auto; text-decoration:none; color:var(--text-primary); }
-        .pl-ad-item:hover { background:var(--bg-hover); }
-        .pl-ad-item .pl-ad-img { width:44px; height:44px; flex:0 0 44px; border-radius:6px; object-fit:cover; background:var(--bg-secondary); }
-        .pl-ad-item .pl-ad-body { min-width:0; flex:1 1 auto; }
-        .pl-ad-item .pl-ad-title { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .pl-ad-item .pl-ad-desc { font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .pl-ad-item .pl-ad-badge { font-size:10px; font-weight:700; letter-spacing:.4px; color:#A8782A; border:1px solid #A8782A; border-radius:4px; padding:1px 5px; flex:0 0 auto; }
-        .pl-ad-item .pl-ad-info { background:none; border:0; color:var(--text-muted); font-size:14px; padding:4px; cursor:pointer; flex:0 0 auto; }
         .main-container.channels-collapsed .banner-ad-container {
             padding: 8px 20px 0 20px;
         }
@@ -5566,6 +5561,9 @@
                             <label><span>Tıklama başına gelir (TL)</span><input type="number" id="adSetCpc" min="0" step="0.01" value="0"></label>
                             <label><span>1000 gösterim başına gelir (TL)</span><input type="number" id="adSetCpm" min="0" step="0.01" value="0"></label>
                             <label><span>Varsayılan kanal payı (%)</span><input type="number" id="adSetShare" min="0" max="100" value="50"></label>
+                            <label><span>Sohbette reklam: kaç yeni mesajda bir</span><input type="number" id="adSetChatMsgs" min="5" max="500" value="20"></label>
+                            <label><span>Sohbette reklam: en az kaç saniye arayla</span><input type="number" id="adSetChatSec" min="30" max="3600" value="240"></label>
+                            <label><span>Tıklama sayılması için hesap yaşı (gün)</span><input type="number" id="adSetMinAge" min="0" max="60" value="3"></label>
                             <div class="banner-ad-form-actions"><button type="button" class="primary" onclick="adSaveSettings()"><i class="fas fa-save"></i> Oranları kaydet</button></div>
                             <label><span>Ay</span><input type="month" id="adEarnMonth"></label>
                             <div class="banner-ad-form-actions"><button type="button" onclick="adOwnerLoad()"><i class="fas fa-rotate"></i> Listele</button></div>
@@ -10637,43 +10635,7 @@
     let currentBannerAdIndex = 0;
     let editingBannerAdIndex = -1;
 
-    // Reklam = oynatma listesinin (web / çekmece / sohbet paneli) hep ilk satırı
-    const PL_AD_CONTAINERS = ['playlistItemsWeb', 'playlistDrawerItems', 'mdChatPLItems'];
-    function buildPlAd(ad) {
-        const a = document.createElement('div');
-        a.className = 'pl-ad-item';
-        const url = /^https?:\/\//i.test(ad.url) ? ad.url : '';
-        a.onclick = (e) => { if (e.target.closest('.pl-ad-info')) return; try { window.adTrack && window.adTrack('click', ad); } catch (_) {} if (url) window.open(url, '_blank', 'noopener'); };
-        const img = document.createElement('img'); img.className = 'pl-ad-img'; img.alt = ''; img.loading = 'lazy'; img.src = ad.image || '';
-        img.onerror = () => { img.style.visibility = 'hidden'; };
-        const body = document.createElement('div'); body.className = 'pl-ad-body';
-        const t = document.createElement('div'); t.className = 'pl-ad-title'; t.textContent = ad.title;
-        const d = document.createElement('div'); d.className = 'pl-ad-desc'; d.textContent = ad.description || ad.displayUrl || ad.url.replace(/^https?:\/\//, '').split('/')[0];
-        body.append(t, d);
-        const b = document.createElement('span'); b.className = 'pl-ad-badge'; b.textContent = 'REKLAM';
-        const i = document.createElement('button'); i.type = 'button'; i.className = 'pl-ad-info'; i.title = 'Daha fazla bilgi'; i.innerHTML = '<i class="fas fa-circle-info"></i>';
-        i.onclick = (e) => { e.stopPropagation(); if (window.openAdInfo) window.openAdInfo(); };
-        a.append(img, body, b, i);
-        return a;
-    }
-    function refreshPlAds() {
-        const ad = cachedBannerAds && cachedBannerAds[currentBannerAdIndex];
-        const ok = ad && ad.title && ad.url;
-        PL_AD_CONTAINERS.forEach((id) => {
-            const c = document.getElementById(id);
-            if (!c) return;
-            const old = c.querySelector(':scope > .pl-ad-item');
-            if (!ok) { if (old) old.remove(); return; }
-            const key = ad.title + '|' + ad.url + '|' + (ad.image || '') + '|' + (ad.description || '');
-            if (old && old.dataset.k === key && c.firstElementChild === old) return;
-            if (old) old.remove();
-            const el = buildPlAd(ad); el.dataset.k = key;
-            c.insertBefore(el, c.firstChild);
-            try { window.adTrack && window.adTrack('view', ad); } catch (_) {}
-        });
-    }
-    window.refreshPlAds = refreshPlAds;
-    function renderBannerAd() { refreshPlAds(); }
+    function renderBannerAd() { /* reklam artık sohbet akışında (bkz. kanal reklam script'i) */ }
 
     function rotateBannerAd() {
         if (!cachedBannerAds.length) return;
@@ -10699,12 +10661,6 @@
                 currentBannerAdIndex = 0;
                 renderBannerAd(cachedBannerAds[0]);
                 
-                if (bannerAdRotationInterval) clearInterval(bannerAdRotationInterval);
-                if (cachedBannerAds.length > 1) {
-                    bannerAdRotationInterval = setInterval(rotateBannerAd, 15000);
-                }
-            } else {
-                refreshPlAds();
             }
             
             if (isOwner) updateBannerAdListUI();
@@ -15674,9 +15630,9 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             }
         };
 
-        window.openAdInfo = function () {
+        window.openAdInfo = function (i) {
             try {
-                const ad = cachedBannerAds[currentBannerAdIndex]; if (!ad) return;
+                const ad = cachedBannerAds[typeof i === 'number' ? i : currentBannerAdIndex]; if (!ad) return;
                 $('adInfoModal') && $('adInfoModal').remove();
                 const m = document.createElement('div'); m.id = 'adInfoModal';
                 const card = document.createElement('div'); card.className = 'card';
@@ -18661,18 +18617,40 @@ init();
     function ch() { try { return typeof currentChannel !== 'undefined' ? currentChannel : null; } catch (e) { return null; } }
     function user() { try { return typeof currentUser !== 'undefined' && currentUser ? currentUser.name : ''; } catch (e) { return ''; } }
     function safeKey(x) { return String(x || '').replace(/[.#$\[\]\/]/g, '_'); }
+    var SET = null, setP = null;
+    function getSet() {
+        if (SET) return Promise.resolve(SET);
+        if (!setP && db()) setP = db().ref('adSettings').once('value').then(function (x) { SET = x.val() || {}; return SET; }, function () { SET = {}; return SET; });
+        return setP || Promise.resolve({});
+    }
+    function hash(x) { var h = 5381; x = String(x); for (var i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) >>> 0; return h.toString(36); }
+    // Tıklama sayılma şartı: kayıtlı hesap, yeterince eski, owner/kanal sahibi değil
+    function eligible(c, set) {
+        try {
+            var u = currentUser; if (!u || !u.isRegistered || (typeof isOwner !== 'undefined' && isOwner)) return false;
+            var chn = cachedChannels && cachedChannels[c]; if (chn && chn.owner === u.name) return false;
+            var r = registeredUsers && registeredUsers[u.name], age = r && r.registeredAt ? Date.now() - r.registeredAt : Infinity;
+            return age >= (set.minAge != null ? +set.minAge : 3) * 864e5;
+        } catch (e) { return false; }
+    }
+    function count(type, c) {
+        var m = mk(); pend[c] = pend[c] || {}; pend[c][m] = pend[c][m] || { views: 0, clicks: 0 };
+        pend[c][m][type === 'view' ? 'views' : 'clicks']++;
+        clearTimeout(flushT); flushT = setTimeout(flush, type === 'click' ? 4000 : 120000);
+    }
     window.adTrack = function (type, ad) {
         var c = ch(); if (!c || !ad || !ad.url || c === 'help') return;
         var now = Date.now(), k = safeKey(ad.url) + '|' + safeKey(c);
         if (type === 'view') {                       // aynı reklam+kanal için 10 dk'da bir gösterim
-            if (seen[k] && now - seen[k] < 600000) return; seen[k] = now;
-        } else {                                      // aynı kullanıcı+reklam+kanal için günde 1 tıklama
-            var dk = 'adc:' + user() + ':' + k + ':' + new Date().toDateString();
-            try { if (localStorage.getItem(dk)) return; localStorage.setItem(dk, '1'); } catch (e) {}
+            if (seen[k] && now - seen[k] < 600000) return; seen[k] = now; count('view', c); return;
         }
-        var m = mk(); pend[c] = pend[c] || {}; pend[c][m] = pend[c][m] || { views: 0, clicks: 0 };
-        pend[c][m][type === 'view' ? 'views' : 'clicks']++;
-        clearTimeout(flushT); flushT = setTimeout(flush, type === 'click' ? 4000 : 120000);
+        getSet().then(function (set) {
+            if (!eligible(c, set)) return;
+            var d = new Date(), day = d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
+            // hesap başına günde 1 tıklama — cihaz/IP fark etmez, hesap sunucuda kayıtlı
+            db().ref('adClickLog/' + day + '/' + safeKey(user()) + '/' + hash(ad.url)).transaction(function (v) { return v ? undefined : true; })
+                .then(function (r) { if (r && r.committed) count('click', c); }, function () {});
+        });
     };
     function flush() {
         var d = db(), p = pend; pend = {};
@@ -18688,6 +18666,66 @@ init();
     }
     setInterval(function () { if (Object.keys(pend).length) flush(); }, 120000);
     addEventListener('pagehide', function () { try { flush(); } catch (e) {} });
+
+
+    // ============================================================
+    // SOHBET AKIŞINDA REKLAM (görselli, belirli aralıkla, "REKLAM" etiketli)
+    // ============================================================
+    var CA = { ch: null, seen: null, n: 0, last: Date.now(), placed: [], idx: 0 };
+    function adsList() { try { return (cachedBannerAds || []).filter(function (a) { return a && a.title && a.url && /^https?:\/\//i.test(a.url); }); } catch (e) { return []; } }
+    function buildChatAd(ad, idx) {
+        var w = el('div', null, ''); w.className = 'chat-ad-item';
+        var top = el('div', null, 'display:flex;align-items:center;justify-content:space-between;margin-bottom:6px');
+        top.appendChild(el('span', 'REKLAM', 'font-size:10px;font-weight:700;letter-spacing:.5px;color:#A8782A;border:1px solid #A8782A;border-radius:4px;padding:1px 6px'));
+        var x = el('button', '✕', 'background:none;border:0;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 2px'); x.type = 'button'; x.title = 'Gizle';
+        x.onclick = function (e) { e.stopPropagation(); w.remove(); CA.placed = CA.placed.filter(function (p) { return p.el !== w; }); };
+        top.appendChild(x); w.appendChild(top);
+        if (ad.image) {
+            var im = document.createElement('img'); im.alt = ''; im.loading = 'lazy'; im.src = ad.image; im.style.cssText = 'width:100%;max-height:150px;object-fit:cover;border-radius:8px;display:block;margin-bottom:6px';
+            im.onerror = function () { im.remove(); }; w.appendChild(im);
+        }
+        w.appendChild(el('div', ad.title, 'font-size:13.5px;font-weight:700'));
+        if (ad.description) w.appendChild(el('div', ad.description, 'font-size:12px;color:var(--text-muted);margin-top:2px'));
+        var row = el('div', null, 'display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px');
+        row.appendChild(el('span', ad.displayUrl || ad.url.replace(/^https?:\/\//, '').split('/')[0], 'font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'));
+        var more = el('button', 'Daha fazla bilgi ›', 'background:none;border:0;color:#A8782A;font-size:11.5px;cursor:pointer;flex:0 0 auto'); more.type = 'button';
+        more.onclick = function (e) { e.stopPropagation(); try { currentBannerAdIndex = idx; window.openAdInfo && window.openAdInfo(idx); } catch (_) {} };
+        row.appendChild(more); w.appendChild(row);
+        w.onclick = function () { window.adTrack('click', ad); window.open(ad.url, '_blank', 'noopener'); };
+        // gösterim: kartın %60'ı en az 1 sn ekranda görünürse
+        if ('IntersectionObserver' in window) {
+            var t = null, io = new IntersectionObserver(function (en) {
+                if (en[0].isIntersecting && !document.hidden) { t = setTimeout(function () { window.adTrack('view', ad); io.disconnect(); }, 1000); } else { clearTimeout(t); }
+            }, { threshold: 0.6 });
+            io.observe(w);
+        }
+        return w;
+    }
+    function chatAdTick(msgs) {
+        var c = document.getElementById('messages'), name = ch(); if (!c || !name) return;
+        var ids = Object.keys(msgs || {});
+        if (CA.ch !== name || !CA.seen) { CA.ch = name; CA.seen = {}; ids.forEach(function (i) { CA.seen[i] = 1; }); CA.n = 0; CA.last = Date.now(); CA.placed = []; return; }
+        ids.forEach(function (i) { if (!CA.seen[i]) { CA.seen[i] = 1; CA.n++; } });
+        // rebuild sonrası yerleştirilmiş reklamları aynı mesajın altına geri koy
+        CA.placed = CA.placed.filter(function (p) { var a = document.getElementById('msg_' + p.after); if (!a) return false; a.after(p.el); return true; });
+        if (name === 'help' || document.hidden) return;
+        getSet().then(function (set) {
+            var needM = +set.chatMsgs || 20, needS = +set.chatSec || 240;
+            if (CA.n < needM || Date.now() - CA.last < needS * 1000) return;
+            var list = adsList(); if (!list.length) return;
+            var items = c.querySelectorAll('.message-item[id^="msg_"]'); if (!items.length) return;
+            var last = items[items.length - 1], atBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 80;
+            var ad = list[CA.idx++ % list.length], el2 = buildChatAd(ad, cachedBannerAds.indexOf(ad));
+            last.after(el2); CA.placed.push({ after: last.id.slice(4), el: el2 }); if (CA.placed.length > 3) CA.placed.shift().el.remove();
+            CA.n = 0; CA.last = Date.now();
+            if (atBottom) c.scrollTop = c.scrollHeight;
+        });
+    }
+    (function hook() {
+        if (typeof window.updateMessages !== 'function') return setTimeout(hook, 500);
+        var o = window.updateMessages;
+        window.updateMessages = function (m) { var r = o.apply(this, arguments); try { chatAdTick(m); } catch (e) {} return r; };
+    })();
 
     function money(x) { return (Math.round(x * 100) / 100).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + ' ₺'; }
     function calc(st, set, share) {
@@ -18721,8 +18759,9 @@ init();
     window.adSaveSettings = function () {
         if (typeof isOwner === 'undefined' || !isOwner) return;
         var v = function (id, max) { return Math.max(0, Math.min(max, parseFloat(document.getElementById(id).value) || 0)); };
-        db().ref('adSettings').set({ cpc: v('adSetCpc', 1e6), cpm: v('adSetCpm', 1e6), share: v('adSetShare', 100) })
-            .then(function () { alert('Kaydedildi'); }, function () { alert('Kaydedilemedi (yetki?)'); });
+        var ns = { cpc: v('adSetCpc', 1e6), cpm: v('adSetCpm', 1e6), share: v('adSetShare', 100), chatMsgs: v('adSetChatMsgs', 500) || 20, chatSec: v('adSetChatSec', 3600) || 240, minAge: v('adSetMinAge', 60) };
+        db().ref('adSettings').set(ns)
+            .then(function () { SET = ns; alert('Kaydedildi'); }, function () { alert('Kaydedilemedi (yetki?)'); });
     };
     window.adOwnerLoad = function () {
         if (typeof isOwner === 'undefined' || !isOwner) return;
@@ -18733,6 +18772,7 @@ init();
             var all = r[0] || {}, set = r[1] || {}, shares = r[2] || {}, pays = r[3] || {};
             document.getElementById('adSetCpc').value = set.cpc || 0; document.getElementById('adSetCpm').value = set.cpm || 0;
             document.getElementById('adSetShare').value = set.share != null ? set.share : 50;
+            document.getElementById('adSetChatMsgs').value = set.chatMsgs || 20; document.getElementById('adSetChatSec').value = set.chatSec || 240; document.getElementById('adSetMinAge').value = set.minAge != null ? set.minAge : 3; SET = set;
             tb.innerHTML = ''; var total = 0;
             var rows = Object.keys(all).filter(function (c) { return all[c] && all[c][m]; });
             if (!rows.length) { tb.textContent = 'Bu ay için kayıt yok.'; return; }
@@ -18741,7 +18781,8 @@ init();
                 total += paid ? 0 : e.net;
                 var row = el('div', null, 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border-color)');
                 row.appendChild(el('b', '#' + c, 'flex:1 1 90px'));
-                row.appendChild(el('span', (st.views || 0) + ' gös. · ' + (st.clicks || 0) + ' tık', 'color:var(--text-muted)'));
+                var vw = st.views || 0, ck2 = st.clicks || 0, odd = (vw >= 50 && ck2 / vw > 0.15) || (ck2 >= 20 && !vw);
+                row.appendChild(el('span', vw + ' gös. · ' + ck2 + ' tık' + (vw ? ' (%' + (ck2 / vw * 100).toFixed(1) + ')' : '') + (odd ? ' ⚠ olağandışı' : ''), odd ? 'color:#d33;font-weight:700' : 'color:var(--text-muted)'));
                 var inp = el('input'); inp.type = 'number'; inp.min = 0; inp.max = 100; inp.value = share; inp.style.cssText = 'width:56px'; inp.title = 'Kanal payı %';
                 inp.onchange = function () { var v = Math.max(0, Math.min(100, parseFloat(inp.value) || 0)); db().ref('adShares/' + c).set(v).then(window.adOwnerLoad); };
                 row.appendChild(inp); row.appendChild(el('span', '%'));
