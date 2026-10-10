@@ -18983,5 +18983,54 @@ init();
     };
 })();
 </script>
+<script>
+// Kanal ikonları (kalem, kapak, kazanç, stüdyo + abone/gizle/sessiz/devret/sil) tek "⋮" menüsünde toplanır.
+// Asıl düğmeler gizli kalır (durumları güncellenmeye devam eder); menü öğesi onlara tıklar.
+(function () {
+    var st = document.createElement('style');
+    st.textContent = '#channelActionBar,#vtChBtns{display:none!important}'
+        + '#chatOverflowMenu{max-height:72vh;overflow-y:auto}'
+        + '.chan-menu-h{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--text-muted);padding:6px 12px 2px}'
+        + '.chan-menu-sep{height:1px;background:var(--border-color);margin:6px 4px}'
+        + '.chat-menu-action.chan-danger{color:#e5484d}.chat-menu-action.chan-on i{color:#A8782A}';
+    document.head.appendChild(st);
+    var NAMES = { vtChHead: 'Kanal başlığı', vtChUp: 'Kapak görseli', mdEarnBtn: 'Kanal kazancı', mdStudioBtn: 'Yayın stüdyosu' };
+    function item(src, label, cls) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'chat-menu-action chan-item' + (cls ? ' ' + cls : '');
+        var ic = src.querySelector('i'); if (ic) b.appendChild(ic.cloneNode(true));
+        b.appendChild(document.createTextNode(' ' + label));
+        b.onclick = function () { var m = document.getElementById('chatOverflowMenu'); if (m) m.hidden = true; try { src.click(); } catch (e) {} };
+        return b;
+    }
+    function build() {
+        var m = document.getElementById('chatOverflowMenu'); if (!m) return;
+        m.querySelectorAll('.chan-item,.chan-menu-h,.chan-menu-sep').forEach(function (e) { e.remove(); });
+        var items = [], grp = document.getElementById('vtChBtns');
+        if (grp && grp.style.display !== 'none') {
+            ['vtChHead', 'vtChUp', 'mdEarnBtn', 'mdStudioBtn'].forEach(function (id) {
+                var b = document.getElementById(id); if (b && b.style.display !== 'none') items.push(item(b, NAMES[id]));
+            });
+        }
+        var bar = document.getElementById('channelActionBar');
+        if (bar && !bar.classList.contains('hidden')) {
+            bar.querySelectorAll('.channel-action-btn').forEach(function (b) {
+                var t = (b.getAttribute('title') || 'Kanal').replace(/\s*\(\d+ abone\)/, '');
+                items.push(item(b, t, (b.classList.contains('danger') ? 'chan-danger' : '') + (b.classList.contains('active') ? ' chan-on' : '')));
+            });
+        }
+        if (!items.length) return;
+        var h = document.createElement('div'); h.className = 'chan-menu-h'; h.textContent = 'KANAL';
+        var sep = document.createElement('div'); sep.className = 'chan-menu-sep';
+        var first = m.firstChild; m.insertBefore(h, first);
+        items.forEach(function (it) { m.insertBefore(it, first); });
+        m.insertBefore(sep, first);
+    }
+    (function hook() {
+        if (typeof window.toggleChatPopover !== 'function') return setTimeout(hook, 500);
+        var o = window.toggleChatPopover;
+        window.toggleChatPopover = function (id) { if (id === 'chatOverflowMenu') { try { build(); } catch (e) {} } return o.apply(this, arguments); };
+    })();
+})();
+</script>
 </body>
 </html>
