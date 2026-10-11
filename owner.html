@@ -71,6 +71,7 @@ th{color:var(--mut);font-weight:500;font-size:12px}
     <button data-t="ads" class="on">📢 Reklamlar</button>
     <button data-t="rep">📊 Raporlar</button>
     <button data-t="earn">💰 Kazançlar</button>
+    <button data-t="ch">🏗️ Kanallar</button>
     <button data-t="set">⚙️ Ayarlar</button>
   </div>
   <main>
@@ -149,6 +150,24 @@ gün: 0 = süresiz</pre></details>
         <div id="earnList"></div>
         <div class="row" style="margin-top:10px"><button id="keyImp">🔑 Ödeme anahtarını yükle</button><button id="keyMake">Yeni anahtar oluştur</button><span class="hint" id="keySt"></span></div>
       </div>
+    </section>
+
+    <!-- ===== KANALLAR ===== -->
+    <section id="t_ch" class="hidden">
+      <div class="card"><h2>🏗️ Hazır kanal paketi</h2>
+        <div class="hint" id="chInfo" style="margin-bottom:8px">Yükleniyor…</div>
+        <div class="row">
+          <button class="pri" id="chGo">Kanalları kur</button>
+          <label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="chOver" style="width:auto"> Var olan başlık/kapakları da yenile</label>
+        </div>
+        <div class="hint" id="chProg" style="margin-top:8px"></div>
+        <div class="hint" style="margin-top:8px">Kanal sahibi <b>mateky</b> olur. Sahipliği devretmek için kanalda "⋮ menüsü › Sahipliği devret" kullanın; yeni sahip otomatik Co-Admin olur. Var olan kanallara dokunulmaz.</div>
+      </div>
+      <div class="card"><h2>➕ Ekstra kanallar</h2>
+        <div class="hint">Her satıra bir kanal: <code>ad|Etiket|emoji|başlık|açıklama</code> (ad: küçük harf/rakam/_ ). Boş bırakabilirsiniz.</div>
+        <textarea id="chExtra" placeholder="ornek|Örnek Kanal|🌟|Kısa başlık|Kanal açıklaması"></textarea>
+      </div>
+      <div class="card"><h2>Önizleme</h2><div id="chPrev" class="grid2" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))"></div></div>
     </section>
 
     <!-- ===== AYARLAR ===== -->
@@ -234,7 +253,6 @@ function tryLogin() {
 $('loginBtn').onclick = tryLogin;
 $('pw').onkeydown = function (e) { if (e.key === 'Enter') tryLogin(); };
 $('logout').onclick = function () { sessionStorage.removeItem('ownerOK'); location.reload(); };
-if (sessionStorage.getItem('ownerOK') === '1') start();
 
 /* =====================================================================
    3) YARDIMCILAR
@@ -357,7 +375,7 @@ function start() {
 $('tabs').onclick = function (e) {
   var b = e.target.closest('[data-t]'); if (!b) return;
   document.querySelectorAll('#tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
-  ['ads', 'rep', 'earn', 'set'].forEach(function (t) { $('t_' + t).classList.toggle('hidden', t !== b.dataset.t); });
+  ['ads', 'rep', 'earn', 'ch', 'set'].forEach(function (t) { $('t_' + t).classList.toggle('hidden', t !== b.dataset.t); });
 };
 
 /* ---- form alanlarını türe göre göster ---- */
@@ -524,6 +542,133 @@ $('keyMake').onclick = function () {
       });
     });
 };
+</script>
+<script>
+/* =====================================================================
+   KANAL PAKETİ — 60 hazır kanal (sahip: mateky). Kapaklar küçük SVG olarak üretilir (≈1 KB).
+   ===================================================================== */
+var CH_OWNER = 'mateky';
+var CH_RAW = [
+'pop|Pop Müzik|🎤|Listelerin en çok dinlenenleri|Pop şarkılar, yeni klipler ve ortak şarkı sepeti. Favorini paylaş, birlikte dinleyelim.',
+'rock|Rock & Alternatif|🎸|Gitarlar konuşsun|Klasik rock\'tan alternatife; riff\'ler, konserler ve efsane albümler.',
+'rap|Rap & Hip-Hop|🎧|Ritim, flow ve sokak hikâyeleri|Türkçe ve yabancı rap; yeni çıkanlar, battle\'lar ve beat paylaşımları.',
+'arabesk|Arabesk & Fantezi|🎻|Duygunun en yoğun hali|Arabesk ve fantezi müzik sevenlerin buluşma noktası.',
+'turku|Türkü & Halk Müziği|🪕|Anadolu\'nun sesi|Türküler, bozlaklar ve halk ozanları; yöresel ezgilerin hikâyeleri.',
+'slow|Slow & Aşk Şarkıları|💞|Kalbe dokunan şarkılar|Romantik ve duygusal şarkılar; sevdiğine bir şarkı armağan et.',
+'nostalji|Nostalji Şarkılar|📻|80\'ler 90\'lar 2000\'ler|Eski şarkılar, eski anılar. Çocukluğunun şarkısını paylaş.',
+'lofi|Lo-Fi & Sakin Müzik|🌙|Ders çalışırken, dinlenirken|Sakin ritimler, yağmur sesleri ve odaklanma müzikleri.',
+'elektronik|Elektronik & Dans|🎛️|Tempo yüksek, enerji tam|House, techno, trance ve dans müziği; festival setleri ve yeni mix\'ler.',
+'caz|Caz & Blues|🎷|Sofistike ve sıcak|Caz ve blues klasikleri, canlı kayıtlar ve müzisyen hikâyeleri.',
+'klasik|Klasik Müzik|🎼|Zamansız bestelere kulak ver|Senfoniler, piyano ve keman eserleri; bestecilerin hayatları.',
+'metal|Metal & Hard Rock|🤘|Sert, hızlı, güçlü|Metalin alt türleri, albüm yorumları ve konser anıları.',
+'indie|Indie & Bağımsız|🌿|Keşfedilmeyi bekleyen sesler|Bağımsız sanatçılar ve alternatif tınılar; yeni keşiflerini paylaş.',
+'kpop|K-Pop & Asya Müziği|💜|Seul\'den dünyaya|K-pop, J-pop ve Asya müzikleri; klipler, gruplar ve hayran sohbetleri.',
+'latin|Latin & Dünya Müziği|💃|Dünya turuna çıkıyoruz|Latin, flamenko, afro ve dünya müzikleri; dans ettiren ritimler.',
+'remix|Remix & Mashup|🔁|Bilinen şarkılara yeni ruh|Remix\'ler, mashup\'lar ve bootleg\'ler; en iyilerini paylaş.',
+'akustik|Akustik & Cover|🪗|Sade ve samimi|Akustik versiyonlar ve cover\'lar; kendi kaydını da paylaşabilirsin.',
+'yeniler|Yeni Çıkanlar|🆕|Bu hafta ne çıktı?|Yeni single\'lar, albümler ve klipler; ilk dinleyenler yorum yapsın.',
+'djmix|DJ Set & Mix|🎚️|Kesintisiz mix\'ler|DJ setleri ve uzun mix\'ler; parti ve yolculuk için ideal.',
+'enstrumantal|Enstrümantal & Film Müziği|🎹|Sözsüz ama çok şey anlatan|Film, dizi ve oyun müzikleri ile enstrümantal parçalar.',
+'tanisma|Tanışma Odası|👋|Yeni misin? Merhaba de!|Yeni arkadaşlar edin, kendini tanıt ve ortak ilgi alanlarını bul.',
+'gecekusu|Gece Kuşları|🌃|Uyumayanlar burada|Gece geç saatlerde sohbet edenlerin kanalı; müzik ve muhabbet.',
+'gunaydin|Günaydın Kahvesi|☕|Güne birlikte başlayalım|Sabah sohbetleri, günün planları ve kahve eşliğinde şarkılar.',
+'gonul|Gönül Sohbeti|❤️|Kalbinden geçenleri paylaş|Duygular, ilişkiler ve gönül meseleleri; saygılı ve içten sohbet.',
+'mizah|Mizah & Eğlence|😂|Gülmek serbest|Espriler, komik anılar ve güldüren paylaşımlar.',
+'itiraf|İtiraflar|🤫|Söylemek istediklerin|Adını yazmadan değil, saygıyla paylaşılan itiraflar. Kural: kimseyi hedef alma.',
+'dertlesme|Dertleşme Köşesi|🫂|Yalnız değilsin|Derdini paylaş, birlikte rahatlayalım. Nazik ve destekleyici bir alan.',
+'motivasyon|Motivasyon & Başarı|🚀|Küçük adımlar, büyük hedefler|Hedefler, alışkanlıklar ve ilham veren hikâyeler.',
+'felsefe|Düşünce & Felsefe|🧠|Soru sormaktan çekinme|Hayat, zaman, anlam; derin sorular ve düşündüren sohbetler.',
+'sorucevap|Soru & Cevap|❓|Merak ettiğini sor|Aklına takılan her şeyi sor; topluluk birlikte cevaplasın.',
+'tartisma|Fikir Tartışması|💬|Farklı görüşlere saygıyla|Güncel konularda medeni ve saygılı fikir alışverişi.',
+'haftasonu|Hafta Sonu Planları|🎉|Bu hafta sonu ne yapıyorsun?|Planlar, öneriler ve buluşma fikirleri; hafta sonu enerjisi burada.',
+'oyun|Oyun Dünyası|🎮|Bilgisayar ve konsol|PC ve konsol oyunları, yeni çıkanlar ve takım arayanlar.',
+'mobiloyun|Mobil Oyunlar|📱|Cebinden eğlence|Mobil oyun önerileri, ipuçları ve birlikte oynayacak arkadaşlar.',
+'bilmece|Bilmece & Zeka|🧩|Beynini çalıştır|Bilmeceler, zeka soruları ve mantık oyunları.',
+'yarisma|Yarışma & Quiz|🏆|Bilgini sına|Genel kültür soruları ve sohbet yarışmaları.',
+'dizi|Dizi & Film Önerileri|📺|Ne izlesem?|Dizi ve film önerileri, yorumlar ve spoiler\'sız sohbet.',
+'anime|Anime & Manga|🎌|Otaku buluşması|Anime, manga ve oyun kültürü; önerilen seriler ve sohbetler.',
+'kitap|Kitap Kulübü|📚|Okuduklarını paylaş|Kitap önerileri, alıntılar ve okuma listeleri.',
+'sanat|Sanat & Tasarım|🎨|Yaratıcı zihinler|Resim, tasarım ve el sanatları; eserlerini göster, ilham al.',
+'fotograf|Fotoğrafçılık|📷|Kareler hikâye anlatır|Fotoğraf teknikleri, ekipman sohbetleri ve kare paylaşımları.',
+'yemek|Yemek & Tarif|🍳|Mutfaktan lezzetler|Tarifler, mutfak ipuçları ve yöresel lezzetler.',
+'seyahat|Seyahat & Gezi|✈️|Yeni yerler keşfet|Gezi rotaları, seyahat önerileri ve anılar.',
+'evcil|Evcil Dostlar|🐾|Patili dostlarımız|Kedi, köpek ve diğer evcil hayvanlar; bakım ipuçları ve sevimli paylaşımlar.',
+'otomobil|Otomobil & Motor|🚗|Dört teker, iki teker|Araba ve motosiklet sohbetleri, bakım ve yol hikâyeleri.',
+'moda|Moda & Stil|👗|Tarzını yansıt|Moda trendleri, kombin önerileri ve stil sohbetleri.',
+'teknoloji|Teknoloji Haberleri|💻|Geleceği takip et|Teknoloji haberleri, yeni ürünler ve yorumlar.',
+'yazilim|Yazılım & Kodlama|⌨️|Kod yaz, soru sor|Programlama dilleri, projeler ve yazılımcıların sohbeti.',
+'telefon|Telefon & Gadget|📲|Ne alsam?|Telefon, kulaklık ve akıllı cihaz önerileri ve karşılaştırmalar.',
+'girisim|Girişim & İş Fikirleri|💡|Fikrini paylaş|Girişimcilik, iş fikirleri ve deneyim paylaşımları.',
+'futbol|Futbol Sohbeti|⚽|Maç var, sohbet var|Maç yorumları, transfer söylentileri ve taraftar muhabbeti. Saygı çerçevesinde.',
+'basketbol|Basketbol|🏀|Parkeden sohbetler|Basketbol maçları, NBA ve Türkiye ligleri.',
+'fitness|Fitness & Sağlıklı Yaşam|💪|Hareket et, iyi hisset|Spor programları, beslenme sohbetleri ve motivasyon. Tıbbi tavsiye değildir.',
+'espor|E-Spor|🕹️|Turnuvalar ve takımlar|E-spor turnuvaları, oyuncular ve takım sohbetleri.',
+'ders|Ders & Ödev Yardımı|📖|Birlikte öğrenelim|Ders çalışma ipuçları, ödev yardımı ve not paylaşımı.',
+'ingilizce|İngilizce Pratik|🌍|Konuşarak öğren|İngilizce pratik sohbetleri, kelime paylaşımı ve ipuçları.',
+'kariyer|Kariyer & İş|💼|İş hayatı sohbetleri|CV, mülakat ve kariyer tavsiyeleri; deneyim paylaşımı.',
+'istanbul|İstanbul|🌉|Şehrin kalbi burada|İstanbul sohbetleri, mekân önerileri ve etkinlikler.',
+'ankara|Ankara|🏛️|Başkentten sesler|Ankara sohbetleri, gezilecek yerler ve etkinlik duyuruları.',
+'izmir|İzmir|🌊|Ege\'nin incisi|İzmir sohbetleri, mekân önerileri ve sahil keyfi.'
+];
+function chParse(lines) {
+  return lines.map(function (l) { var p = l.split('|').map(function (x) { return x.trim(); }); if (p.length < 5) return null;
+    var n = p[0].toLowerCase().replace(/[^a-z0-9_]/g, ''); if (n.length < 2) return null;
+    return { name: n, label: p[1], emoji: p[2], head: p[3].slice(0, 100), desc: p.slice(4).join('|').slice(0, 200) }; }).filter(Boolean);
+}
+function chAll() {
+  var ex = ($('chExtra').value || '').split('\n').filter(function (x) { return x.trim(); });
+  var all = chParse(CH_RAW).concat(chParse(ex)), seen = {};
+  return all.filter(function (c) { if (seen[c.name]) return false; seen[c.name] = 1; return true; });
+}
+function chCover(c, i) {
+  var h1 = (i * 137.5) % 360, h2 = (h1 + 40) % 360;
+  var esc = function (t) { return t.replace(/[&<>"]/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; }); };
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(' + h1.toFixed(0) + ',70%,38%)"/><stop offset="1" stop-color="hsl(' + h2.toFixed(0) + ',75%,22%)"/></linearGradient></defs>'
+    + '<rect width="480" height="270" fill="url(#g)"/><circle cx="410" cy="50" r="120" fill="#fff" opacity=".07"/><circle cx="60" cy="250" r="90" fill="#fff" opacity=".06"/>'
+    + '<text x="240" y="150" font-size="104" text-anchor="middle">' + esc(c.emoji) + '</text>'
+    + '<text x="240" y="225" font-size="30" font-weight="700" fill="#fff" text-anchor="middle" font-family="system-ui,Arial,sans-serif">' + esc(c.label) + '</text></svg>';
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+}
+var CH_EX = {};
+function chRender() {
+  var list = chAll(), have = list.filter(function (c) { return CH_EX[c.name]; }).length;
+  $('chInfo').textContent = list.length + ' kanal hazır · ' + have + ' tanesi zaten var · ' + (list.length - have) + ' yeni kurulacak.';
+  $('chPrev').innerHTML = list.map(function (c, i) {
+    return '<div class="card" style="margin:0;padding:8px"><div style="aspect-ratio:16/9;border-radius:8px;background:url(' + chCover(c, i) + ') center/cover"></div><div style="font-weight:600;margin-top:6px;font-size:13px">#' + c.name + (CH_EX[c.name] ? ' ✓' : '') + '</div><div class="hint" style="font-size:11px">' + c.head.replace(/</g, '&lt;') + '</div></div>';
+  }).join('');
+}
+$('chExtra').oninput = chRender;
+document.querySelector('#tabs').addEventListener('click', function (e) {
+  var b = e.target.closest('[data-t]'); if (b && b.dataset.t === 'ch') Store.once('channels').then(function (v) { CH_EX = v || {}; chRender(); });
+});
+$('chGo').onclick = async function () {
+  var list = chAll(), over = $('chOver').checked, made = 0, skipped = 0, btn = $('chGo');
+  if (!confirm(list.length + ' kanal için işlem yapılsın mı? (var olan kanallara dokunulmaz)')) return;
+  btn.disabled = true;
+  try {
+    var ex = await Store.once('channels') || {}; CH_EX = ex;
+    var th = await Store.once('channelThumbs') || {}, hd = await Store.once('channelHeadlines') || {};
+    var base = Object.keys(ex).length;
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i]; $('chProg').textContent = 'İşleniyor… ' + (i + 1) + ' / ' + list.length + ' (#' + c.name + ')';
+      if (!ex[c.name]) {
+        await Store.set('channels/' + c.name, { name: c.name, label: c.label, createdBy: CH_OWNER, owner: CH_OWNER, createdAt: Date.now(), isHidden: false, isLocked: false, order: base + i, description: c.desc });
+        made++;
+        await Store.set('channelThumbs/' + c.name, chCover(c, i)); await Store.set('channelHeadlines/' + c.name, c.head);
+      } else {
+        skipped++;
+        if (over || !th[c.name]) await Store.set('channelThumbs/' + c.name, chCover(c, i));
+        if (over || !hd[c.name]) await Store.set('channelHeadlines/' + c.name, c.head);
+      }
+    }
+    $('chProg').textContent = '✅ Bitti: ' + made + ' yeni kanal kuruldu, ' + skipped + ' kanal zaten vardı.';
+    toast('✅ Kanallar hazır');
+    Store.once('channels').then(function (v) { CH_EX = v || {}; chRender(); });
+  } catch (e) { $('chProg').textContent = '❌ Hata: ' + (e && e.message || e); }
+  btn.disabled = false;
+};
+/* oturum açıksa paneli en sonda başlat (tüm tanımlar yüklendikten sonra) */
+if (sessionStorage.getItem('ownerOK') === '1') start();
 </script>
 </body>
 </html>
