@@ -19052,5 +19052,68 @@ init();
     })();
 })();
 </script>
+<script>
+// Özel sohbet aç/kapa: kayıtlı her kullanıcı kendi özel sohbetini kapatabilir.
+// Kapalı kullanıcıya yazan kişi "Üzgünüz, X kullanıcısının özel sohbeti kapalıdır." uyarısını görür (mesaj gönderilmez).
+(function () {
+    var cache = {}, mineClosed = false, mineLoaded = false;
+    function db() { return window.database; }
+    function me() { try { return currentUser && currentUser.name; } catch (e) { return null; } }
+    function nk(x) { return String(x || '').normalize('NFKC').toLowerCase().replace(/̇/g, '').replace(/ı/g, 'i').trim().replace(/[.#$\[\]\/]/g, '_'); }
+    function isOwnerUser() { try { return !!isOwner; } catch (e) { return false; } }
+    function isBotName(n) { var x = nk(n); return x === 'ai' || x === 'proxy' || x === 'sistem' || x === 'system'; }
+    function closedFor(target) {
+        var k = nk(target), c = cache[k];
+        if (c && Date.now() - c.t < 60000) return Promise.resolve(c.v);
+        if (!db()) return Promise.resolve(false);
+        return db().ref('dmClosed/' + k).once('value').then(function (s) { var v = !!s.val(); cache[k] = { v: v, t: Date.now() }; return v; }, function () { return false; });
+    }
+    function notice(target) {
+        var box = document.getElementById('privateMessages'); if (!box) return;
+        var d = document.createElement('div'); d.className = 'message-item system';
+        d.textContent = '🔒 Üzgünüz, ' + target + ' kullanıcısının özel sohbeti kapalıdır.';
+        box.appendChild(d); box.scrollTop = box.scrollHeight;
+        setTimeout(function () { d.remove(); }, 8000);
+    }
+    // gönderim kapısı
+    (function hook() {
+        if (typeof window.sendPendingMessage !== 'function') return setTimeout(hook, 500);
+        var o = window.sendPendingMessage;
+        window.sendPendingMessage = async function (toUser, data) {
+            try {
+                if (toUser && !isOwnerUser() && !isBotName(toUser) && await closedFor(toUser)) { notice(toUser); return false; }
+            } catch (e) {}
+            return o.apply(this, arguments);
+        };
+    })();
+    // kendi ayarım
+    function paint() {
+        var b = document.getElementById('dmToggleBtn'); if (!b) return;
+        b.innerHTML = mineClosed ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
+        b.title = mineClosed ? 'Özel sohbetin kapalı — açmak için dokun' : 'Özel sohbetin açık — kapatmak için dokun';
+        b.style.opacity = mineClosed ? '1' : '.75'; b.style.color = mineClosed ? '#e5484d' : '';
+    }
+    function loadMine() {
+        var u = me(); if (!u || !db()) return;
+        mineLoaded = true;
+        db().ref('dmClosed/' + nk(u)).once('value').then(function (s) { mineClosed = !!s.val(); paint(); }, function () {});
+    }
+    function toggle() {
+        var u = me(); if (!u || !db()) return;
+        try { if (!currentUser.isRegistered) return alert('Özel sohbet ayarı sadece kayıtlı kullanıcılar içindir.'); } catch (e) {}
+        mineClosed = !mineClosed;
+        var r = db().ref('dmClosed/' + nk(u));
+        (mineClosed ? r.set(true) : r.remove()).then(function () { paint(); alert(mineClosed ? 'Özel sohbetiniz kapatıldı. Size yazmak isteyenler uyarı görecek.' : 'Özel sohbetiniz açıldı.'); }, function () { mineClosed = !mineClosed; paint(); alert('Kaydedilemedi.'); });
+    }
+    setInterval(function () {
+        var bar = document.querySelector('#privateModal .private-actions');
+        if (bar && !document.getElementById('dmToggleBtn')) {
+            var b = document.createElement('button'); b.id = 'dmToggleBtn'; b.className = 'private-action-btn'; b.type = 'button'; b.onclick = toggle;
+            bar.insertBefore(b, bar.firstChild); paint();
+        }
+        if (!mineLoaded && me()) loadMine();
+    }, 2000);
+})();
+</script>
 </body>
 </html>
