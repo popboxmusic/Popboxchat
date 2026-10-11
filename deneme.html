@@ -6044,6 +6044,14 @@
                     <label>Bio</label>
                     <textarea id="profileBio" class="profile-bio" placeholder="Kendinizden bahsedin..."></textarea>
                 </div>
+                <div class="profile-field" id="dmPrivacyField">
+                    <label>🔒 Gizlilik</label>
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">
+                        <input type="checkbox" id="dmOpenChk" style="width:20px;height:20px;flex:0 0 20px">
+                        <span style="font-size:14px">Özel sohbet <b id="dmState">açık</b></span>
+                    </label>
+                    <div class="rules" id="dmHint" style="margin-top:4px">Kapalıyken size yazmak isteyenler "özel sohbeti kapalıdır" uyarısı görür. Değişiklik anında kaydedilir.</div>
+                </div>
             </div>
             <div class="profile-buttons">
                 <button class="profile-btn-save" onclick="saveProfile()"><i class="far fa-save"></i> Kaydet</button>
@@ -19086,33 +19094,34 @@ init();
             return o.apply(this, arguments);
         };
     })();
-    // kendi ayarım
+    // kendi ayarım — Profil paneli > Gizlilik
     function paint() {
-        var b = document.getElementById('dmToggleBtn'); if (!b) return;
-        b.innerHTML = mineClosed ? '<i class="fas fa-bell-slash"></i>' : '<i class="fas fa-bell"></i>';
-        b.title = mineClosed ? 'Özel sohbetin kapalı — açmak için dokun' : 'Özel sohbetin açık — kapatmak için dokun';
-        b.style.opacity = mineClosed ? '1' : '.75'; b.style.color = mineClosed ? '#e5484d' : '';
+        var c = document.getElementById('dmOpenChk'), st = document.getElementById('dmState'); if (!c) return;
+        var reg = false; try { reg = !!currentUser.isRegistered; } catch (e) {}
+        c.checked = !mineClosed; c.disabled = !reg;
+        if (st) { st.textContent = mineClosed ? 'kapalı' : 'açık'; st.style.color = mineClosed ? '#e5484d' : ''; }
+        var h = document.getElementById('dmHint');
+        if (h && !reg) h.textContent = 'Özel sohbet ayarı sadece kayıtlı kullanıcılar içindir.';
     }
     function loadMine() {
         var u = me(); if (!u || !db()) return;
         mineLoaded = true;
         db().ref('dmClosed/' + nk(u)).once('value').then(function (s) { mineClosed = !!s.val(); paint(); }, function () {});
     }
-    function toggle() {
+    function setClosed(closed) {
         var u = me(); if (!u || !db()) return;
-        try { if (!currentUser.isRegistered) return alert('Özel sohbet ayarı sadece kayıtlı kullanıcılar içindir.'); } catch (e) {}
-        mineClosed = !mineClosed;
+        var prev = mineClosed; mineClosed = closed; paint();
         var r = db().ref('dmClosed/' + nk(u));
-        (mineClosed ? r.set(true) : r.remove()).then(function () { paint(); alert(mineClosed ? 'Özel sohbetiniz kapatıldı. Size yazmak isteyenler uyarı görecek.' : 'Özel sohbetiniz açıldı.'); }, function () { mineClosed = !mineClosed; paint(); alert('Kaydedilemedi.'); });
+        (closed ? r.set(true) : r.remove()).catch(function () { mineClosed = prev; paint(); alert('Kaydedilemedi.'); });
     }
+    document.addEventListener('change', function (e) { if (e.target && e.target.id === 'dmOpenChk') setClosed(!e.target.checked); });
+    var wasOpen = false;
     setInterval(function () {
-        var bar = document.querySelector('#privateModal .private-actions');
-        if (bar && !document.getElementById('dmToggleBtn')) {
-            var b = document.createElement('button'); b.id = 'dmToggleBtn'; b.className = 'private-action-btn'; b.type = 'button'; b.onclick = toggle;
-            bar.insertBefore(b, bar.firstChild); paint();
-        }
-        if (!mineLoaded && me()) loadMine();
-    }, 2000);
+        var pm = document.getElementById('profileModal'), open = !!pm && pm.style.display === 'flex';
+        if (open && !wasOpen) { mineLoaded = false; }
+        if (open && !mineLoaded && me()) loadMine();
+        wasOpen = open;
+    }, 800);
 })();
 </script>
 </body>
