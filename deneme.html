@@ -1163,6 +1163,11 @@
             border: 1px solid var(--border-color);
         }
         
+        #ytClickPlay { position: absolute; inset: 0; z-index: 5; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #000 center/cover no-repeat; cursor: pointer; }
+        #ytClickPlay::before { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,.35); }
+        #ytClickPlay .ycp-btn { position: relative; width: 72px; height: 72px; border-radius: 50%; background: rgba(0,0,0,.65); border: 2px solid rgba(255,255,255,.85); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 26px; padding-left: 5px; transition: transform .15s; }
+        #ytClickPlay:hover .ycp-btn { transform: scale(1.08); }
+        #ytClickPlay .ycp-txt { position: relative; color: #fff; font-size: 14px; font-weight: 500; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
         #youtube-player {
             position: absolute;
             top: 0;
@@ -12185,7 +12190,7 @@
         const placeholder = document.querySelector('.video-placeholder');
         if (placeholder) placeholder.style.display = currentVideoId ? 'none' : 'flex';
         if (currentVideoId && player && player.loadVideoById) player.loadVideoById(currentVideoId);
-        else if (player && player.stopVideo) player.stopVideo();
+        else if (player && player.stopVideo) { player.stopVideo(); hideClickPlay(); }
         updatePlaylistUIWeb();
         updatePlaylistDrawer();
         // Uzak kayda SADECE kilitliyken ve yetkili biri seçtiğinde yazılır.
@@ -12468,6 +12473,7 @@
 
     function playVideo(videoId) {
         if (!videoId) return;
+        window.__ytAllowUntil = Date.now() + 1500;   // playlist'ten seçilen video hemen oynar
         // Kilitliyken sadece yetkili seçebilir
         if (channelPlaylistLocked && !canControlPlaylistLock()) {
             addSystemMessage('🔒 Playlist kilitli: videoyu kanal yetkilisi seçiyor.');
@@ -12476,14 +12482,39 @@
         setChannelVideo(videoId);
     }
 
+    // ---------- Tıklayınca oynat: kapak + büyük oynat düğmesi ----------
+    function showClickPlay(id) {
+        const wrap = document.querySelector('.video-wrapper'); if (!wrap || !id) return;
+        let o = document.getElementById('ytClickPlay');
+        if (!o) {
+            o = document.createElement('div'); o.id = 'ytClickPlay';
+            o.innerHTML = '<div class="ycp-btn"><i class="fas fa-play"></i></div><div class="ycp-txt">Videoyu oynat</div>';
+            o.onclick = function () { hideClickPlay(); try { player && player.playVideo && player.playVideo(); } catch (_) {} };
+            wrap.appendChild(o);
+        }
+        o.style.backgroundImage = "url('https://i.ytimg.com/vi/" + encodeURIComponent(id) + "/hqdefault.jpg')";
+        o.style.display = 'flex';
+    }
+    function hideClickPlay() { const o = document.getElementById('ytClickPlay'); if (o) o.style.display = 'none'; }
+
     function initYouTubePlayer() {
         if (typeof YT !== 'undefined' && YT.Player) {
             player = new YT.Player('youtube-player', {
                 height: '100%', width: '100%',
                 videoId: currentVideoId,
-                playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'modestbranding': 1 },
+                playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0, 'modestbranding': 1, 'playsinline': 1 },
                 events: {
                     'onReady': function(event) {
+                        try {
+                            const pl = event.target, lv = pl.loadVideoById.bind(pl);
+                            pl.loadVideoById = function (a, b, c) {
+                                const allow = Date.now() < (window.__ytAllowUntil || 0);
+                                if (allow) { hideClickPlay(); return lv(a, b, c); }
+                                showClickPlay(a && typeof a === 'object' ? a.videoId : a);
+                                return pl.cueVideoById(a, b, c);
+                            };
+                            if (currentVideoId) showClickPlay(currentVideoId);
+                        } catch (_) {}
                         try { const v0 = document.getElementById('vitrin'); if (v0 && v0.classList.contains('show')) { event.target.mute(); event.target.pauseVideo(); } } catch (_) {}
                         const placeholder = document.querySelector('.video-placeholder');
                         if (placeholder) placeholder.style.display = currentVideoId ? 'none' : 'flex';
@@ -12494,7 +12525,8 @@
                             const v1 = document.getElementById('vitrin');
                             if (v1 && v1.classList.contains('show') && (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING)) { event.target.pauseVideo(); return; }
                         } catch (_) {}
-                        if (event.data === YT.PlayerState.ENDED) playNextVideo();
+                        if (event.data === YT.PlayerState.PLAYING) hideClickPlay();
+                        if (event.data === YT.PlayerState.ENDED) { window.__ytAllowUntil = Date.now() + 3000; playNextVideo(); }
                     }
                 }
             });
@@ -17339,6 +17371,19 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
 #ownSideBox .own-row:hover{background:var(--bg-tertiary)}
 #ownSideBox .own-row i{width:18px;text-align:center;color:var(--text-muted)}
 </style>
+<style id="vt-side-fix">
+/* Sol panel: bölümler ezilmesin, panel biraz daha geniş olsun */
+#vtSide{flex:0 0 300px;width:300px;gap:2px}
+#vtSide>*{flex-shrink:0}
+#vtSide .vt-scroll{flex:0 0 auto;min-height:0;max-height:min(40vh,340px)}
+#vtSide .vt-scroll:has(.vt-row){min-height:150px}
+#vtSide{flex-basis:340px;width:340px}
+#vtSide .vt-sec{padding:14px 8px 6px;font-size:12px}
+#vtSide .vt-row{padding:10px 12px;font-size:15px}
+#vtSide .vt-row{padding:9px 10px;font-size:14.5px}
+#vtSide .vt-empty{padding:8px 10px}
+@media(max-width:900px){#vtSide{width:min(90vw,360px);flex-basis:auto}}
+</style>
 <div id="vitrin" class="show">
  <div class="vt-top">
   <button class="vt-btn" id="vtMenuBtn" onclick="vtToggleSide()" aria-label="Menü"><i class="fas fa-bars"></i></button>
@@ -17583,7 +17628,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
   }
   function closeAd(resume){
     clearInterval(adTimer);if(adEl){adEl.remove()}adEl=null;adCh=null;adCfg=null;
-    if(resume){try{var p=g('player',null);p&&p.playVideo&&p.playVideo()}catch(e){}}
+    if(resume){try{var p=g('player',null);if(p&&p.getPlayerState&&p.getPlayerState()===2)p.playVideo()}catch(e){}}
   }
   function showChannelAd(n,periodic){
     if(!me()||V.classList.contains('show'))return;
@@ -17778,7 +17823,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
   }
   window.vtToggleSide=function(f){V.classList.toggle('side',typeof f==='boolean'?f:!V.classList.contains('side'))};
   window.vtShow=function(){closeAd(false);lastSec='';V.classList.add('show');V.classList.remove('side');try{var _p=g('player',null);_p&&_p.pauseVideo&&_p.pauseVideo()}catch(e){}renderSide();render();renderHero(true);if(window.positionPrivateModal)window.positionPrivateModal()};
-  function hide(){stopPrev();stopAuto();clearHero();V.classList.remove('show','side');if(window.positionPrivateModal)setTimeout(window.positionPrivateModal,50);window.dispatchEvent(new Event('resize'));try{var p=g('player',null);p&&p.unMute&&p.unMute();p&&p.playVideo&&p.playVideo()}catch(e){}}
+  function hide(){stopPrev();stopAuto();clearHero();V.classList.remove('show','side');if(window.positionPrivateModal)setTimeout(window.positionPrivateModal,50);window.dispatchEvent(new Event('resize'));try{var p=g('player',null);p&&p.unMute&&p.unMute()}catch(e){}}
   window.vtOpenChannel=function(n){
     if(!me()||!chans[n])return;
     try{window.switchChannel(n)}catch(e){console.error(e)}
