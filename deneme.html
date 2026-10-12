@@ -5534,6 +5534,14 @@
                 <div class="role-section">
                     <div class="role-section-title owner">💬 Sohbet içi reklamlar (tüm kanallar)</div>
                     <div class="banner-ad-manager">
+                        <div class="banner-ad-form" id="chatAdCtl" style="margin-bottom:12px">
+                            <div class="role-section-title" style="margin:0 0 6px">⏱ Sohbet reklam döngüsü</div>
+                            <label><span>Sohbet reklamları</span><select id="adSetChatOn"><option value="1">🟢 Açık (aktif reklamlar döner)</option><option value="0">⏸ Kapalı (hiçbiri gösterilmez)</option></select></label>
+                            <label><span>Kaç saniyede bir yeni reklam gösterilsin (sn)</span><input type="number" id="adSetChatSec" min="5" max="3600" value="120"></label>
+                            <label><span>En az kaç yeni mesaj gelsin (0 = yalnızca süreye göre)</span><input type="number" id="adSetChatMsgs" min="0" max="500" value="5"></label>
+                            <div class="banner-ad-form-actions"><button type="button" onclick="setAllBannerAds(false)"><i class="fas fa-pause"></i> Hepsini durdur</button><button type="button" onclick="setAllBannerAds(true)"><i class="fas fa-play"></i> Hepsini aktif et</button><button type="button" class="primary" onclick="adSaveSettings()"><i class="fas fa-save"></i> Kaydet</button></div>
+                            <div class="chat-ad-hint" style="font-size:12px;opacity:.7;margin-top:6px">Aşağıdaki listede her reklamın ▶/⏸ düğmesiyle tek tek açıp kapatabilirsiniz. Aktif reklamlar sırayla döner.</div>
+                        </div>
                         <div class="banner-ad-form">
                             <label>
                                 <span>Görsel URL</span>
@@ -5569,8 +5577,6 @@
                             <label><span>Gösterim başına gelir (TL)</span><input type="number" id="adSetView" min="0" step="0.001" value="0.01"></label>
                             <label><span>Ödeme sınırı (TL)</span><input type="number" id="adSetMin" min="0" step="1" value="200"></label>
                             <label><span>Varsayılan kanal payı (%)</span><input type="number" id="adSetShare" min="0" max="100" value="50"></label>
-                            <label><span>Sohbette reklam: en az kaç yeni mesaj sonra</span><input type="number" id="adSetChatMsgs" min="1" max="500" value="5"></label>
-                            <label><span>Sohbette reklam: en az kaç saniye arayla</span><input type="number" id="adSetChatSec" min="15" max="3600" value="120"></label>
                             <label><span>Tıklama sayılması için hesap yaşı (gün)</span><input type="number" id="adSetMinAge" min="0" max="60" value="3"></label>
                             <div class="banner-ad-form-actions"><button type="button" class="primary" onclick="adSaveSettings()"><i class="fas fa-save"></i> Oranları kaydet</button></div>
                             <label><span>Ay</span><input type="month" id="adEarnMonth"></label>
@@ -10703,17 +10709,21 @@
             const displayUrl = ad.displayUrl || (ad.url || '').replace(/^https?:\/\//, '').split('/')[0] || '';
             const isEditing = editingBannerAdIndex === index;
             
+            const on = ad.active !== false;
             return `
-                <div class="banner-ad-item" style="${isEditing ? 'border-color: var(--youtube-red); box-shadow: 0 0 0 2px rgba(201, 100, 66, 0.15);' : ''}">
+                <div class="banner-ad-item" style="${isEditing ? 'border-color: var(--youtube-red); box-shadow: 0 0 0 2px rgba(201, 100, 66, 0.15);' : ''}${on ? '' : 'opacity:.55;'}">
                     <div class="banner-ad-item-thumb">
                         <img src="${imgSrc}" alt="" onerror="this.style.display='none'; this.parentNode.innerHTML='<i class=\\'far fa-image\\' style=\\'color:#666;\\'></i>';">
                     </div>
                     <div class="banner-ad-item-info">
-                        <div class="banner-ad-item-title">${escapeHtml(ad.title || 'Başlıksız')}</div>
+                        <div class="banner-ad-item-title">${on ? '🟢' : '⏸'} ${escapeHtml(ad.title || 'Başlıksız')}</div>
                         <div class="banner-ad-item-desc">${escapeHtml(ad.description || '-')}</div>
                         <div class="banner-ad-item-url">${escapeHtml(displayUrl)}</div>
                     </div>
                     <div class="banner-ad-item-actions">
+                        <button class="banner-ad-action-btn" onclick="toggleBannerAd(${index})" title="${on ? 'Durdur' : 'Aktif et'}">
+                            <i class="fas fa-${on ? 'pause' : 'play'}"></i>
+                        </button>
                         <button class="banner-ad-action-btn" onclick="moveBannerAdUp(${index})" ${isFirst ? 'disabled' : ''} title="Yukarı Taşı">
                             <i class="fas fa-arrow-up"></i>
                         </button>
@@ -10828,6 +10838,19 @@
                 console.error('Reklam silme hatası:', err);
                 addSystemMessage('❌ Reklam silinemedi!');
             });
+    }
+
+    function toggleBannerAd(index) {
+        if (!isOwner) return;
+        const newList = [...cachedBannerAds];
+        if (!newList[index]) return;
+        newList[index] = { ...newList[index], active: newList[index].active === false };
+        bannerAdsRef.set(newList);
+    }
+
+    function setAllBannerAds(on) {
+        if (!isOwner || !cachedBannerAds.length) return;
+        bannerAdsRef.set(cachedBannerAds.map(a => ({ ...a, active: !!on })));
     }
 
     function moveBannerAdUp(index) {
@@ -17643,7 +17666,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     $('vtAdmCard').innerHTML=head+body;
     if(admTab==='home'&&window.mdAdsAdm)window.mdAdsAdm($('vtAdmCard'));
     var sa=$('admSlotAll'),se=$('admSlotEarn');
-    if(sa&&$('ownerAdsBanners')){sa.appendChild($('ownerAdsBanners'));try{updateBannerAdListUI()}catch(e){}}
+    if(sa&&$('ownerAdsBanners')){sa.appendChild($('ownerAdsBanners'));try{updateBannerAdListUI();window.adFillSettings&&adFillSettings()}catch(e){}}
     if(se&&$('adEarnOwner')){se.appendChild($('adEarnOwner'));try{window.adOwnerLoad&&adOwnerLoad()}catch(e){}}
     Object.keys(keep).forEach(function(i){if($(i))$(i).value=keep[i]});
   }
@@ -18569,7 +18592,7 @@ init();
     function safeKey(x) { return String(x || '').replace(/[.#$\[\]\/]/g, '_'); }
     function hash(x) { var h = 5381; x = String(x); for (var i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) >>> 0; return h.toString(36); }
     function num(v, d) { v = parseFloat(v); return isNaN(v) ? d : v; }
-    function cfg(set) { set = set || {}; return { cpc: num(set.cpc, DEF.cpc), view: num(set.view, DEF.view), share: num(set.share, DEF.share), minPayout: num(set.minPayout, DEF.minPayout), chatMsgs: num(set.chatMsgs, DEF.chatMsgs), chatSec: num(set.chatSec, DEF.chatSec), minAge: num(set.minAge, DEF.minAge) }; }
+    function cfg(set) { set = set || {}; return { cpc: num(set.cpc, DEF.cpc), view: num(set.view, DEF.view), share: num(set.share, DEF.share), minPayout: num(set.minPayout, DEF.minPayout), chatMsgs: num(set.chatMsgs, DEF.chatMsgs), chatSec: num(set.chatSec, DEF.chatSec), chatOn: set.chatOn !== false, minAge: num(set.minAge, DEF.minAge) }; }
     function getSet() {
         if (SET) return Promise.resolve(SET);
         if (!setP && db()) setP = db().ref('adSettings').once('value').then(function (x) { SET = x.val() || {}; return SET; }, function () { SET = {}; return SET; });
@@ -18653,7 +18676,7 @@ init();
 
     // ---------- sohbet akışında reklam ----------
     var CA = { ch: null, seen: null, n: 0, last: 0, placed: [], idx: 0 };
-    function adsList() { try { return (cachedBannerAds || []).filter(function (a) { return a && a.title && a.url && /^https?:\/\//i.test(a.url) && (!a.until || a.until > Date.now()); }); } catch (e) { return []; } }
+    function adsList() { try { return (cachedBannerAds || []).filter(function (a) { return a && a.title && a.url && a.active !== false && /^https?:\/\//i.test(a.url) && (!a.until || a.until > Date.now()); }); } catch (e) { return []; } }
     function buildChatAd(ad, idx) {
         var w = el('div'); w.className = 'chat-ad-item';
         if (ad.image) { var im = document.createElement('img'); im.alt = ''; im.loading = 'lazy'; im.src = ad.image; im.className = 'chat-ad-img'; im.onerror = function () { im.remove(); }; w.appendChild(im); }
@@ -18682,7 +18705,7 @@ init();
         if (!c || !name || name === 'help' || document.hidden || !CA.seen) return;
         getSet().then(function (set) {
             var k = cfg(set);
-            if (CA.n < k.chatMsgs || Date.now() - CA.last < k.chatSec * 1000) return;
+            if (!k.chatOn || CA.n < k.chatMsgs || Date.now() - CA.last < k.chatSec * 1000) return;
             var list = adsList(); if (!list.length) return;
             var items = c.querySelectorAll('.message-item[id^="msg_"]'); if (!items.length) return;
             var last = items[items.length - 1], atBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 80;
@@ -18704,7 +18727,7 @@ init();
         CA.placed = CA.placed.filter(function (p) { var a = document.getElementById('msg_' + p.after); if (!a) return false; a.after(p.el); return true; });
         chatAdTry();
     }
-    setInterval(chatAdTry, 15000);   // sohbet sessiz olsa da süre dolunca reklam çıksın
+    setInterval(chatAdTry, 5000);   // sohbet sessiz olsa da süre dolunca reklam çıksın
     (function hook() {
         if (typeof window.updateMessages !== 'function') return setTimeout(hook, 500);
         var o = window.updateMessages;
@@ -18883,13 +18906,15 @@ init();
     window.adSaveSettings = function () {
         if (typeof isOwner === 'undefined' || !isOwner) return;
         var v = function (id, max, d) { return Math.max(0, Math.min(max, num(document.getElementById(id).value, d))); };
-        var ns = { cpc: v('adSetCpc', 1000, DEF.cpc), view: v('adSetView', 1000, DEF.view), share: v('adSetShare', 100, DEF.share), minPayout: v('adSetMin', 1e6, DEF.minPayout), chatMsgs: Math.max(1, v('adSetChatMsgs', 500, DEF.chatMsgs)), chatSec: Math.max(15, v('adSetChatSec', 3600, DEF.chatSec)), minAge: v('adSetMinAge', 60, DEF.minAge) };
+        var ns = { cpc: v('adSetCpc', 1000, DEF.cpc), view: v('adSetView', 1000, DEF.view), share: v('adSetShare', 100, DEF.share), minPayout: v('adSetMin', 1e6, DEF.minPayout), chatMsgs: v('adSetChatMsgs', 500, DEF.chatMsgs), chatSec: Math.max(5, v('adSetChatSec', 3600, DEF.chatSec)), chatOn: document.getElementById('adSetChatOn').value !== '0', minAge: v('adSetMinAge', 60, DEF.minAge) };
         db().ref('adSettings').update(ns).then(function () { SET = Object.assign(SET || {}, ns); alert('Kaydedildi'); }, function () { alert('Kaydedilemedi (yetki?)'); });
     };
     function fillSettings(set) {
         var c = cfg(set), m = { adSetCpc: c.cpc, adSetView: c.view, adSetShare: c.share, adSetMin: c.minPayout, adSetChatMsgs: c.chatMsgs, adSetChatSec: c.chatSec, adSetMinAge: c.minAge };
         Object.keys(m).forEach(function (id) { var e = document.getElementById(id); if (e) e.value = m[id]; });
+        var co = document.getElementById('adSetChatOn'); if (co) co.value = c.chatOn ? '1' : '0';
     }
+    window.adFillSettings = function () { getSet().then(fillSettings); };
     window.adOwnerLoad = function () {
         if (typeof isOwner === 'undefined' || !isOwner) return;
         var mi = document.getElementById('adEarnMonth'), m = (mi.value || '').replace('-', '') || mk();
