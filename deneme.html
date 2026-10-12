@@ -5573,6 +5573,8 @@
                         
                         <div class="banner-ad-form" style="margin-bottom:12px" id="adEarnOwner">
                             <div class="role-section-title" style="margin:0 0 6px">💰 Kanal reklam kazançları</div>
+                            <label><span>Para kazanma</span><select id="adSetEarnMode"><option value="off">⏸ Kapalı (şimdilik — ikonda "ileride aktif edilecek" yazar)</option><option value="all">🟢 Tüm kanallarda aktif</option><option value="ch">🎯 Yalnızca seçtiğim kanallarda aktif</option></select></label>
+                            <div id="adEarnChList" style="display:none;max-height:180px;overflow:auto;border:1px solid var(--border-color);border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:13px"></div>
                             <label><span>Tıklama başına gelir (TL)</span><input type="number" id="adSetCpc" min="0" step="0.01" value="0.05"></label>
                             <label><span>Gösterim başına gelir (TL)</span><input type="number" id="adSetView" min="0" step="0.001" value="0.01"></label>
                             <label><span>Ödeme sınırı (TL)</span><input type="number" id="adSetMin" min="0" step="1" value="200"></label>
@@ -18611,9 +18613,18 @@ init();
         return rem === 1;
     }
 
+    // ---------- para kazanma aç/kapat: earnMode = off (varsayılan) | all | ch ----------
+    function earnActive(c, set) {
+        set = set || {}; var m = set.earnMode || 'off';
+        if (m === 'all') return true;
+        if (m === 'ch') return !!(set.earnCh && set.earnCh[c] === true);
+        return false;
+    }
+    window.adEarnActive = function (c) { return earnActive(c || ch(), SET); };
     // ---------- sayaçlar ----------
     function eligible(c, set) {
         try {
+            if (!earnActive(c, set)) return false;
             var u = currentUser; if (!u || !u.isRegistered || (typeof isOwner !== 'undefined' && isOwner)) return false;
             var chn = cachedChannels && cachedChannels[c]; if (chn && chn.owner === u.name) return false;
             var r = registeredUsers && registeredUsers[u.name], age = r && r.registeredAt ? Date.now() - r.registeredAt : Infinity;
@@ -18832,8 +18843,17 @@ init();
         });
         return o;
     }
+    var EARN_SOON = 'Para kazanma şu an kapalı — ileride aktif edilecek. Gelişmeleri Admin Kanalı\'ndan duyuracağız. Teşekkürler!';
     window.adOpenEarn = function () {
         var n = ch(); if (!n || !db()) return;
+        if (!SET) { getSet().then(window.adOpenEarn); return; }
+        if (!earnActive(n, SET)) {
+            var o = earnShell();
+            o.querySelector('.md-tabs2').style.display = 'none';
+            document.getElementById('adEarnCh').textContent = '#' + n;
+            document.getElementById('adEarnBox').innerHTML = '<div style="text-align:center;padding:18px 8px"><div style="font-size:42px">💰</div><p style="margin:10px 0 0;font-weight:600">Para kazanma ileride aktif edilecek</p><p class="md-p" style="margin-top:8px">Bu özellik şimdilik kapalı. Açıldığında kanalınızdaki reklam gösterim ve tıklamalarından kazanç elde edebileceksiniz. Gelişmeler için Admin Kanalı\'nı takip edin. Teşekkürler!</p></div>';
+            return;
+        }
         earnShell(); document.getElementById('adEarnCh').textContent = '#' + n;
         window.adLoadEarn(n);
     };
@@ -18901,6 +18921,14 @@ init();
             });
         }).catch(function () {});
     }
+    setInterval(function () {
+        var n = ch(), b = document.getElementById('mdEarnBtn'); if (!b || !n) return;
+        getSet().then(function (set) {
+            var on = earnActive(n, set);
+            b.title = on ? 'Kanal kazancı' : 'Para kazanma ileride aktif edilecek';
+            b.style.opacity = on ? '' : '.55';
+        });
+    }, 2000);
     var nt = 0, ni = setInterval(function () { notifyOwner(); if (notified || ++nt > 40) clearInterval(ni); }, 4000);
 
     // ---------- owner paneli ----------
@@ -18908,13 +18936,25 @@ init();
         if (typeof isOwner === 'undefined' || !isOwner) return;
         var v = function (id, max, d) { return Math.max(0, Math.min(max, num(document.getElementById(id).value, d))); };
         var ns = { cpc: v('adSetCpc', 1000, DEF.cpc), view: v('adSetView', 1000, DEF.view), share: v('adSetShare', 100, DEF.share), minPayout: v('adSetMin', 1e6, DEF.minPayout), chatMsgs: v('adSetChatMsgs', 500, DEF.chatMsgs), chatSec: Math.max(5, v('adSetChatSec', 3600, DEF.chatSec)), chatOn: document.getElementById('adSetChatOn').value !== '0', minAge: v('adSetMinAge', 60, DEF.minAge) };
+        var em = document.getElementById('adSetEarnMode'); if (em) { ns.earnMode = em.value; var ec = {}; document.querySelectorAll('.earn-ch-chk').forEach(function (x) { ec[x.dataset.ch] = x.checked; }); ns.earnCh = ec; }
         db().ref('adSettings').update(ns).then(function () { SET = Object.assign(SET || {}, ns); alert('Kaydedildi'); }, function () { alert('Kaydedilemedi (yetki?)'); });
     };
     function fillSettings(set) {
         var c = cfg(set), m = { adSetCpc: c.cpc, adSetView: c.view, adSetShare: c.share, adSetMin: c.minPayout, adSetChatMsgs: c.chatMsgs, adSetChatSec: c.chatSec, adSetMinAge: c.minAge };
         Object.keys(m).forEach(function (id) { var e = document.getElementById(id); if (e) e.value = m[id]; });
         var co = document.getElementById('adSetChatOn'); if (co) co.value = c.chatOn ? '1' : '0';
+        var em = document.getElementById('adSetEarnMode'); if (em) { em.value = (set && set.earnMode) || 'off'; renderEarnCh(set); }
     }
+    function renderEarnCh(set) {
+        var box = document.getElementById('adEarnChList'), em = document.getElementById('adSetEarnMode'); if (!box) return;
+        box.style.display = em && em.value === 'ch' ? '' : 'none';
+        var chs = {}; try { chs = cachedChannels || {}; } catch (e) {}
+        var on = (set && set.earnCh) || {};
+        box.innerHTML = Object.keys(chs).filter(function (n) { return n !== 'help' && !chs[n].systemChannel; }).sort().map(function (n) {
+            return '<label style="display:flex;align-items:center;gap:8px;margin:2px 0"><input type="checkbox" class="earn-ch-chk" data-ch="' + n.replace(/"/g, '&quot;') + '"' + (on[n] === true ? ' checked' : '') + '> #' + n.replace(/</g, '&lt;') + '</label>';
+        }).join('') || '<div class="md-p">Kanal bulunamadı.</div>';
+    }
+    document.addEventListener('change', function (e) { if (e.target && e.target.id === 'adSetEarnMode') renderEarnCh(SET); });
     window.adFillSettings = function () { getSet().then(fillSettings); };
     window.adOwnerLoad = function () {
         if (typeof isOwner === 'undefined' || !isOwner) return;
