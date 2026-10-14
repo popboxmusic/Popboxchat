@@ -19735,5 +19735,49 @@ setInterval(function(){try{render()}catch(e){}},1500);
 })();
 
 </script>
+<script id="pmStick">
+(function(){
+'use strict';
+/* Mobil klavye / yeni mesaj / geç yüklenen medya sonrası son mesajı görünür tut (özel sohbet + kanal sohbeti) */
+function sticky(boxId,inputId,mineClass,isOpen){
+  var stick=true;
+  function box(){return document.getElementById(boxId)}
+  function toBottom(){var b=box();if(b&&isOpen())b.scrollTop=b.scrollHeight}
+  function settle(){toBottom();requestAnimationFrame(toBottom);[60,160,320,600,900].forEach(function(t){setTimeout(function(){if(stick)toBottom()},t)})}
+  function bind(){
+    var b=box();if(!b||b.dataset.stick)return;b.dataset.stick='1';
+    b.addEventListener('scroll',function(){stick=(b.scrollHeight-b.scrollTop-b.clientHeight)<90},{passive:true});
+    new MutationObserver(function(muts){
+      var mine=muts.some(function(m){return [].some.call(m.addedNodes,function(n){return n.nodeType===1&&n.classList.contains(mineClass)})});
+      if(mine)stick=true;
+      if(stick)settle();
+    }).observe(b,{childList:true});
+    if(window.ResizeObserver)new ResizeObserver(function(){if(stick&&isOpen())settle()}).observe(b);
+    ['load','loadedmetadata','loadeddata'].forEach(function(ev){b.addEventListener(ev,function(){if(stick)settle()},true)});
+    var inp=document.getElementById(inputId);
+    if(inp){
+      inp.addEventListener('focus',function(){stick=true;settle()});
+      inp.addEventListener('input',function(){if(stick)toBottom()});
+      inp.addEventListener('blur',function(){setTimeout(function(){if(isOpen()&&stick)settle();if(window.innerWidth<=768)window.scrollTo(0,0)},250)});
+    }
+  }
+  return {bind:bind,settle:settle,reset:function(){stick=true},isStick:function(){return stick},isOpen:isOpen};
+}
+var pm=sticky('privateMessages','private-input','pm-out',function(){var m=document.getElementById('privateModal');return !!m&&m.style.display==='flex'});
+var ch=sticky('messages','message-input','mine',function(){var b=document.getElementById('messages');return !!b&&b.clientHeight>0});
+function vvFix(){
+  if(window.innerWidth<=768&&(pm.isOpen()||document.body.classList.contains('mobile-chat-keyboard-open'))){window.scrollTo(0,0);if(document.scrollingElement)document.scrollingElement.scrollTop=0}
+  if(pm.isOpen()&&pm.isStick())pm.settle();
+  if(ch.isStick()&&document.activeElement&&document.activeElement.id==='message-input')ch.settle();
+}
+if(window.visualViewport){window.visualViewport.addEventListener('resize',vvFix,{passive:true});window.visualViewport.addEventListener('scroll',vvFix,{passive:true})}
+window.addEventListener('resize',function(){if(pm.isOpen()&&pm.isStick())pm.settle()},{passive:true});
+var _o=window.openPrivateChat;
+if(typeof _o==='function')window.openPrivateChat=async function(){pm.reset();var r=await _o.apply(this,arguments);pm.bind();pm.reset();pm.settle();return r};
+var _sw=window.switchChannel;
+if(typeof _sw==='function')window.switchChannel=function(){ch.reset();var r=_sw.apply(this,arguments);setTimeout(function(){ch.reset();ch.settle()},300);return r};
+pm.bind();ch.bind();setInterval(function(){pm.bind();ch.bind()},1500);
+})();
+</script>
 </body>
 </html>
