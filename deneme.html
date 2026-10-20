@@ -18447,21 +18447,38 @@ function paintCover(){
   $('mdCoverFile').onchange=function(){var f=this.files&&this.files[0];if(!f)return;shrink(f,480,270,.72,function(d){ST.cover=d;paintCover()})};
 }
 /* ---------- YouTube kanal bağlantısı (link ile, giriş gerektirmez) ---------- */
-var YT=window.CETCETY_YT=Object.assign({proxy:'',apiKey:''},window.CETCETY_YT||{});
-var ytConn={},ytBusy=false,ytAutoDone={};
+var YT=window.CETCETY_YT=Object.assign({proxy:'https://ytproxy.kyazar07.workers.dev/?url=',apiKey:''},window.CETCETY_YT||{});
+var ytConn={},ytBusy=false,ytAutoDone={},ytPxLoaded=false;
+try{var _lp=localStorage.getItem('cetcetyYtProxy');if(_lp&&!YT.proxy)YT.proxy=_lp}catch(e){}
+function ytLoadProxy(){
+  if(ytPxLoaded||!db())return;ytPxLoaded=true;
+  try{db().ref('siteSettings/ytProxy').once('value').then(function(s){var v=s.val();if(v&&typeof v==='string')YT.proxy=v},function(){})}catch(e){}
+}
+function ytSaveProxy(v){
+  v=(v||'').trim();
+  if(v&&!/^https:\/\//.test(v))return false;
+  YT.proxy=v;try{localStorage.setItem('cetcetyYtProxy',v)}catch(e){}
+  try{db().ref('siteSettings/ytProxy')[v?'set':'remove'](v||undefined)}catch(e){}
+  return true;
+}
 function ytRef(n){return db().ref('channelYt/'+n)}
 function plRef(n){return db().ref(n==='genel'?'playlist':'channelPlaylists/'+n)}
 function ytFetchText(url){
-  var px=[];
-  if(YT.proxy)px.push(YT.proxy+encodeURIComponent(url));
-  px.push('https://api.allorigins.win/raw?url='+encodeURIComponent(url),'https://corsproxy.io/?'+encodeURIComponent(url),'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url));
-  var i=0;
-  function next(){
-    if(i>=px.length)return Promise.reject(new Error('YouTube’a ulaşılamadı, biraz sonra tekrar deneyin.'));
-    var u=px[i++],ac=window.AbortController?new AbortController():null,tm=setTimeout(function(){ac&&ac.abort()},12000);
-    return fetch(u,ac?{signal:ac.signal}:{}).then(function(r){clearTimeout(tm);if(!r.ok)throw 0;return r.text()}).then(function(t){if(!t||t.length<50)throw 0;return t}).catch(function(){clearTimeout(tm);return next()});
-  }
-  return next();
+  var e=encodeURIComponent(url),px=[];
+  if(YT.proxy)px.push(YT.proxy+e);
+  px.push('https://api.allorigins.win/raw?url='+e,'https://corsproxy.io/?'+e,'https://api.codetabs.com/v1/proxy?quest='+e,'https://corsproxy.org/?'+e,'https://thingproxy.freeboard.io/fetch/'+url,'https://yacdn.org/proxy/'+url,'https://cors.eu.org/'+url,'https://r.jina.ai/'+url);
+  /* hepsi aynı anda denenir, ilk geçerli yanıt kullanılır */
+  return new Promise(function(res,rej){
+    var left=px.length,ok=false;
+    px.forEach(function(u){
+      var ac=window.AbortController?new AbortController():null,tm=setTimeout(function(){ac&&ac.abort()},10000);
+      fetch(u,ac?{signal:ac.signal}:{}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(t){
+        clearTimeout(tm);if(ok)return;
+        if(!t||t.length<50||/<title>\s*(Before you continue|403|Access denied)/i.test(t))throw 0;
+        ok=true;res(t);
+      }).catch(function(){clearTimeout(tm);if(--left===0&&!ok)rej(new Error('YouTube’a ulaşılamadı: ücretsiz proxy servisleri yanıt vermedi. Biraz sonra tekrar deneyin ya da yönetici kendi proxy’sini tanımlasın (CETCETY_YT.proxy).'))});
+    });
+  });
 }
 function ytApiGet(path,params){
   var q=Object.keys(params).map(function(k){return k+'='+encodeURIComponent(params[k])}).join('&')+'&key='+encodeURIComponent(YT.apiKey);
@@ -18551,6 +18568,7 @@ function ytRender(n,loading){
   }else{
     h+='<p class="md-p">İstediğiniz YouTube kanalının adını ve linkini yazın; kanaldaki videolar bu kanalın oynatma listesine otomatik yüklenir.</p>';
     h+='<input type="text" id="mdYtName" maxlength="60" placeholder="Kanal adı"><input type="text" id="mdYtLink" placeholder="Kanal linki (youtube.com/@ad veya /channel/UC…)" style="margin-top:8px">';
+    if(isOwn())h+='<div class="md-p" style="margin:10px 0 4px">Yönetici: proxy adresi (Cloudflare Worker)</div><input type="text" id="mdYtPx" placeholder="https://adiniz.workers.dev/?url=" value="'+esc(YT.proxy||'')+'"><button class="md-b" data-a="ytpx" style="margin-top:6px">Proxy’yi kaydet</button>';
     h+='<div class="md-st" id="mdYtSt"></div><div class="md-act"><button class="md-b" data-c="mdYt">Vazgeç</button><button class="md-b pri" data-a="ytconn"><i class="fab fa-youtube"></i> Bağla ve videoları çek</button></div>';
   }
   modal('mdYt',h);
@@ -18561,6 +18579,7 @@ window.mdYoutube=function(){
   ytRef(n).once('value').then(function(s){ytConn[n]=s.val();ytRender(n)},function(){ytRender(n)});
 };
 function ytAct(A,n){
+  if(A==='ytpx'){var pv=($('mdYtPx').value||'').trim();if(pv&&pv.indexOf('?')<0)pv+='?url=';var okp=ytSaveProxy(pv);return ytMsg(okp?'✅ Proxy kaydedildi.':'❌ Adres https:// ile başlamalı.',!okp);}
   if(ytBusy)return;
   function done(){ytBusy=false}
   function fail(m){done();ytMsg('❌ '+m,true)}
@@ -18642,7 +18661,7 @@ document.addEventListener('click',function(e){
   else if(A==='coversave'&&ST.cover){db().ref('channelThumbs/'+n).set(ST.cover).then(function(){ST.cover=null;closeM('mdCover');toast('Kapak kaydedildi')},function(){toast('Kapak kaydedilemedi (yetki?)')})}
   else if(A==='coverdel'){db().ref('channelThumbs/'+n).remove().then(function(){closeM('mdCover');toast('Kapak kaldırıldı — videodan otomatik alınır')})}
   else if(A==='reg'){closeM('mdAvLock');window.mdRegister()}
-  else if(A==='ytconn'||A==='ytsync'||A==='ytdisc')ytAct(A,n);
+  else if(A==='ytconn'||A==='ytsync'||A==='ytdisc'||A==='ytpx')ytAct(A,n);
   else if(A==='stageclose'){vodSel=null;clearStage()}
 });
 /* ---------- mobil: tek '⋯' menüsü ---------- */
@@ -18903,7 +18922,7 @@ document.addEventListener('click',function(e){if(window.__mdDrag&&e.target.close
 /* ---------- döngü + veri ---------- */
 function tick(){
   var u=me();if(!u)return;
-  var sb=$('mdYtBtn');if(sb)sb.style.display=canStudio(cur())?'':'none';ytAuto(cur());
+  var sb=$('mdYtBtn');if(sb)sb.style.display=canStudio(cur())?'':'none';ytLoadProxy();ytAuto(cur());
   var eb=$('mdEarnBtn'),grp0=$('vtChBtns');if(grp0&&!eb){eb=document.createElement('button');eb.type='button';eb.id='mdEarnBtn';eb.className='vt-chb';eb.title='Kanal kazancı';eb.innerHTML='<i class="fas fa-money-bill-wave"></i>';eb.onclick=function(){window.adOpenEarn&&window.adOpenEarn()};grp0.insertBefore(eb,$('mdYtBtn')||null)}
   if(eb)eb.style.display=canStudio(cur())?'':'none';
   var grp=$('vtChBtns');if(grp&&!$('mdMoreBtn')){var mb=document.createElement('button');mb.type='button';mb.id='mdMoreBtn';mb.title='Kanal ayarları';mb.innerHTML='<i class="fas fa-ellipsis"></i>';mb.onclick=function(e){e.stopPropagation();morePop(mb)};grp.appendChild(mb)}
