@@ -224,6 +224,7 @@ header.top p{margin:2px 0 0;color:var(--muted);font-size:14px}
             <input type="radio" name="q" id="q5" value="50000000"><label for="q5">Ultra (50 Mbps)</label>
             <input type="radio" name="q" id="q6" value="100000000"><label for="q6">8K (100 Mbps)</label>
           </div></div>
+        <div class="field" id="preciseBox"><label class="check"><input type="checkbox" id="precise" checked> Atlamasız hassas işleme (önerilir)</label><div class="hint" style="margin-top:4px;font-size:12px;color:var(--muted)">Her kare tek tek işlenir; 4K/8K'da bile kare atlamaz. Gerçek zamandan yavaş çalışır, işlem bitene kadar sekmeyi açık tut.</div></div>
         <div class="field" id="directBox" hidden><label class="check"><input type="checkbox" id="direct" checked> Doğrudan diske kaydet (uzun videolar için)</label></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn pri" id="makeBtn" type="button" disabled>Videoyu oluştur</button>
@@ -662,7 +663,7 @@ function loop(){
     if(T>=tot){T=tot;if(recording){finishRec();}else{pause()}}
     syncMedia(false);
   }
-  if(playing||dirty){drawFrame(T);dirty=false;updateUI();if(recording)updateExport()}
+  if(!offline&&(playing||dirty)){drawFrame(T);dirty=false;updateUI();if(recording)updateExport()}
 }
 
 /* ---------- dışa aktarma ---------- */
@@ -676,6 +677,7 @@ function pickMime(){
 function waitReady(v){return new Promise(function(res){var n=0;(function chk(){if(v.readyState>=2&&!v.seeking||++n>60)return res();setTimeout(chk,50)})()})}
 async function makeVideoOut(){
   if(recording||!clips.length)return;
+  if($('precise')&&$('precise').checked&&offlineSupported())return offlineExport();
   if(!cv.captureStream||!window.MediaRecorder){exStatus('Bu tarayıcı video kaydını desteklemiyor. Chrome, Edge veya Safari kullan.',true);return}
   pause();readSettings();
   exMime=pickMime();exExt=/mp4/.test(exMime)?'mp4':'webm';
@@ -727,6 +729,316 @@ async function onRecStop(){
 }
 function resetExportUI(){$('makeBtn').disabled=!clips.length;$('stopBtn').hidden=true;$('prog').style.display='none';$('progI').style.width='0'}
 
+/* ======================================================================
+   ATLAMASIZ KARE-KARE DIŞA AKTARMA (WebCodecs + kendi MP4 yazıcısı)
+   Gerçek zamandan bağımsız: her kare tek tek çizilir ve kodlanır,
+   bu yüzden 4K/8K'da bile kare atlamaz.
+   ====================================================================== */
+var offline=false;
+var Mp4=(function(){
+  function cat(list){var n=0,i;for(i=0;i<list.length;i++)n+=list[i].length;var o=new Uint8Array(n),p=0;for(i=0;i<list.length;i++){o.set(list[i],p);p+=list[i].length}return o}
+  function U(a){return a instanceof Uint8Array?a:Uint8Array.from(a)}
+  function u32(n){return [(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255]}
+  function u16(n){return [(n>>8)&255,n&255]}
+  function u64(n){return u32(Math.floor(n/4294967296)).concat(u32(n>>>0))}
+  function tag(s){return [s.charCodeAt(0),s.charCodeAt(1),s.charCodeAt(2),s.charCodeAt(3)]}
+  function box(type){var parts=[],i;for(i=1;i<arguments.length;i++)parts.push(U(arguments[i]));var body=cat(parts);return cat([U(u32(body.length+8).concat(tag(type))),body])}
+  function fbox(type,ver,flags){var parts=[U([ver,(flags>>16)&255,(flags>>8)&255,flags&255])],i;for(i=3;i<arguments.length;i++)parts.push(U(arguments[i]));return box.apply(null,[type].concat(parts))}
+  function table(vals,size){var o=new Uint8Array(vals.length*size),dv=new DataView(o.buffer),i;for(i=0;i<vals.length;i++){if(size===4)dv.setUint32(i*4,vals[i]>>>0);else{dv.setUint32(i*8,Math.floor(vals[i]/4294967296));dv.setUint32(i*8+4,vals[i]>>>0)}}return o}
+  var MATRIX=[].concat(u32(0x10000),u32(0),u32(0),u32(0),u32(0x10000),u32(0),u32(0),u32(0),u32(0x40000000));
+
+  function stsdVideo(t){
+    var entry,cfg;
+    if(t.codec==='avc'){cfg=box('avcC',t.desc);entry='avc1'}
+    else if(t.codec==='av1'){cfg=box('av1C',t.desc);entry='av01'}
+    else{ /* vp9: vpcC kodek dizgisinden */
+      var m=/^vp09\.(\d+)\.(\d+)\.(\d+)/.exec(t.codecStr||'')||[0,'00','41','08'];
+      cfg=fbox('vpcC',1,0,[+m[1],+m[2],((+m[3])<<4)|(1<<1)|0,1,1,1],u16(0));entry='vp09';
+    }
+    var name=new Uint8Array(32);
+    var body=cat([U([0,0,0,0,0,0,0,1]),U(u16(0).concat(u16(0),u32(0),u32(0),u32(0))),U(u16(t.w).concat(u16(t.h))),U(u32(0x480000).concat(u32(0x480000),u32(0),u16(1))),name,U(u16(0x18).concat([0xFF,0xFF])),cfg]);
+    return fbox('stsd',0,0,u32(1),box(entry,body));
+  }
+  function descr(tagN,payload){var p=U(payload);return cat([U([tagN,0x80,0x80,0x80,p.length]),p])}
+  function stsdAudio(t){
+    var cfg,entry;
+    if(t.codec==='aac'){
+      var asc=t.desc?new Uint8Array(t.desc):U([0x11,0x90]);
+      var dec=descr(4,cat([U([0x40,0x15,0,0,0]),U(u32(0)),U(u32(t.bitrate||192000)),descr(5,asc)]));
+      var es=descr(3,cat([U(u16(1)),U([0]),dec,descr(6,[2])]));
+      cfg=fbox('esds',0,0,es);entry='mp4a';
+    }else{
+      var pre=312;if(t.desc){var d=new Uint8Array(t.desc);if(d.length>=12)pre=d[10]|(d[11]<<8)}
+      cfg=box('dOps',U([0,t.ch]),U(u16(pre)),U(u32(t.sr)),U(u16(0)),U([0]));entry='Opus';
+    }
+    var body=cat([U([0,0,0,0,0,0,0,1]),U(u32(0).concat(u32(0))),U(u16(t.ch).concat(u16(16),u16(0),u16(0))),U(u32(t.sr*65536>>>0)),cfg]);
+    return fbox('stsd',0,0,u32(1),box(entry,body));
+  }
+  function trak(t,id,offs,big,movieTs){
+    var samples=t.s,n=samples.length,i;
+    var durTicks=0;for(i=0;i<n;i++)durTicks+=samples[i].dur;
+    var durMovie=Math.round(durTicks/t.ts*movieTs);
+    var tkhd=fbox('tkhd',0,3,u32(0),u32(0),u32(id),u32(0),u32(durMovie),u32(0),u32(0),u16(0),u16(0),u16(t.video?0:0x100),u16(0),MATRIX,u32(t.video?t.w*65536:0),u32(t.video?t.h*65536:0));
+    var mdhd=fbox('mdhd',0,0,u32(0),u32(0),u32(t.ts),u32(durTicks),u16(0x55C4),u16(0));
+    var hdlr=fbox('hdlr',0,0,u32(0),tag(t.video?'vide':'soun'),u32(0),u32(0),u32(0),U(Array.from((t.video?'Video':'Audio')+'\0').map(function(c){return c.charCodeAt(0)})));
+    var dinf=box('dinf',fbox('dref',0,0,u32(1),fbox('url ',0,1)));
+    var runs=[],last=-1,cnt=0;
+    for(i=0;i<n;i++){if(samples[i].dur===last)cnt++;else{if(cnt)runs.push(cnt,last);last=samples[i].dur;cnt=1}}
+    if(cnt)runs.push(cnt,last);
+    var stts=fbox('stts',0,0,u32(runs.length/2),table(runs,4));
+    var sizes=new Array(n);for(i=0;i<n;i++)sizes[i]=samples[i].size;
+    var stsz=fbox('stsz',0,0,u32(0),u32(n),table(sizes,4));
+    var stsc=fbox('stsc',0,0,u32(1),u32(1),u32(1),u32(1));
+    var stco=big?fbox('co64',0,0,u32(n),table(offs,8)):fbox('stco',0,0,u32(n),table(offs,4));
+    var parts=[t.video?stsdVideo(t):stsdAudio(t),stts,stsc,stsz,stco];
+    if(t.video){var ks=[];for(i=0;i<n;i++)if(samples[i].key)ks.push(i+1);if(ks.length&&ks.length<n)parts.splice(2,0,fbox('stss',0,0,u32(ks.length),table(ks,4)))}
+    var stbl=box.apply(null,['stbl'].concat(parts));
+    var minf=box('minf',t.video?fbox('vmhd',0,1,u16(0),u16(0),u16(0),u16(0)):fbox('smhd',0,0,u16(0),u16(0)),dinf,stbl);
+    return {box:box('trak',tkhd,box('mdia',mdhd,hdlr,minf)),durMovie:durMovie};
+  }
+
+  /* sink: {write(u8)->Promise|void, patch(pos,u8), size()} ; memory sink Blob üretir */
+  function Muxer(o){
+    this.o=o;this.v={s:[],ts:90000,video:true,w:o.width,h:o.height,codec:o.vcodec,codecStr:o.vcodecStr,desc:null};
+    this.a=o.audio?{s:[],ts:o.audio.sr,video:false,codec:o.audio.codec,ch:o.audio.ch,sr:o.audio.sr,bitrate:o.audio.bitrate,desc:o.audio.desc||null}:null;
+    this.vOff=[];this.aOff=[];this.pend=[];this.rel=0;this.chain=Promise.resolve();this.parts=[];this.vTicks=[];this.lastV=0;
+    this.disk=o.disk||null;
+    var ftyp=box('ftyp',tag('isom'),u32(512),tag('isom'),tag('iso2'),tag('avc1'),tag('mp41'));
+    this.ftyp=ftyp;
+    if(this.disk){this.chain=this.chain.then(function(){return o.disk.write(ftyp)});this.hdrPos=ftyp.length;
+      var h=cat([U(u32(1).concat(tag('mdat'),u64(0)))]);this.chain=this.chain.then(function(){return o.disk.write(h)});this.base=ftyp.length+16}
+  }
+  Muxer.prototype._put=function(u8){
+    if(this.disk){var d=this.disk;this.chain=this.chain.then(function(){return d.write(u8)})}else this.parts.push(u8);
+    var at=this.rel;this.rel+=u8.length;return at;
+  };
+  Muxer.prototype.setVideoDesc=function(d){if(d&&!this.v.desc)this.v.desc=new Uint8Array(d.buffer?d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength):d)};
+  Muxer.prototype.setAudioDesc=function(d){if(this.a&&d&&!this.a.desc)this.a.desc=new Uint8Array(d.buffer?d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength):d)};
+  Muxer.prototype.addAudio=function(u8,ptsUs,durUs){this.pend.push({u8:u8,pts:ptsUs,dur:durUs})};
+  Muxer.prototype._flushAudio=function(upto){
+    while(this.pend.length&&this.pend[0].pts<=upto){
+      var p=this.pend.shift(),at=this._put(p.u8);this.aOff.push(at);
+      this.a.s.push({size:p.u8.length,dur:Math.max(1,Math.round(p.dur*this.a.sr/1e6))});
+    }
+  };
+  Muxer.prototype.addVideo=function(u8,ptsUs,key){
+    this._flushAudio(ptsUs);
+    var at=this._put(u8);this.vOff.push(at);
+    this.v.s.push({size:u8.length,dur:0,key:key});this.vTicks.push(Math.round(ptsUs*90000/1e6));this.lastV=ptsUs;
+  };
+  Muxer.prototype.finalize=function(endUs){
+    var self=this,v=this.v,n=v.s.length,i;
+    this._flushAudio(this.lastV+1e6/30);
+    for(i=0;i<n;i++){v.s[i].dur=i<n-1?Math.max(1,this.vTicks[i+1]-this.vTicks[i]):(n>1?v.s[n-1-1].dur:3000)}
+    var movieTs=1000,total=this.rel;
+    var big=(this.disk?this.base:0)+total>4000000000||total>3500000000;
+    function build(baseAbs){
+      var vo=self.vOff.map(function(x){return x+baseAbs}),ao=self.aOff.map(function(x){return x+baseAbs});
+      var tv=trak(v,1,vo,big,movieTs),ta=self.a&&self.a.s.length?trak(self.a,2,ao,big,movieTs):null;
+      var dur=Math.max(tv.durMovie,ta?ta.durMovie:0);
+      var mvhd=fbox('mvhd',0,0,u32(0),u32(0),u32(movieTs),u32(dur),u32(0x10000),u16(0x100),u16(0),u32(0),u32(0),MATRIX,new Uint8Array(24),u32(ta?3:2));
+      return box.apply(null,['moov',mvhd,tv.box].concat(ta?[ta.box]:[]));
+    }
+    if(this.disk){
+      var d=this.disk,moov=build(this.base),hdr=cat([U(u32(1).concat(tag('mdat'),u64(total+16)))]);
+      this.chain=this.chain.then(function(){return d.patch(self.hdrPos,hdr)}).then(function(){return d.write(moov)}).then(function(){return d.close()});
+      return this.chain.then(function(){return null});
+    }
+    var m1=build(0),base=this.ftyp.length+m1.length+16,moov2=build(base);
+    var hdr2=cat([U(u32(1).concat(tag('mdat'),u64(total+16)))]);
+    return Promise.resolve(new Blob([this.ftyp,moov2,hdr2].concat(this.parts),{type:'video/mp4'}));
+  };
+  return {Muxer:Muxer};
+})();
+
+function offlineSupported(){
+  return !!(window.VideoEncoder&&window.VideoFrame&&window.OfflineAudioContext&&window.HTMLVideoElement&&HTMLVideoElement.prototype.requestVideoFrameCallback);
+}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function seekAwait(v,t){return new Promise(function(res){
+  var done=false;function fin(){if(done)return;done=true;v.removeEventListener('seeked',fin);res()}
+  v.addEventListener('seeked',fin);setTimeout(fin,5000);
+  try{v.currentTime=clamp(t,0,Math.max(0,(v.duration||1e9)-0.001))}catch(e){fin()}
+})}
+var TIMEOUT={t:1};
+function nextFrame(v,ovv,ovPlay){return new Promise(function(res){
+  var done=false;
+  function fin(md){if(done)return;done=true;try{v.pause();if(ovv)ovv.pause()}catch(e){}v.removeEventListener('ended',onEnd);res(md)}
+  function onEnd(){fin(null)}
+  v.addEventListener('ended',onEnd);
+  v.requestVideoFrameCallback(function(now,md){fin(md)});
+  setTimeout(function(){fin(TIMEOUT)},10000);
+  var p=v.play();if(p&&p.catch)p.catch(function(){});
+  if(ovv&&ovPlay){var q=ovv.play();if(q&&q.catch)q.catch(function(){})}
+})}
+async function pickVCodec(w,h,br,fps){
+  var px=w*h,list=[['avc1.640034','avc'],['avc1.640033','avc'],['avc1.640036','avc'],['vp09.00.62.08','vp9'],['av01.0.16M.08','av1'],['vp09.00.51.08','vp9'],['vp09.00.41.08','vp9']];
+  if(px<=2.2e6)list.unshift(['avc1.640028','avc']);
+  for(var i=0;i<list.length;i++){
+    var cfg={codec:list[i][0],width:w,height:h,bitrate:br,framerate:fps,latencyMode:'quality'};
+    if(list[i][1]==='avc')cfg.avc={format:'avc'};
+    try{var r=await VideoEncoder.isConfigSupported(cfg);if(r&&r.supported)return {cfg:cfg,mux:list[i][1],str:list[i][0]}}catch(e){}
+  }
+  return null;
+}
+async function pickACodec(){
+  if(!window.AudioEncoder||!window.AudioData)return null;
+  var list=[['mp4a.40.2','aac'],['opus','opus']];
+  for(var i=0;i<list.length;i++){
+    var cfg={codec:list[i][0],sampleRate:48000,numberOfChannels:2,bitrate:192000};
+    try{var r=await AudioEncoder.isConfigSupported(cfg);if(r&&r.supported)return {cfg:cfg,mux:list[i][1]}}catch(e){}
+  }
+  return null;
+}
+/* tüm sesleri (klipler + müzik + üst video) çevrimdışı karıştırır */
+async function mixAudio(tot){
+  var sr=48000,n=Math.max(1,Math.ceil(tot*sr)),oc=new OfflineAudioContext(2,n,sr),any=false;
+  async function dec(url){try{var ab=await (await fetch(url)).arrayBuffer();return await oc.decodeAudioData(ab)}catch(e){return null}}
+  var acc=0,i;
+  for(i=0;i<clips.length;i++){
+    var c=clips[i],len=clipLen(c);
+    if(!c.mute&&S.origVol>0){
+      var b=await dec(c.url);
+      if(b){var s=oc.createBufferSource();s.buffer=b;s.playbackRate.value=c.speed;var g=oc.createGain();g.gain.value=S.origVol;s.connect(g);g.connect(oc.destination);try{s.start(acc,c.in,Math.max(0.05,c.out-c.in));any=true}catch(e){}}
+    }
+    acc+=len;
+  }
+  if(music&&music.buffer&&S.musicVol>0){
+    var ms=oc.createBufferSource();ms.buffer=music.buffer;ms.loop=true;var mg=oc.createGain();mg.gain.value=S.musicVol;ms.connect(mg);mg.connect(oc.destination);ms.start(0);ms.stop(tot);any=true;
+  }
+  if(ov&&S.ov.vol>0){
+    var ob=await dec(ov.url);
+    if(ob){var os=oc.createBufferSource();os.buffer=ob;os.loop=!!S.ov.loop;var og=oc.createGain();og.gain.value=S.ov.vol;os.connect(og);og.connect(oc.destination);try{os.start(S.ov.start);os.stop(tot);any=true}catch(e){}}
+  }
+  if(!any)return null;
+  return await oc.startRendering();
+}
+async function offlineExport(){
+  var tot=total(),FPS=30,t0=performance.now();
+  var diskSink=null,wr=null;
+  if($('direct').checked&&window.showSaveFilePicker){
+    try{
+      var fh=await window.showSaveFilePicker({suggestedName:'video.mp4',types:[{description:'MP4 video',accept:{'video/mp4':['.mp4']}}]});
+      wr=await fh.createWritable();
+      diskSink={write:function(u8){return wr.write(u8)},patch:function(pos,u8){return wr.write({type:'write',position:pos,data:u8})},close:function(){return wr.close()}};
+      /* patch sonrası imleç sona dönmeli */
+      var endPos=0;
+      diskSink.write=function(u8){endPos+=u8.length;return wr.write(u8)};
+      diskSink.patch=function(pos,u8){return wr.write({type:'write',position:pos,data:u8}).then(function(){return wr.seek(endPos)})};
+    }catch(e){if(e&&e.name==='AbortError')return;wr=null;diskSink=null}
+  }
+  pause();readSettings();
+  recording=true;offline=true;stopFlag=false;
+  $('makeBtn').disabled=true;$('stopBtn').hidden=false;$('prog').style.display='block';$('result').hidden=true;$('result').innerHTML='';
+  var ended=false,verr=null,venc=null,mux=null,savedMute=[];
+  function ui(p,msg){$('progI').style.width=Math.round(p*100)+'%';exStatus(msg+(document.hidden?' · SEKME ARKA PLANDA, öne getir!':''),document.hidden)}
+  try{
+    exStatus('Kodlayıcı hazırlanıyor…');
+    var vsel=await pickVCodec(S.w,S.h,S.q,FPS);
+    if(!vsel)throw new Error('Bu tarayıcı '+S.w+'×'+S.h+' çözünürlükte video kodlayamıyor. Daha düşük boyut seç veya "Atlamasız işleme" kutusunu kapat.');
+    var asel=await pickACodec();
+    /* --- ses (önce hazırlanır, video yazılırken araya serpiştirilir) --- */
+    var achunks=[],adesc=null;
+    if(asel){
+      ui(0,'Ses hazırlanıyor…');
+      var mixed=null;try{mixed=await mixAudio(tot)}catch(e){mixed=null}
+      if(mixed){
+        var aerr=null,aenc=new AudioEncoder({output:function(ch,meta){var u=new Uint8Array(ch.byteLength);ch.copyTo(u);achunks.push({u:u,ts:ch.timestamp,d:ch.duration||Math.round(1024/48000*1e6)});if(meta&&meta.decoderConfig&&meta.decoderConfig.description&&!adesc)adesc=meta.decoderConfig.description},error:function(e){aerr=e}});
+        aenc.configure(asel.cfg);
+        var L=mixed.getChannelData(0),R=mixed.getChannelData(1),step=2048,len=mixed.length;
+        for(var ai=0;ai<len&&!aerr;ai+=step){
+          var nf=Math.min(step,len-ai),pl=new Float32Array(nf*2);pl.set(L.subarray(ai,ai+nf),0);pl.set(R.subarray(ai,ai+nf),nf);
+          aenc.encode(new AudioData({format:'f32-planar',sampleRate:48000,numberOfFrames:nf,numberOfChannels:2,timestamp:Math.round(ai/48000*1e6),data:pl}));
+          if(aenc.encodeQueueSize>16)await sleep(1);
+        }
+        await aenc.flush();aenc.close();
+        if(aerr||!achunks.length){achunks=[];adesc=null}
+      }
+    }
+    var useAudio=achunks.length>0;
+    mux=new Mp4.Muxer({width:S.w,height:S.h,vcodec:vsel.mux,vcodecStr:vsel.str,disk:diskSink,audio:useAudio?{codec:asel.mux,ch:2,sr:48000,bitrate:192000,desc:adesc}:null});
+    if(useAudio)achunks.forEach(function(a){mux.addAudio(a.u,a.ts,a.d)});
+    /* --- video kodlayıcı --- */
+    venc=new VideoEncoder({output:function(ch,meta){
+      var u=new Uint8Array(ch.byteLength);ch.copyTo(u);
+      if(meta&&meta.decoderConfig&&meta.decoderConfig.description)mux.setVideoDesc(meta.decoderConfig.description);
+      mux.addVideo(u,ch.timestamp,ch.type==='key');
+    },error:function(e){verr=e}});
+    venc.configure(vsel.cfg);
+    clips.forEach(function(c){savedMute.push([c.v,c.v.muted]);c.v.muted=true;try{c.v.pause()}catch(e){}});
+    if(ov){savedMute.push([ov.v,ov.v.muted]);ov.v.muted=true;try{ov.v.pause()}catch(e){}}
+    var gridK=0,frames=0,slow=0.5,starts=[],acc2=0,ci;
+    clips.forEach(function(c){starts.push(acc2);acc2+=clipLen(c)});
+    async function emit(limit){
+      while(!stopFlag&&gridK/FPS<limit-1e-9&&gridK/FPS<tot-1e-9){
+        var t=gridK/FPS;drawFrame(t);
+        var fr=new VideoFrame(cv,{timestamp:Math.round(t*1e6),duration:Math.round(1e6/FPS)});
+        venc.encode(fr,{keyFrame:gridK%(FPS*2)===0});fr.close();
+        gridK++;frames++;
+        while(venc.encodeQueueSize>3&&!verr)await sleep(2);
+        if(verr)throw verr;
+        if(frames%6===0){
+          var p=Math.min(1,t/tot),el=(performance.now()-t0)/1000,rem=p>0.01?el*(1-p)/p:0;
+          ui(p,'Kare kare işleniyor… %'+Math.round(p*100)+' · '+frames+' kare'+(p>0.01?' · kalan yaklaşık '+mmss(rem):''));
+          await sleep(0);
+        }
+      }
+    }
+    async function syncOv(Tj){
+      if(!ov)return false;
+      var ot=Tj-S.ov.start,act=ot>=0&&(S.ov.loop||ot<ov.dur);
+      if(!act){if(!ov.v.paused)ov.v.pause();return false}
+      var w2=S.ov.loop?ot%ov.dur:ot;
+      if(Math.abs(ov.v.currentTime-w2)>0.15||ov.v.readyState<2)await seekAwait(ov.v,w2);
+      return true;
+    }
+    for(ci=0;ci<clips.length&&!stopFlag;ci++){
+      var c=clips[ci],cs=starts[ci],cend=cs+clipLen(c),v=c.v,curT=cs,prevM=-1,dtMin=Infinity,stall=0;
+      await seekAwait(v,c.in);
+      while(!stopFlag){
+        v.playbackRate=clamp(c.speed*slow,0.0625,16);if(ov)ov.v.playbackRate=clamp(slow,0.0625,16);
+        var ovPlay=await syncOv(curT);
+        var md=await nextFrame(v,ov&&ov.v,ovPlay);
+        if(md===TIMEOUT){if(++stall>6)throw new Error('Video karesi alınamadı. Sekmeyi arka plana atma, tekrar dene.');await seekAwait(v,prevM>=0?prevM:c.in);continue}
+        if(!md)break;
+        stall=0;
+        var m=md.mediaTime;
+        if(m<=prevM+1e-4)continue;
+        if(m>=c.out-1e-3)break;
+        if(prevM>=0){
+          var d=m-prevM;
+          if(dtMin<Infinity&&d>1.9*dtMin&&slow>0.07){slow=Math.max(0.0625,slow/2);await seekAwait(v,prevM);continue}
+          if(d>1e-4&&d<dtMin)dtMin=d;
+        }
+        prevM=m;
+        var Tj=cs+(m-c.in)/c.speed;curT=Tj;
+        var half=0.5*(dtMin<Infinity?dtMin:1/FPS)/c.speed;
+        await emit(Math.min(cend,Tj+half));
+      }
+      await emit(cend);
+    }
+    await emit(tot);
+    ui(1,'Dosya tamamlanıyor…');
+    await venc.flush();if(verr)throw verr;venc.close();
+    var blob=await mux.finalize();
+    clips.forEach(function(c){try{c.v.pause()}catch(e){}});
+    if(diskSink){exStatus('Kaydedildi: seçtiğin dosya hazır ('+mmss(gridK/FPS)+', '+frames+' kare, atlama yok).')}
+    else{
+      var url=URL.createObjectURL(blob),mb=(blob.size/1048576).toFixed(1);
+      var box=$('result');box.hidden=false;box.innerHTML='<video controls playsinline style="width:100%;max-height:50vh;border-radius:12px;background:#000;display:block" src="'+url+'"></video><div style="margin:8px 0;font-size:13px;color:var(--muted)">MP4 · '+S.w+'×'+S.h+' · '+mb+' MB · '+frames+' kare'+(useAudio?'':' · ses yok')+'</div><a class="btn pri" download="video.mp4" href="'+url+'">İndir</a>';
+      exStatus('Hazır.');
+      window.__lastBlob=blob;
+    }
+  }catch(e){
+    exStatus('Dışa aktarma hatası: '+(e&&e.message||e),true);
+    try{if(venc&&venc.state!=='closed')venc.close()}catch(x){}
+    try{if(wr)await wr.abort()}catch(x){}
+  }
+  savedMute.forEach(function(p){try{p[0].muted=p[1]}catch(e){}});
+  offline=false;recording=false;
+  resetExportUI();$('playBtn').textContent='▶ Oynat';T=0;activeId=null;syncMedia(true);dirty=true;
+}
+
 /* ---------- olaylar ---------- */
 $('drop').addEventListener('click',function(){$('file').click()});
 $('drop').addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();$('file').click()}});
@@ -772,6 +1084,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden&&reco
 buildTexts();
 if(!FILT)$('filtNote').hidden=false;
 if(window.showSaveFilePicker)$('directBox').hidden=false;
+if(!offlineSupported())$('preciseBox').hidden=true;
 readSettings();
 requestAnimationFrame(loop);
 window.__ed={S:S,clips:function(){return clips},ov:function(){return ov},add:addFiles,setOv:setOverlay,play:play,pause:pause,draw:function(t){T=t;syncMedia(true);dirty=true},make:makeVideoOut,total:total,state:function(){return {T:T,playing:playing,recording:recording}},read:readSettings};
