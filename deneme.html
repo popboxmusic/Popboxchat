@@ -18548,9 +18548,45 @@ function ytVideos(cid){
         return(j.nextPageToken&&out.length<1000)?page(j.nextPageToken):out;
       });
     };
-    return page('').then(function(v){return{title:'',vids:v}},function(){return ytRss(cid)});
+    return page('').then(function(v){return{title:'',vids:v}},function(){return ytNoKey(cid)});
   }
-  return ytRss(cid);
+  return ytNoKey(cid);
+}
+/* API anahtarı yoksa: RSS (son 15, gerçek tarihli) + kanalın "yüklemeler" sayfasından ~100 videoya kadar */
+function ytNoKey(cid){
+  var rss=ytRss(cid).catch(function(){return null});
+  var pl=ytPlaylistScrape(cid).catch(function(){return[]});
+  return Promise.all([rss,pl]).then(function(r){
+    var rs=r[0],list=r[1]||[];
+    if(!rs&&!list.length)throw new Error('Kanal videoları alınamadı. Linki kontrol edin veya biraz sonra tekrar deneyin.');
+    var real={},oldest=Date.now(),lastIdx=-1;
+    if(rs)rs.vids.forEach(function(v){real[v.id]=v.pub;if(v.pub<oldest)oldest=v.pub});
+    var out=[],seen={};
+    list.forEach(function(v,i){
+      if(seen[v.id])return;seen[v.id]=1;
+      if(real[v.id]){out.push({id:v.id,title:v.title,pub:real[v.id]});lastIdx=i}
+      else out.push({id:v.id,title:v.title,pub:(lastIdx>=0?oldest:Date.now())-(i-Math.max(lastIdx,0))*3600000});
+    });
+    if(rs)rs.vids.forEach(function(v){if(!seen[v.id]){seen[v.id]=1;out.push(v)}});
+    return{title:rs?rs.title:'',vids:out};
+  });
+}
+function ytPlaylistScrape(cid){
+  return ytFetchText('https://www.youtube.com/playlist?list=UU'+cid.slice(2)).then(function(t){
+    var m=t.match(/ytInitialData\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+    if(!m)throw new Error('x');
+    var d=JSON.parse(m[1]),out=[];
+    (function walk(o){
+      if(!o||typeof o!=='object')return;
+      if(o.playlistVideoRenderer){
+        var r=o.playlistVideoRenderer,ti=r.title||{},tx=ti.simpleText||(ti.runs&&ti.runs[0]&&ti.runs[0].text)||'Video';
+        if(r.videoId&&r.isPlayable!==false)out.push({id:r.videoId,title:tx});
+        return;
+      }
+      for(var k in o)walk(o[k]);
+    })(d);
+    return out;
+  });
 }
 function ytRss(cid){
   return ytFetchText('https://www.youtube.com/feeds/videos.xml?channel_id='+cid).then(function(t){
