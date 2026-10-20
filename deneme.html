@@ -17961,11 +17961,11 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     var b=$('vtChBtns');
     if(!b){
       b=document.createElement('span');b.id='vtChBtns';b.className='vt-chbtns';
-      b.innerHTML='<button type="button" class="vt-chb" id="vtChHead" title="Kanal başlığı"><i class="fas fa-pen"></i></button><button type="button" class="vt-chb" id="vtChUp" title="Kapak görseli"><i class="fas fa-image"></i></button><button type="button" class="vt-chb" id="mdStudioBtn" title="Video yükle" style="display:none"><i class="fas fa-video"></i></button>';
+      b.innerHTML='<button type="button" class="vt-chb" id="vtChHead" title="Kanal başlığı"><i class="fas fa-pen"></i></button><button type="button" class="vt-chb" id="vtChUp" title="Kapak görseli"><i class="fas fa-image"></i></button><button type="button" class="vt-chb" id="mdYtBtn" title="YouTube kanalını bağla" style="display:none"><i class="fab fa-youtube"></i></button>';
       grp.appendChild(b);
       $('vtChHead').onclick=function(){window.mdOpenHead&&window.mdOpenHead()};
       $('vtChUp').onclick=function(){window.mdOpenCover&&window.mdOpenCover()};
-      $('mdStudioBtn').onclick=function(){window.mdStudio&&window.mdStudio()};
+      $('mdYtBtn').onclick=function(){window.mdYoutube&&window.mdYoutube()};
     }
     var n=g('activeChannelName',null),ok=!V.classList.contains('show')&&canThumb(n);
     b.style.display=ok?'inline-flex':'none';
@@ -18316,7 +18316,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
  .chat-room-selector{flex:1 1 0;min-width:0}
  .chat-room-selector #currentChatTitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .vt-chbtns{flex:0 0 auto;margin-left:6px!important;flex-wrap:nowrap!important}
- #vtChHead,#vtChUp,#mdStudioBtn,#mdEarnBtn{display:none!important}
+ #vtChHead,#vtChUp,#mdYtBtn,#mdEarnBtn{display:none!important}
  #mdMoreBtn{display:inline-flex!important;width:36px;height:36px;flex:0 0 36px;border-radius:50%;border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);align-items:center;justify-content:center;cursor:pointer}
 }
 .adm-lb{display:block;font-size:12px;color:var(--text-muted);margin:6px 0 2px}
@@ -18446,34 +18446,120 @@ function paintCover(){
   modal('mdCover','<div class="md-h"><b>🖼 Kapak görseli</b><button class="md-x" data-c="mdCover">✕</button></div><div class="md-cover" id="mdCoverPv"'+(img?' style="background-image:url(\''+esc(img)+'\')"':'')+'>'+(img?'':'<i class="fas fa-image"></i>')+'</div><p class="md-p">'+(ST.cover?'Yeni görsel önizlemesi — “Kaydet” ile yayına alın.':(t?'Şu an kullanılan kapak.':'Kapak yok: videodan otomatik alınır.'))+'</p><input type="file" id="mdCoverFile" accept="image/*" style="display:none"><div class="md-act"><button class="md-b red" data-a="coverdel"'+(t&&!ST.cover?'':' disabled')+'>🗑 Kaldır</button><button class="md-b" data-a="coverpick">📁 '+(t||ST.cover?'Değiştir':'Görsel yükle')+'</button><button class="md-b pri" data-a="coversave"'+(ST.cover?'':' disabled')+'>Kaydet</button></div>');
   $('mdCoverFile').onchange=function(){var f=this.files&&this.files[0];if(!f)return;shrink(f,480,270,.72,function(d){ST.cover=d;paintCover()})};
 }
-/* ---------- Stüdyo ---------- */
-window.mdStudio=function(){var n=cur();if(!canStudio(n))return;renderStudio()};
-function renderStudio(){
-  var n=cur();
-  var h='<div class="md-h"><b><i class="fas fa-video"></i> Video Yükle <small>#'+esc(n)+'</small></b><button class="md-x" data-c="mdStudio">✕</button></div>';
-  h+='<input type="text" id="mdUT" maxlength="100" placeholder="Video başlığı"><label class="md-drop'+(ST.file?' has':'')+'" for="mdUF"><i class="fas fa-cloud-arrow-up"></i><span id="mdUN">'+(ST.file?esc(ST.file.name)+' ('+Math.round(ST.file.size/1048576)+' MB)':'Video seç veya buraya bırak')+'</span></label><input type="file" id="mdUF" accept="video/*" style="display:none"><div class="md-bar"><i id="mdUB"></i></div><div class="md-st" id="mdUSt">Yüklenen video kanalın oynatma listesine eklenir.</div><div class="md-act"><button class="md-b pri" data-a="upgo">⬆ Yükle ve listeye ekle</button></div>';
-  modal('mdStudio',h);
-  if($('mdUF'))$('mdUF').onchange=function(){ST.file=this.files&&this.files[0]||null;var l=document.querySelector('.md-drop');if(l)l.classList.toggle('has',!!ST.file);$('mdUN').textContent=ST.file?ST.file.name+' ('+Math.round(ST.file.size/1048576)+' MB)':'Video seç veya buraya bırak';var t=$('mdUT');if(ST.file&&t&&!t.value)t.value=ST.file.name.replace(/\.[^.]+$/,'')};
+/* ---------- YouTube kanal bağlantısı ---------- */
+var YT=window.CETCETY_YT=Object.assign({clientId:'',apiKey:''},window.CETCETY_YT||{});
+var ytConn={},ytBusy=false,ytAutoDone={};
+function ytRef(n){return db().ref('channelYt/'+n)}
+function plRef(n){return db().ref(n==='genel'?'playlist':'channelPlaylists/'+n)}
+function ytGet(path,params,token){
+  var q=Object.keys(params).map(function(k){return k+'='+encodeURIComponent(params[k])}).join('&');
+  if(!token&&YT.apiKey)q+='&key='+encodeURIComponent(YT.apiKey);
+  return fetch('https://www.googleapis.com/youtube/v3/'+path+'?'+q,{headers:token?{Authorization:'Bearer '+token}:{}}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error&&j.error.message||('HTTP '+r.status));return j})});
 }
-function upload(){
-  var n=cur();
-  if(!ST.file)return toast('Önce bir video seçin.');
-  if(!CFG.uploadUrl)return toast('Depolama altyapısı henüz bağlanmadı (CETCETY_MEDIA.uploadUrl).');
-  var title=($('mdUT').value||ST.file.name).trim(),fd=new FormData(),x=new XMLHttpRequest();
-  fd.append('file',ST.file);fd.append('channel',n);fd.append('user',me().name);
-  x.open('POST',CFG.uploadUrl);
-  x.upload.onprogress=function(e){if(e.lengthComputable){$('mdUB').style.width=(e.loaded/e.total*100)+'%';$('mdUSt').textContent='Yükleniyor… %'+Math.round(e.loaded/e.total*100)}};
-  x.onerror=function(){$('mdUSt').textContent='❌ Yükleme başarısız.'};
-  x.onload=function(){
+function ytToken(cb,err){
+  if(!YT.clientId)return err('YouTube bağlantısı henüz yapılandırılmadı (CETCETY_YT.clientId).');
+  function go(){
     try{
-      var r=JSON.parse(x.responseText),url=r.url;if(x.status>299||!url)throw 0;
-      var key=db().ref('channelVods/'+n).push().key,it={id:'up_'+key,title:title,url:url,addedBy:me().name,timestamp:Date.now(),kind:'upload',thumb:ST.thumb||''};
-      db().ref('channelVods/'+n+'/'+key).set({type:'upload',title:title,url:url,by:me().name,startedAt:Date.now(),vis:'public',thumb:ST.thumb||''});
-      db().ref(n==='genel'?'playlist':'channelPlaylists/'+n).push(it);
-      ST.file=null;$('mdUSt').textContent='✅ Yüklendi ve oynatma listesine eklendi.';$('mdUB').style.width='100%';
-    }catch(e){$('mdUSt').textContent='❌ Sunucu yanıtı geçersiz.'}
-  };
-  $('mdUSt').textContent='Hazırlanıyor…';makeThumb(ST.file,function(th){ST.thumb=th;$('mdUSt').textContent='Yükleniyor…';x.send(fd)});
+      var tc=google.accounts.oauth2.initTokenClient({client_id:YT.clientId,scope:'https://www.googleapis.com/auth/youtube.readonly',callback:function(r){if(r&&r.access_token)cb(r.access_token);else err('Google izni verilmedi.')},error_callback:function(){err('Google penceresi kapatıldı.')}});
+      tc.requestAccessToken({prompt:''});
+    }catch(e){err('Google girişi başlatılamadı.')}
+  }
+  if(window.google&&google.accounts&&google.accounts.oauth2)return go();
+  var sc=document.createElement('script');sc.src='https://accounts.google.com/gsi/client';sc.async=true;sc.onload=go;sc.onerror=function(){err('Google servisine ulaşılamadı.')};document.head.appendChild(sc);
+}
+function ytUploads(upId,token,max){
+  var out=[];
+  function page(tk){
+    var pr={part:'snippet,contentDetails',playlistId:upId,maxResults:50};if(tk)pr.pageToken=tk;
+    return ytGet('playlistItems',pr,token).then(function(j){
+      (j.items||[]).forEach(function(it){
+        var sn=it.snippet||{},id=(it.contentDetails||{}).videoId||(sn.resourceId||{}).videoId;
+        if(!id||sn.title==='Private video'||sn.title==='Deleted video')return;
+        out.push({id:id,title:sn.title||'Video',pub:Date.parse((it.contentDetails||{}).videoPublishedAt||sn.publishedAt)||Date.now()});
+      });
+      if(j.nextPageToken&&out.length<max)return page(j.nextPageToken);
+      return out;
+    });
+  }
+  return page('');
+}
+function ytImport(n,vids,info){
+  return plRef(n).once('value').then(function(s){
+    var have={};s.forEach(function(c){var v=c.val();if(v&&v.id)have[v.id]=1});
+    var ups={},cnt=0,u=me();
+    vids.forEach(function(v){
+      if(have[v.id])return;
+      var k=plRef(n).push().key;
+      ups[k]={id:v.id,title:v.title,url:'https://www.youtube.com/watch?v='+v.id,addedBy:(u&&u.name)||'YouTube',timestamp:Date.now(),kind:'yt-auto',order:-Math.floor(v.pub/1000)};
+      cnt++;
+    });
+    var p=cnt?plRef(n).update(ups):Promise.resolve();
+    return p.then(function(){
+      return ytRef(n).update(Object.assign({lastSync:Date.now(),total:vids.length},info||{})).then(function(){return cnt});
+    });
+  });
+}
+function ytSync(n,token){
+  var c=ytConn[n];if(!c)return Promise.reject(new Error('Bağlantı yok'));
+  return ytUploads(c.uploads,token,1000).then(function(v){return ytImport(n,v)}).then(function(cnt){ytConn[n]=Object.assign({},ytConn[n],{lastSync:Date.now()});return cnt});
+}
+function ytConnect(n,token){
+  return ytGet('channels',{part:'snippet,contentDetails',mine:'true'},token).then(function(j){
+    var ch=(j.items||[])[0];
+    if(!ch||!ch.contentDetails||!ch.contentDetails.relatedPlaylists.uploads)throw new Error('Bu Google hesabında YouTube kanalı bulunamadı.');
+    var info={channelId:ch.id,title:(ch.snippet||{}).title||'',uploads:ch.contentDetails.relatedPlaylists.uploads,connectedBy:me().name,connectedAt:Date.now()};
+    return ytRef(n).set(info).then(function(){ytConn[n]=info;return ytUploads(info.uploads,token,1000)}).then(function(v){return ytImport(n,v,{})});
+  });
+}
+function ytMsg(t,bad){var e=$('mdYtSt');if(e){e.textContent=t;e.style.color=bad?'#e5484d':''}}
+function ytRender(n,loading){
+  var c=ytConn[n],h='<div class="md-h"><b><i class="fab fa-youtube"></i> YouTube kanalı <small>#'+esc(n)+'</small></b><button class="md-x" data-c="mdYt">✕</button></div>';
+  if(loading)h+='<p class="md-p">Yükleniyor…</p>';
+  else if(c){
+    h+='<p class="md-p"><b>'+esc(c.title||'YouTube kanalı')+'</b> bağlı.<br>Kanaldaki videolar bu kanalın oynatma listesine otomatik eklenir; yeni yüklediğiniz videolar da kendiliğinden gelir.</p>';
+    h+='<p class="md-p">Son senkronizasyon: '+(c.lastSync?new Date(c.lastSync).toLocaleString('tr-TR'):'—')+(c.total?' · '+c.total+' video':'')+'</p>';
+    h+='<div class="md-st" id="mdYtSt"></div><div class="md-act"><button class="md-b red" data-a="ytdisc">Bağlantıyı kes</button><button class="md-b pri" data-a="ytsync">⟳ Şimdi senkronize et</button></div>';
+  }else{
+    h+='<p class="md-p">Kendi YouTube hesabınızı bu kanala bağlayın. Google ile giriş yaptığınızda hesabınızdaki kanalın tüm videoları oynatma listesine otomatik yüklenir. Yalnızca videolarınızı okuma izni istenir; şifreniz bize ulaşmaz.</p>';
+    h+='<div class="md-st" id="mdYtSt">'+(YT.clientId?'':'⚠ Yönetici henüz Google istemci kimliğini (CETCETY_YT.clientId) tanımlamadı.')+'</div><div class="md-act"><button class="md-b" data-c="mdYt">Vazgeç</button><button class="md-b pri" data-a="ytconn"><i class="fab fa-youtube"></i> YouTube hesabını bağla</button></div>';
+  }
+  modal('mdYt',h);
+}
+window.mdYoutube=function(){
+  var n=cur();if(!canStudio(n))return;
+  ytRender(n,true);
+  ytRef(n).once('value').then(function(s){ytConn[n]=s.val();ytRender(n)},function(){ytRender(n)});
+};
+function ytAct(A,n){
+  if(ytBusy)return;
+  function done(){ytBusy=false}
+  function fail(m){done();ytMsg('❌ '+m,true)}
+  if(A==='ytconn'){
+    ytBusy=true;ytMsg('Google girişi bekleniyor…');
+    ytToken(function(t){ytMsg('Videolar alınıyor…');ytConnect(n,t).then(function(cnt){done();ytRender(n);ytMsg('✅ Bağlandı: '+cnt+' video listeye eklendi.');toast('YouTube kanalı bağlandı — '+cnt+' video eklendi')},function(e){fail(e.message)})},fail);
+  }else if(A==='ytsync'){
+    ytBusy=true;ytMsg('Senkronize ediliyor…');
+    var run=function(t){ytSync(n,t).then(function(cnt){done();ytRender(n);ytMsg('✅ '+cnt+' yeni video eklendi.')},function(e){fail(e.message)})};
+    if(YT.apiKey)run(null);else ytToken(run,fail);
+  }else if(A==='ytdisc'){
+    if(!confirm('YouTube bağlantısı kesilsin mi?'))return;
+    var rmAll=confirm('YouTube’dan içe aktarılan videolar da oynatma listesinden silinsin mi?\n\nTamam = sil, İptal = listede kalsın');
+    ytBusy=true;
+    ytRef(n).remove().then(function(){
+      if(!rmAll)return;
+      return plRef(n).once('value').then(function(s){var u={};s.forEach(function(c){var v=c.val();if(v&&v.kind==='yt-auto')u[c.key]=null});return Object.keys(u).length?plRef(n).update(u):0});
+    }).then(function(){delete ytConn[n];done();ytRender(n);toast('YouTube bağlantısı kesildi')},function(){fail('İşlem yapılamadı (yetki?)')});
+  }
+}
+/* sahibi kanala girince, bağlıysa ve API anahtarı varsa sessizce senkronize et (6 saatte bir) */
+function ytAuto(n){
+  if(!n||ytAutoDone[n]||!YT.apiKey||!canStudio(n)||!db())return;
+  ytAutoDone[n]=1;
+  ytRef(n).once('value').then(function(s){
+    var c=s.val();if(!c||!c.uploads)return;ytConn[n]=c;
+    if(Date.now()-(c.lastSync||0)<6*3600*1000)return;
+    ytSync(n,null).then(function(cnt){if(cnt)toast('YouTube: '+cnt+' yeni video listeye eklendi')},function(){});
+  },function(){});
 }
 /* ---------- Sahne (canlı / video oynatma) ---------- */
 function loadHls(cb){if(window.Hls)return cb();var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js';s.onload=cb;s.onerror=cb;document.head.appendChild(s)}
@@ -18525,16 +18611,16 @@ document.addEventListener('click',function(e){
   else if(A==='coversave'&&ST.cover){db().ref('channelThumbs/'+n).set(ST.cover).then(function(){ST.cover=null;closeM('mdCover');toast('Kapak kaydedildi')},function(){toast('Kapak kaydedilemedi (yetki?)')})}
   else if(A==='coverdel'){db().ref('channelThumbs/'+n).remove().then(function(){closeM('mdCover');toast('Kapak kaldırıldı — videodan otomatik alınır')})}
   else if(A==='reg'){closeM('mdAvLock');window.mdRegister()}
-  else if(A==='upgo')upload();
+  else if(A==='ytconn'||A==='ytsync'||A==='ytdisc')ytAct(A,n);
   else if(A==='stageclose'){vodSel=null;clearStage()}
 });
 /* ---------- mobil: tek '⋯' menüsü ---------- */
 function morePop(btn){
   var old=$('mdPop');if(old){old.remove();return}
   var n=cur(),r=btn.getBoundingClientRect(),p=document.createElement('div');p.id='mdPop';p.className='md-pop';
-  p.innerHTML='<button data-p="head"><i class="fas fa-pen"></i>Kanal başlığı</button><button data-p="cover"><i class="fas fa-image"></i>Kapak görseli</button>'+(canStudio(n)?'<button data-p="earn"><i class="fas fa-money-bill-wave"></i>Kanal kazancı</button><button data-p="studio"><i class="fas fa-video"></i>Video yükle</button>':'');
+  p.innerHTML='<button data-p="head"><i class="fas fa-pen"></i>Kanal başlığı</button><button data-p="cover"><i class="fas fa-image"></i>Kapak görseli</button>'+(canStudio(n)?'<button data-p="earn"><i class="fas fa-money-bill-wave"></i>Kanal kazancı</button><button data-p="yt"><i class="fab fa-youtube"></i>YouTube kanalını bağla</button>':'');
   document.body.appendChild(p);var w=p.offsetWidth,h=p.offsetHeight,L=Math.min(Math.max(8,r.right-w),innerWidth-w-8),T=r.bottom+6;if(T+h>innerHeight-8)T=Math.max(8,r.top-h-6);p.style.left=L+'px';p.style.top=T+'px';
-  p.onclick=function(e){var b=e.target.closest('[data-p]');if(!b)return;p.remove();var k=b.dataset.p;k==='head'?mdOpenHead():k==='cover'?mdOpenCover():k==='earn'?(window.adOpenEarn&&window.adOpenEarn()):mdStudio()};
+  p.onclick=function(e){var b=e.target.closest('[data-p]');if(!b)return;p.remove();var k=b.dataset.p;k==='head'?mdOpenHead():k==='cover'?mdOpenCover():k==='earn'?(window.adOpenEarn&&window.adOpenEarn()):mdYoutube()};
   setTimeout(function(){document.addEventListener('click',function f(e){if(!p.contains(e.target)){p.remove();document.removeEventListener('click',f)}})},0);
 }
 /* ---------- Kayıt Ol (misafirler için) ---------- */
@@ -18786,8 +18872,8 @@ document.addEventListener('click',function(e){if(window.__mdDrag&&e.target.close
 /* ---------- döngü + veri ---------- */
 function tick(){
   var u=me();if(!u)return;
-  var sb=$('mdStudioBtn');if(sb)sb.style.display=canStudio(cur())?'':'none';
-  var eb=$('mdEarnBtn'),grp0=$('vtChBtns');if(grp0&&!eb){eb=document.createElement('button');eb.type='button';eb.id='mdEarnBtn';eb.className='vt-chb';eb.title='Kanal kazancı';eb.innerHTML='<i class="fas fa-money-bill-wave"></i>';eb.onclick=function(){window.adOpenEarn&&window.adOpenEarn()};grp0.insertBefore(eb,$('mdStudioBtn')||null)}
+  var sb=$('mdYtBtn');if(sb)sb.style.display=canStudio(cur())?'':'none';ytAuto(cur());
+  var eb=$('mdEarnBtn'),grp0=$('vtChBtns');if(grp0&&!eb){eb=document.createElement('button');eb.type='button';eb.id='mdEarnBtn';eb.className='vt-chb';eb.title='Kanal kazancı';eb.innerHTML='<i class="fas fa-money-bill-wave"></i>';eb.onclick=function(){window.adOpenEarn&&window.adOpenEarn()};grp0.insertBefore(eb,$('mdYtBtn')||null)}
   if(eb)eb.style.display=canStudio(cur())?'':'none';
   var grp=$('vtChBtns');if(grp&&!$('mdMoreBtn')){var mb=document.createElement('button');mb.type='button';mb.id='mdMoreBtn';mb.title='Kanal ayarları';mb.innerHTML='<i class="fas fa-ellipsis"></i>';mb.onclick=function(e){e.stopPropagation();morePop(mb)};grp.appendChild(mb)}
   kbMount();regUI();mountPL();renderChatPL();applyForms();
@@ -19272,7 +19358,7 @@ init();
         + '.chan-menu-sep{height:1px;background:var(--border-color);margin:6px 4px}'
         + '.chat-menu-action.chan-danger{color:#e5484d}.chat-menu-action.chan-on i{color:#A8782A}';
     document.head.appendChild(st);
-    var NAMES = { vtChHead: 'Kanal başlığı', vtChUp: 'Kapak görseli', mdEarnBtn: 'Kanal kazancı', mdStudioBtn: 'Yayın stüdyosu' };
+    var NAMES = { vtChHead: 'Kanal başlığı', vtChUp: 'Kapak görseli', mdEarnBtn: 'Kanal kazancı', mdYtBtn: 'YouTube kanalını bağla' };
     function item(src, label, cls) {
         var b = document.createElement('button'); b.type = 'button'; b.className = 'chat-menu-action chan-item' + (cls ? ' ' + cls : '');
         var ic = src.querySelector('i'); if (ic) b.appendChild(ic.cloneNode(true));
@@ -19285,7 +19371,7 @@ init();
         m.querySelectorAll('.chan-item,.chan-menu-h,.chan-menu-sep').forEach(function (e) { e.remove(); });
         var items = [], grp = document.getElementById('vtChBtns');
         if (grp && grp.style.display !== 'none') {
-            ['vtChHead', 'vtChUp', 'mdEarnBtn', 'mdStudioBtn'].forEach(function (id) {
+            ['vtChHead', 'vtChUp', 'mdEarnBtn', 'mdYtBtn'].forEach(function (id) {
                 var b = document.getElementById(id); if (b && b.style.display !== 'none') items.push(item(b, NAMES[id]));
             });
         }
