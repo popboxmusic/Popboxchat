@@ -18446,42 +18446,73 @@ function paintCover(){
   modal('mdCover','<div class="md-h"><b>🖼 Kapak görseli</b><button class="md-x" data-c="mdCover">✕</button></div><div class="md-cover" id="mdCoverPv"'+(img?' style="background-image:url(\''+esc(img)+'\')"':'')+'>'+(img?'':'<i class="fas fa-image"></i>')+'</div><p class="md-p">'+(ST.cover?'Yeni görsel önizlemesi — “Kaydet” ile yayına alın.':(t?'Şu an kullanılan kapak.':'Kapak yok: videodan otomatik alınır.'))+'</p><input type="file" id="mdCoverFile" accept="image/*" style="display:none"><div class="md-act"><button class="md-b red" data-a="coverdel"'+(t&&!ST.cover?'':' disabled')+'>🗑 Kaldır</button><button class="md-b" data-a="coverpick">📁 '+(t||ST.cover?'Değiştir':'Görsel yükle')+'</button><button class="md-b pri" data-a="coversave"'+(ST.cover?'':' disabled')+'>Kaydet</button></div>');
   $('mdCoverFile').onchange=function(){var f=this.files&&this.files[0];if(!f)return;shrink(f,480,270,.72,function(d){ST.cover=d;paintCover()})};
 }
-/* ---------- YouTube kanal bağlantısı ---------- */
-var YT=window.CETCETY_YT=Object.assign({clientId:'',apiKey:''},window.CETCETY_YT||{});
+/* ---------- YouTube kanal bağlantısı (link ile, giriş gerektirmez) ---------- */
+var YT=window.CETCETY_YT=Object.assign({proxy:'',apiKey:''},window.CETCETY_YT||{});
 var ytConn={},ytBusy=false,ytAutoDone={};
 function ytRef(n){return db().ref('channelYt/'+n)}
 function plRef(n){return db().ref(n==='genel'?'playlist':'channelPlaylists/'+n)}
-function ytGet(path,params,token){
-  var q=Object.keys(params).map(function(k){return k+'='+encodeURIComponent(params[k])}).join('&');
-  if(!token&&YT.apiKey)q+='&key='+encodeURIComponent(YT.apiKey);
-  return fetch('https://www.googleapis.com/youtube/v3/'+path+'?'+q,{headers:token?{Authorization:'Bearer '+token}:{}}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error&&j.error.message||('HTTP '+r.status));return j})});
-}
-function ytToken(cb,err){
-  if(!YT.clientId)return err('YouTube bağlantısı henüz yapılandırılmadı (CETCETY_YT.clientId).');
-  function go(){
-    try{
-      var tc=google.accounts.oauth2.initTokenClient({client_id:YT.clientId,scope:'https://www.googleapis.com/auth/youtube.readonly',callback:function(r){if(r&&r.access_token)cb(r.access_token);else err('Google izni verilmedi.')},error_callback:function(){err('Google penceresi kapatıldı.')}});
-      tc.requestAccessToken({prompt:''});
-    }catch(e){err('Google girişi başlatılamadı.')}
+function ytFetchText(url){
+  var px=[];
+  if(YT.proxy)px.push(YT.proxy+encodeURIComponent(url));
+  px.push('https://api.allorigins.win/raw?url='+encodeURIComponent(url),'https://corsproxy.io/?'+encodeURIComponent(url),'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url));
+  var i=0;
+  function next(){
+    if(i>=px.length)return Promise.reject(new Error('YouTube’a ulaşılamadı, biraz sonra tekrar deneyin.'));
+    var u=px[i++],ac=window.AbortController?new AbortController():null,tm=setTimeout(function(){ac&&ac.abort()},12000);
+    return fetch(u,ac?{signal:ac.signal}:{}).then(function(r){clearTimeout(tm);if(!r.ok)throw 0;return r.text()}).then(function(t){if(!t||t.length<50)throw 0;return t}).catch(function(){clearTimeout(tm);return next()});
   }
-  if(window.google&&google.accounts&&google.accounts.oauth2)return go();
-  var sc=document.createElement('script');sc.src='https://accounts.google.com/gsi/client';sc.async=true;sc.onload=go;sc.onerror=function(){err('Google servisine ulaşılamadı.')};document.head.appendChild(sc);
+  return next();
 }
-function ytUploads(upId,token,max){
-  var out=[];
-  function page(tk){
-    var pr={part:'snippet,contentDetails',playlistId:upId,maxResults:50};if(tk)pr.pageToken=tk;
-    return ytGet('playlistItems',pr,token).then(function(j){
-      (j.items||[]).forEach(function(it){
-        var sn=it.snippet||{},id=(it.contentDetails||{}).videoId||(sn.resourceId||{}).videoId;
-        if(!id||sn.title==='Private video'||sn.title==='Deleted video')return;
-        out.push({id:id,title:sn.title||'Video',pub:Date.parse((it.contentDetails||{}).videoPublishedAt||sn.publishedAt)||Date.now()});
-      });
-      if(j.nextPageToken&&out.length<max)return page(j.nextPageToken);
-      return out;
+function ytApiGet(path,params){
+  var q=Object.keys(params).map(function(k){return k+'='+encodeURIComponent(params[k])}).join('&')+'&key='+encodeURIComponent(YT.apiKey);
+  return fetch('https://www.googleapis.com/youtube/v3/'+path+'?'+q).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error&&j.error.message||('HTTP '+r.status));return j})});
+}
+/* link / @ad / UC… kimliğinden kanal kimliğini bul */
+function ytResolve(inp){
+  inp=String(inp||'').trim();
+  if(!inp)return Promise.reject(new Error('Kanal linkini yazın.'));
+  var m=inp.match(/(UC[\w-]{22})/);if(m&&(/^UC/.test(inp)||/\/channel\//.test(inp)))return Promise.resolve(m[1]);
+  var h=inp.match(/@([\w.\-]+)/),page;
+  if(h)page='https://www.youtube.com/@'+h[1];
+  else if(/youtube\.com\/(c|user)\//i.test(inp))page=(inp.indexOf('http')===0?inp:'https://'+inp).split('?')[0];
+  else if(/^[\w.\-]+$/.test(inp))page='https://www.youtube.com/@'+inp;
+  else return Promise.reject(new Error('Geçerli bir YouTube kanal linki yazın.'));
+  var tryApi=(YT.apiKey&&h)?ytApiGet('channels',{part:'id',forHandle:'@'+h[1]}).then(function(j){return j.items&&j.items[0]&&j.items[0].id}).catch(function(){return null}):Promise.resolve(null);
+  return tryApi.then(function(id){
+    if(id)return id;
+    return ytFetchText(page).then(function(t){
+      var r=t.match(/"channelId":"(UC[\w-]{22})"/)||t.match(/"externalId":"(UC[\w-]{22})"/)||t.match(/channel_id=(UC[\w-]{22})/)||t.match(/youtube\.com\/channel\/(UC[\w-]{22})/);
+      if(!r)throw new Error('Kanal bulunamadı. Linki kontrol edin (youtube.com/@ad veya /channel/UC… biçimi).');
+      return r[1];
     });
+  });
+}
+/* kanalın videolarını al: API anahtarı varsa tamamı, yoksa herkese açık RSS ile son videolar */
+function ytVideos(cid){
+  if(YT.apiKey){
+    var out=[],up='UU'+cid.slice(2);
+    var page=function(tk){
+      var pr={part:'snippet,contentDetails',playlistId:up,maxResults:50};if(tk)pr.pageToken=tk;
+      return ytApiGet('playlistItems',pr).then(function(j){
+        (j.items||[]).forEach(function(it){var sn=it.snippet||{},id=(it.contentDetails||{}).videoId;if(!id||sn.title==='Private video'||sn.title==='Deleted video')return;out.push({id:id,title:sn.title||'Video',pub:Date.parse((it.contentDetails||{}).videoPublishedAt||sn.publishedAt)||Date.now()})});
+        return(j.nextPageToken&&out.length<1000)?page(j.nextPageToken):out;
+      });
+    };
+    return page('').then(function(v){return{title:'',vids:v}},function(){return ytRss(cid)});
   }
-  return page('');
+  return ytRss(cid);
+}
+function ytRss(cid){
+  return ytFetchText('https://www.youtube.com/feeds/videos.xml?channel_id='+cid).then(function(t){
+    var d=new DOMParser().parseFromString(t,'text/xml'),es=d.getElementsByTagName('entry'),out=[];
+    var ft=d.getElementsByTagName('title')[0];
+    for(var i=0;i<es.length;i++){
+      var e=es[i],idn=e.getElementsByTagName('yt:videoId')[0]||e.getElementsByTagNameNS('*','videoId')[0],tn=e.getElementsByTagName('title')[0],pn=e.getElementsByTagName('published')[0];
+      if(!idn)continue;out.push({id:idn.textContent.trim(),title:(tn&&tn.textContent)||'Video',pub:Date.parse(pn&&pn.textContent)||Date.now()});
+    }
+    if(!out.length)throw new Error('Bu kanalda video bulunamadı.');
+    return{title:ft?ft.textContent:'',vids:out};
+  });
 }
 function ytImport(n,vids,info){
   return plRef(n).once('value').then(function(s){
@@ -18494,21 +18525,19 @@ function ytImport(n,vids,info){
       cnt++;
     });
     var p=cnt?plRef(n).update(ups):Promise.resolve();
-    return p.then(function(){
-      return ytRef(n).update(Object.assign({lastSync:Date.now(),total:vids.length},info||{})).then(function(){return cnt});
-    });
+    return p.then(function(){return ytRef(n).update(Object.assign({lastSync:Date.now(),total:vids.length},info||{})).then(function(){return cnt})});
   });
 }
-function ytSync(n,token){
+function ytSync(n){
   var c=ytConn[n];if(!c)return Promise.reject(new Error('Bağlantı yok'));
-  return ytUploads(c.uploads,token,1000).then(function(v){return ytImport(n,v)}).then(function(cnt){ytConn[n]=Object.assign({},ytConn[n],{lastSync:Date.now()});return cnt});
+  return ytVideos(c.channelId).then(function(r){return ytImport(n,r.vids)}).then(function(cnt){ytConn[n]=Object.assign({},ytConn[n],{lastSync:Date.now()});return cnt});
 }
-function ytConnect(n,token){
-  return ytGet('channels',{part:'snippet,contentDetails',mine:'true'},token).then(function(j){
-    var ch=(j.items||[])[0];
-    if(!ch||!ch.contentDetails||!ch.contentDetails.relatedPlaylists.uploads)throw new Error('Bu Google hesabında YouTube kanalı bulunamadı.');
-    var info={channelId:ch.id,title:(ch.snippet||{}).title||'',uploads:ch.contentDetails.relatedPlaylists.uploads,connectedBy:me().name,connectedAt:Date.now()};
-    return ytRef(n).set(info).then(function(){ytConn[n]=info;return ytUploads(info.uploads,token,1000)}).then(function(v){return ytImport(n,v,{})});
+function ytConnect(n,name,link){
+  return ytResolve(link).then(function(cid){
+    return ytVideos(cid).then(function(r){
+      var info={channelId:cid,title:name||r.title||'YouTube kanalı',link:link,connectedBy:me().name,connectedAt:Date.now()};
+      return ytRef(n).set(info).then(function(){ytConn[n]=info;return ytImport(n,r.vids)});
+    });
   });
 }
 function ytMsg(t,bad){var e=$('mdYtSt');if(e){e.textContent=t;e.style.color=bad?'#e5484d':''}}
@@ -18516,12 +18545,13 @@ function ytRender(n,loading){
   var c=ytConn[n],h='<div class="md-h"><b><i class="fab fa-youtube"></i> YouTube kanalı <small>#'+esc(n)+'</small></b><button class="md-x" data-c="mdYt">✕</button></div>';
   if(loading)h+='<p class="md-p">Yükleniyor…</p>';
   else if(c){
-    h+='<p class="md-p"><b>'+esc(c.title||'YouTube kanalı')+'</b> bağlı.<br>Kanaldaki videolar bu kanalın oynatma listesine otomatik eklenir; yeni yüklediğiniz videolar da kendiliğinden gelir.</p>';
+    h+='<p class="md-p"><b>'+esc(c.title||'YouTube kanalı')+'</b> bağlı.<br><a href="https://www.youtube.com/channel/'+esc(c.channelId)+'" target="_blank" rel="noopener">youtube.com/channel/'+esc(c.channelId)+'</a><br>Kanaldaki videolar oynatma listesine otomatik eklenir; yeni videolar kendiliğinden gelir.</p>';
     h+='<p class="md-p">Son senkronizasyon: '+(c.lastSync?new Date(c.lastSync).toLocaleString('tr-TR'):'—')+(c.total?' · '+c.total+' video':'')+'</p>';
     h+='<div class="md-st" id="mdYtSt"></div><div class="md-act"><button class="md-b red" data-a="ytdisc">Bağlantıyı kes</button><button class="md-b pri" data-a="ytsync">⟳ Şimdi senkronize et</button></div>';
   }else{
-    h+='<p class="md-p">Kendi YouTube hesabınızı bu kanala bağlayın. Google ile giriş yaptığınızda hesabınızdaki kanalın tüm videoları oynatma listesine otomatik yüklenir. Yalnızca videolarınızı okuma izni istenir; şifreniz bize ulaşmaz.</p>';
-    h+='<div class="md-st" id="mdYtSt">'+(YT.clientId?'':'⚠ Yönetici henüz Google istemci kimliğini (CETCETY_YT.clientId) tanımlamadı.')+'</div><div class="md-act"><button class="md-b" data-c="mdYt">Vazgeç</button><button class="md-b pri" data-a="ytconn"><i class="fab fa-youtube"></i> YouTube hesabını bağla</button></div>';
+    h+='<p class="md-p">İstediğiniz YouTube kanalının adını ve linkini yazın; kanaldaki videolar bu kanalın oynatma listesine otomatik yüklenir.</p>';
+    h+='<input type="text" id="mdYtName" maxlength="60" placeholder="Kanal adı"><input type="text" id="mdYtLink" placeholder="Kanal linki (youtube.com/@ad veya /channel/UC…)" style="margin-top:8px">';
+    h+='<div class="md-st" id="mdYtSt"></div><div class="md-act"><button class="md-b" data-c="mdYt">Vazgeç</button><button class="md-b pri" data-a="ytconn"><i class="fab fa-youtube"></i> Bağla ve videoları çek</button></div>';
   }
   modal('mdYt',h);
 }
@@ -18535,12 +18565,13 @@ function ytAct(A,n){
   function done(){ytBusy=false}
   function fail(m){done();ytMsg('❌ '+m,true)}
   if(A==='ytconn'){
-    ytBusy=true;ytMsg('Google girişi bekleniyor…');
-    ytToken(function(t){ytMsg('Videolar alınıyor…');ytConnect(n,t).then(function(cnt){done();ytRender(n);ytMsg('✅ Bağlandı: '+cnt+' video listeye eklendi.');toast('YouTube kanalı bağlandı — '+cnt+' video eklendi')},function(e){fail(e.message)})},fail);
+    var nm=($('mdYtName').value||'').trim(),lk=($('mdYtLink').value||'').trim();
+    if(!lk)return ytMsg('❌ Kanal linkini yazın.',true);
+    ytBusy=true;ytMsg('Kanal aranıyor, videolar alınıyor…');
+    ytConnect(n,nm,lk).then(function(cnt){done();ytRender(n);ytMsg('✅ Bağlandı: '+cnt+' video listeye eklendi.');toast('YouTube kanalı bağlandı — '+cnt+' video eklendi')},function(e){fail(e.message||'İşlem başarısız.')});
   }else if(A==='ytsync'){
     ytBusy=true;ytMsg('Senkronize ediliyor…');
-    var run=function(t){ytSync(n,t).then(function(cnt){done();ytRender(n);ytMsg('✅ '+cnt+' yeni video eklendi.')},function(e){fail(e.message)})};
-    if(YT.apiKey)run(null);else ytToken(run,fail);
+    ytSync(n).then(function(cnt){done();ytRender(n);ytMsg('✅ '+cnt+' yeni video eklendi.')},function(e){fail(e.message||'İşlem başarısız.')});
   }else if(A==='ytdisc'){
     if(!confirm('YouTube bağlantısı kesilsin mi?'))return;
     var rmAll=confirm('YouTube’dan içe aktarılan videolar da oynatma listesinden silinsin mi?\n\nTamam = sil, İptal = listede kalsın');
@@ -18551,14 +18582,14 @@ function ytAct(A,n){
     }).then(function(){delete ytConn[n];done();ytRender(n);toast('YouTube bağlantısı kesildi')},function(){fail('İşlem yapılamadı (yetki?)')});
   }
 }
-/* sahibi kanala girince, bağlıysa ve API anahtarı varsa sessizce senkronize et (6 saatte bir) */
+/* sahibi kanala girince, bağlıysa 6 saatte bir sessizce senkronize et */
 function ytAuto(n){
-  if(!n||ytAutoDone[n]||!YT.apiKey||!canStudio(n)||!db())return;
+  if(!n||ytAutoDone[n]||!canStudio(n)||!db())return;
   ytAutoDone[n]=1;
   ytRef(n).once('value').then(function(s){
-    var c=s.val();if(!c||!c.uploads)return;ytConn[n]=c;
+    var c=s.val();if(!c||!c.channelId)return;ytConn[n]=c;
     if(Date.now()-(c.lastSync||0)<6*3600*1000)return;
-    ytSync(n,null).then(function(cnt){if(cnt)toast('YouTube: '+cnt+' yeni video listeye eklendi')},function(){});
+    ytSync(n).then(function(cnt){if(cnt)toast('YouTube: '+cnt+' yeni video listeye eklendi')},function(){});
   },function(){});
 }
 /* ---------- Sahne (canlı / video oynatma) ---------- */
