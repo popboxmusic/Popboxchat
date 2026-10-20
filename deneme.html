@@ -2937,7 +2937,6 @@
             object-fit: cover;
         }
         
-
         /* ---- Katılımcı paneli: profesyonel görünüm ---- */
         .ul-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 12px}
         .ul-chan{font-size:13px;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:6px}
@@ -8441,6 +8440,516 @@
             return;
         }
         const now = Date.now();
+        let html = `<div style="padding:8px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid var(--border-color); margin-bottom:8px;">
+            Takip Ettiklerim — ${followingList.length} kişi
+        </div>`;
+        followingList.forEach(username => {
+            const userData = cachedOnlineUsers[username] || null;
+            const isOnline = userData && (now - (userData.lastSeen || 0)) < ONLINE_THRESHOLD;
+            const avatarUrl = userProfiles[username]?.avatar || userData?.avatar || null;
+            const avatarHtml = avatarUrl ? `<img src="${avatarUrl}">` : '<i class="far fa-user"></i>';
+            const followerBack = cachedFollowers[username] ? ' <i class="far fa-check-circle" style="color:var(--operator); font-size:10px;" title="Sizi de takip ediyor"></i>' : '';
+            html += `
+                <div class="user-item" onclick="openPrivateChat('${username}')">
+                    <div class="user-status">
+                        <span class="private-contact-dot ${isOnline ? 'online' : 'offline'}"></span>
+                        <div class="user-avatar-sidebar">${avatarHtml}</div>
+                        <strong>${username}${followerBack}</strong>
+                    </div>
+                    <button class="user-follow-btn following" onclick="event.stopPropagation(); toggleFollowUser('${username}', this)" title="Takipten Çık">
+                        <i class="fas fa-user-check"></i>
+                    </button>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    }
+
+    // ============================================================
+    // KANAL ABONELİK SİSTEMİ
+    // ============================================================
+    async function isSubscribedToChannel(channelName, username) {
+        if (!channelSubscribersRef || !username) return false;
+        const snap = await channelSubscribersRef.child(channelName).child(username).once('value');
+        return snap.exists();
+    }
+
+    async function subscribeToChannel(channelName, username) {
+        if (!channelSubscribersRef || !username) return;
+        try {
+            await channelSubscribersRef.child(channelName).child(username).set({ subscribedAt: Date.now() });
+            incrementWriteCount();
+            addSystemMessage(`🔔 #${channelName} kanalına abone oldunuz.`);
+            updateChannelActionBar();
+        } catch (error) {
+            console.error('Abone olma hatası:', error);
+            addSystemMessage('❌ Abone olma başarısız!');
+        }
+    }
+
+    async function unsubscribeFromChannel(channelName, username) {
+        if (!channelSubscribersRef || !username) return;
+        try {
+            await channelSubscribersRef.child(channelName).child(username).remove();
+            incrementWriteCount();
+            addSystemMessage(`🔕 #${channelName} kanalı aboneliğiniz iptal edildi.`);
+            updateChannelActionBar();
+        } catch (error) {
+            console.error('Abonelikten çıkma hatası:', error);
+            addSystemMessage('❌ Abonelikten çıkma başarısız!');
+        }
+    }
+
+    async function toggleChannelSubscription(channelName) {
+        if (!currentUser) return;
+        const channel = cachedChannels[channelName];
+        if (!channel) return;
+        
+        if (channel.isHidden && !canAccessHiddenChannel(channelName)) {
+            addSystemMessage(`🔒 #${channelName} gizli bir kanal, abone olamazsınız.`);
+            return;
+        }
+        
+        const isSubbed = await isSubscribedToChannel(channelName, currentUser.name);
+        if (isSubbed) await unsubscribeFromChannel(channelName, currentUser.name);
+        else await subscribeToChannel(channelName, currentUser.name);
+        
+        if (currentUserListTab === 'subscriptions') updateSubscriptionListUI();
+        renderChannelTabs();
+    }
+
+    async function loadChannelSubscriberCount(channelName) {
+        if (!channelSubscribersRef || !channelName) return 0;
+        try {
+            const snap = await channelSubscribersRef.child(channelName).once('value');
+            const data = snap.val() || {};
+            return Object.keys(data).length;
+        } catch (error) { return 0; }
+    }
+
+    function updateChannelActionBar() {
+        const bar = document.getElementById('channelActionBar');
+        if (!bar) return;
+        if (!currentUser || !currentChannel) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+        
+        const channel = cachedChannels[currentChannel];
+        if (!channel) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+        
+        const canManage = canManageChannel(currentChannel);
+        const canTransfer = can('transferChannel', currentChannel);
+        const canLock = can('lockChannel', currentChannel);
+        const isSubscribed = cachedChannelSubscribers[currentChannel]?.[currentUser.name];
+        
+        if (!canManage && !canLock && !canTransfer) {
+            if (channel.isHidden && !canAccessHiddenChannel(currentChannel)) {
+                bar.classList.add('hidden');
+                bar.innerHTML = '';
+                return;
+            }
+        }
+        
+        bar.classList.remove('hidden');
+        let html = '';
+        
+        if (!channel.isHidden || canAccessHiddenChannel(currentChannel)) {
+            const subCount = Object.keys(cachedChannelSubscribers[currentChannel] || {}).length;
+            if (isSubscribed) {
+                html += `<button class="channel-action-btn active subscribe-btn" onclick="toggleChannelSubscription('${currentChannel}')" title="Abonelikten Çık (${subCount} abone)"><i class="far fa-bell"></i></button>`;
+            } else {
+                html += `<button class="channel-action-btn subscribe-btn" onclick="toggleChannelSubscription('${currentChannel}')" title="Abone Ol (${subCount} abone)"><i class="far fa-bell-slash"></i></button>`;
+            }
+        }
+        
+        if (canManage) {
+            html += `<button class="channel-action-btn" onclick="toggleChannelHidden('${currentChannel}')" title="${channel.isHidden ? 'Görünür Yap' : 'Gizle'}"><i class="far fa-eye${channel.isHidden ? '-slash' : ''}"></i></button>`;
+        }
+        if (canLock) {
+            html += `<button class="channel-action-btn" onclick="toggleChannelLocked('${currentChannel}')" title="${channel.isLocked ? 'Sessizi Aç' : 'Sessize Al'}"><i class="fas fa-volume-${channel.isLocked ? 'mute' : 'up'}"></i></button>`;
+        }
+        if (canTransfer) {
+            html += `<button class="channel-action-btn" onclick="transferChannelPrompt('${currentChannel}')" title="Sahipliği Devret"><i class="fas fa-exchange-alt"></i></button>`;
+        }
+        if (canManage) {
+            html += `<button class="channel-action-btn danger" onclick="deleteChannel('${currentChannel}')" title="Kanalı Sil"><i class="far fa-trash-alt"></i></button>`;
+        }
+        
+        bar.innerHTML = html;
+    }
+
+    async function loadChannelSubscribersForCurrent() {
+        if (!channelSubscribersRef || !currentChannel) return;
+        channelSubscribersRef.child(currentChannel).on('value', snapshot => {
+            const data = snapshot.val() || {};
+            cachedChannelSubscribers[currentChannel] = data;
+            window.cachedChannelSubscribers = cachedChannelSubscribers;
+            updateChannelActionBar();
+            _updateChannelTabsStates(
+                document.getElementById('channelTabs'),
+                Object.entries(cachedChannels)
+                    .filter(([name]) => canAccessHiddenChannel(name))
+                    .sort((a, b) => (a[1].order || 0) - (b[1].order || 0))
+            );
+            if (currentUserListTab === 'subscriptions') updateSubscriptionListUI();
+        });
+    }
+
+    // ============================================================
+    // GİRİŞ SİSTEMİ
+    // ============================================================
+    async function login() {
+        const nickInput = document.getElementById('login-nick');
+        const passwordInput = document.getElementById('login-password');
+        const rawNick = nickInput.value.trim();
+        const password = passwordInput.value;
+        const loginBtn = document.getElementById('login-btn');
+        
+        if (!rawNick) { showLoginError('❌ Lütfen bir kullanıcı adı girin!'); return; }
+        if (rawNick.length < 2 || rawNick.length > 20) { showLoginError('❌ Kullanıcı adı 2-20 karakter arasında olmalı!'); return; }
+        if (['ai','sistem','proxy'].includes(normalizeNick(rawNick))) { showLoginError('❌ Bu kullanıcı adı bot/sistem için ayrılmıştır!'); return; }
+        if (!isFirebaseConnected) { showLoginError('❌ Firebase bağlantısı yok!'); return; }
+        
+        loginBtn.disabled = true;
+        loginBtn.innerHTML = '<span class="loading"></span> Kontrol ediliyor...';
+        
+        try {
+            const normalizedNickCheck = normalizeNick(rawNick);
+            const isOwnerLogin = normalizedNickCheck === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username);
+            
+            if (!isOwnerLogin) {
+                const banCheck = await checkUserBanOnLogin(rawNick);
+                if (banCheck.isBanned) {
+                    if (banCheck.type === 'global') {
+                        showLoginError(`🚫 **GLOBAL BANLI KULLANICI**\nSebep: ${banCheck.reason}\nSüre: ${banCheck.duration}`);
+                    } else {
+                        showLoginError(`🚫 **BANLI KULLANICI**\nSebep: ${banCheck.reason}\nKalan süre: ${banCheck.remaining} dakika`);
+                    }
+                    return;
+                }
+            }
+
+            const normalizedNick = normalizeNick(rawNick);
+            
+            if (normalizedNick === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
+                const passwordValid = await verifyOwnerPassword(password);
+                if (!passwordValid) {
+                    showLoginError('❌ Hatalı şifre!');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Giriş Yap';
+                    return;
+                }
+                await completeLogin(SECURE_CONFIG.OWNER_CONFIG.username, 'owner', true, null);
+                return;
+            }
+            
+            const userRegistered = await isRegisteredUserSecure(rawNick);
+            if (userRegistered && userRegistered.isRegistered) {
+                if (!password) {
+                    nickInput.value = userRegistered.originalName;
+                    showLoginError('🔒 "' + userRegistered.originalName + '" kayıtlı bir kullanıcıdır; şifre gerekli.\nBu nick size ait değilse başka bir nick seçin.\n' + await nickSuggestionText(userRegistered.originalName));
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Giriş Yap';
+                    return;
+                }
+                const passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
+                if (!passwordValid) {
+                    nickInput.value = userRegistered.originalName;
+                    showLoginError('❌ Hatalı şifre! "' + userRegistered.originalName + '" kayıtlı bir nicktir.\nŞifrenizi unuttuysanız "Şifremi unuttum" bağlantısını kullanın.\n' + await nickSuggestionText(userRegistered.originalName));
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Giriş Yap';
+                    return;
+                }
+                await completeLogin(userRegistered.originalName, userRegistered.role, true, userRegistered);
+            } else {
+                const _clash = await guestNickClash(rawNick);
+                if (_clash) {
+                    showLoginError('⚠️ "' + _clash + '" nicki şu an kullanımda.\n' + await nickSuggestionText(rawNick));
+                    return;
+                }
+                await completeLogin(rawNick, 'user', false, null);
+            }
+            
+        } catch (error) {
+            console.error('Giriş sırasında hata:', error);
+            const message = error.code === 'PERMISSION_DENIED'
+                ? 'Firebase veritabanı erişimi reddedildi.'
+                : `Giriş hatası: ${error.message || 'Beklenmeyen bir hata oluştu.'}`;
+            showLoginError(`❌ ${message}`);
+        } finally {
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = 'Giriş Yap';
+        }
+    }
+    window.login = login;
+
+    async function completeLogin(username, role, isRegistered, userData) {
+        try {
+            const gbMsg = window.gbCheckLoginAccess ? await window.gbCheckLoginAccess(username, role) : null;
+            if (gbMsg) {
+                showLoginError(gbMsg);
+                const lb = document.getElementById('login-btn');
+                if (lb) { lb.disabled = false; lb.innerHTML = 'GİRİŞ YAP'; }
+                return;
+            }
+        } catch (e) {}
+        const now = Date.now();
+        const userInfo = {
+            name: username, lastSeen: now, joinedAt: now, isOnline: true,
+            timestamp: now, role: role, isRegistered: isRegistered,
+            isHidden: (role === 'owner')
+        };
+        await usersRef.child(username).set(userInfo);
+        usersRef.child(username).onDisconnect().update({ isOnline: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+        incrementWriteCount();
+        
+        try { await sweepPrivateWipes(); } catch (e) {}   // 3 dk'yı aşmış silmeler önce uygulanır
+        armPrivateWipe(username);                         // geri döndüyse bekleyen silme iptal
+        if (role === 'owner') { try { database.ref('privateChatsArchive').remove(); } catch (e) {} }   // eski özel mesaj arşivi artık tutulmaz
+        
+        currentUser = { name: username, role: role, isRegistered: isRegistered, data: userInfo };
+        if (window.gbStartWatch) window.gbStartWatch();
+        window.currentUser = currentUser;
+        userSessionStartedAt = Date.now();
+        privateAlertedMessageIds.clear();
+        sessionChannelEntries.clear();
+        loadPrivateContacts();
+        
+        isOwner = (role === 'owner');
+        syncLegacyRoleFlags();
+        updateAllRoleVisibilityUI();
+        
+        document.getElementById('login-screen').style.display = 'none';
+        showChatNoticeForEntry();
+        initApp();
+        
+        if (isOwner) {
+            addSystemMessage(`♛ TANRI MODU AKTİF — Hoş geldin, ${currentUser.name}! Sistemde her şeye sahipsin.`);
+        } else {
+            addSystemMessage(`🎉 Hoş geldin, ${currentUser.name}! (Rol: ${getRoleLabel(role)})`);
+        }
+        
+        loadUserProfile(username);
+        
+        const canAdd = canAddVideoToChannel(currentChannel);
+        document.getElementById('addVideoBtnWeb').disabled = !canAdd;
+        document.getElementById('addVideoBtnMobile').disabled = !canAdd;
+        
+        
+        await broadcastChannelEntry(currentChannel);
+        await enterChannelPresence(currentChannel);
+        
+        loadChannelSubscribersForCurrent();
+        updateChannelActionBar();
+        
+        setInterval(() => {
+            if (currentUser && usersRef) {
+                usersRef.child(currentUser.name).update({ lastSeen: Date.now(), isOnline: true });
+            }
+        }, PING_INTERVAL);
+    }
+
+    function updateAllRoleVisibilityUI() {
+        const roleToUiMap = {
+            owner:        { badgeId: 'ownerBadge',          panelId: 'ownerPanelIcon',        mobileId: 'mobileOwnerIcon' },
+            admin:        { badgeId: 'adminBadge',          panelId: 'adminPanelIcon',        mobileId: 'mobileAdminIcon' },
+            coadmin:      { badgeId: 'coadminBadge',        panelId: 'coadminPanelIcon',      mobileId: 'mobileCoAdminIcon' },
+            operator:     { badgeId: 'operatorBadge',       panelId: 'operatorPanelIcon',     mobileId: 'mobileOperatorIcon' },
+            halfoperator: { badgeId: 'halfoperatorBadge',   panelId: 'halfoperatorPanelIcon', mobileId: 'mobileHalfOperatorIcon' },
+            verified:     { badgeId: 'verifiedBadge',       panelId: 'verifiedPanelIcon',     mobileId: 'mobileVerifiedIcon' }
+        };
+        
+        Object.entries(roleToUiMap).forEach(([role, ids]) => {
+            const visible = hasRole(role);
+            const badge = document.getElementById(ids.badgeId);
+            const panel = document.getElementById(ids.panelId);
+            const mobile = document.getElementById(ids.mobileId);
+            if (badge) badge.style.display = visible ? 'flex' : 'none';
+            if (panel) panel.style.display = visible ? 'flex' : 'none';
+            if (mobile) mobile.style.display = visible ? 'flex' : 'none';
+        });
+        
+        // 🆕 Geçici + verme butonu (Owner/Admin/CoAdmin/Operator/HalfOp)
+        const canGrantTemp = isOwner || hasRole('halfoperator');
+        const tempIcon = document.getElementById('tempVerifiedIcon');
+        const mobileTempIcon = document.getElementById('mobileTempVerifiedIcon');
+        if (tempIcon) tempIcon.style.display = canGrantTemp ? 'flex' : 'none';
+        if (mobileTempIcon) mobileTempIcon.style.display = canGrantTemp ? 'flex' : 'none';
+        
+        renderChannelTabs();
+        renderChannelManageList();
+        updateChannelActionBar();
+    }
+
+    function showLoginError(message) {
+        const errorMsg = document.getElementById('login-error');
+        errorMsg.textContent = message;
+        errorMsg.style.display = 'block';
+        document.getElementById('login-success').style.display = 'none';
+    }
+
+    function showLoginSuccess(message) {
+        const successMsg = document.getElementById('login-success');
+        successMsg.textContent = message;
+        successMsg.style.display = 'block';
+        document.getElementById('login-error').style.display = 'none';
+    }
+
+    async function isRegisteredUserSecure(username) {
+        try {
+            const normalized = normalizeNick(username);
+            const snapshot = await registeredUsersRef.once('value');
+            const users = snapshot.val() || {};
+            for (const [dbUsername, userData] of Object.entries(users)) {
+                if (normalizeNick(dbUsername) === normalized) {
+                    return { originalName: dbUsername, ...userData, isRegistered: true };
+                }
+            }
+            return null;
+        } catch (error) { return null; }
+    }
+
+    async function verifyAdminPasswordSecure(username, password) {
+        try {
+            const normalized = normalizeNick(username);
+            if (normalized === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) {
+                return await verifyOwnerPassword(password);
+            }
+            const userRegistered = await isRegisteredUserSecure(username);
+            return userRegistered && userRegistered.password === password;
+        } catch (error) { return false; }
+    }
+
+    // ============================================================
+    // 🆕 GEÇİCİ ONAYLI MODAL — TÜM ROLLER İÇİN AÇMA
+    // ============================================================
+    function openTempVerifiedPanel() {
+        if (!isOwner && !hasRole('halfoperator')) {
+            addSystemMessage('⛔ Bu işlem için Half-Operatör ve üstü yetki gerekli!');
+            return;
+        }
+        document.getElementById('tempVerifiedModal').style.display = 'block';
+        document.getElementById('overlay').style.display = 'block';
+    }
+    window.openTempVerifiedPanel = openTempVerifiedPanel;
+
+    function closeTempVerifiedModal() {
+        document.getElementById('tempVerifiedModal').style.display = 'none';
+        document.getElementById('overlay').style.display = 'none';
+    }
+    window.closeTempVerifiedModal = closeTempVerifiedModal;
+
+    // Mobil menüden çağrı
+    function toggleTempVerifiedFromMenu() {
+        toggleMobileMenu();
+        setTimeout(() => openTempVerifiedPanel(), 50);
+    }
+    window.toggleTempVerifiedFromMenu = toggleTempVerifiedFromMenu;
+                // ============================================================
+    // KANAL PRESENCE
+    // ============================================================
+    async function enterChannelPresence(channelName) {
+        if (!currentUser || !database || !channelName) return;
+        
+        try {
+            if (activeChannelName && activeChannelName !== channelName) {
+                await leaveChannelPresence(activeChannelName);
+            }
+            
+            const presenceRef = database.ref(`channelPresence/${channelName}/${currentUser.name}`);
+            await presenceRef.set({
+                lastSeen: Date.now(),
+                role: currentUser.role,
+                avatar: currentProfileAvatar || null
+            });
+            presenceRef.onDisconnect().remove();
+            
+            if (presencePingInterval) clearInterval(presencePingInterval);
+            presencePingInterval = setInterval(() => {
+                if (currentUser && activeChannelName === channelName) {
+                    presenceRef.update({ lastSeen: Date.now() });
+                }
+            }, 30000);
+            
+            listenChannelPresence(channelName);
+        } catch (error) {
+            console.warn('Kanal presence hatası:', error);
+        }
+    }
+
+    async function leaveChannelPresence(channelName) {
+        if (!currentUser || !database) return;
+        try {
+            await database.ref(`channelPresence/${channelName}/${currentUser.name}`).remove();
+        } catch (error) {}
+        if (presencePingInterval) {
+            clearInterval(presencePingInterval);
+            presencePingInterval = null;
+        }
+    }
+
+    function listenChannelPresence(channelName) {
+        if (presenceListenerRef) {
+            presenceListenerRef.off();
+            presenceListenerRef = null;
+        }
+        
+        const ref = database.ref(`channelPresence/${channelName}`);
+        presenceListenerRef = ref;
+        ref.on('value', (snapshot) => {
+            const data = snapshot.val() || {};
+            const now = Date.now();
+            const channelUsers = {};
+            
+            Object.entries(data).forEach(([username, info]) => {
+                if (username === SECURE_CONFIG.OWNER_CONFIG.username && 
+                    (!currentUser || currentUser.name !== SECURE_CONFIG.OWNER_CONFIG.username)) return;
+                if (info.lastSeen && now - info.lastSeen < ONLINE_THRESHOLD) {
+                    channelUsers[username] = info;
+                }
+            });
+            
+            cachedChannelPresence[channelName] = channelUsers;
+            
+            const count = Object.keys(channelUsers).length;
+            const el = document.getElementById('onlineCount');
+            if (el) el.textContent = count;
+            const mobileEl = document.getElementById('mobileOnlineCount');
+            if (mobileEl) mobileEl.textContent = count;
+            
+            if (activeChannelName === channelName && 
+                document.getElementById('usersSidebar')?.classList.contains('active')) {
+                updateChannelUserListUI(channelUsers);
+            }
+        });
+    }
+
+    function updateChannelUserListUI(users) {
+        const container = document.getElementById('userListContainer');
+        if (!container) return;
+        
+        if (currentUserListTab === 'private') { updatePrivateContactListUI(); return; }
+        if (currentUserListTab === 'following') { updateFollowingListUI(); return; }
+        if (currentUserListTab === 'subscriptions') { updateSubscriptionListUI(); return; }
+        
+        const now = Date.now();
+        const usersToDisplay = Object.entries(users)
+            .map(([username, info]) => ({
+                username,
+                userData: info,
+                isOnline: true,
+                secondsAgo: Math.floor((now - (info.lastSeen || 0)) / 1000),
+                roleLevel: (info && info.isBot) ? 4.5 : getRoleLevel(getUserRoleInChannel(username, activeChannelName))
+            }))
+            .sort((a, b) => {
+                if (a.roleLevel !== b.roleLevel) return b.roleLevel - a.roleLevel;
+                return a.username.toLocaleLowerCase('tr').localeCompare(b.username.toLocaleLowerCase('tr'), 'tr', { sensitivity: 'base', numeric: true });
+            });
+        const _prevScroll = container.scrollTop;
+        
+        if (usersToDisplay.length === 0) {
+            container.innerHTML = `<div style="color:var(--text-muted); text-align:center; padding:20px;">#${activeChannelName} kanalında kimse yok.</div>`;
+            return;
+        }
+        
         const _grp = { staff: [], bots: [], members: [] };
         usersToDisplay.forEach(u => {
             const isBotU = u.userData?.isBot === true || u.username === 'Proxy';
