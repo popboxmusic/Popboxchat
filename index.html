@@ -11411,16 +11411,61 @@
         return ok;
     }
 
-    // Galeriden seçilen video: ilk 15 sn alınır, küçültülür
+    const VIDEO_EXT_RE = /\.(mp4|m4v|mov|webm|3gp|3g2|mkv|avi|mpe?g|ogv)$/i;
+    function isVideoFile(f) { return !!f && (((f.type || '').toLowerCase().startsWith('video/')) || VIDEO_EXT_RE.test(f.name || '')); }
+
+    function grabVideoPoster(v) {
+        return new Promise(resolve => {
+            let done = false;
+            const fin = () => {
+                if (done) return; done = true; v.removeEventListener('seeked', fin);
+                try {
+                    const sw = v.videoWidth, sh = v.videoHeight;
+                    if (!sw || !sh) return resolve(null);
+                    const sc = Math.min(1, 200 / Math.max(sw, sh)), c = document.createElement('canvas');
+                    c.width = Math.round(sw * sc); c.height = Math.round(sh * sc);
+                    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+                    resolve(c.toDataURL('image/jpeg', 0.6));
+                } catch (e) { resolve(null); }
+            };
+            v.addEventListener('seeked', fin);
+            try { v.currentTime = Math.min(0.2, (v.duration || 1) / 2); } catch (e) { fin(); }
+            setTimeout(fin, 2500);
+        });
+    }
+
+    // Galeriden seçilen video: küçükse olduğu gibi gönderilir, büyükse ilk 15 sn alınıp küçültülür
     async function sendPrivateVideoFile(file) {
         if (file.size > 300 * 1024 * 1024) { addSystemMessage('❌ Video dosyası çok büyük (en fazla 300 MB).'); return; }
-        const status = showPrivateStatus('🎬 Video hazırlanıyor (15 sn\'ye kırpılıyor, küçültülüyor)...');
+        const status = showPrivateStatus('🎬 Video hazırlanıyor...');
+        const setStatus = t => { if (status.firstChild) status.firstChild.textContent = t; };
         const v = document.createElement('video');
         const url = URL.createObjectURL(file);
         let audioCtx = null;
         try {
-            v.playsInline = true; v.preload = 'auto'; v.src = url;
-            await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error('Video açılamadı.')); });
+            v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto'; v.muted = false; v.src = url;
+            /* oynatma, kullanıcı dokunuşu hâlâ geçerliyken başlatılır (telefon tarayıcıları bunu şart koşar) */
+            let playOk = true;
+            const playP = (() => { try { return v.play(); } catch (e) { return Promise.reject(e); } })();
+            if (playP && playP.catch) playP.catch(() => { playOk = false; });
+            await new Promise((res, rej) => {
+                const t = setTimeout(() => rej(new Error('Video açılamadı (biçim desteklenmiyor olabilir).')), 20000);
+                v.onloadedmetadata = () => { clearTimeout(t); res(); };
+                v.onerror = () => { clearTimeout(t); rej(new Error('Video açılamadı (biçim desteklenmiyor olabilir).')); };
+            });
+            const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : PRIVATE_VIDEO_MAX_SEC;
+            const mime = (file.type || '').toLowerCase().split(';')[0];
+
+            /* HIZLI YOL: küçük ve kısa mp4/webm → yeniden kodlamadan anında gönder */
+            if (file.size <= PRIVATE_VIDEO_MAX_BYTES && (mime === 'video/mp4' || mime === 'video/webm') && dur <= PRIVATE_VIDEO_MAX_SEC + 0.5) {
+                try { v.pause(); } catch (e) {}
+                const poster = await grabVideoPoster(v);
+                setStatus('📤 Video gönderiliyor...');
+                await sendPrivateVideo({ blob: file, duration: dur, poster, mime });
+                return;
+            }
+
+            /* YENİDEN KODLAMA: ilk 15 sn, küçültülmüş */
             let audioTracks = [];
             try {
                 const AC = window.AudioContext || window.webkitAudioContext;
@@ -11433,14 +11478,21 @@
                     if (audioCtx.state === 'suspended') await audioCtx.resume();
                 }
             } catch (e) { audioTracks = []; }
-            await v.play();
-            const maxSec = Math.min(PRIVATE_VIDEO_MAX_SEC, isFinite(v.duration) && v.duration > 0 ? v.duration : PRIVATE_VIDEO_MAX_SEC);
-            const enc = startVideoEncoding(v, audioTracks, maxSec + 0.2, t => { status.firstChild.textContent = '🎬 Video hazırlanıyor... ' + Math.min(100, Math.round(t / maxSec * 100)) + '%'; });
+            try { v.currentTime = 0; } catch (e) {}
+            try { await v.play(); }
+            catch (e) {
+                /* sesli oynatma reddedildi: sessiz oynatarak devam et (video ses olmadan gider) */
+                v.muted = true; audioTracks = [];
+                try { await v.play(); } catch (e2) { throw new Error('Telefon videoyu oynatmaya izin vermedi. Videoyu seçtikten sonra tekrar dene.'); }
+                addSystemMessage('⚠️ Video ses olmadan gönderiliyor (tarayıcı sesi yakalamaya izin vermedi).');
+            }
+            const maxSec = Math.min(PRIVATE_VIDEO_MAX_SEC, dur);
+            const enc = startVideoEncoding(v, audioTracks, maxSec + 0.2, t => setStatus('🎬 Video hazırlanıyor... ' + Math.min(100, Math.round(t / maxSec * 100)) + '%'));
             v.onended = () => enc.stop();
             const res = await enc.done;
             v.pause();
-            if (!res) throw new Error('Video hazırlanamadı.');
-            status.firstChild.textContent = '📤 Video gönderiliyor...';
+            if (!res || !res.blob || !res.blob.size) throw new Error('Video hazırlanamadı.');
+            setStatus('📤 Video gönderiliyor...');
             await sendPrivateVideo(res);
         } catch (error) {
             console.error('Video gönderilemedi:', error);
@@ -13702,7 +13754,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             /* alıcının çevrimiçi durumu, engel ve ban kontrolleri aynı anda başlar */
             const userP = usersRef ? usersRef.child(to).once('value') : null;
             const [blocked, canSend] = await Promise.all([
-                ccCached('blk:' + to, 15000, () => checkBlockStatus(to)),
+                checkBlockStatus(to),
                 ccCached('ban:' + currentUser.name, 20000, () => checkBanBeforeMessage())
             ]);
             if (blocked) { restore(); alert('Bu kullanıcıya mesaj gönderemezsiniz!'); return; }
@@ -13966,7 +14018,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         try {
             if (!await sendPendingMessage(recipient, messageData)) throw new Error('Firebase mesajı kaydetmedi.');
             incrementWriteCount();
-            await archiveAndTrimPrivateChat(chatId);
+            setTimeout(() => archiveAndTrimPrivateChat(chatId), 1500);
             // addSystemMessage('✅ Medya gönderildi.');  // Yanıltıcı: genel sohbete yazıyor, özel sohbete değil
             return true;
         } catch (error) {
@@ -14064,7 +14116,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const files = Array.from(event.target.files || []);
         try {
             for (const file of files) {
-                if (file.type && file.type.startsWith('video/')) { await sendPrivateVideoFile(file); continue; }
+                if (isVideoFile(file)) { await sendPrivateVideoFile(file); continue; }
                 if (!isImageFile(file)) { addSystemMessage('❌ Yalnızca resim veya video gönderilebilir.'); continue; }
                 await sendPrivateImage(file, '📸 Resim gönderdi');
             }
@@ -14242,7 +14294,10 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     // ============================================================
     // KARŞILIKLI ENGEL KONTROLÜ
     // ============================================================
-    async function checkBlockStatus(targetUser) {
+    function checkBlockStatus(targetUser) {
+        return ccCached('blkraw:' + targetUser, 8000, () => checkBlockStatusRaw(targetUser));
+    }
+    async function checkBlockStatusRaw(targetUser) {
         if (!currentUser || !blocksRef) return false;
         if (normalizeNick(targetUser) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return false;
         if (normalizeNick(targetUser) === normalizeNick(currentUser.name)) return false;
