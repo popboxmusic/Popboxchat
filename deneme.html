@@ -5174,14 +5174,6 @@
 #ccInstallBtn[hidden]{display:none!important}
 
 </style>
-<style id="cc-adult-style">
-.channel-sidebar .channel-tab .ct-adult{flex:0 0 auto;font-size:10px;font-weight:800;letter-spacing:.04em;padding:1px 6px;border-radius:6px;background:#e5484d;color:#fff}
-body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:#e5484d;color:#fff;vertical-align:middle}
-.cc-ad-note{font-size:12.5px;color:var(--text-muted);line-height:1.5;margin:6px 0 12px}
-.cc-ad-row{display:flex;gap:8px;flex-wrap:wrap}
-.cc-ad-code{font:700 20px/1.2 "Courier New",monospace;letter-spacing:.08em;padding:12px 14px;border-radius:10px;background:var(--bg-tertiary);border:1px dashed var(--border-strong,var(--border-color));color:var(--text-primary);user-select:all;word-break:break-all}
-.cc-ad-acts{display:flex;gap:8px;flex-wrap:wrap}.cc-ad-acts .role-action-btn{width:auto;flex:1 1 150px;margin:0}
-</style>
 </head>
 <body>
     <!-- ============================================================
@@ -5628,7 +5620,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
             <button class="role-tab" onclick="switchOwnerTab('reports')"><i class="fas fa-exclamation-triangle"></i> Şikayetler</button>
             <button class="role-tab" onclick="switchOwnerTab('blocks')"><i class="fas fa-ban"></i> Engellemeler</button>
             <button class="role-tab" onclick="switchOwnerTab('anvideo')"><i class="fas fa-film"></i> AN videoları</button>
-            <button class="role-tab" onclick="switchOwnerTab('adult')"><i class="fas fa-lock"></i> +18 Kanal</button>
         </div>
         <div class="role-panel-content">
             <div class="role-tab-content active" id="ownerDashboardTab">
@@ -5856,10 +5847,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
                 </div>
             </div>
             
-            <div class="role-tab-content" id="ownerAdultTab">
-                <div class="role-section"><div id="ccAdultBox"></div></div>
-            </div>
-
             <!-- YENİ REKLAM YÖNETİM SEKMESİ (BANNER) -->
             <div class="role-tab-content" id="ownerAdsTab">
                 <div class="role-section">
@@ -7203,7 +7190,7 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
             if (channel.isLocked) statusIcon += ' <i class="fas fa-volume-mute" title="Sessiz"></i>';
             if (isSubbed) statusIcon += ' <i class="far fa-bell" title="Abone" style="color: var(--favorite); font-size: 10px;"></i>';
             
-            const newHtml = `<span class="ct-hash">#</span><span class="ct-name">${escapeChannelHtml(channel.label || name)}</span>${channel.adult ? '<span class="ct-adult">18+</span>' : ''}${statusIcon ? `<span class="ct-ic">${statusIcon}</span>` : ''}${
+            const newHtml = `<span class="ct-hash">#</span><span class="ct-name">${escapeChannelHtml(channel.label || name)}</span>${statusIcon ? `<span class="ct-ic">${statusIcon}</span>` : ''}${
                 subCount > 0 ? `<span class="channel-subscriber-badge"><i class="fas fa-users"></i>${subCount}</span>` : ''
             }`;
             
@@ -7615,13 +7602,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
         return false;
     }
     
-    if (channel && channel.adult) {
-        if (isOwner) return true;
-        if (!user) return false;
-        const un0 = normalizeNick(user);
-        if (un0 === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return true;
-        return !!(channel.allowedUsers && Object.keys(channel.allowedUsers).some(k => channel.allowedUsers[k] && normalizeNick(k) === un0));
-    }
     if (!channel || !channel.isHidden) return true;
     if (isOwner) return true;
     if (!user) return false;
@@ -7916,31 +7896,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
         }
     }
 
-    async function ensureBotUserExists(botName) {
-        if (!database || !botName) return;
-        try {
-            const snap = await database.ref(`onlineUsers/${botName}`).once('value');
-            const data = snap.val();
-            const now = Date.now();
-            if (!data || (now - (data.lastSeen || 0)) > ONLINE_THRESHOLD) {
-                await database.ref(`onlineUsers/${botName}`).set({
-                    name: botName,
-                    role: 'supervisor',
-                    level: 4.5,
-                    isBot: true,
-                    isOnline: true,
-                    lastSeen: now,
-                    joinedAt: data?.joinedAt || now,
-                    avatar: null
-                });
-                const botRef = database.ref(`onlineUsers/${botName}`);
-                botRef.onDisconnect().update({ isOnline: false, lastSeen: Date.now() });
-            }
-        } catch (e) {
-            console.warn('Bot kullanıcı kaydı hatası:', e);
-        }
-    }
-
     async function trimServerMessages(channelName) {
         if (!database || !channelName) return;
         try {
@@ -8010,31 +7965,7 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
             if (text.startsWith('/')) {
                 const cmdName = text.substring(1).split(' ')[0].toLowerCase();
                 
-            // 🆕 KANALA BAĞLI BOTLAR (Spor → #spor, Haber → #haber, DJ → #radyo)
-            // Komut yanlış kanalda yazılırsa bot çalışmaz, sadece uyarı gösterilir.
-            {
-                const homeBot = getBotForCommand(text);
-                if (homeBot) {
-                    input.value = '';
-                    autoResize(input);
-                    if (isBotAllowedInChannel(homeBot.key)) {
-                        homeBot.api.handleCommand(text);
-                    } else {
-                        addSystemMessage(`⛔ ${homeBot.label} sadece #${BOT_HOME_CHANNELS[homeBot.key]} kanalında çalışır.`);
-                    }
-                    isSendingMessage = false;
-                    return;
-                }
-            }
-                
-                if (cmdName === 'proxy' || cmdName.startsWith('proxy-')) {
-                    // Proxy Bot yakalayacak — devam et
-                } else if (cmdName === 'oyun' || cmdName === 'oyun-baslat' || 
-                           cmdName === 'oyun-durdur' || cmdName === 'katil' || cmdName === 'katıl' ||
-                           cmdName === 'skor' || cmdName === 'puan' || cmdName === 'istatistik' ||
-                           cmdName === 'oyun-yardim' || cmdName === 'akilkupu') {
-                    // Akıl Küpü Bot yakalayacak — devam et
-                } else {
+                {
                     handleCommand(text);
                     input.value = '';
                     autoResize(input);
@@ -8070,7 +8001,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
                 input.value = '';
                 autoResize(input);
                 if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
-                if (currentChannel === 'ai' && window.AIBot) window.AIBot.askInChannel(text);
                 setTimeout(() => trimServerMessages(currentChannel), 2000);
             } catch (error) {
                 addSystemMessage('❌ Mesaj gönderilemedi!');
@@ -9066,6 +8996,7 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
         
         const now = Date.now();
         const usersToDisplay = Object.entries(users)
+            .filter(([username, info]) => !(info && info.isBot) && username !== 'Proxy' && username !== 'AI')
             .map(([username, info]) => ({
                 username,
                 userData: info,
@@ -10545,7 +10476,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
         if (['xp','seviye','top','siralama','xpver','xpsifirla'].includes(command)) { if (window.XPCmd && await window.XPCmd.handle(command, args)) return; }
         if (['sifresifirla','sifretalepleri','email','eposta'].includes(command)) { if (window.V5Cmd && await window.V5Cmd.handle(command, args)) return; }
         if (command === 'join') {
-            if (args.length === 1 && !String(args[0]).startsWith('#') && await ccAdultTryJoin(args[0])) return;
             if (args.length >= 1) {
                 const channelName = args[0].replace('#', '');
                 const username = args[1] || null;
@@ -11837,7 +11767,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
     function isPrivateContactFresh(username) {
         if (!username) return false;
         if (username === privateChatWith) return true;
-        if (username === 'Proxy') return true;
         if ((privateUnreadCounts[username] || 0) > 0) return true;
         if (Object.keys(cachedOnlineUsers || {}).length === 0) return true;
         const u = cachedOnlineUsers[username];
@@ -12173,7 +12102,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
         document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
         document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
         if (tabName === 'ads') { updateBannerAdListUI(); }
-        if (tabName === 'adult') { ccAdultRender(true); }
     }
     
     function switchAdminTab(tabName) {
@@ -12825,52 +12753,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
         if (mq.addEventListener) mq.addEventListener('change', onSys);
     }
 
-    // ============================================================
-    // 🤖 BOT KANAL KİLİDİ — her bot sadece kendi kanalında çalışır
-    // ============================================================
-    const BOT_HOME_CHANNELS = { spor: 'spor', haber: 'haber', dj: 'radyo' };
-    const BOT_LABELS = { spor: 'Spor Botu', haber: 'Haber Botu', dj: 'DJ Botu' };
-
-    function getBotApi(key) {
-        if (key === 'spor') return window.SporBot;
-        if (key === 'haber') return window.HaberBot;
-        if (key === 'dj') return window.DJBot || window.DjBot || window.DJ;
-        return null;
-    }
-
-    function isBotAllowedInChannel(key, channelName) {
-        return (channelName || currentChannel) === BOT_HOME_CHANNELS[key];
-    }
-
-    // Metin hangi botun komutuysa onu döndürür (yoksa null)
-    function getBotForCommand(text) {
-        for (const key of Object.keys(BOT_HOME_CHANNELS)) {
-            const api = getBotApi(key);
-            if (api && typeof api.isCommand === 'function' && typeof api.handleCommand === 'function') {
-                try { if (api.isCommand(text)) return { key, api, label: BOT_LABELS[key] }; } catch (e) {}
-            }
-        }
-        return null;
-    }
-
-    // Bot scriptleri yüklendikten sonra handleCommand'ı sarmala:
-    // başka bir yerden (ör. dj.js kendi dinleyicisinden) çağrılsa bile yanlış kanalda çalışmasın
-    window.addEventListener('load', () => {
-        Object.keys(BOT_HOME_CHANNELS).forEach(key => {
-            const api = getBotApi(key);
-            if (!api || typeof api.handleCommand !== 'function' || api._channelGuarded) return;
-            const original = api.handleCommand.bind(api);
-            api.handleCommand = function (...args) {
-                if (!isBotAllowedInChannel(key)) {
-                    addSystemMessage(`⛔ ${BOT_LABELS[key]} sadece #${BOT_HOME_CHANNELS[key]} kanalında çalışır.`);
-                    return;
-                }
-                return original(...args);
-            };
-            api._channelGuarded = true;
-        });
-    });
-
     function playVideo(videoId) {
         if (!videoId) return;
         window.__ytAllowUntil = Date.now() + 1500;   // playlist'ten seçilen video hemen oynar
@@ -13076,14 +12958,11 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
     }
 
     async function deleteChannel(name) {
-        if (cachedChannels[name] && cachedChannels[name].adult && !isOwner) { addSystemMessage('⛔ +18 kanalını yalnızca Owner silebilir.'); return; }
-        const _adultHash = cachedChannels[name] && cachedChannels[name].adultCodeHash;
-        if (['genel', 'help', 'admin_channel_global', 'ai'].includes(name)) { addSystemMessage('⛔ Sistem kanalları silinemez!'); return; }
+        if (['genel', 'help', 'admin_channel_global'].includes(name)) { addSystemMessage('⛔ Sistem kanalları silinemez!'); return; }
         if (!can('deleteChannel', name)) { addSystemMessage('⛔ Bu kanalı silme yetkiniz yok!'); return; }
         if (Object.keys(cachedChannels).length <= 1) { addSystemMessage('⛔ Son kanal silinemez!'); return; }
         if (!confirm(`#${name} kanalını ve mesajlarını silmek istediğinize emin misiniz?`)) return;
         await channelsRef.child(name).remove();
-        if (_adultHash) { try { await database.ref('adultCodes/' + _adultHash).remove(); } catch (e) {} }
         await database.ref(`channelMessages/${name}`).remove();
         await database.ref(`channelRoles/${name}`).remove();
         await database.ref(`channelPresence/${name}`).remove();
@@ -13097,7 +12976,6 @@ body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-siz
     }
 
     async function toggleChannelHidden(name) {
-        if (cachedChannels[name] && cachedChannels[name].adult && !isOwner) { addSystemMessage('⛔ +18 kanalını yalnızca Owner yönetir.'); return; }
         if (!can('hideChannel', name)) {
             addSystemMessage('⛔ Bu kanalı gizleme yetkiniz yok!');
             return;
@@ -13182,7 +13060,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     async function transferChannelPrompt(name) {
         const channel = cachedChannels[name];
         if (!channel) return;
-        if (channel.adult) { addSystemMessage('⛔ +18 kanalının sahipliği devredilemez.'); return; }
         
         if (!can('transferChannel', name)) {
             addSystemMessage('⛔ Kanal sahipliğini devretme yetkiniz yok!');
@@ -13220,217 +13097,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             addSystemMessage('❌ Kanal devri başarısız!');
         }
     }
-
-    // ============================================================
-    // +18 KANAL (yalnızca Owner açar, /join KOD ile girilir)
-    // ============================================================
-    const CC_ADULT_CH = 'plus18';
-    const CC_CODE_ALPH = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-    let _ccAdFails = 0, _ccAdLockUntil = 0, _ccAdSig = '';
-
-    function ccAdNorm(raw) { return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
-    function ccAdLooksLikeCode(raw) { const n = ccAdNorm(raw); return n.length === 16 && /^[A-HJKMNP-Z2-9]+$/.test(n); }
-    function ccGenCode() {
-        const a = new Uint32Array(16); crypto.getRandomValues(a);
-        let c = ''; a.forEach(x => { c += CC_CODE_ALPH[x % CC_CODE_ALPH.length]; });
-        return c.match(/.{4}/g).join('-');
-    }
-    async function ccAdHash(code) {
-        if (!(window.crypto && crypto.subtle)) throw new Error('Güvenli bağlantı (HTTPS) gerekli.');
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('cc18|' + ccAdNorm(code)));
-        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    function ccAskAge() {
-        return new Promise(resolve => {
-            const old = document.getElementById('ccAgeGate'); if (old) old.remove();
-            const ov = document.createElement('div'); ov.className = 'cc-ov'; ov.id = 'ccAgeGate';
-            ov.innerHTML = '<div class="cc-card" role="dialog" aria-modal="true"><div class="cc-h"><i class="fas fa-user-lock"></i>18 yaş sınırı</div>'
-                + '<div class="cc-sub">Bu kanal yalnızca <b>18 yaşını doldurmuş</b> kullanıcılar içindir ve yetişkinlere yönelik içerik barındırabilir. Reşit olmayanların görüntülenmesi veya paylaşılması kesinlikle yasaktır; ihlal edenler kalıcı olarak engellenir.</div>'
-                + '<label class="cc-chk"><input type="checkbox" id="ccAgeOk"> 18 yaşından büyük olduğumu beyan ederim</label>'
-                + '<div class="cc-act"><button type="button" class="cc-btn" id="ccAgeNo">Vazgeç</button><button type="button" class="cc-btn pri" id="ccAgeGo" disabled>Kanala gir</button></div></div>';
-            document.body.appendChild(ov);
-            const ok = ov.querySelector('#ccAgeOk'), go = ov.querySelector('#ccAgeGo');
-            const done = v => { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
-            const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
-            ok.onchange = () => { go.disabled = !ok.checked; };
-            ov.querySelector('#ccAgeNo').onclick = () => done(false);
-            go.onclick = () => done(true);
-            ov.addEventListener('mousedown', e => { if (e.target === ov) done(false); });
-            document.addEventListener('keydown', onKey, true);
-        });
-    }
-
-    /* /join KOD → true: komut burada işlendi, false: eski /join davranışına devam et */
-    async function ccAdultTryJoin(raw) {
-        const isAdm = isOwner || hasRole('admin');
-        if (!ccAdLooksLikeCode(raw)) {
-            if (isAdm) return false;
-            addSystemMessage('⛔ Geçersiz kod.');
-            return true;
-        }
-        if (!currentUser) return true;
-        if (!isOwner && !currentUser.isRegistered) { addSystemMessage('🔒 Bu kanala yalnızca kayıtlı kullanıcılar girebilir. Önce kayıt olun.'); return true; }
-        if (Date.now() < _ccAdLockUntil) { addSystemMessage('⏳ Çok fazla hatalı deneme. Biraz sonra tekrar deneyin.'); return true; }
-        let info = null;
-        try {
-            const hash = await ccAdHash(raw);
-            info = (await database.ref('adultCodes/' + hash).once('value')).val();
-        } catch (e) { addSystemMessage('❌ Kod doğrulanamadı: ' + (e.message || e)); return true; }
-        const ch = info && info.channel, c = ch && cachedChannels[ch];
-        if (!c || !c.adult) {
-            if (++_ccAdFails >= 5) { _ccAdLockUntil = Date.now() + 60000; _ccAdFails = 0; }
-            addSystemMessage('⛔ Geçersiz veya iptal edilmiş kod.');
-            return true;
-        }
-        _ccAdFails = 0;
-        if (canAccessHiddenChannel(ch)) { await switchChannel(ch); return true; }
-        if (!(await ccAskAge())) { addSystemMessage('İşlem iptal edildi.'); return true; }
-        try {
-            await channelsRef.child(ch).child('allowedUsers').child(currentUser.name).set(true);
-            try { await database.ref('adultAck/' + ch + '/' + _moveKey(currentUser.name)).set(Date.now()); } catch (e) {}
-        } catch (e) {
-            addSystemMessage('❌ Kanala girilemedi (yetki hatası). Yönetici Firebase kurallarını kontrol etmeli.');
-            return true;
-        }
-        for (let i = 0; i < 25 && !canAccessHiddenChannel(ch); i++) await new Promise(r => setTimeout(r, 200));
-        if (!canAccessHiddenChannel(ch)) { addSystemMessage('❌ Kanal henüz hazır değil, tekrar deneyin.'); return true; }
-        await switchChannel(ch);
-        return true;
-    }
-
-    /* kanal içi görünüm: başlık rozeti, bilgilendirme, link alanı yazısı */
-    function ccAdultUI(name) {
-        const c = cachedChannels[name], on = !!(c && c.adult);
-        document.body.classList.toggle('cc-adult-ch', on);
-        const placeholder = on ? 'YouTube veya video dosyası linki (.mp4 / .webm / .m3u8)' : 'YouTube linki...';
-        ['playlistUrlWeb', 'playlistUrlMobile'].forEach(id => { const el = document.getElementById(id); if (el) el.placeholder = placeholder; });
-        if (on && window._ccAdultNoticed !== name + ':' + (currentUser && currentUser.name)) {
-            window._ccAdultNoticed = name + ':' + (currentUser && currentUser.name);
-            addSystemMessage('🔞 Bu kanal 18 yaşından büyükler içindir. Reşit olmayanların görüntülenmesi/paylaşılması yasaktır; ihlal eden engellenir.');
-        }
-    }
-
-    /* YouTube dışı video: yalnızca +18 kanalında, doğrudan video dosyası bağlantısı */
-    function ccAddExternalVideo(url, title, urlId, titleId) {
-        const c = cachedChannels[currentChannel];
-        if (!c || !c.adult) { alert('Geçersiz YouTube linki!\n\nYouTube dışı video yalnızca +18 kanalında eklenebilir.'); return false; }
-        let u; try { u = new URL(url); } catch (e) { alert('Geçerli bir video bağlantısı girin.'); return false; }
-        if (u.protocol !== 'https:') { alert('Yalnızca https:// bağlantıları eklenebilir.'); return false; }
-        if (!/\.(mp4|m4v|webm|mov|m3u8|ogv)$/i.test(u.pathname)) { alert('Doğrudan video dosyası bağlantısı gerekli (.mp4, .webm, .m3u8). Sayfa bağlantıları oynatılamaz.'); return false; }
-        const ref = activeChannelPlaylistRef || playlistRef;
-        if (!ref) return false;
-        const fileName = decodeURIComponent(u.pathname.split('/').pop() || '').replace(/\.[^.]+$/, '');
-        const clean = String(title || fileName || 'Video').replace(/[<>&"'`]/g, '').trim().slice(0, 100) || 'Video';
-        const key = ref.push().key;
-        ref.child(key).set({ id: 'up_' + key, title: clean, url: u.href, addedBy: currentUser ? currentUser.name : 'Anonim', timestamp: Date.now(), kind: 'ext' });
-        incrementWriteCount();
-        const a = document.getElementById(urlId), b = document.getElementById(titleId);
-        if (a) a.value = ''; if (b) b.value = '';
-        if (playlist.length === 0) setTimeout(() => { if (playlist.length > 0) playVideo(playlist[0].id); }, 500);
-        return true;
-    }
-
-    /* ---- Owner paneli: +18 Kanal sekmesi ---- */
-    function ccAdMsg(t, bad) { const e = document.getElementById('ccAdMsg'); if (e) { e.textContent = t; e.style.color = bad ? '#e5484d' : ''; } }
-    function ccAdultRender(force) {
-        const box = document.getElementById('ccAdultBox'); if (!box) return;
-        const c = cachedChannels[CC_ADULT_CH];
-        let saved = ''; try { saved = localStorage.getItem('ccAdultCode') || ''; } catch (e) {}
-        const members = c && c.allowedUsers ? Object.keys(c.allowedUsers).filter(k => c.allowedUsers[k]) : [];
-        const sig = JSON.stringify([!!c, c && c.label, members, !!(c && c.adultCodeHash), saved]);
-        if (!force && sig === _ccAdSig) return;
-        _ccAdSig = sig;
-        const E = escapeChannelHtml;
-        let h = '<div class="role-section-title owner">🔞 +18 Kanal</div>'
-            + '<p class="cc-ad-note">Gizli kanal: yalnızca <b>Owner</b> açabilir. Kullanıcılar kanalı göremez; <b>/join KOD</b> yazıp 18 yaş onayı verenler girer. YouTube dışı video (.mp4/.m3u8 bağlantısı) yalnızca bu kanalda eklenebilir.</p>';
-        if (!isOwner) { box.innerHTML = h + '<p class="cc-ad-note">Bu bölüm yalnızca Owner içindir.</p>'; return; }
-        if (!c) {
-            h += '<label class="cc-lbl" for="ccAdName">Kanal adı</label><input class="cc-in" id="ccAdName" maxlength="30" value="+18" autocomplete="off">'
-              + '<label class="cc-chk" style="margin-top:12px"><input type="checkbox" id="ccAdOk"> 18 yaş sınırı, yerel yasalar ve platform kuralları konusundaki sorumluluğun bende olduğunu kabul ediyorum</label>'
-              + '<button class="role-action-btn" onclick="ccAdultCreate()"><i class="fas fa-plus"></i> +18 kanalını oluştur</button>';
-        } else {
-            const hasCode = !!c.adultCodeHash;
-            h += '<div class="cc-ad-row"><span class="cc-chip"><i class="fas fa-hashtag"></i> ' + E(c.label || CC_ADULT_CH) + '</span><span class="cc-chip">Gizli</span><span class="cc-chip">' + members.length + ' üye</span><span class="cc-chip">' + (hasCode ? 'Giriş açık' : 'Giriş kapalı') + '</span></div>';
-            h += '<div class="cc-lbl" style="margin-top:12px">Giriş kodu</div>';
-            if (hasCode && saved) h += '<div class="cc-ad-code" id="ccAdCode">' + E(saved) + '</div><div class="cc-sub" style="margin:4px 0 8px">Kullanıcılar sohbete <b>/join ' + E(saved) + '</b> yazar.</div>';
-            else if (hasCode) h += '<div class="cc-sub">Kod bu cihazda kayıtlı değil. Yeni kod üretirseniz eskisi geçersiz olur.</div>';
-            else h += '<div class="cc-sub">Şu an giriş kapalı. Yeni kod üretin.</div>';
-            h += '<div class="cc-ad-acts">'
-              + '<button class="role-action-btn" onclick="ccAdultNewCode()"><i class="fas fa-rotate"></i> Yeni kod üret</button>'
-              + (hasCode && saved ? '<button class="role-action-btn" onclick="ccAdultCopy()"><i class="far fa-copy"></i> Kopyala</button>' : '')
-              + (hasCode ? '<button class="role-action-btn" onclick="ccAdultCloseJoin()"><i class="fas fa-door-closed"></i> Girişi kapat</button>' : '')
-              + '<button class="role-action-btn" onclick="try{toggleOwnerPanel()}catch(e){};switchChannel(\'' + CC_ADULT_CH + '\')"><i class="fas fa-arrow-right"></i> Kanala git</button>'
-              + '</div>';
-            h += '<div class="cc-lbl" style="margin-top:14px">Üyeler</div><div class="role-list">'
-              + (members.length ? members.map(m => '<div class="role-list-item"><span>' + E(m) + '</span>' + (normalizeNick(m) === normalizeNick(currentUser.name) ? '' : '<button class="role-list-btn" title="Çıkar" onclick="ccAdultKick(this.dataset.u)" data-u="' + E(m) + '"><i class="fas fa-user-xmark"></i></button>') + '</div>').join('') : '<div class="cc-sub">Henüz üye yok.</div>')
-              + '</div>';
-            h += '<button class="role-action-btn danger" style="margin-top:14px" onclick="ccAdultDelete()"><i class="far fa-trash-alt"></i> +18 kanalını sil</button>';
-        }
-        h += '<div class="cc-err" id="ccAdMsg"></div>';
-        box.innerHTML = h;
-    }
-    async function ccAdultNewCode() {
-        if (!isOwner) return;
-        const c = cachedChannels[CC_ADULT_CH]; if (!c) return;
-        try {
-            const code = ccGenCode(), hash = await ccAdHash(code);
-            if (c.adultCodeHash) { try { await database.ref('adultCodes/' + c.adultCodeHash).remove(); } catch (e) {} }
-            await database.ref('adultCodes/' + hash).set({ channel: CC_ADULT_CH, createdAt: Date.now() });
-            await channelsRef.child(CC_ADULT_CH).update({ adultCodeHash: hash });
-            try { localStorage.setItem('ccAdultCode', code); } catch (e) {}
-            c.adultCodeHash = hash; _ccAdSig = ''; ccAdultRender(true);
-            ccAdMsg('✅ Yeni kod üretildi. Eski kod artık geçersiz.');
-        } catch (e) { ccAdMsg('❌ ' + (e.message || 'Kod üretilemedi'), true); }
-    }
-    async function ccAdultCloseJoin() {
-        if (!isOwner) return;
-        const c = cachedChannels[CC_ADULT_CH]; if (!c || !c.adultCodeHash) return;
-        try {
-            await database.ref('adultCodes/' + c.adultCodeHash).remove();
-            await channelsRef.child(CC_ADULT_CH).update({ adultCodeHash: null });
-            try { localStorage.removeItem('ccAdultCode'); } catch (e) {}
-            c.adultCodeHash = null; _ccAdSig = ''; ccAdultRender(true);
-            ccAdMsg('Giriş kapatıldı. Mevcut üyeler kalır.');
-        } catch (e) { ccAdMsg('❌ İşlem yapılamadı', true); }
-    }
-    function ccAdultCopy() {
-        let code = ''; try { code = localStorage.getItem('ccAdultCode') || ''; } catch (e) {}
-        if (!code) return;
-        try { const p = navigator.clipboard.writeText(code); if (p && p.catch) p.catch(() => {}); ccAdMsg('Kod kopyalandı.'); } catch (e) { ccAdMsg('Kopyalanamadı, kodu elle seçin.', true); }
-    }
-    async function ccAdultKick(user) {
-        if (!isOwner || !user) return;
-        await unjoinChannelByCommand(CC_ADULT_CH, user);
-        _ccAdSig = ''; setTimeout(() => ccAdultRender(true), 400);
-    }
-    async function ccAdultDelete() {
-        if (!isOwner) return;
-        await deleteChannel(CC_ADULT_CH);
-        try { localStorage.removeItem('ccAdultCode'); } catch (e) {}
-        _ccAdSig = ''; setTimeout(() => ccAdultRender(true), 500);
-    }
-    async function ccAdultCreate() {
-        if (!isOwner) { addSystemMessage('⛔ +18 kanalını yalnızca Owner açabilir.'); return; }
-        if (cachedChannels[CC_ADULT_CH]) { ccAdMsg('Zaten bir +18 kanalı var.', true); return; }
-        const ok = document.getElementById('ccAdOk');
-        if (!ok || !ok.checked) { ccAdMsg('Önce sorumluluk kutusunu işaretleyin.', true); return; }
-        const label = ((document.getElementById('ccAdName') || {}).value || '+18').replace(/[<>&"'`]/g, '').trim().slice(0, 30) || '+18';
-        const data = {
-            name: CC_ADULT_CH, label, createdBy: currentUser.name, owner: currentUser.name,
-            createdAt: Date.now(), isHidden: true, isLocked: false, adult: true,
-            order: Object.keys(cachedChannels).length, allowedUsers: { [currentUser.name]: true }
-        };
-        try {
-            const tx = await channelsRef.child(CC_ADULT_CH).transaction(cur => (cur === null ? data : undefined));
-            if (!tx.committed) { ccAdMsg('Bu ad zaten kullanılıyor.', true); return; }
-            incrementWriteCount();
-            cachedChannels[CC_ADULT_CH] = Object.assign({}, data);
-            await ccAdultNewCode();
-            ccAdMsg('✅ +18 kanalı oluşturuldu. Aşağıdaki kodu paylaşın.');
-        } catch (e) { ccAdMsg('❌ Kanal oluşturulamadı: ' + (e.message || e), true); }
-    }
-    setInterval(() => { const t = document.getElementById('ownerAdultTab'); if (t && t.classList.contains('active')) { try { ccAdultRender(false); } catch (e) {} } }, 1500);
 
     function createChannelPrompt() {
         const name = prompt('Kanal adı (harf/rakam/_):');
@@ -13484,7 +13150,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         await enterChannelPresence(name);
         await broadcastChannelEntry(name);
         updateUserListUI();
-        ccAdultUI(name);
     }
 
     // ============================================================
@@ -13630,7 +13295,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const customTitle = document.getElementById('playlistVideoTitleWeb').value.trim();
         if (!url) return;
         const videoId = extractVideoId(url);
-        if (!videoId) { ccAddExternalVideo(url, customTitle, 'playlistUrlWeb', 'playlistVideoTitleWeb'); return; }
+        if (!videoId) { alert('Geçersiz YouTube linki!'); return; }
         const newPlaylistItem = {
             id: videoId, title: customTitle || 'Video ' + (playlist.length + 1),
             url: url, addedBy: currentUser ? currentUser.name : 'Anonim', timestamp: Date.now()
@@ -13663,8 +13328,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         { name: 'haber', label: 'Haber', order: 3 },
         { name: 'sinema', label: 'Sinema', order: 4 },
         { name: 'help', label: 'Help', order: -1, isHidden: true },
-        { name: 'admin_channel_global', label: 'Admin Global', order: -2, isHidden: true, systemChannel: true, description: 'Sistem, Proxy, ban, şikayet ve kanal olayları' },
-        { name: 'ai', label: 'AI', order: 5, description: 'AI bilgi ve ödev yardım kanalı' }
+        { name: 'admin_channel_global', label: 'Admin Global', order: -2, isHidden: true, systemChannel: true, description: 'Sistem, ban, şikayet ve kanal olayları' }
     ];
 
     async function loadChannels() {
@@ -13715,17 +13379,9 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             return;
         }
         
-        const proxyConfig = window.PROXY_CONFIG || window.ProxyBotConfig || {};
-        const botName = proxyConfig.BOT_NAME || 'Proxy';
-        const isProxyBot = username === 'Proxy' || username === botName || username === 'AI';
-        
-        if (!isProxyBot) {
-            if (await checkBlockStatus(username)) {
-                addSystemMessage(`⛔ ${username} kullanıcısı ile mesajlaşamazsınız.`);
-                return;
-            }
-        } else {
-            ensureBotUserExists(username);
+        if (await checkBlockStatus(username)) {
+            addSystemMessage(`⛔ ${username} kullanıcısı ile mesajlaşamazsınız.`);
+            return;
         }
         
         const previousContact = privateChatWith;
@@ -14013,7 +13669,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                 if (window._ccTypSent) window._ccTypSent[chatId] = 0;
                 if (typingRef) typingRef.child(chatId).child(currentUser.name).remove();
                 if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
-                if (window.AIBot && window.AIBot.isBot(to)) window.AIBot.askPrivate(text);
                 /* fazla mesajları her seferinde değil, 8 mesajda bir temizle */
                 window._ccSendCount = (window._ccSendCount || 0) + 1;
                 if (window._ccSendCount % 8 === 0) setTimeout(() => archiveAndTrimPrivateChat(chatId), 1500);
@@ -14541,9 +14196,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         if (normalizeNick(targetUser) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return false;
         if (normalizeNick(targetUser) === normalizeNick(currentUser.name)) return false;
         
-        const proxyConfig = window.PROXY_CONFIG || window.ProxyBotConfig || {};
-        const botName = proxyConfig.BOT_NAME || 'Proxy';
-        if (targetUser === 'Proxy' || targetUser === botName) return false;
         
         try {
             const now = Date.now();
@@ -14787,7 +14439,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const customTitle = document.getElementById('playlistVideoTitleMobile').value.trim();
         if (!url) return;
         const videoId = extractVideoId(url);
-        if (!videoId) { ccAddExternalVideo(url, customTitle, 'playlistUrlMobile', 'playlistVideoTitleMobile'); return; }
+        if (!videoId) { alert('Geçersiz YouTube linki!'); return; }
         const newPlaylistItem = {
             id: videoId, title: customTitle || 'Video ' + (playlist.length + 1),
             url: url, addedBy: currentUser ? currentUser.name : 'Anonim', timestamp: Date.now()
@@ -14910,712 +14562,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         })();
     </script>
     
-    <!-- PROXY BOT -->
-    <script>
-    (function () {
-        'use strict';
-
-        const PROXY_CONFIG = {
-            BOT_NAME: 'Proxy',
-            BOT_ICON: '⚙️',
-            BOT_TAG: '[PROXY]',
-            OWNER_NAME: 'mateky',
-            LEVEL: 4.5,
-            ROLE_KEY: 'supervisor',
-
-            FLOOD_LIMIT: 5,
-            FLOOD_WINDOW_MS: 5000,
-            SPAM_REPEAT_LIMIT: 3,
-            SPAM_WINDOW_MS: 30000,
-            CAPS_RATIO: 0.7,
-            LINK_REGEX: /(https?:\/\/|www\.)/i,
-
-            MUTE_DURATION: 5,
-            KICK_DURATION: 30,
-            BAN_DURATION: 1440,
-
-            STRIKE_WARN: 2,
-            STRIKE_MUTE: 3,
-            STRIKE_KICK: 5,
-            STRIKE_BAN: 7,
-
-            AUTO_JOIN_NEW_CHANNELS: true,
-            MONITOR_ALL_CHANNELS: true,
-            REPORT_CHANNEL: 'admin_channel_global',
-            STRIKE_RESET_MS: 3600000,
-            DEBUG: true
-        };
-
-        const ProxyBot = {
-            initialized: false,
-            version: '1.1.0',
-            userBehavior: {},
-            userStrikes: {},
-            channelStates: {},
-            listeners: { messages: {}, channels: null, onlineUsers: null },
-            botUser: {
-                name: 'Proxy', role: 'supervisor',
-                level: PROXY_CONFIG.LEVEL, isBot: true, icon: PROXY_CONFIG.BOT_ICON
-            },
-            refs: {}
-        };
-
-        function getGlobal(name) {
-            try { return window[name]; } catch (e) { return undefined; }
-        }
-
-        function log(...args) {
-            if (PROXY_CONFIG.DEBUG) console.log(`%c${PROXY_CONFIG.BOT_ICON} ${PROXY_CONFIG.BOT_TAG}`, 'color:#4F8A5B;font-weight:bold;', ...args);
-        }
-        function warn(...args) { console.warn(`%c${PROXY_CONFIG.BOT_ICON} ${PROXY_CONFIG.BOT_TAG}`, 'color:#A8782A;font-weight:bold;', ...args); }
-        function error(...args) { console.error(`%c${PROXY_CONFIG.BOT_ICON} ${PROXY_CONFIG.BOT_TAG}`, 'color:#B5452F;font-weight:bold;', ...args); }
-
-        function normalizeNick(nick) { return nick ? String(nick).normalize('NFKC').toLowerCase().replace(/\u0307/g, '').replace(/ı/g, 'i').trim() : ''; }
-
-        function isSystemLikeMessage(msg) {
-            if (!msg) return true;
-            const s = normalizeNick(msg.sender);
-            if (s === 'system' || s === normalizeNick(PROXY_CONFIG.BOT_NAME)) return true;
-            if (msg.type === 'system' || msg.type === 'supervisor' || msg.type === 'admin-global') return true;
-            if (msg.isRoleEntry || msg.isOwnerEntry || msg.isBotMessage || msg.isBotReport || msg.isProxyReport) return true;
-            return false;
-        }
-
-        const PROXY_LEADER_TTL = 45000;
-        const PROXY_CLIENT_ID = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-        let proxyIsLeader = false;
-        let proxyLeaderConfirmedAt = 0;
-        let proxyServerOffset = 0;
-
-        function isLeaderNow() {
-            return proxyIsLeader && (Date.now() - proxyLeaderConfirmedAt) < 25000;
-        }
-
-        async function claimOnce(key) {
-            const db = getDatabase();
-            if (!db) return false;
-            try {
-                const res = await db.ref('proxyBot/claims/' + key).transaction(cur =>
-                    cur ? undefined : { by: PROXY_CLIENT_ID, at: Date.now() });
-                return !!res.committed;
-            } catch (e) { return true; }
-        }
-
-        async function cleanupProxyClaims() {
-            const db = getDatabase();
-            if (!db) return;
-            try {
-                const snap = await db.ref('proxyBot/claims').once('value');
-                const cutoff = Date.now() - 600000;
-                const upd = {};
-                snap.forEach(c => { if (((c.val() || {}).at || 0) < cutoff) upd[c.key] = null; });
-                if (Object.keys(upd).length) await db.ref('proxyBot/claims').update(upd);
-            } catch (e) {}
-        }
-
-        async function refreshProxyLeadership() {
-            const db = getDatabase();
-            if (!db) { proxyIsLeader = false; return false; }
-            try {
-                try { proxyServerOffset = (await db.ref('.info/serverTimeOffset').once('value')).val() || 0; } catch (e) {}
-                const res = await db.ref('proxyBot/leader').transaction(cur => {
-                    const now = Date.now();
-                    if (!cur || !cur.ts || (Date.now() + proxyServerOffset) - cur.ts > PROXY_LEADER_TTL || cur.id === PROXY_CLIENT_ID) {
-                        return { id: PROXY_CLIENT_ID, ts: Date.now() + proxyServerOffset };
-                    }
-                    return undefined;
-                });
-                const val = res.snapshot.val();
-                proxyIsLeader = !!(res.committed && val && val.id === PROXY_CLIENT_ID);
-                if (proxyIsLeader) proxyLeaderConfirmedAt = Date.now();
-            } catch (e) {
-                const cu = getCurrentUser();
-                proxyIsLeader = !!(cu && normalizeNick(cu.name) === normalizeNick(PROXY_CONFIG.OWNER_NAME));
-                if (proxyIsLeader) proxyLeaderConfirmedAt = Date.now();
-            }
-            if (proxyIsLeader && Date.now() - (ProxyBot._lastClaimCleanup || 0) > 600000) {
-                ProxyBot._lastClaimCleanup = Date.now();
-                cleanupProxyClaims();
-            }
-            return proxyIsLeader;
-        }
-
-        function isOwnerOrAdmin(username) {
-            const norm = normalizeNick(username);
-            if (norm === normalizeNick(PROXY_CONFIG.OWNER_NAME)) return true;
-            try {
-                const adminList = getGlobal('adminList') || [];
-                const defaultAdmins = (getGlobal('SECURE_CONFIG')?.DEFAULT_ADMINS) || [];
-                if (adminList.some(u => normalizeNick(u) === norm)) return true;
-                if (defaultAdmins.some(u => normalizeNick(u) === norm)) return true;
-            } catch (e) {}
-            return false;
-        }
-
-        function getCurrentUser() { return getGlobal('currentUser') || null; }
-        function getDatabase() { return getGlobal('database') || null; }
-        function getCurrentChannel() { return getGlobal('currentChannel') || 'genel'; }
-        function getChannelsCache() { return getGlobal('cachedChannels') || {}; }
-
-        function getUserStrikes(username) {
-            const norm = normalizeNick(username);
-            const data = ProxyBot.userStrikes[norm] || { count: 0, lastStrike: 0 };
-            if (Date.now() - data.lastStrike > PROXY_CONFIG.STRIKE_RESET_MS) data.count = 0;
-            return data.count;
-        }
-
-        function addStrike(username, reason) {
-            const norm = normalizeNick(username);
-            if (!ProxyBot.userStrikes[norm]) ProxyBot.userStrikes[norm] = { count: 0, lastStrike: 0 };
-            ProxyBot.userStrikes[norm].count++;
-            ProxyBot.userStrikes[norm].lastStrike = Date.now();
-            const count = ProxyBot.userStrikes[norm].count;
-            log(`Strike eklendi → ${username} (${count}) — ${reason}`);
-            return count;
-        }
-
-        function trackMessage(username, text) {
-            const norm = normalizeNick(username);
-            if (!ProxyBot.userBehavior[norm]) ProxyBot.userBehavior[norm] = { messages: [] };
-            const now = Date.now();
-            ProxyBot.userBehavior[norm].messages.push({ text: text, timestamp: now });
-            ProxyBot.userBehavior[norm].messages = ProxyBot.userBehavior[norm].messages
-                .filter(m => now - m.timestamp < 60000);
-        }
-
-        function detectFlood(username) {
-            const norm = normalizeNick(username);
-            const data = ProxyBot.userBehavior[norm];
-            if (!data) return false;
-            const now = Date.now();
-            const recent = data.messages.filter(m => now - m.timestamp < PROXY_CONFIG.FLOOD_WINDOW_MS);
-            return recent.length >= PROXY_CONFIG.FLOOD_LIMIT;
-        }
-
-        function detectRepeatedSpam(username) {
-            const norm = normalizeNick(username);
-            const data = ProxyBot.userBehavior[norm];
-            if (!data) return false;
-            const now = Date.now();
-            const recent = data.messages
-                .filter(m => now - m.timestamp < PROXY_CONFIG.SPAM_WINDOW_MS)
-                .map(m => m.text.toLowerCase().trim());
-            if (recent.length < PROXY_CONFIG.SPAM_REPEAT_LIMIT) return false;
-            const counts = {};
-            recent.forEach(text => { counts[text] = (counts[text] || 0) + 1; });
-            return Object.values(counts).some(c => c >= PROXY_CONFIG.SPAM_REPEAT_LIMIT);
-        }
-
-        function detectCapsSpam(text) {
-            if (!text || text.length < 10) return false;
-            const letters = text.replace(/[^a-zA-ZçğıöşüÇĞİÖŞÜ]/g, '');
-            if (letters.length < 8) return false;
-            const uppercase = letters.replace(/[^A-ZÇĞİÖŞÜ]/g, '');
-            return (uppercase.length / letters.length) >= PROXY_CONFIG.CAPS_RATIO;
-        }
-
-        function detectSuspiciousLink(text) {
-            if (!text) return false;
-            if (!PROXY_CONFIG.LINK_REGEX.test(text)) return false;
-            if (/youtube\.com|youtu\.be/i.test(text)) return false;
-            return true;
-        }
-
-        function detectMassMention(text) {
-            if (!text) return false;
-            const mentions = text.match(/@\w+/g) || [];
-            return mentions.length >= 5;
-        }
-
-        function detectAllCapsShouting(text) {
-            if (!text || text.length < 5) return false;
-            return text === text.toUpperCase() && /[A-ZÇĞİÖŞÜ]/.test(text);
-        }
-
-        async function proxyMuteUser(username, durationMinutes, reason) {
-            const db = getDatabase();
-            if (!db) return false;
-            if (isOwnerOrAdmin(username)) return false;
-            try {
-                const mutedUsers = getGlobal('mutedUsers');
-                if (mutedUsers) mutedUsers[username] = Date.now() + (durationMinutes * 60000);
-                await db.ref(`proxyBot/mutes/${username}`).set({
-                    mutedBy: PROXY_CONFIG.BOT_NAME, mutedAt: Date.now(),
-                    expiresAt: Date.now() + (durationMinutes * 60000),
-                    reason: reason, duration: durationMinutes
-                });
-                log(`🔇 ${username} → ${durationMinutes} dk mute (${reason})`);
-                await reportToAdmin(`🔇 **MUTE**\n👤 Kullanıcı: **${username}**\n⏱️ Süre: **${durationMinutes} dakika**\n📋 Sebep: ${reason}`);
-                return true;
-            } catch (err) { error('Mute hatası:', err); return false; }
-        }
-
-        async function proxyKickUser(username, durationMinutes, reason) {
-            const db = getDatabase();
-            if (!db) return false;
-            if (isOwnerOrAdmin(username)) return false;
-            try {
-                const bansRef = getGlobal('bansRef');
-                if (bansRef) {
-                    await bansRef.child(username).set({
-                        bannedUntil: Date.now() + (durationMinutes * 60000),
-                        bannedBy: PROXY_CONFIG.BOT_NAME,
-                        reason: `[PROXY] ${reason}`,
-                        timestamp: Date.now(), duration: durationMinutes, isProxyAction: true
-                    });
-                }
-                log(`👢 ${username} → ${durationMinutes} dk kick (${reason})`);
-                await reportToAdmin(`👢 **KICK**\n👤 Kullanıcı: **${username}**\n⏱️ Süre: **${durationMinutes} dakika**\n📋 Sebep: ${reason}`);
-                return true;
-            } catch (err) { error('Kick hatası:', err); return false; }
-        }
-
-        async function proxyBanUser(username, durationMinutes, reason) {
-            const db = getDatabase();
-            if (!db) return false;
-            if (isOwnerOrAdmin(username)) return false;
-            try {
-                const bansRef = getGlobal('bansRef');
-                if (bansRef) {
-                    await bansRef.child(username).set({
-                        bannedUntil: Date.now() + (durationMinutes * 60000),
-                        bannedBy: PROXY_CONFIG.BOT_NAME,
-                        reason: `[PROXY] ${reason}`,
-                        timestamp: Date.now(), duration: durationMinutes, isProxyAction: true
-                    });
-                }
-                log(`🚫 ${username} → ${durationMinutes} dk ban (${reason})`);
-                await reportToAdmin(`🚫 **BAN**\n👤 Kullanıcı: **${username}**\n⏱️ Süre: **${durationMinutes} dakika**\n📋 Sebep: ${reason}`);
-                return true;
-            } catch (err) { error('Ban hatası:', err); return false; }
-        }
-
-        async function proxyLockChannel(channelName, reason) {
-            const db = getDatabase();
-            if (!db) return false;
-            try {
-                await db.ref(`channels/${channelName}`).update({
-                    isLocked: true, lockedBy: PROXY_CONFIG.BOT_NAME,
-                    lockedAt: Date.now(), lockReason: reason
-                });
-                log(`🔒 #${channelName} kanalı sessize alındı (${reason})`);
-                await reportToAdmin(`🔒 **KANAL SESSİZE ALINDI**\n📢 Kanal: **#${channelName}**\n📋 Sebep: ${reason}`);
-                setTimeout(async () => {
-                    try {
-                        const snap = await db.ref(`channels/${channelName}/lockedBy`).once('value');
-                        if (snap.val() === PROXY_CONFIG.BOT_NAME) {
-                            await db.ref(`channels/${channelName}`).update({
-                                isLocked: false, unlockedBy: PROXY_CONFIG.BOT_NAME, unlockedAt: Date.now()
-                            });
-                            await reportToAdmin(`🔓 **KANAL AÇILDI** — #${channelName} (otomatik)`);
-                        }
-                    } catch (e) {}
-                }, 180000);
-                return true;
-            } catch (err) { error('Kanal kilitleme hatası:', err); return false; }
-        }
-
-        async function reportToAdmin(message) {
-            if (!isLeaderNow()) return;
-            const db = getDatabase();
-            if (!db) return;
-            try {
-                await db.ref(`channelMessages/${PROXY_CONFIG.REPORT_CHANNEL}`).push({
-                    sender: PROXY_CONFIG.BOT_NAME, text: message,
-                    type: 'supervisor', isBotReport: true, isRoleEntry: false,
-                    timestamp: Date.now(),
-                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                    avatar: null
-                });
-            } catch (err) { error('Rapor gönderilemedi:', err); }
-        }
-
-        async function botSendToChannel(channelName, text) {
-            if (!isLeaderNow()) return;
-            const db = getDatabase();
-            if (!db) return;
-            try {
-                const targetRef = channelName === 'genel'
-                    ? db.ref('messages')
-                    : db.ref(`channelMessages/${channelName}`);
-                await targetRef.push({
-                    sender: PROXY_CONFIG.BOT_NAME, text: text,
-                    type: 'supervisor', isBotMessage: true,
-                    timestamp: Date.now(),
-                    time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                    avatar: null
-                });
-            } catch (err) { error('Bot mesaj gönderemedi:', err); }
-        }
-
-        async function analyzeMessage(channelName, username, text, msgId) {
-            if (!isLeaderNow() || ProxyBot.paused) return;
-            if (normalizeNick(username) === 'system') return;
-            if (isOwnerOrAdmin(username)) return;
-            if (normalizeNick(username) === normalizeNick(PROXY_CONFIG.BOT_NAME)) return;
-            trackMessage(username, text);
-
-            const threats = [];
-            if (detectFlood(username)) threats.push('flood');
-            if (detectRepeatedSpam(username)) threats.push('repeated_spam');
-            if (detectCapsSpam(text)) threats.push('caps_spam');
-            if (detectSuspiciousLink(text)) threats.push('suspicious_link');
-            if (detectMassMention(text)) threats.push('mass_mention');
-            if (detectAllCapsShouting(text)) threats.push('all_caps');
-            if (threats.length === 0) return;
-
-            if (msgId && !(await claimOnce('a_' + channelName + '_' + msgId))) return;
-            const strikeCount = addStrike(username, threats.join(', '));
-            const channelInfo = channelName === 'genel' ? '#genel' : `#${channelName}`;
-
-            log(`⚠️ Tehdit tespit edildi → ${username} (${threats.join(', ')}) — Strike: ${strikeCount}`);
-
-            if (threats.includes('flood') || threats.includes('repeated_spam')) {
-                const channels = getChannelsCache();
-                if (channels[channelName] && !channels[channelName].isLocked) {
-                    await botSendToChannel(channelName,
-                        `⚠️ **${username}**, ${threats.includes('flood') ? 'çok hızlı mesaj gönderiyorsun' : 'aynı mesajı tekrar ediyorsun'}! Lütfen yavaşla. (Uyarı: ${strikeCount})`
-                    );
-                }
-            }
-
-            if (strikeCount >= PROXY_CONFIG.STRIKE_BAN) {
-                await proxyBanUser(username, PROXY_CONFIG.BAN_DURATION, `Tekrarlayan spam ihlali (${strikeCount} strike) — ${threats.join(', ')}`);
-                await botSendToChannel(channelName, `🚫 **${username}** bot tarafından **${Math.floor(PROXY_CONFIG.BAN_DURATION / 60)} saat** banlandı. Sebep: Spam.`);
-            } else if (strikeCount >= PROXY_CONFIG.STRIKE_KICK) {
-                await proxyKickUser(username, PROXY_CONFIG.KICK_DURATION, `Spam ihlali (${strikeCount} strike) — ${threats.join(', ')}`);
-                await botSendToChannel(channelName, `👢 **${username}** bot tarafından **${PROXY_CONFIG.KICK_DURATION} dakika** atıldı. Sebep: Spam.`);
-            } else if (strikeCount >= PROXY_CONFIG.STRIKE_MUTE) {
-                await proxyMuteUser(username, PROXY_CONFIG.MUTE_DURATION, `Spam ihlali (${strikeCount} strike) — ${threats.join(', ')}`);
-                await botSendToChannel(channelName, `🔇 **${username}** bot tarafından **${PROXY_CONFIG.MUTE_DURATION} dakika** susturuldu. Sebep: Spam.`);
-            } else if (strikeCount >= PROXY_CONFIG.STRIKE_WARN) {
-                await reportToAdmin(`⚠️ **UYARI** — ${channelInfo}\n👤 Kullanıcı: **${username}**\n🎯 Tehditler: ${threats.join(', ')}\n📊 Strike: ${strikeCount}`);
-            }
-        }
-
-        function attachMessageListener(channelName) {
-            const db = getDatabase();
-            if (!db) return;
-            if (ProxyBot.listeners.messages[channelName]) return;
-
-            const ref = channelName === 'genel'
-                ? db.ref('messages').limitToLast(1)
-                : db.ref(`channelMessages/${channelName}`).limitToLast(1);
-
-            const listener = (snapshot) => {
-                const msg = snapshot.val();
-                if (!msg) return;
-                if (Date.now() - (msg.timestamp || 0) > 10000) return;
-                if (isSystemLikeMessage(msg)) return;
-                analyzeMessage(channelName, msg.sender, msg.text || '', snapshot.key);
-            };
-
-            ref.on('child_added', listener);
-            ProxyBot.listeners.messages[channelName] = { ref, listener };
-            log(`📡 Dinleyici kuruldu → #${channelName}`);
-        }
-
-        function attachAllChannelListeners() {
-            const channels = getChannelsCache();
-            Object.keys(channels).forEach(ch => attachMessageListener(ch));
-        }
-
-        function watchForNewChannels() {
-            const db = getDatabase();
-            if (!db) return;
-            if (ProxyBot.listeners.channels) return;
-
-            const channelsRef = db.ref('channels');
-            const listener = (snapshot) => {
-                const channels = snapshot.val() || {};
-                Object.keys(channels).forEach(ch => {
-                    if (!ProxyBot.listeners.messages[ch]) {
-                        attachMessageListener(ch);
-                        log(`🆕 Yeni kanal keşfedildi → #${ch}`);
-                        if (PROXY_CONFIG.AUTO_JOIN_NEW_CHANNELS) autoJoinChannel(ch);
-                    }
-                    const presenceRef = db.ref(`channelPresence/${ch}/${PROXY_CONFIG.BOT_NAME}`);
-                    presenceRef.once('value').then(snap => {
-                        if (!snap.exists()) {
-                            presenceRef.set({
-                                lastSeen: Date.now(), role: 'supervisor', isBot: true, avatar: null
-                            });
-                            presenceRef.onDisconnect().remove();
-                        }
-                    });
-                });
-            };
-
-            channelsRef.on('value', listener);
-            ProxyBot.listeners.channels = { ref: channelsRef, listener };
-            log('👁️ Kanal izleyici aktif');
-        }
-
-        async function autoJoinChannel(channelName) {
-            if (!isLeaderNow()) return;
-            const db = getDatabase();
-            if (!db) return;
-            try {
-                const presenceRef = db.ref(`channelPresence/${channelName}/${PROXY_CONFIG.BOT_NAME}`);
-                await presenceRef.set({
-                    lastSeen: Date.now(), role: 'supervisor', isBot: true, avatar: null
-                });
-                presenceRef.onDisconnect().remove();
-                await botSendToChannel(channelName,
-                    `${PROXY_CONFIG.BOT_ICON} **Proxy** bu kanalı izlemeye başladı. Kurallara uyun, sorun yaşamayın.`
-                );
-                log(`✅ #${channelName} kanalına otomatik katıldı`);
-            } catch (err) { error('Otomatik kanal katılımı hatası:', err); }
-        }
-
-        function startPresenceHeartbeat() {
-            setInterval(async () => {
-                const db = getDatabase();
-                if (!db) return;
-                const channels = getChannelsCache();
-                const now = Date.now();
-                for (const ch of Object.keys(channels)) {
-                    try { db.ref(`channelPresence/${ch}/${PROXY_CONFIG.BOT_NAME}`).update({ lastSeen: now }); } catch (e) {}
-                }
-            }, 30000);
-        }
-
-        const botCommands = {
-            '/proxy': {
-                owner: true,
-                handler: (args, channel) => {
-                    botSendToChannel(channel,
-                        `${PROXY_CONFIG.BOT_ICON} **Proxy Bot v${ProxyBot.version}** [${PROXY_CLIENT_ID.slice(-5)} / lider: ${isLeaderNow() ? 'evet' : 'hayır'}]\n` +
-                        `📊 Aktif kanal: ${Object.keys(ProxyBot.listeners.messages).length}\n` +
-                        `👥 İzlenen kullanıcı: ${Object.keys(ProxyBot.userStrikes).length}\n` +
-                        `⚡ Strike sistemi: Aktif\n` +
-                        `🔒 Koruma: Flood / Spam / Caps / Link`
-                    );
-                }
-            },
-            '/proxy-durum': {
-                owner: true,
-                handler: (args, channel) => {
-                    const strikeList = Object.entries(ProxyBot.userStrikes)
-                        .filter(([u, s]) => s.count > 0)
-                        .map(([u, s]) => `• ${u}: ${s.count} strike`)
-                        .join('\n') || 'Kayıt yok';
-                    botSendToChannel(channel,
-                        `${PROXY_CONFIG.BOT_ICON} **Proxy Durum Raporu**\n` +
-                        `━━━━━━━━━━━━━━\n` +
-                        `📊 Toplam izleme: ${Object.keys(ProxyBot.listeners.messages).length} kanal\n` +
-                        `👥 Strike kaydı olan: ${Object.keys(ProxyBot.userStrikes).length} kişi\n\n` +
-                        `📋 **Detay:**\n${strikeList}`
-                    );
-                }
-            },
-            '/proxy-sifirla': {
-                owner: true,
-                handler: (args, channel) => {
-                    const target = args[0];
-                    if (!target) {
-                        botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} Kullanım: /proxy-sifirla [kullanıcı]`);
-                        return;
-                    }
-                    const norm = normalizeNick(target);
-                    if (ProxyBot.userStrikes[norm]) {
-                        delete ProxyBot.userStrikes[norm];
-                        delete ProxyBot.userBehavior[norm];
-                        botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} ✅ **${target}** kullanıcısının strike kayıtları sıfırlandı.`);
-                    } else {
-                        botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} ⚠️ **${target}** için kayıt yok.`);
-                    }
-                }
-            },
-            '/proxy-yardim': {
-                owner: true,
-                handler: (args, channel) => {
-                    botSendToChannel(channel,
-                        `${PROXY_CONFIG.BOT_ICON} **Proxy Bot Komutları** (Sadece Owner)\n` +
-                        `━━━━━━━━━━━━━━\n` +
-                        `• /proxy → Bot bilgisi\n` +
-                        `• /proxy-durum → Strike raporu\n` +
-                        `• /proxy-sifirla [kullanıcı] → Strike sıfırla\n` +
-                        `• /proxy-kapat → Botu duraklat\n` +
-                        `• /proxy-baslat → Botu başlat\n` +
-                        `• /proxy-yardim → Bu mesaj`
-                    );
-                }
-            },
-            '/proxy-kapat': {
-                owner: true,
-                handler: async (args, channel) => {
-                    await botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} ⏸️ Proxy Bot duraklatıldı. /proxy-baslat ile yeniden başlatın.`);
-                    PROXY_CONFIG.DEBUG = false;
-                    ProxyBot.paused = true;
-                }
-            },
-            '/proxy-baslat': {
-                owner: true,
-                handler: async (args, channel) => {
-                    PROXY_CONFIG.DEBUG = true;
-                    ProxyBot.paused = false;
-                    await botSendToChannel(channel, `${PROXY_CONFIG.BOT_ICON} ▶️ Proxy Bot aktif!`);
-                }
-            }
-        };
-
-        function watchBotCommands() {
-            const db = getDatabase();
-            if (!db) return;
-            const processedCommands = new Set();
-
-            const watched = new Set();
-            const watchChannel = (channelName) => {
-                if (watched.has(channelName)) return;
-                watched.add(channelName);
-                const ref = channelName === 'genel'
-                    ? db.ref('messages').limitToLast(5)
-                    : db.ref(`channelMessages/${channelName}`).limitToLast(5);
-
-                const listener = async (snapshot) => {
-                    const msg = snapshot.val();
-                    if (!msg) return;
-                    const msgId = snapshot.key;
-                    if (!isLeaderNow()) return;
-                    if (processedCommands.has(msgId)) return;
-                    processedCommands.add(msgId);
-                    
-                    if (Date.now() - (msg.timestamp || 0) > 60000) return;
-                    if (!msg.text || !msg.text.startsWith('/proxy')) return;
-
-                    if (normalizeNick(msg.sender) !== normalizeNick(PROXY_CONFIG.OWNER_NAME)) {
-                        reportToAdmin(`⛔ **Yetkisiz Komut Denemesi**\n👤 Kullanıcı: **${msg.sender}**\n💬 Komut: ${msg.text}\n📢 Kanal: #${channelName}`);
-                        return;
-                    }
-
-                    if (!(await claimOnce('c_' + channelName + '_' + msgId))) return;
-                    const parts = msg.text.trim().split(/\s+/);
-                    const cmd = parts[0].toLowerCase();
-                    const args = parts.slice(1);
-
-                    log(`📨 Komut alındı: ${cmd} → #${channelName}`);
-
-                    if (botCommands[cmd]) botCommands[cmd].handler(args, channelName);
-                    else {
-                        log(`❓ Bilinmeyen komut: ${cmd}`);
-                        botSendToChannel(channelName, `${PROXY_CONFIG.BOT_ICON} Bilinmeyen komut. Yardım için: /proxy-yardim`);
-                    }
-                };
-
-                ref.on('child_added', listener);
-                log(`🎯 Komut dinleyici kuruldu → #${channelName}`);
-            };
-
-            const channels = getChannelsCache();
-            Object.keys(channels).forEach(watchChannel);
-
-            db.ref('channels').on('child_added', (snap) => {
-                setTimeout(() => watchChannel(snap.key), 1000);
-            });
-        }
-
-        async function initProxyBot() {
-            if (ProxyBot.initialized || ProxyBot.initializing) return;
-            ProxyBot.initializing = true;
-            log(`🚀 Proxy Bot v${ProxyBot.version} başlatılıyor...`);
-
-            let attempts = 0;
-            while (!getDatabase() && attempts < 60) { await new Promise(r => setTimeout(r, 500)); attempts++; }
-            if (!getDatabase()) { error('❌ Firebase bağlantısı kurulamadı.'); return; }
-
-            attempts = 0;
-            while (!getCurrentUser() && attempts < 120) { await new Promise(r => setTimeout(r, 500)); attempts++; }
-
-            attempts = 0;
-            while (Object.keys(getChannelsCache()).length === 0 && attempts < 40) { await new Promise(r => setTimeout(r, 500)); attempts++; }
-
-            log('✅ Bağımlılıklar hazır. Bot aktif ediliyor...');
-
-            attachAllChannelListeners();
-            watchForNewChannels();
-            watchBotCommands();
-            startPresenceHeartbeat();
-            await refreshProxyLeadership();
-            setInterval(refreshProxyLeadership, 15000);
-
-            try {
-                const db = getDatabase();
-                if (db) {
-                    await db.ref(`onlineUsers/${PROXY_CONFIG.BOT_NAME}`).set({
-                        name: PROXY_CONFIG.BOT_NAME, role: 'supervisor',
-                        level: PROXY_CONFIG.LEVEL, isBot: true, isOnline: true,
-                        lastSeen: Date.now(), joinedAt: Date.now(), avatar: null
-                    });
-                    db.ref(`onlineUsers/${PROXY_CONFIG.BOT_NAME}`).onDisconnect().update({
-                        isOnline: false, lastSeen: Date.now()
-                    });
-
-                    const channels = getChannelsCache();
-                    for (const ch of Object.keys(channels)) {
-                        try {
-                            const presenceRef = db.ref(`channelPresence/${ch}/${PROXY_CONFIG.BOT_NAME}`);
-                            await presenceRef.set({
-                                lastSeen: Date.now(), role: 'supervisor', isBot: true, avatar: null
-                            });
-                            presenceRef.onDisconnect().remove();
-                        } catch (e) {}
-                    }
-
-                    setInterval(async () => {
-                        try {
-                            const now = Date.now();
-                            db.ref(`onlineUsers/${PROXY_CONFIG.BOT_NAME}`).update({ lastSeen: now, isOnline: true });
-                            const chs = getChannelsCache();
-                            for (const ch of Object.keys(chs)) {
-                                db.ref(`channelPresence/${ch}/${PROXY_CONFIG.BOT_NAME}`).update({ lastSeen: now });
-                            }
-                        } catch (e) {}
-                    }, 20000);
-
-                    log('✅ Bot onlineUsers + tüm channelPresence kanallarına eklendi');
-                }
-            } catch (e) { warn('Bot kullanıcı kaydı hatası:', e); }
-
-            await reportToAdmin(
-                `${PROXY_CONFIG.BOT_ICON} **Proxy Bot Aktif**\n` +
-                `━━━━━━━━━━━━━━\n` +
-                `👤 Sahip: **${PROXY_CONFIG.OWNER_NAME}** (Owner)\n` +
-                `📊 İzlenen kanal: ${Object.keys(ProxyBot.listeners.messages).length}\n` +
-                `🛡️ Koruma modülleri:\n` +
-                `   • Flood koruması (5sn/5msj)\n` +
-                `   • Spam koruması (30sn/3x tekrar)\n` +
-                `   • Caps koruması\n` +
-                `   • Link filtresi\n` +
-                `   • Toplu mention koruması\n` +
-                `⚡ Strike sistemi: 2=uyarı, 3=mute, 5=kick, 7=ban\n` +
-                `📖 Komutlar için: /proxy-yardim`
-            );
-
-            ProxyBot.initialized = true;
-            log('🎉 Proxy Bot hazır!');
-
-            window.PROXY_CONFIG = PROXY_CONFIG;
-            window.ProxyBot = ProxyBot;
-            window.ProxyBotConfig = PROXY_CONFIG;
-        }
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initProxyBot);
-        } else {
-            initProxyBot();
-        }
-
-        setTimeout(() => {
-            if (!ProxyBot.initialized) {
-                log('⏰ Yedek başlatıcı devreye girdi');
-                initProxyBot();
-            }
-        }, 5000);
-
-    })();
-    </script>
-
     <!-- RESPONSIVE v2 -->
     <script>
     (function () {
@@ -15707,163 +14653,9 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     <script>
     (function () {
         'use strict';
-        const ADMIN_CH = 'admin_channel_global', AI_CH = 'ai';
-        const cfg = window.AI_BOT_CONFIG = Object.assign({
-            NAME: 'AI', ICON: '🤖',
-            ENDPOINT: '',
-            MAX_Q: 500, COOLDOWN_MS: 3000
-        }, window.AI_BOT_CONFIG || {});
+        const ADMIN_CH = 'admin_channel_global';
         const hhmm = () => new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-        const clean = t => String(t).replace(/[<>]/g, '').trim().slice(0, 900);
-        const key = n => normalizeNick(n).replace(/[.#$\[\]\/]/g, '_');
-
-        const LANG = { ingilizce:'en', ingilizcesi:'en', ingilizceye:'en', ingilizcede:'en', almanca:'de', almancası:'de', almancaya:'de',
-            fransızca:'fr', fransızcası:'fr', fransızcaya:'fr', ispanyolca:'es', ispanyolcası:'es', ispanyolcaya:'es',
-            italyanca:'it', italyancası:'it', italyancaya:'it', rusça:'ru', rusçası:'ru', rusçaya:'ru', arapça:'ar', arapçası:'ar', arapçaya:'ar',
-            japonca:'ja', japoncası:'ja', çince:'zh-CN', çincesi:'zh-CN', korece:'ko', korecesi:'ko', portekizce:'pt', portekizcesi:'pt',
-            türkçe:'tr', türkçesi:'tr', türkçeye:'tr', türkçede:'tr' };
-        const LNAME = { en:'İngilizce', de:'Almanca', fr:'Fransızca', es:'İspanyolca', it:'İtalyanca', ru:'Rusça', ar:'Arapça',
-            ja:'Japonca', 'zh-CN':'Çince', ko:'Korece', pt:'Portekizce', tr:'Türkçe' };
-        const FILL = new Set(('nedir ne neydi nelerdir nasıl nerede nereden neden niçin niye kaç hangi kimdir kim anlat anlatır anlatsana mısın misin musun mısınız ' +
-            'açıkla açıklar açıklasana bilgi bilgisi ver verir verebilir söyle söyler söylesene hakkında ilgili ile bana bize lütfen acaba demek anlamı anlamına ' +
-            'yani bir bu şu o sence bilir biliyor bul bulur ara araştır tanımı tanımla tanım çevir çevirir çeviri çevirisi tercüme kelimesi kelimesinin sözcüğü ' +
-            'sözcüğünün cümlesi cümlesinin olarak karşılığı karşılık yazılır yazılışı söylenir denir okunur okunuşu ya mı mi mu mü midir mıdır soru sorum var ' +
-            'what is the of in how do you say mean means meaning').split(' '));
-        const tok = q => String(q).toLocaleLowerCase('tr').replace(/[?!.,;:"“”()\[\]]/g, ' ').split(/\s+/).filter(Boolean);
-        const safeUrl = u => String(u).replace(/"/g, '%22').replace(/</g, '%3C').replace(/>/g, '%3E').replace(/'/g, '%27').replace(/\s/g, '%20');
-        const ans = (text, links) => clean(text) + (links || []).map(l => '<br>🔗 <a href="' + safeUrl(l.url) + '" target="_blank" rel="noopener noreferrer">' + clean(l.label) + '</a>').join('');
-        const stripSuffix = w => (w.length > 5 ? w.replace(/(lar|ler|nın|nin|nun|nün|dan|den|tan|ten|da|de|ta|te|ın|in|un|ün|ı|i|u|ü|yı|yi|yu|yü)$/, '') : w);
-
-        function parseTranslate(q) {
-            const s = String(q).toLocaleLowerCase('tr');
-            const toks = tok(q); let to = null; const rest = [];
-            for (const t of toks) {
-                const b = t.replace(/['’]/g, '');
-                const base = !to && Object.keys(LANG).find(k => !k.endsWith('si') && !k.endsWith('sı') && b.startsWith(k) && b.length - k.length <= 6);
-                if (!to && (LANG[b] || base)) { to = LANG[b] || LANG[base]; continue; }
-                if (FILL.has(b)) continue;
-                rest.push(t);
-            }
-            if (!to) {
-                if (/\bne demek\b/.test(s) && rest.length && !/[çğıöşü]/.test(rest.join(' '))) return { text: rest.join(' '), from: 'en', to: 'tr' };
-                return null;
-            }
-            if (!rest.length) return null;
-            return { text: rest.join(' '), to, from: to === 'tr' ? 'auto' : 'tr' };
-        }
-        async function gtx(text, sl, tl) {
-            const r = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=' + sl + '&tl=' + tl + '&dt=t&q=' + encodeURIComponent(text));
-            const j = await r.json();
-            return ((j && j[0]) || []).map(x => x[0]).join('').trim();
-        }
-        async function mymem(text, sl, tl) {
-            const r = await fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + (sl === 'auto' ? 'en' : sl) + '|' + tl);
-            const j = await r.json(); const t = j && j.responseData && j.responseData.translatedText;
-            return (!t || /QUERY LENGTH|MYMEMORY|INVALID/i.test(t)) ? '' : t.trim();
-        }
-        async function translateText(text, sl, tl) {
-            try { const t = await gtx(text, sl, tl); if (t) return t; } catch (_) {}
-            try { return await mymem(text, sl, tl); } catch (_) {}
-            return '';
-        }
-        async function doTranslate(p) {
-            const w = p.text; let out = '', used = w;
-            const single = !/\s/.test(w);
-            if (single && p.to !== 'tr' && w.length >= 5 && /(nin|nın|nun|nün|in|ın|un|ün)$/.test(w)) {
-                const st = w.replace(/(nin|nın|nun|nün|in|ın|un|ün)$/, '');
-                const t = await translateText(st, p.from, p.to);
-                if (t && t.toLocaleLowerCase('tr') !== st) { out = t; used = st; }
-            }
-            if (!out) out = await translateText(w, p.from, p.to);
-            if (!out) return null;
-            return ans('🔤 "' + used + '" → ' + LNAME[p.to] + ': ' + out.toLocaleLowerCase('tr'),
-                [{ label: 'Kaynak: Google Çeviri', url: 'https://translate.google.com/?sl=' + p.from + '&tl=' + p.to + '&text=' + encodeURIComponent(used) + '&op=translate' }]);
-        }
-        function tryMath(q) {
-            let e = String(q).toLowerCase().replace(/^(hesapla|sonuç)\s*:?\s*/, '').replace(/\s*(kaç\s*eder|kaçtır|=|\?)+\s*$/, '')
-                .replace(/,/g, '.').replace(/(?<![\p{L}])artı(?![\p{L}])/gu, '+').replace(/(?<![\p{L}])eksi(?![\p{L}])/gu, '-').replace(/(?<![\p{L}])çarpı(?![\p{L}])/gu, '*').replace(/(?<![\p{L}])bölü(?![\p{L}])/gu, '/')
-                .replace(/[x×]/g, '*').replace(/÷/g, '/').replace(/\^/g, '**').replace(/(?:karekök|√)\s*\(?\s*([\d.]+)\s*\)?/g, 'Math.sqrt($1)');
-            const chk = e.replace(/Math\.sqrt/g, '');
-            if (!/^[\d+\-*/().\s%]+$/.test(chk) || !/\d/.test(chk) || !/[+\-*/%]|sqrt/.test(e)) return null;
-            try {
-                const v = Function('"use strict";return (' + e + ')')();
-                if (typeof v === 'number' && isFinite(v)) return String(Math.round(v * 1e10) / 1e10).replace('.', ',');
-            } catch (_) {}
-            return null;
-        }
-        async function wikiSearch(lang, q) {
-            const u = 'https://' + lang + '.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrlimit=3&gsrsearch=' + encodeURIComponent(q) +
-                '&prop=extracts|info&exintro=1&explaintext=1&exchars=700&inprop=url';
-            const j = await (await fetch(u)).json();
-            const pages = Object.values((j.query || {}).pages || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
-            return pages.find(p => p.extract && p.extract.length > 40 && !/anlam ayrımı|may refer to|disambiguation/i.test(p.extract.slice(0, 200))) || null;
-        }
-        function brief(t, n) {
-            t = String(t).replace(/\s+/g, ' ').trim();
-            if (t.length <= n) return t;
-            const cut = t.slice(0, n), i = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '));
-            return (i > n * 0.5 ? cut.slice(0, i + 1) : cut.replace(/\s+\S*$/, '') + '…');
-        }
-        async function doSearch(q) {
-            const toks = tok(q); let words = toks.filter(t => !FILL.has(t.replace(/['’]/g, '')));
-            if (!words.length) words = toks;
-            const topic = words.join(' ');
-            let p = null;
-            try { p = await wikiSearch('tr', topic); } catch (_) {}
-            if (!p && words.length) { try { const alt = words.map(stripSuffix).join(' '); if (alt !== topic) p = await wikiSearch('tr', alt); } catch (_) {} }
-            if (p) return ans('📚 ' + p.title + ': ' + brief(p.extract, 430), [{ label: 'Kaynak: Vikipedi — ' + p.title, url: p.fullurl || ('https://tr.wikipedia.org/wiki/' + encodeURIComponent(p.title)) }]);
-            try {
-                const en = await translateText(topic, 'tr', 'en');
-                if (en) {
-                    const e = await wikiSearch('en', en);
-                    if (e) {
-                        const tr = await translateText(brief(e.extract, 420), 'en', 'tr');
-                        return ans('📚 ' + e.title + ': ' + (tr || brief(e.extract, 420)), [{ label: 'Kaynak: Wikipedia (EN) — ' + e.title, url: e.fullurl || ('https://en.wikipedia.org/wiki/' + encodeURIComponent(e.title)) }]);
-                    }
-                }
-            } catch (_) {}
-            return null;
-        }
-        const INTRO = cfg.ICON + ' Merhaba! Ben AI — bilgi ve arama botuyum. Soruyu nasıl yazarsan yaz anlarım. Cevaplara kaynak linki eklerim. Bana özelden de yazabilirsin.';
-        async function think(q) {
-            q = String(q).trim().slice(0, cfg.MAX_Q);
-            if (cfg.ENDPOINT) {
-                try {
-                    const r = await fetch(cfg.ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ question: q, user: currentUser ? currentUser.name : '' }) });
-                    if (r.ok) { const j = await r.json(); if (j && j.reply) return clean(j.reply); }
-                } catch (_) {}
-            }
-            const m = tryMath(q); if (m !== null) return '🧮 Sonuç: ' + clean(m);
-            if (/^(yardım|help|merhaba|selam|nasılsın|hi|hey)\b/i.test(q)) return INTRO;
-            try { const p = parseTranslate(q); if (p) { const t = await doTranslate(p); if (t) return t; } } catch (_) {}
-            try { const s = await doSearch(q); if (s) return s; } catch (_) {}
-            const g = encodeURIComponent(q);
-            return ans('🤔 Tam cevabı bulamadım; şu kaynaklara bakabilirsin:', [
-                { label: 'Google\'da ara', url: 'https://www.google.com/search?q=' + g },
-                { label: 'Vikipedi\'de ara', url: 'https://tr.wikipedia.org/w/index.php?search=' + g }]);
-        }
-
-        let busyUntil = 0;
-        const guard = () => { if (Date.now() < busyUntil) return false; busyUntil = Date.now() + cfg.COOLDOWN_MS; return true; };
-        window.AIBot = {
-            isBot: n => normalizeNick(n) === normalizeNick(cfg.NAME),
-            async askInChannel(text) {
-                if (!guard() || !currentUser) return;
-                const nick = currentUser.name;
-                const a = await think(text);
-                await database.ref('channelMessages/' + AI_CH).push({
-                    sender: cfg.NAME, text: '@' + clean(nick) + ' ' + a, type: 'supervisor', isBotMessage: true,
-                    timestamp: Date.now(), time: hhmm(), avatar: null, channel: AI_CH });
-            },
-            async askPrivate(text) {
-                if (!guard() || !currentUser) return;
-                const nick = currentUser.name;
-                const a = await think(text);
-                await privateChatsRef.child(generateChatId(nick, cfg.NAME)).push({
-                    sender: cfg.NAME, receiver: nick, text: a, timestamp: Date.now(), time: hhmm(), avatar: null, isRead: false });
-            }
-        };
+                const key = n => normalizeNick(n).replace(/[.#$\[\]\/]/g, '_');
 
         const returnTo = {};
         function loadReturn() { try { Object.assign(returnTo, JSON.parse(sessionStorage.getItem('cety_return') || '{}')); } catch (_) {} }
@@ -15938,14 +14730,8 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             try {
                 const s = await database.ref('channelMessages/' + ch).limitToFirst(1).once('value');
                 if (!s.exists()) await database.ref('channelMessages/' + ch).push({
-                    sender: ch === AI_CH ? cfg.NAME : 'Sistem', text, type: 'supervisor', isBotMessage: true,
+                    sender: 'Sistem', text, type: 'supervisor', isBotMessage: true,
                     timestamp: Date.now(), time: hhmm(), avatar: null, channel: ch });
-            } catch (_) {}
-        }
-        async function botPresence() {
-            try {
-                await ensureBotUserExists(cfg.NAME);
-                await database.ref('onlineUsers/' + cfg.NAME).update({ lastSeen: Date.now(), isOnline: true });
             } catch (_) {}
         }
         setInterval(() => {
@@ -15958,12 +14744,11 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                     if (firstMove) { firstMove = false; window._lastMoveTs = v ? v.ts : 0; return; }
                     if (v && v.ts !== window._lastMoveTs) { window._lastMoveTs = v.ts; onMove(v); }
                 });
-                botPresence(); setInterval(botPresence, 30000);
                 if (isOwner || hasRole('admin')) {
                     welcome(ADMIN_CH, '📢 Sistem mesajları bu kanalda toplanır.');
                     ensureHelpLocked();
                 }
-                if (isOwner) welcome(AI_CH, cfg.ICON + ' #ai kanalına hoş geldiniz!');
+                if (isOwner && window.__cleanupLegacy) window.__cleanupLegacy();
             } catch (_) {}
         }, 2000);
     })();
@@ -16123,14 +14908,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     })();
     </script>
 
-    <!-- oyun_bot.js -->
-    <script src="oyun_bot.js"></script>
-    <!-- spor_bot.js -->
-    <script src="spor_bot.js"></script>
-    <!-- haber_bot.js -->
-<script src="haber_bot.js"></script>
-<!-- DJ Bot -->
-    <script src="dj.js"></script>
     <!-- v5 — Arama, Kanal Yönetim Paneli, kayıt/nick koruması, şifre kurtarma -->
     <style>
         #login-error { white-space: pre-line; }
@@ -16429,7 +15206,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         }
 
         let sel = null, pinCache = null;
-        const SYS_CH = ['genel', 'help', 'admin_channel_global', 'ai'];
+        const SYS_CH = ['genel', 'help', 'admin_channel_global'];
         const canPin = n => { try { return !!(window.canPinInChannel && window.canPinInChannel(n)); } catch (_) { return false; } };
         const canMan = n => { try { return !!currentUser && canManageChannel(n); } catch (_) { return false; } };
         function myChannels() {
@@ -16608,7 +15385,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const sleep = ms => new Promise(r => setTimeout(r, ms));
         const OWNER = () => SECURE_CONFIG.OWNER_CONFIG.username;
         const isStaff = () => !!(isOwner || hasRole('admin'));
-        const BOTS = () => new Set(['proxy', 'ai', 'sistem', 'system', 'akıl küpü', 'akilkupu', nk(OWNER())]);
+        const BOTS = () => new Set(['sistem', 'system', nk(OWNER())]);
         const today = () => new Date().toISOString().slice(0, 10);
         // XP'den muaf: Owner, Admin, Co-Admin, Süpervizör, Op, Half-Op, Onaylı (genel ya da bu kanalda) + botlar
         const roleOf = n => { try { return getUserRoleInChannel(n, (typeof xpCh !== 'undefined' && xpCh) || activeChannelName); } catch (_) { return 'user'; } };
@@ -16714,7 +15491,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             } catch (_) {}
         }
         async function wipeUser(k) {
-            const chs = new Set(Object.keys(cachedChannels || {})); ['genel', 'ai'].forEach(c => chs.add(c));
+            const chs = new Set(Object.keys(cachedChannels || {})); ['genel'].forEach(c => chs.add(c));
             for (const c of chs) { if (enabled(c)) { try { await database.ref('xp/' + c + '/' + k).remove(); } catch (_) {} } }
         }
         async function sweepExpired() {
@@ -16842,7 +15619,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             ['email', 'adres@ornek.com', 'Hesabına şifre kurtarma e-postası ekler', 'all', 'kayıtlı hesap'], ['komutlar', '', 'Özel komutları listeler', 'all'],
             ['xp', '[kullanıcı]', 'Bu kanaldaki XP / seviyeni gösterir (/seviye)', 'all', 'kayıtlı, yetkisiz kullanıcılar'], ['top', '', 'Bu kanalın ilk 10 XP sıralaması (/siralama)', 'all'],
             ['konu', '[metin]', 'Kanal açıklamasını gösterir; kanal sahibi/Admin değiştirir', 'all', 'değiştirmek için yetki'],
-            ['oyun', '', 'Akıl Küpü oyun botu komutları (/oyun-yardim, /katil, /skor, /istatistik)', 'all', 'oyun botu'],
             ['verifiedpanel', '', '+ Onaylı kullanıcı panelini açar (/vpanel)', 'verified'],
             ['halfoperatorpanel', '', 'Half-Operatör panelini açar (/hopanel)', 'halfoperator'], ['sessizeal', '', 'Kanalı sessize alır / açar', 'halfoperator'],
             ['gecici', 'kullanıcı dakika', 'Süreli geçici + onay verir (/tempverified)', 'halfoperator'], ['kanalverified', 'kullanıcı', 'Bu kanalda onaylı (+) yapar', 'halfoperator', 'kanal yetkisi'],
@@ -16866,7 +15642,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             ['ownerpanel', '', 'Owner panelini açar (/op)', 'owner'], ['admin', 'kullanıcı', 'Admin yapar', 'owner', 'kayıtlı olmalı'], ['removeadmin', 'kullanıcı', 'Admin yetkisini alır', 'owner'],
             ['sifregoster', 'kullanıcı', 'Kullanıcı şifresini açılır pencerede gösterir', 'owner'],
             ['komut', '', 'Özel komut oluşturma penceresini açar', 'owner'],
-            ['proxy', '', 'Proxy bot bilgisi (/proxy-yardim ile tümü)', 'owner'], ['proxy-durum', '', 'Strike raporu', 'owner'], ['proxy-sifirla', 'kullanıcı', 'Strike sıfırlar', 'owner'], ['proxy-kapat', '', 'Proxy botu duraklatır', 'owner'], ['proxy-baslat', '', 'Proxy botu başlatır', 'owner']
         ];
         window.CMD_REGISTRY = CMDS;
         const myLevel = () => isOwner ? 6 : ['admin', 'coadmin', 'operator', 'halfoperator', 'verified'].reduce((a, r) => a || (hasRole(r) ? R[r] : 0), 0);
@@ -19960,7 +18735,7 @@ init();
     function me() { try { return currentUser && currentUser.name; } catch (e) { return null; } }
     function nk(x) { return String(x || '').normalize('NFKC').toLowerCase().replace(/̇/g, '').replace(/ı/g, 'i').trim().replace(/[.#$\[\]\/]/g, '_'); }
     function isOwnerUser() { try { return !!isOwner; } catch (e) { return false; } }
-    function isBotName(n) { var x = nk(n); return x === 'ai' || x === 'proxy' || x === 'sistem' || x === 'system'; }
+    function isBotName(n) { var x = nk(n); return x === 'sistem' || x === 'system'; }
     function closedFor(target) {
         var k = nk(target), c = cache[k];
         if (c && Date.now() - c.t < 60000) return Promise.resolve(c.v);
@@ -20331,7 +19106,7 @@ setInterval(upd,700);upd();
 <script id="chCleanJs">
 (function(){
 'use strict';
-var KEEP=['genel','radyo','spor','haber','sinema','help','admin_channel_global','ai'];
+var KEEP=['genel','radyo','spor','haber','sinema','help','admin_channel_global'];
 var sig='';
 function $(i){return document.getElementById(i)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
@@ -20603,6 +19378,26 @@ function ccAskTransfer(channelName,currentOwner){
   window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferred=e;paint()});
   window.addEventListener('appinstalled',function(){deferred=null;try{localStorage.setItem(KEY,String(Date.now()))}catch(e){}paint()});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',paint);else paint();
+})();
+</script>
+
+<script id="legacyCleanup">
+(function(){
+'use strict';
+window.__cleanupLegacy=function(){
+  try{
+    if(window.__cleanupRan||typeof database==='undefined'||!database) return;
+    window.__cleanupRan=true;
+    var ls=null; try{ls=localStorage.getItem('ccCleanup16')}catch(e){}
+    try{localStorage.removeItem('ccAdultCode')}catch(e){}
+    if(ls==='1') return;
+    var paths=['channels/plus18','channelMessages/plus18','channelRoles/plus18','channelPresence/plus18','channelPlaylists/plus18','channelPlayback/plus18','channelSubscribers/plus18','adultCodes','adultAck/plus18',
+      'channels/ai','channelMessages/ai','channelRoles/ai','channelPresence/ai','xp/ai','onlineUsers/Proxy','onlineUsers/AI','users/Proxy','users/AI','proxyBot','botPresence'];
+    Promise.all(paths.map(function(x){return database.ref(x).remove().catch(function(){})})).then(function(){
+      try{localStorage.setItem('ccCleanup16','1')}catch(e){}
+    });
+  }catch(e){}
+};
 })();
 </script>
 </body>
