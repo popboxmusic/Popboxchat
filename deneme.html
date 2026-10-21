@@ -5114,6 +5114,48 @@
 }
 .online-list-btn.users-open{background:var(--bg-hover);color:var(--text-primary)}
 </style>
+<style id="cc-ui-pro2">
+/* kanal satırı: işlem düğmeleri yer kaplamasın, üstte açılsın */
+.channel-sidebar .channel-tab-wrapper{position:relative}
+.channel-sidebar .channel-tab-actions{position:absolute;right:6px;top:50%;transform:translateY(-50%);padding:3px;border-radius:10px;background:var(--bg-panel);border:1px solid var(--border-color);box-shadow:0 2px 10px rgba(0,0,0,.35);pointer-events:none;z-index:2}
+.channel-sidebar .channel-tab-wrapper:hover .channel-tab-actions,.channel-sidebar .channel-tab-wrapper:focus-within .channel-tab-actions{pointer-events:auto}
+.channel-sidebar .channel-tab-actions:empty{display:none}
+
+/* kanal devri paneli */
+.cc-ov{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);animation:fadeIn .15s ease}
+.cc-card{width:min(440px,100%);background:var(--bg-panel);border:1px solid var(--border-color);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.5);padding:20px;color:var(--text-primary)}
+.cc-h{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700;margin-bottom:4px}
+.cc-h i{color:var(--youtube-red)}
+.cc-sub{font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.5}
+.cc-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.cc-chip{font-size:12px;padding:4px 10px;border-radius:999px;background:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-secondary)}
+.cc-lbl{font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;display:block}
+.cc-in{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);font:inherit;font-size:14px;outline:none}
+.cc-in:focus{border-color:var(--youtube-red)}
+.cc-sug{max-height:150px;overflow:auto;margin-top:6px;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-tertiary)}
+.cc-sug:empty{display:none}
+.cc-sug button{display:flex;width:100%;align-items:center;gap:8px;padding:8px 12px;border:0;background:transparent;color:var(--text-primary);font:inherit;font-size:13px;cursor:pointer;text-align:left}
+.cc-sug button:hover{background:var(--bg-hover)}
+.cc-warn{display:flex;gap:10px;align-items:flex-start;margin:14px 0;padding:10px 12px;border-radius:10px;background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.35);font-size:12.5px;line-height:1.5}
+.cc-warn i{color:#e5484d;margin-top:2px}
+.cc-chk{display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:16px;cursor:pointer}
+.cc-act{display:flex;gap:8px;justify-content:flex-end}
+.cc-btn{padding:9px 16px;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.cc-btn:hover{background:var(--bg-hover)}
+.cc-btn.pri{background:var(--youtube-red);border-color:var(--youtube-red);color:#fff}
+.cc-btn:disabled{opacity:.45;cursor:not-allowed}
+.cc-err{font-size:12.5px;color:#e5484d;min-height:16px;margin-top:6px}
+
+/* özel sohbet gizlilik kalkanı */
+#pmShield{position:absolute;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:24px;background:rgba(12,12,12,.94);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);color:#fff}
+#pmShield.show{display:flex}
+#pmShield i{font-size:34px;color:#e5484d}
+#pmShield b{font-size:16px}
+#pmShield span{font-size:13px;opacity:.75;max-width:300px;line-height:1.5}
+#privateModal .private-messages,#privateModal .private-messages *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#privateModal img,#privateModal video{-webkit-user-drag:none;user-drag:none}
+@media print{#privateModal,#pmShield{display:none!important}}
+</style>
 </head>
 <body>
     <!-- ============================================================
@@ -5153,6 +5195,7 @@
                 </div>
             </div>
             <button class="icon-btn theme-toggle-btn" onclick="toggleTheme()" title="Gece / Gündüz"><i class="fas fa-moon" data-theme-icon></i></button>
+            <button class="icon-btn fs-toggle-btn" id="fsBtn" type="button" onclick="toggleFullscreen()" title="Tam ekran" aria-label="Tam ekran"><i class="fas fa-expand"></i></button>
             <button class="icon-btn online-list-btn" onclick="toggleUserList()" title="Çevrimiçi Kullanıcılar">
                 <i class="fas fa-users"></i>
                 <span style="margin-left:4px; font-size:12px;" id="onlineCount">0</span>
@@ -13045,7 +13088,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             return;
         }
         
-        const targetName = prompt(`#${name} kanalının yeni sahibi olacak kayıtlı kullanıcı adı:`);
+        const targetName = await ccAskTransfer(name, channel.owner);
         if (!targetName) return;
         
         const target = await isRegisteredUserSecure(targetName.trim());
@@ -20054,6 +20097,109 @@ pm.bind();ch.bind();setInterval(function(){pm.bind();ch.bind()},1500);
   function init(){var m=main();if(!m)return;try{if(localStorage.getItem(KEY)==='1')m.classList.add('users-collapsed')}catch(e){}paint()}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
   window.addEventListener('resize',paint);
+})();
+</script>
+
+<script>
+/* ===== Tam ekran ===== */
+(function(){
+  var de=document.documentElement;
+  var can=!!(document.fullscreenEnabled||document.webkitFullscreenEnabled||de.requestFullscreen||de.webkitRequestFullscreen);
+  function el(){return document.fullscreenElement||document.webkitFullscreenElement}
+  function paint(){var b=document.getElementById('fsBtn');if(!b)return;var on=!!el();b.title=on?'Tam ekrandan çık':'Tam ekran';var i=b.querySelector('i');if(i)i.className='fas '+(on?'fa-compress':'fa-expand');b.classList.toggle('active',on)}
+  window.toggleFullscreen=function(){
+    try{
+      if(el()){(document.exitFullscreen||document.webkitExitFullscreen).call(document)}
+      else{var r=de.requestFullscreen||de.webkitRequestFullscreen;if(r){var p=r.call(de);if(p&&p.catch)p.catch(function(){})}}
+    }catch(e){}
+  };
+  document.addEventListener('fullscreenchange',paint);document.addEventListener('webkitfullscreenchange',paint);
+  function init(){var b=document.getElementById('fsBtn');if(b&&!can)b.style.display='none';paint()}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+
+/* ===== Kanal sahipliğini devret paneli ===== */
+function ccAskTransfer(channelName,currentOwner){
+  return new Promise(function(resolve){
+    var old=document.getElementById('ccTransfer');if(old)old.remove();
+    var ov=document.createElement('div');ov.className='cc-ov';ov.id='ccTransfer';
+    function E(t){return String(t==null?'':t).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+    ov.innerHTML='<div class="cc-card" role="dialog" aria-modal="true" aria-labelledby="ccTrT">'
+      +'<div class="cc-h" id="ccTrT"><i class="fas fa-exchange-alt"></i>Kanal sahipliğini devret</div>'
+      +'<div class="cc-sub">Kanalın yönetimi seçtiğin kayıtlı kullanıcıya geçer.</div>'
+      +'<div class="cc-chips"><span class="cc-chip"><i class="fas fa-hashtag"></i> '+E(channelName)+'</span><span class="cc-chip"><i class="fas fa-crown"></i> Mevcut sahip: '+E(currentOwner||'—')+'</span></div>'
+      +'<label class="cc-lbl" for="ccTrIn">Yeni sahibin kullanıcı adı</label>'
+      +'<input class="cc-in" id="ccTrIn" type="text" autocomplete="off" spellcheck="false" placeholder="Kullanıcı adı yaz veya listeden seç">'
+      +'<div class="cc-sug" id="ccTrSug"></div><div class="cc-err" id="ccTrErr"></div>'
+      +'<div class="cc-warn"><i class="fas fa-triangle-exclamation"></i><div>Devirden sonra bu kanalda sahiplik yetkilerini kaybedersin. Bu işlemi yalnızca yeni sahip geri verirse geri alabilirsin.</div></div>'
+      +'<label class="cc-chk"><input type="checkbox" id="ccTrOk"> Sahipliği devretmek istediğimi onaylıyorum</label>'
+      +'<div class="cc-act"><button type="button" class="cc-btn" id="ccTrNo">Vazgeç</button><button type="button" class="cc-btn pri" id="ccTrGo" disabled>Devret</button></div></div>';
+    document.body.appendChild(ov);
+    var inp=ov.querySelector('#ccTrIn'),sug=ov.querySelector('#ccTrSug'),ok=ov.querySelector('#ccTrOk'),go=ov.querySelector('#ccTrGo'),err=ov.querySelector('#ccTrErr');
+    var users=[];try{users=Object.keys(cachedRegisteredUsers||{})}catch(e){}
+    var me='';try{me=(currentUser&&currentUser.name||'').toLowerCase()}catch(e){}
+    function upd(){go.disabled=!(inp.value.trim()&&ok.checked)}
+    function renderSug(){
+      var q=inp.value.trim().toLowerCase();
+      var list=users.filter(function(u){return u.toLowerCase()!==me&&u.toLowerCase()!==String(currentOwner||'').toLowerCase()&&(!q||u.toLowerCase().indexOf(q)>-1)}).slice(0,30);
+      sug.innerHTML='';
+      if(!q&&list.length>8)list=list.slice(0,8);
+      list.forEach(function(u){var b=document.createElement('button');b.type='button';b.innerHTML='<i class="far fa-user"></i> '+E(u);b.onclick=function(){inp.value=u;sug.innerHTML='';upd();ok.focus()};sug.appendChild(b)});
+    }
+    function close(v){document.removeEventListener('keydown',onKey,true);ov.remove();resolve(v)}
+    function onKey(e){if(e.key==='Escape'){e.stopPropagation();close(null)}else if(e.key==='Enter'&&!go.disabled&&document.activeElement!==ok){e.preventDefault();go.click()}}
+    inp.oninput=function(){err.textContent='';renderSug();upd()};ok.onchange=upd;
+    ov.querySelector('#ccTrNo').onclick=function(){close(null)};
+    go.onclick=function(){var v=inp.value.trim();if(!v){err.textContent='Kullanıcı adı yaz.';return}close(v)};
+    ov.addEventListener('mousedown',function(e){if(e.target===ov)close(null)});
+    document.addEventListener('keydown',onKey,true);
+    renderSug();setTimeout(function(){inp.focus()},30);
+  });
+}
+
+/* ===== Özel sohbet: ekran görüntüsü koruması ===== */
+(function(){
+  var pm=document.getElementById('privateModal');if(!pm)return;
+  var sh=document.createElement('div');sh.id='pmShield';
+  sh.innerHTML='<i class="fas fa-ban"></i><b>Özel sohbetlerde ekran görüntüsü alınamaz</b><span id="pmShieldTxt">Gizliliği korumak için bu sohbet gizlendi.</span>';
+  pm.appendChild(sh);
+  function isOpen(){return pm.style.display==='flex'}
+  var holdT=null,hidden=false;
+  function show(msg,ms){
+    if(!isOpen())return;
+    var t=document.getElementById('pmShieldTxt');if(t&&msg)t.textContent=msg;
+    sh.classList.add('show');clearTimeout(holdT);
+    if(ms)holdT=setTimeout(function(){if(!hidden)sh.classList.remove('show')},ms);
+  }
+  function wipeClipboard(){try{var pr=navigator.clipboard&&navigator.clipboard.writeText('Özel sohbetlerde ekran görüntüsü alınamaz.');if(pr&&pr.catch)pr.catch(function(){})}catch(e){}}
+  function shot(e){
+    if(!isOpen())return;
+    if(e&&e.preventDefault)try{e.preventDefault()}catch(x){}
+    wipeClipboard();
+    show('Ekran görüntüsü engellendi.',3500);
+    try{if(typeof addSystemMessage==='function')addSystemMessage('🚫 Özel sohbetlerde ekran görüntüsü alınamaz.')}catch(x){}
+  }
+  function isShotKey(e){
+    if(e.key==='PrintScreen'||e.code==='PrintScreen')return true;
+    var k=(e.key||'').toLowerCase();
+    if(e.metaKey&&e.shiftKey&&(k==='s'||k==='3'||k==='4'||k==='5'||k==='6'))return true;
+    if(e.ctrlKey&&e.shiftKey&&k==='s')return true;
+    if(e.altKey&&(e.key==='PrintScreen'||e.code==='PrintScreen'))return true;
+    return false;
+  }
+  document.addEventListener('keydown',function(e){if(isShotKey(e))shot(e)},true);
+  document.addEventListener('keyup',function(e){if(isShotKey(e))shot(e)},true);
+  /* ekran alıntı araçları / uygulama değiştirme pencereyi odaktan çıkarır → içeriği gizle */
+  function hide(){if(isOpen()){hidden=true;show('Gizliliği korumak için bu sohbet gizlendi. Geri dönünce yeniden görünür.')}}
+  function reveal(){hidden=false;clearTimeout(holdT);holdT=setTimeout(function(){if(!hidden)sh.classList.remove('show')},350)}
+  window.addEventListener('blur',hide);window.addEventListener('focus',reveal);
+  document.addEventListener('visibilitychange',function(){document.hidden?hide():reveal()});
+  window.addEventListener('pagehide',hide);
+  pm.addEventListener('contextmenu',function(e){if(e.target.closest&&e.target.closest('.private-messages'))e.preventDefault()});
+  window.addEventListener('beforeprint',function(){sh.classList.add('show')});
+  window.addEventListener('afterprint',function(){sh.classList.remove('show')});
+  /* sohbet kapanınca kalkanı kaldır */
+  new MutationObserver(function(){if(!isOpen()){sh.classList.remove('show');hidden=false}}).observe(pm,{attributes:true,attributeFilter:['style']});
 })();
 </script>
 </body>
