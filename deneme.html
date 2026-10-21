@@ -5174,6 +5174,14 @@
 #ccInstallBtn[hidden]{display:none!important}
 
 </style>
+<style id="cc-adult-style">
+.channel-sidebar .channel-tab .ct-adult{flex:0 0 auto;font-size:10px;font-weight:800;letter-spacing:.04em;padding:1px 6px;border-radius:6px;background:#e5484d;color:#fff}
+body.cc-adult-ch #currentChatTitle::after{content:"18+";margin-left:8px;font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:#e5484d;color:#fff;vertical-align:middle}
+.cc-ad-note{font-size:12.5px;color:var(--text-muted);line-height:1.5;margin:6px 0 12px}
+.cc-ad-row{display:flex;gap:8px;flex-wrap:wrap}
+.cc-ad-code{font:700 20px/1.2 "Courier New",monospace;letter-spacing:.08em;padding:12px 14px;border-radius:10px;background:var(--bg-tertiary);border:1px dashed var(--border-strong,var(--border-color));color:var(--text-primary);user-select:all;word-break:break-all}
+.cc-ad-acts{display:flex;gap:8px;flex-wrap:wrap}.cc-ad-acts .role-action-btn{width:auto;flex:1 1 150px;margin:0}
+</style>
 </head>
 <body>
     <!-- ============================================================
@@ -5620,6 +5628,7 @@
             <button class="role-tab" onclick="switchOwnerTab('reports')"><i class="fas fa-exclamation-triangle"></i> Şikayetler</button>
             <button class="role-tab" onclick="switchOwnerTab('blocks')"><i class="fas fa-ban"></i> Engellemeler</button>
             <button class="role-tab" onclick="switchOwnerTab('anvideo')"><i class="fas fa-film"></i> AN videoları</button>
+            <button class="role-tab" onclick="switchOwnerTab('adult')"><i class="fas fa-lock"></i> +18 Kanal</button>
         </div>
         <div class="role-panel-content">
             <div class="role-tab-content active" id="ownerDashboardTab">
@@ -5847,6 +5856,10 @@
                 </div>
             </div>
             
+            <div class="role-tab-content" id="ownerAdultTab">
+                <div class="role-section"><div id="ccAdultBox"></div></div>
+            </div>
+
             <!-- YENİ REKLAM YÖNETİM SEKMESİ (BANNER) -->
             <div class="role-tab-content" id="ownerAdsTab">
                 <div class="role-section">
@@ -7190,7 +7203,7 @@
             if (channel.isLocked) statusIcon += ' <i class="fas fa-volume-mute" title="Sessiz"></i>';
             if (isSubbed) statusIcon += ' <i class="far fa-bell" title="Abone" style="color: var(--favorite); font-size: 10px;"></i>';
             
-            const newHtml = `<span class="ct-hash">#</span><span class="ct-name">${escapeChannelHtml(channel.label || name)}</span>${statusIcon ? `<span class="ct-ic">${statusIcon}</span>` : ''}${
+            const newHtml = `<span class="ct-hash">#</span><span class="ct-name">${escapeChannelHtml(channel.label || name)}</span>${channel.adult ? '<span class="ct-adult">18+</span>' : ''}${statusIcon ? `<span class="ct-ic">${statusIcon}</span>` : ''}${
                 subCount > 0 ? `<span class="channel-subscriber-badge"><i class="fas fa-users"></i>${subCount}</span>` : ''
             }`;
             
@@ -7602,6 +7615,13 @@
         return false;
     }
     
+    if (channel && channel.adult) {
+        if (isOwner) return true;
+        if (!user) return false;
+        const un0 = normalizeNick(user);
+        if (un0 === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return true;
+        return !!(channel.allowedUsers && Object.keys(channel.allowedUsers).some(k => channel.allowedUsers[k] && normalizeNick(k) === un0));
+    }
     if (!channel || !channel.isHidden) return true;
     if (isOwner) return true;
     if (!user) return false;
@@ -10525,6 +10545,7 @@
         if (['xp','seviye','top','siralama','xpver','xpsifirla'].includes(command)) { if (window.XPCmd && await window.XPCmd.handle(command, args)) return; }
         if (['sifresifirla','sifretalepleri','email','eposta'].includes(command)) { if (window.V5Cmd && await window.V5Cmd.handle(command, args)) return; }
         if (command === 'join') {
+            if (args.length === 1 && !String(args[0]).startsWith('#') && await ccAdultTryJoin(args[0])) return;
             if (args.length >= 1) {
                 const channelName = args[0].replace('#', '');
                 const username = args[1] || null;
@@ -11411,16 +11432,61 @@
         return ok;
     }
 
-    // Galeriden seçilen video: ilk 15 sn alınır, küçültülür
+    const VIDEO_EXT_RE = /\.(mp4|m4v|mov|webm|3gp|3g2|mkv|avi|mpe?g|ogv)$/i;
+    function isVideoFile(f) { return !!f && (((f.type || '').toLowerCase().startsWith('video/')) || VIDEO_EXT_RE.test(f.name || '')); }
+
+    function grabVideoPoster(v) {
+        return new Promise(resolve => {
+            let done = false;
+            const fin = () => {
+                if (done) return; done = true; v.removeEventListener('seeked', fin);
+                try {
+                    const sw = v.videoWidth, sh = v.videoHeight;
+                    if (!sw || !sh) return resolve(null);
+                    const sc = Math.min(1, 200 / Math.max(sw, sh)), c = document.createElement('canvas');
+                    c.width = Math.round(sw * sc); c.height = Math.round(sh * sc);
+                    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+                    resolve(c.toDataURL('image/jpeg', 0.6));
+                } catch (e) { resolve(null); }
+            };
+            v.addEventListener('seeked', fin);
+            try { v.currentTime = Math.min(0.2, (v.duration || 1) / 2); } catch (e) { fin(); }
+            setTimeout(fin, 2500);
+        });
+    }
+
+    // Galeriden seçilen video: küçükse olduğu gibi gönderilir, büyükse ilk 15 sn alınıp küçültülür
     async function sendPrivateVideoFile(file) {
         if (file.size > 300 * 1024 * 1024) { addSystemMessage('❌ Video dosyası çok büyük (en fazla 300 MB).'); return; }
-        const status = showPrivateStatus('🎬 Video hazırlanıyor (15 sn\'ye kırpılıyor, küçültülüyor)...');
+        const status = showPrivateStatus('🎬 Video hazırlanıyor...');
+        const setStatus = t => { if (status.firstChild) status.firstChild.textContent = t; };
         const v = document.createElement('video');
         const url = URL.createObjectURL(file);
         let audioCtx = null;
         try {
-            v.playsInline = true; v.preload = 'auto'; v.src = url;
-            await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error('Video açılamadı.')); });
+            v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto'; v.muted = false; v.src = url;
+            /* oynatma, kullanıcı dokunuşu hâlâ geçerliyken başlatılır (telefon tarayıcıları bunu şart koşar) */
+            let playOk = true;
+            const playP = (() => { try { return v.play(); } catch (e) { return Promise.reject(e); } })();
+            if (playP && playP.catch) playP.catch(() => { playOk = false; });
+            await new Promise((res, rej) => {
+                const t = setTimeout(() => rej(new Error('Video açılamadı (biçim desteklenmiyor olabilir).')), 20000);
+                v.onloadedmetadata = () => { clearTimeout(t); res(); };
+                v.onerror = () => { clearTimeout(t); rej(new Error('Video açılamadı (biçim desteklenmiyor olabilir).')); };
+            });
+            const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : PRIVATE_VIDEO_MAX_SEC;
+            const mime = (file.type || '').toLowerCase().split(';')[0];
+
+            /* HIZLI YOL: küçük ve kısa mp4/webm → yeniden kodlamadan anında gönder */
+            if (file.size <= PRIVATE_VIDEO_MAX_BYTES && (mime === 'video/mp4' || mime === 'video/webm') && dur <= PRIVATE_VIDEO_MAX_SEC + 0.5) {
+                try { v.pause(); } catch (e) {}
+                const poster = await grabVideoPoster(v);
+                setStatus('📤 Video gönderiliyor...');
+                await sendPrivateVideo({ blob: file, duration: dur, poster, mime });
+                return;
+            }
+
+            /* YENİDEN KODLAMA: ilk 15 sn, küçültülmüş */
             let audioTracks = [];
             try {
                 const AC = window.AudioContext || window.webkitAudioContext;
@@ -11433,14 +11499,21 @@
                     if (audioCtx.state === 'suspended') await audioCtx.resume();
                 }
             } catch (e) { audioTracks = []; }
-            await v.play();
-            const maxSec = Math.min(PRIVATE_VIDEO_MAX_SEC, isFinite(v.duration) && v.duration > 0 ? v.duration : PRIVATE_VIDEO_MAX_SEC);
-            const enc = startVideoEncoding(v, audioTracks, maxSec + 0.2, t => { status.firstChild.textContent = '🎬 Video hazırlanıyor... ' + Math.min(100, Math.round(t / maxSec * 100)) + '%'; });
+            try { v.currentTime = 0; } catch (e) {}
+            try { await v.play(); }
+            catch (e) {
+                /* sesli oynatma reddedildi: sessiz oynatarak devam et (video ses olmadan gider) */
+                v.muted = true; audioTracks = [];
+                try { await v.play(); } catch (e2) { throw new Error('Telefon videoyu oynatmaya izin vermedi. Videoyu seçtikten sonra tekrar dene.'); }
+                addSystemMessage('⚠️ Video ses olmadan gönderiliyor (tarayıcı sesi yakalamaya izin vermedi).');
+            }
+            const maxSec = Math.min(PRIVATE_VIDEO_MAX_SEC, dur);
+            const enc = startVideoEncoding(v, audioTracks, maxSec + 0.2, t => setStatus('🎬 Video hazırlanıyor... ' + Math.min(100, Math.round(t / maxSec * 100)) + '%'));
             v.onended = () => enc.stop();
             const res = await enc.done;
             v.pause();
-            if (!res) throw new Error('Video hazırlanamadı.');
-            status.firstChild.textContent = '📤 Video gönderiliyor...';
+            if (!res || !res.blob || !res.blob.size) throw new Error('Video hazırlanamadı.');
+            setStatus('📤 Video gönderiliyor...');
             await sendPrivateVideo(res);
         } catch (error) {
             console.error('Video gönderilemedi:', error);
@@ -12100,6 +12173,7 @@
         document.querySelector(`#ownerPanel .role-tab[onclick*="${tabName}"]`).classList.add('active');
         document.getElementById('owner' + tabName.charAt(0).toUpperCase() + tabName.slice(1) + 'Tab').classList.add('active');
         if (tabName === 'ads') { updateBannerAdListUI(); }
+        if (tabName === 'adult') { ccAdultRender(true); }
     }
     
     function switchAdminTab(tabName) {
@@ -13002,11 +13076,14 @@
     }
 
     async function deleteChannel(name) {
+        if (cachedChannels[name] && cachedChannels[name].adult && !isOwner) { addSystemMessage('⛔ +18 kanalını yalnızca Owner silebilir.'); return; }
+        const _adultHash = cachedChannels[name] && cachedChannels[name].adultCodeHash;
         if (['genel', 'help', 'admin_channel_global', 'ai'].includes(name)) { addSystemMessage('⛔ Sistem kanalları silinemez!'); return; }
         if (!can('deleteChannel', name)) { addSystemMessage('⛔ Bu kanalı silme yetkiniz yok!'); return; }
         if (Object.keys(cachedChannels).length <= 1) { addSystemMessage('⛔ Son kanal silinemez!'); return; }
         if (!confirm(`#${name} kanalını ve mesajlarını silmek istediğinize emin misiniz?`)) return;
         await channelsRef.child(name).remove();
+        if (_adultHash) { try { await database.ref('adultCodes/' + _adultHash).remove(); } catch (e) {} }
         await database.ref(`channelMessages/${name}`).remove();
         await database.ref(`channelRoles/${name}`).remove();
         await database.ref(`channelPresence/${name}`).remove();
@@ -13020,6 +13097,7 @@
     }
 
     async function toggleChannelHidden(name) {
+        if (cachedChannels[name] && cachedChannels[name].adult && !isOwner) { addSystemMessage('⛔ +18 kanalını yalnızca Owner yönetir.'); return; }
         if (!can('hideChannel', name)) {
             addSystemMessage('⛔ Bu kanalı gizleme yetkiniz yok!');
             return;
@@ -13104,6 +13182,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     async function transferChannelPrompt(name) {
         const channel = cachedChannels[name];
         if (!channel) return;
+        if (channel.adult) { addSystemMessage('⛔ +18 kanalının sahipliği devredilemez.'); return; }
         
         if (!can('transferChannel', name)) {
             addSystemMessage('⛔ Kanal sahipliğini devretme yetkiniz yok!');
@@ -13141,6 +13220,217 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             addSystemMessage('❌ Kanal devri başarısız!');
         }
     }
+
+    // ============================================================
+    // +18 KANAL (yalnızca Owner açar, /join KOD ile girilir)
+    // ============================================================
+    const CC_ADULT_CH = 'plus18';
+    const CC_CODE_ALPH = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    let _ccAdFails = 0, _ccAdLockUntil = 0, _ccAdSig = '';
+
+    function ccAdNorm(raw) { return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+    function ccAdLooksLikeCode(raw) { const n = ccAdNorm(raw); return n.length === 16 && /^[A-HJKMNP-Z2-9]+$/.test(n); }
+    function ccGenCode() {
+        const a = new Uint32Array(16); crypto.getRandomValues(a);
+        let c = ''; a.forEach(x => { c += CC_CODE_ALPH[x % CC_CODE_ALPH.length]; });
+        return c.match(/.{4}/g).join('-');
+    }
+    async function ccAdHash(code) {
+        if (!(window.crypto && crypto.subtle)) throw new Error('Güvenli bağlantı (HTTPS) gerekli.');
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('cc18|' + ccAdNorm(code)));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function ccAskAge() {
+        return new Promise(resolve => {
+            const old = document.getElementById('ccAgeGate'); if (old) old.remove();
+            const ov = document.createElement('div'); ov.className = 'cc-ov'; ov.id = 'ccAgeGate';
+            ov.innerHTML = '<div class="cc-card" role="dialog" aria-modal="true"><div class="cc-h"><i class="fas fa-user-lock"></i>18 yaş sınırı</div>'
+                + '<div class="cc-sub">Bu kanal yalnızca <b>18 yaşını doldurmuş</b> kullanıcılar içindir ve yetişkinlere yönelik içerik barındırabilir. Reşit olmayanların görüntülenmesi veya paylaşılması kesinlikle yasaktır; ihlal edenler kalıcı olarak engellenir.</div>'
+                + '<label class="cc-chk"><input type="checkbox" id="ccAgeOk"> 18 yaşından büyük olduğumu beyan ederim</label>'
+                + '<div class="cc-act"><button type="button" class="cc-btn" id="ccAgeNo">Vazgeç</button><button type="button" class="cc-btn pri" id="ccAgeGo" disabled>Kanala gir</button></div></div>';
+            document.body.appendChild(ov);
+            const ok = ov.querySelector('#ccAgeOk'), go = ov.querySelector('#ccAgeGo');
+            const done = v => { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
+            const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+            ok.onchange = () => { go.disabled = !ok.checked; };
+            ov.querySelector('#ccAgeNo').onclick = () => done(false);
+            go.onclick = () => done(true);
+            ov.addEventListener('mousedown', e => { if (e.target === ov) done(false); });
+            document.addEventListener('keydown', onKey, true);
+        });
+    }
+
+    /* /join KOD → true: komut burada işlendi, false: eski /join davranışına devam et */
+    async function ccAdultTryJoin(raw) {
+        const isAdm = isOwner || hasRole('admin');
+        if (!ccAdLooksLikeCode(raw)) {
+            if (isAdm) return false;
+            addSystemMessage('⛔ Geçersiz kod.');
+            return true;
+        }
+        if (!currentUser) return true;
+        if (!isOwner && !currentUser.isRegistered) { addSystemMessage('🔒 Bu kanala yalnızca kayıtlı kullanıcılar girebilir. Önce kayıt olun.'); return true; }
+        if (Date.now() < _ccAdLockUntil) { addSystemMessage('⏳ Çok fazla hatalı deneme. Biraz sonra tekrar deneyin.'); return true; }
+        let info = null;
+        try {
+            const hash = await ccAdHash(raw);
+            info = (await database.ref('adultCodes/' + hash).once('value')).val();
+        } catch (e) { addSystemMessage('❌ Kod doğrulanamadı: ' + (e.message || e)); return true; }
+        const ch = info && info.channel, c = ch && cachedChannels[ch];
+        if (!c || !c.adult) {
+            if (++_ccAdFails >= 5) { _ccAdLockUntil = Date.now() + 60000; _ccAdFails = 0; }
+            addSystemMessage('⛔ Geçersiz veya iptal edilmiş kod.');
+            return true;
+        }
+        _ccAdFails = 0;
+        if (canAccessHiddenChannel(ch)) { await switchChannel(ch); return true; }
+        if (!(await ccAskAge())) { addSystemMessage('İşlem iptal edildi.'); return true; }
+        try {
+            await channelsRef.child(ch).child('allowedUsers').child(currentUser.name).set(true);
+            try { await database.ref('adultAck/' + ch + '/' + _moveKey(currentUser.name)).set(Date.now()); } catch (e) {}
+        } catch (e) {
+            addSystemMessage('❌ Kanala girilemedi (yetki hatası). Yönetici Firebase kurallarını kontrol etmeli.');
+            return true;
+        }
+        for (let i = 0; i < 25 && !canAccessHiddenChannel(ch); i++) await new Promise(r => setTimeout(r, 200));
+        if (!canAccessHiddenChannel(ch)) { addSystemMessage('❌ Kanal henüz hazır değil, tekrar deneyin.'); return true; }
+        await switchChannel(ch);
+        return true;
+    }
+
+    /* kanal içi görünüm: başlık rozeti, bilgilendirme, link alanı yazısı */
+    function ccAdultUI(name) {
+        const c = cachedChannels[name], on = !!(c && c.adult);
+        document.body.classList.toggle('cc-adult-ch', on);
+        const placeholder = on ? 'YouTube veya video dosyası linki (.mp4 / .webm / .m3u8)' : 'YouTube linki...';
+        ['playlistUrlWeb', 'playlistUrlMobile'].forEach(id => { const el = document.getElementById(id); if (el) el.placeholder = placeholder; });
+        if (on && window._ccAdultNoticed !== name + ':' + (currentUser && currentUser.name)) {
+            window._ccAdultNoticed = name + ':' + (currentUser && currentUser.name);
+            addSystemMessage('🔞 Bu kanal 18 yaşından büyükler içindir. Reşit olmayanların görüntülenmesi/paylaşılması yasaktır; ihlal eden engellenir.');
+        }
+    }
+
+    /* YouTube dışı video: yalnızca +18 kanalında, doğrudan video dosyası bağlantısı */
+    function ccAddExternalVideo(url, title, urlId, titleId) {
+        const c = cachedChannels[currentChannel];
+        if (!c || !c.adult) { alert('Geçersiz YouTube linki!\n\nYouTube dışı video yalnızca +18 kanalında eklenebilir.'); return false; }
+        let u; try { u = new URL(url); } catch (e) { alert('Geçerli bir video bağlantısı girin.'); return false; }
+        if (u.protocol !== 'https:') { alert('Yalnızca https:// bağlantıları eklenebilir.'); return false; }
+        if (!/\.(mp4|m4v|webm|mov|m3u8|ogv)$/i.test(u.pathname)) { alert('Doğrudan video dosyası bağlantısı gerekli (.mp4, .webm, .m3u8). Sayfa bağlantıları oynatılamaz.'); return false; }
+        const ref = activeChannelPlaylistRef || playlistRef;
+        if (!ref) return false;
+        const fileName = decodeURIComponent(u.pathname.split('/').pop() || '').replace(/\.[^.]+$/, '');
+        const clean = String(title || fileName || 'Video').replace(/[<>&"'`]/g, '').trim().slice(0, 100) || 'Video';
+        const key = ref.push().key;
+        ref.child(key).set({ id: 'up_' + key, title: clean, url: u.href, addedBy: currentUser ? currentUser.name : 'Anonim', timestamp: Date.now(), kind: 'ext' });
+        incrementWriteCount();
+        const a = document.getElementById(urlId), b = document.getElementById(titleId);
+        if (a) a.value = ''; if (b) b.value = '';
+        if (playlist.length === 0) setTimeout(() => { if (playlist.length > 0) playVideo(playlist[0].id); }, 500);
+        return true;
+    }
+
+    /* ---- Owner paneli: +18 Kanal sekmesi ---- */
+    function ccAdMsg(t, bad) { const e = document.getElementById('ccAdMsg'); if (e) { e.textContent = t; e.style.color = bad ? '#e5484d' : ''; } }
+    function ccAdultRender(force) {
+        const box = document.getElementById('ccAdultBox'); if (!box) return;
+        const c = cachedChannels[CC_ADULT_CH];
+        let saved = ''; try { saved = localStorage.getItem('ccAdultCode') || ''; } catch (e) {}
+        const members = c && c.allowedUsers ? Object.keys(c.allowedUsers).filter(k => c.allowedUsers[k]) : [];
+        const sig = JSON.stringify([!!c, c && c.label, members, !!(c && c.adultCodeHash), saved]);
+        if (!force && sig === _ccAdSig) return;
+        _ccAdSig = sig;
+        const E = escapeChannelHtml;
+        let h = '<div class="role-section-title owner">🔞 +18 Kanal</div>'
+            + '<p class="cc-ad-note">Gizli kanal: yalnızca <b>Owner</b> açabilir. Kullanıcılar kanalı göremez; <b>/join KOD</b> yazıp 18 yaş onayı verenler girer. YouTube dışı video (.mp4/.m3u8 bağlantısı) yalnızca bu kanalda eklenebilir.</p>';
+        if (!isOwner) { box.innerHTML = h + '<p class="cc-ad-note">Bu bölüm yalnızca Owner içindir.</p>'; return; }
+        if (!c) {
+            h += '<label class="cc-lbl" for="ccAdName">Kanal adı</label><input class="cc-in" id="ccAdName" maxlength="30" value="+18" autocomplete="off">'
+              + '<label class="cc-chk" style="margin-top:12px"><input type="checkbox" id="ccAdOk"> 18 yaş sınırı, yerel yasalar ve platform kuralları konusundaki sorumluluğun bende olduğunu kabul ediyorum</label>'
+              + '<button class="role-action-btn" onclick="ccAdultCreate()"><i class="fas fa-plus"></i> +18 kanalını oluştur</button>';
+        } else {
+            const hasCode = !!c.adultCodeHash;
+            h += '<div class="cc-ad-row"><span class="cc-chip"><i class="fas fa-hashtag"></i> ' + E(c.label || CC_ADULT_CH) + '</span><span class="cc-chip">Gizli</span><span class="cc-chip">' + members.length + ' üye</span><span class="cc-chip">' + (hasCode ? 'Giriş açık' : 'Giriş kapalı') + '</span></div>';
+            h += '<div class="cc-lbl" style="margin-top:12px">Giriş kodu</div>';
+            if (hasCode && saved) h += '<div class="cc-ad-code" id="ccAdCode">' + E(saved) + '</div><div class="cc-sub" style="margin:4px 0 8px">Kullanıcılar sohbete <b>/join ' + E(saved) + '</b> yazar.</div>';
+            else if (hasCode) h += '<div class="cc-sub">Kod bu cihazda kayıtlı değil. Yeni kod üretirseniz eskisi geçersiz olur.</div>';
+            else h += '<div class="cc-sub">Şu an giriş kapalı. Yeni kod üretin.</div>';
+            h += '<div class="cc-ad-acts">'
+              + '<button class="role-action-btn" onclick="ccAdultNewCode()"><i class="fas fa-rotate"></i> Yeni kod üret</button>'
+              + (hasCode && saved ? '<button class="role-action-btn" onclick="ccAdultCopy()"><i class="far fa-copy"></i> Kopyala</button>' : '')
+              + (hasCode ? '<button class="role-action-btn" onclick="ccAdultCloseJoin()"><i class="fas fa-door-closed"></i> Girişi kapat</button>' : '')
+              + '<button class="role-action-btn" onclick="try{toggleOwnerPanel()}catch(e){};switchChannel(\'' + CC_ADULT_CH + '\')"><i class="fas fa-arrow-right"></i> Kanala git</button>'
+              + '</div>';
+            h += '<div class="cc-lbl" style="margin-top:14px">Üyeler</div><div class="role-list">'
+              + (members.length ? members.map(m => '<div class="role-list-item"><span>' + E(m) + '</span>' + (normalizeNick(m) === normalizeNick(currentUser.name) ? '' : '<button class="role-list-btn" title="Çıkar" onclick="ccAdultKick(this.dataset.u)" data-u="' + E(m) + '"><i class="fas fa-user-xmark"></i></button>') + '</div>').join('') : '<div class="cc-sub">Henüz üye yok.</div>')
+              + '</div>';
+            h += '<button class="role-action-btn danger" style="margin-top:14px" onclick="ccAdultDelete()"><i class="far fa-trash-alt"></i> +18 kanalını sil</button>';
+        }
+        h += '<div class="cc-err" id="ccAdMsg"></div>';
+        box.innerHTML = h;
+    }
+    async function ccAdultNewCode() {
+        if (!isOwner) return;
+        const c = cachedChannels[CC_ADULT_CH]; if (!c) return;
+        try {
+            const code = ccGenCode(), hash = await ccAdHash(code);
+            if (c.adultCodeHash) { try { await database.ref('adultCodes/' + c.adultCodeHash).remove(); } catch (e) {} }
+            await database.ref('adultCodes/' + hash).set({ channel: CC_ADULT_CH, createdAt: Date.now() });
+            await channelsRef.child(CC_ADULT_CH).update({ adultCodeHash: hash });
+            try { localStorage.setItem('ccAdultCode', code); } catch (e) {}
+            c.adultCodeHash = hash; _ccAdSig = ''; ccAdultRender(true);
+            ccAdMsg('✅ Yeni kod üretildi. Eski kod artık geçersiz.');
+        } catch (e) { ccAdMsg('❌ ' + (e.message || 'Kod üretilemedi'), true); }
+    }
+    async function ccAdultCloseJoin() {
+        if (!isOwner) return;
+        const c = cachedChannels[CC_ADULT_CH]; if (!c || !c.adultCodeHash) return;
+        try {
+            await database.ref('adultCodes/' + c.adultCodeHash).remove();
+            await channelsRef.child(CC_ADULT_CH).update({ adultCodeHash: null });
+            try { localStorage.removeItem('ccAdultCode'); } catch (e) {}
+            c.adultCodeHash = null; _ccAdSig = ''; ccAdultRender(true);
+            ccAdMsg('Giriş kapatıldı. Mevcut üyeler kalır.');
+        } catch (e) { ccAdMsg('❌ İşlem yapılamadı', true); }
+    }
+    function ccAdultCopy() {
+        let code = ''; try { code = localStorage.getItem('ccAdultCode') || ''; } catch (e) {}
+        if (!code) return;
+        try { const p = navigator.clipboard.writeText(code); if (p && p.catch) p.catch(() => {}); ccAdMsg('Kod kopyalandı.'); } catch (e) { ccAdMsg('Kopyalanamadı, kodu elle seçin.', true); }
+    }
+    async function ccAdultKick(user) {
+        if (!isOwner || !user) return;
+        await unjoinChannelByCommand(CC_ADULT_CH, user);
+        _ccAdSig = ''; setTimeout(() => ccAdultRender(true), 400);
+    }
+    async function ccAdultDelete() {
+        if (!isOwner) return;
+        await deleteChannel(CC_ADULT_CH);
+        try { localStorage.removeItem('ccAdultCode'); } catch (e) {}
+        _ccAdSig = ''; setTimeout(() => ccAdultRender(true), 500);
+    }
+    async function ccAdultCreate() {
+        if (!isOwner) { addSystemMessage('⛔ +18 kanalını yalnızca Owner açabilir.'); return; }
+        if (cachedChannels[CC_ADULT_CH]) { ccAdMsg('Zaten bir +18 kanalı var.', true); return; }
+        const ok = document.getElementById('ccAdOk');
+        if (!ok || !ok.checked) { ccAdMsg('Önce sorumluluk kutusunu işaretleyin.', true); return; }
+        const label = ((document.getElementById('ccAdName') || {}).value || '+18').replace(/[<>&"'`]/g, '').trim().slice(0, 30) || '+18';
+        const data = {
+            name: CC_ADULT_CH, label, createdBy: currentUser.name, owner: currentUser.name,
+            createdAt: Date.now(), isHidden: true, isLocked: false, adult: true,
+            order: Object.keys(cachedChannels).length, allowedUsers: { [currentUser.name]: true }
+        };
+        try {
+            const tx = await channelsRef.child(CC_ADULT_CH).transaction(cur => (cur === null ? data : undefined));
+            if (!tx.committed) { ccAdMsg('Bu ad zaten kullanılıyor.', true); return; }
+            incrementWriteCount();
+            cachedChannels[CC_ADULT_CH] = Object.assign({}, data);
+            await ccAdultNewCode();
+            ccAdMsg('✅ +18 kanalı oluşturuldu. Aşağıdaki kodu paylaşın.');
+        } catch (e) { ccAdMsg('❌ Kanal oluşturulamadı: ' + (e.message || e), true); }
+    }
+    setInterval(() => { const t = document.getElementById('ownerAdultTab'); if (t && t.classList.contains('active')) { try { ccAdultRender(false); } catch (e) {} } }, 1500);
 
     function createChannelPrompt() {
         const name = prompt('Kanal adı (harf/rakam/_):');
@@ -13194,6 +13484,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         await enterChannelPresence(name);
         await broadcastChannelEntry(name);
         updateUserListUI();
+        ccAdultUI(name);
     }
 
     // ============================================================
@@ -13339,7 +13630,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const customTitle = document.getElementById('playlistVideoTitleWeb').value.trim();
         if (!url) return;
         const videoId = extractVideoId(url);
-        if (!videoId) { alert('Geçersiz YouTube linki!'); return; }
+        if (!videoId) { ccAddExternalVideo(url, customTitle, 'playlistUrlWeb', 'playlistVideoTitleWeb'); return; }
         const newPlaylistItem = {
             id: videoId, title: customTitle || 'Video ' + (playlist.length + 1),
             url: url, addedBy: currentUser ? currentUser.name : 'Anonim', timestamp: Date.now()
@@ -13670,65 +13961,86 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     })();
 
     let isSendingPrivateMessage = false;
+    /* kısa süreli önbellek: aynı kontrolü her mesajda sunucuya sormamak için */
+    const _ccCache = {};
+    function ccCached(key, ttl, fn) {
+        const c = _ccCache[key];
+        if (c && Date.now() - c.t < ttl) return Promise.resolve(c.v);
+        return Promise.resolve(fn()).then(v => { _ccCache[key] = { t: Date.now(), v: v }; return v; });
+    }
+
     async function sendPrivateMessage() {
-        if (isSendingPrivateMessage) return;
-        isSendingPrivateMessage = true;
-        
+        if (!privateChatWith || !currentPrivateChatId) { alert('❌ Önce bir kullanıcı seçin!'); return; }
+        const input = document.getElementById('private-input');
+        const text = input.value.trim();
+        if (!text) return;
+        if (!checkWriteLimit()) { addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı!'); return; }
+
+        const to = privateChatWith, chatId = currentPrivateChatId;
+        const restore = () => { if (!input.value) { input.value = text; autoResize(input); updatePrivateActionBtn(); } };
+        /* mesaj kutusu anında boşalır; sunucu kontrolleri arkada paralel çalışır */
+        input.value = '';
+        autoResize(input);
+        updatePrivateActionBtn();
+
         try {
-            if (!privateChatWith || !currentPrivateChatId) { alert('❌ Önce bir kullanıcı seçin!'); return; }
-            if (!checkWriteLimit()) { addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı!'); return; }
-            if (await checkBlockStatus(privateChatWith)) { alert('Bu kullanıcıya mesaj gönderemezsiniz!'); return; }
-                        
-            // 🆕 Süre dolmuş geçici + varsa ANINDA temizle
             const normalizedSelf = normalizeNick(currentUser.name);
             if (tempVerifiedUsers[normalizedSelf] && tempVerifiedUsers[normalizedSelf] <= Date.now()) {
                 delete tempVerifiedUsers[normalizedSelf];
-                if (tempVerifiedRef) {
-                    try { await tempVerifiedRef.child(normalizedSelf).remove(); } catch (e) {}
-                }
+                if (tempVerifiedRef) { try { tempVerifiedRef.child(normalizedSelf).remove().catch(() => {}); } catch (e) {} }
                 updateAllRoleVisibilityUI();
             }
-            const canSend = await checkBanBeforeMessage();
-            if (!canSend) return;
-            
-            const input = document.getElementById('private-input');
-            const text = input.value.trim();
-            if (!text) return;
-            
+            /* alıcının çevrimiçi durumu, engel ve ban kontrolleri aynı anda başlar */
+            const userP = usersRef ? usersRef.child(to).once('value') : null;
+            const [blocked, canSend] = await Promise.all([
+                checkBlockStatus(to),
+                ccCached('ban:' + currentUser.name, 20000, () => checkBanBeforeMessage())
+            ]);
+            if (blocked) { restore(); alert('Bu kullanıcıya mesaj gönderemezsiniz!'); return; }
+            if (!canSend) { restore(); return; }
+
             const messageData = {
-                sender: currentUser.name, receiver: privateChatWith, text: text,
+                sender: currentUser.name, receiver: to, text: text,
                 timestamp: Date.now(),
                 time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                 avatar: currentProfileAvatar || null, isRead: false
             };
-            
-            const sent = await sendPendingMessage(privateChatWith, messageData);
+
+            const sent = await sendPendingMessage(to, messageData, userP, restore);
             if (sent) {
                 incrementWriteCount();
-                input.value = '';
-                autoResize(input);
-                updatePrivateActionBtn();
-                
-                if (typingTimeout[currentPrivateChatId]) clearTimeout(typingTimeout[currentPrivateChatId]);
-                if (typingRef) typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+                if (typingTimeout[chatId]) clearTimeout(typingTimeout[chatId]);
+                if (window._ccTypSent) window._ccTypSent[chatId] = 0;
+                if (typingRef) typingRef.child(chatId).child(currentUser.name).remove();
                 if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
-                if (window.AIBot && window.AIBot.isBot(privateChatWith)) window.AIBot.askPrivate(text);
-                setTimeout(() => archiveAndTrimPrivateChat(currentPrivateChatId), 500);
+                if (window.AIBot && window.AIBot.isBot(to)) window.AIBot.askPrivate(text);
+                /* fazla mesajları her seferinde değil, 8 mesajda bir temizle */
+                window._ccSendCount = (window._ccSendCount || 0) + 1;
+                if (window._ccSendCount % 8 === 0) setTimeout(() => archiveAndTrimPrivateChat(chatId), 1500);
+            } else {
+                restore();
+                addSystemMessage('❌ Mesaj gönderilemedi!');
             }
         } catch (error) {
             console.error('Mesaj gönderme hatası:', error);
+            restore();
             addSystemMessage('❌ Mesaj gönderilemedi!');
-        } finally {
-            setTimeout(() => { isSendingPrivateMessage = false; }, 300);
         }
     }
 
     function emitTyping() {
         if (!currentPrivateChatId || !privateChatWith || !typingRef) return;
-        if (typingTimeout[currentPrivateChatId]) clearTimeout(typingTimeout[currentPrivateChatId]);
-        typingRef.child(currentPrivateChatId).child(currentUser.name).set(true);
-        typingTimeout[currentPrivateChatId] = setTimeout(() => {
-            typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+        const id = currentPrivateChatId;
+        if (typingTimeout[id]) clearTimeout(typingTimeout[id]);
+        /* her tuş vuruşunda değil, en çok 2 saniyede bir yaz */
+        window._ccTypSent = window._ccTypSent || {};
+        if (Date.now() - (window._ccTypSent[id] || 0) > 2000) {
+            window._ccTypSent[id] = Date.now();
+            typingRef.child(id).child(currentUser.name).set(true);
+        }
+        typingTimeout[id] = setTimeout(() => {
+            window._ccTypSent[id] = 0;
+            typingRef.child(id).child(currentUser.name).remove();
         }, TYPING_TIMEOUT_DURATION);
     }
 
@@ -13945,7 +14257,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         try {
             if (!await sendPendingMessage(recipient, messageData)) throw new Error('Firebase mesajı kaydetmedi.');
             incrementWriteCount();
-            await archiveAndTrimPrivateChat(chatId);
+            setTimeout(() => archiveAndTrimPrivateChat(chatId), 1500);
             // addSystemMessage('✅ Medya gönderildi.');  // Yanıltıcı: genel sohbete yazıyor, özel sohbete değil
             return true;
         } catch (error) {
@@ -14043,7 +14355,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const files = Array.from(event.target.files || []);
         try {
             for (const file of files) {
-                if (file.type && file.type.startsWith('video/')) { await sendPrivateVideoFile(file); continue; }
+                if (isVideoFile(file)) { await sendPrivateVideoFile(file); continue; }
                 if (!isImageFile(file)) { addSystemMessage('❌ Yalnızca resim veya video gönderilebilir.'); continue; }
                 await sendPrivateImage(file, '📸 Resim gönderdi');
             }
@@ -14165,24 +14477,28 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     // ============================================================
     // BEKLEYEN MESAJLAR
     // ============================================================
-    async function sendPendingMessage(toUser, messageData) {
+    async function sendPendingMessage(toUser, messageData, prefetchedUser, onFail) {
         if (!currentUser || !pendingMessagesRef) return false;
         try {
-            await rememberPrivateContact(toUser, true);
-            const userSnap = await usersRef.child(toUser).once('value');
+            /* kişi kaydı arkada yapılır, mesajı bekletmez */
+            rememberPrivateContact(toUser, true).catch(() => {});
+            const userSnap = await (prefetchedUser || usersRef.child(toUser).once('value'));
             const userData = userSnap.val();
             const isOnline = userData && (Date.now() - (userData.lastSeen || 0) < ONLINE_THRESHOLD);
-            
+            const fail = (err) => { console.error('Mesaj gönderme hatası:', err); addSystemMessage('❌ Mesaj iletilemedi!'); if (onFail) onFail(); };
+
             if (isOnline) {
                 const chatId = generateChatId(currentUser.name, toUser);
                 const messageRef = privateChatsRef.child(chatId).push();
-                await messageRef.set(messageData);
-                await updatePrivateContactMessageIndex(toUser, messageRef.key, messageData);
+                /* yerel olay anında tetiklenir: mesaj sunucu onayını beklemeden ekranda görünür */
+                messageRef.set(messageData)
+                    .then(() => updatePrivateContactMessageIndex(toUser, messageRef.key, messageData))
+                    .catch(fail);
                 return true;
             } else {
-                await pendingMessagesRef.child(toUser).child(currentUser.name).push({
+                pendingMessagesRef.child(toUser).child(currentUser.name).push({
                     ...messageData, originalTimestamp: messageData.timestamp, isPending: true
-                });
+                }).catch(fail);
                 addSystemMessage(`📨 ${toUser} şu an çevrimdışı. Mesajınız kaydedildi.`);
                 return true;
             }
@@ -14217,7 +14533,10 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     // ============================================================
     // KARŞILIKLI ENGEL KONTROLÜ
     // ============================================================
-    async function checkBlockStatus(targetUser) {
+    function checkBlockStatus(targetUser) {
+        return ccCached('blkraw:' + targetUser, 8000, () => checkBlockStatusRaw(targetUser));
+    }
+    async function checkBlockStatusRaw(targetUser) {
         if (!currentUser || !blocksRef) return false;
         if (normalizeNick(targetUser) === normalizeNick(SECURE_CONFIG.OWNER_CONFIG.username)) return false;
         if (normalizeNick(targetUser) === normalizeNick(currentUser.name)) return false;
@@ -14228,9 +14547,11 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         
         try {
             const now = Date.now();
-            const myBlockSnap = await blocksRef.child(currentUser.name).child(targetUser).once('value');
+            const [myBlockSnap, theirBlockSnap] = await Promise.all([
+                blocksRef.child(currentUser.name).child(targetUser).once('value'),
+                blocksRef.child(targetUser).child(currentUser.name).once('value')
+            ]);
             const myBlock = myBlockSnap.val();
-            const theirBlockSnap = await blocksRef.child(targetUser).child(currentUser.name).once('value');
             const theirBlock = theirBlockSnap.val();
             
             let myActive = false;
@@ -14466,7 +14787,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const customTitle = document.getElementById('playlistVideoTitleMobile').value.trim();
         if (!url) return;
         const videoId = extractVideoId(url);
-        if (!videoId) { alert('Geçersiz YouTube linki!'); return; }
+        if (!videoId) { ccAddExternalVideo(url, customTitle, 'playlistUrlMobile', 'playlistVideoTitleMobile'); return; }
         const newPlaylistItem = {
             id: videoId, title: customTitle || 'Video ' + (playlist.length + 1),
             url: url, addedBy: currentUser ? currentUser.name : 'Anonim', timestamp: Date.now()
