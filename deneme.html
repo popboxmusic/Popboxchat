@@ -5160,6 +5160,19 @@
 #privateModal .private-messages,#privateModal .private-messages *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #privateModal img,#privateModal video{-webkit-user-drag:none;user-drag:none}
 @media print{#privateModal,#pmShield{display:none!important}}
+/* ana ekrana ekle */
+#ccInstall{max-width:1500px;margin:12px auto 0;padding:0 16px}
+.cc-inst{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:16px;background:linear-gradient(135deg,rgba(201,100,66,.16),rgba(201,100,66,.05));border:1px solid rgba(201,100,66,.35)}
+.cc-inst-ic{flex:0 0 46px;height:46px;border-radius:12px;background:#C96442;color:#fff;display:flex;align-items:center;justify-content:center;font-size:21px}
+.cc-inst-tx{flex:1;min-width:0}
+.cc-inst-tx b{display:block;font-size:15px;color:var(--text-primary)}
+.cc-inst-tx span{display:block;font-size:12.5px;color:var(--text-muted);margin-top:2px;line-height:1.4}
+.cc-inst .cc-btn{white-space:nowrap}
+.cc-inst-x{flex:0 0 auto;width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:14px}
+.cc-inst-x:hover{background:var(--bg-hover);color:var(--text-primary)}
+@media(max-width:600px){.cc-inst{flex-wrap:wrap}.cc-inst-tx{flex-basis:calc(100% - 100px)}.cc-inst .cc-btn{flex:1}.cc-ib-t{display:none}}
+#ccInstallBtn[hidden]{display:none!important}
+
 </style>
 </head>
 <body>
@@ -17709,12 +17722,13 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
   <button class="vt-btn" id="vtMenuBtn" onclick="vtToggleSide()" aria-label="Menü"><i class="fas fa-bars"></i></button>
   <div class="vt-logo"><i class="far fa-comments logo-icon"></i><span>CETCETY</span></div>
   <div class="vt-search"><i class="fas fa-search"></i><input id="vtSearch" type="search" placeholder="Kanal ara..." autocomplete="off" oninput="vtRenderGrid()"></div>
+  <button class="vt-btn" id="ccInstallBtn" type="button" onclick="ccInstallApp()" hidden title="Ana ekrana ekle"><i class="fas fa-mobile-screen-button"></i><span class="cc-ib-t"> Ana ekrana ekle</span></button>
   <button class="vt-btn" id="vtAdBtn" onclick="vtAdmOpen()"><i class="fas fa-bullhorn"></i> Reklamlar</button>
  </div>
  <div class="vt-body">
   <aside id="vtSide"></aside>
   <div class="vt-back" onclick="vtToggleSide(false)"></div>
-  <main id="vtMain"><div id="vtHero"></div><div id="anStrip"></div><div id="vtSections"></div></main>
+  <main id="vtMain"><div id="ccInstall" hidden></div><div id="vtHero"></div><div id="anStrip"></div><div id="vtSections"></div></main>
  </div>
 </div>
 <div id="vtAdm"><div class="adm-card" id="vtAdmCard"></div></div>
@@ -20113,8 +20127,16 @@ pm.bind();ch.bind();setInterval(function(){pm.bind();ch.bind()},1500);
 /* ===== Tam ekran ===== */
 (function(){
   try{
-    var man={name:'CETCETY',short_name:'CETCETY',start_url:location.href.split('#')[0],scope:location.href.split('#')[0].replace(/[^\/]*$/,''),display:'standalone',display_override:['fullscreen','standalone'],orientation:'any',background_color:'#1b1b1b',theme_color:'#1b1b1b'};
+    function icon(sz){var c=document.createElement('canvas');c.width=c.height=sz;var x=c.getContext('2d');
+      x.fillStyle='#1b1b1b';x.fillRect(0,0,sz,sz);
+      x.fillStyle='#C96442';var r=sz*0.18,m=sz*0.16,w=sz-2*m;x.beginPath();x.moveTo(m+r,m);x.arcTo(m+w,m,m+w,m+w,r);x.arcTo(m+w,m+w,m,m+w,r);x.arcTo(m,m+w,m,m,r);x.arcTo(m,m,m+w,m,r);x.closePath();x.fill();
+      x.fillStyle='#fff';x.font='800 '+Math.round(sz*0.46)+'px Roboto,Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText('C',sz/2,sz/2+sz*0.02);
+      return c.toDataURL('image/png')}
+    var base=location.href.split('#')[0].split('?')[0];
+    var i192=icon(192),i512=icon(512);
+    var man={name:'CETCETY',short_name:'CETCETY',description:'Canlı sohbet, müzik ve video platformu',id:base,start_url:base,scope:base.replace(/[^\/]*$/,''),display:'standalone',display_override:['fullscreen','standalone'],orientation:'any',background_color:'#1b1b1b',theme_color:'#1b1b1b',icons:[{src:i192,sizes:'192x192',type:'image/png',purpose:'any'},{src:i512,sizes:'512x512',type:'image/png',purpose:'any'},{src:i512,sizes:'512x512',type:'image/png',purpose:'maskable'}]};
     var l=document.getElementById('ccManifest');if(l&&/^https?:/.test(location.protocol))l.href=URL.createObjectURL(new Blob([JSON.stringify(man)],{type:'application/manifest+json'}));
+    var ai=document.createElement('link');ai.rel='apple-touch-icon';ai.href=i192;document.head.appendChild(ai);
   }catch(e){}
 })();
 (function(){
@@ -20221,6 +20243,45 @@ function ccAskTransfer(channelName,currentOwner){
   window.addEventListener('afterprint',function(){sh.classList.remove('show')});
   /* sohbet kapanınca kalkanı kaldır */
   new MutationObserver(function(){if(!isOpen()){sh.classList.remove('show');hidden=false}}).observe(pm,{attributes:true,attributeFilter:['style']});
+})();
+</script>
+
+<script>
+/* ===== Ana ekrana ekle ===== */
+(function(){
+  var deferred=null,KEY='ccInstallDismissed';
+  function standalone(){return !!(window.navigator.standalone||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||(window.matchMedia&&matchMedia('(display-mode: fullscreen)').matches))}
+  function ios(){var u=navigator.userAgent||'';return /iphone|ipad|ipod/i.test(u)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)}
+  function dismissed(){try{var t=+localStorage.getItem(KEY)||0;return t&&Date.now()-t<7*864e5}catch(e){return false}}
+  function paint(){
+    var box=document.getElementById('ccInstall'),btn=document.getElementById('ccInstallBtn');
+    if(!box||!btn)return;
+    if(standalone()){box.hidden=true;btn.hidden=true;return}
+    btn.hidden=false;
+    if(dismissed()){box.hidden=true;return}
+    box.hidden=false;
+    if(!box.firstChild){
+      box.innerHTML='<div class="cc-inst"><div class="cc-inst-ic"><i class="fas fa-mobile-screen-button"></i></div><div class="cc-inst-tx"><b>CETCETY’yi ana ekrana ekle</b><span>Uygulama gibi tek dokunuşla aç, adres çubuğu olmadan tam ekran kullan.</span></div><button type="button" class="cc-btn pri" onclick="ccInstallApp()">Ana ekrana ekle</button><button type="button" class="cc-inst-x" title="Gizle" aria-label="Gizle" onclick="ccInstallHide()"><i class="fas fa-times"></i></button></div>';
+    }
+  }
+  window.ccInstallHide=function(){try{localStorage.setItem(KEY,String(Date.now()))}catch(e){}var b=document.getElementById('ccInstall');if(b)b.hidden=true};
+  function help(){
+    var steps=ios()
+      ?'<ol style="margin:0 0 4px 18px;padding:0;line-height:1.7"><li>Safari’de alttaki <b>Paylaş</b> <i class="fas fa-arrow-up-from-bracket"></i> düğmesine dokun.</li><li><b>Ana Ekrana Ekle</b>’yi seç.</li><li><b>Ekle</b>’ye dokun. CETCETY ana ekranına gelir.</li></ol><div class="cc-sub" style="margin:8px 0 0">Başka bir tarayıcıdaysan siteyi Safari’de aç.</div>'
+      :'<ol style="margin:0 0 4px 18px;padding:0;line-height:1.7"><li>Tarayıcı menüsünü aç (<b>⋮</b> veya <b>⋯</b>).</li><li><b>Ana ekrana ekle</b> ya da <b>Uygulamayı yükle</b>’yi seç.</li><li>Onayla. CETCETY ana ekranına gelir.</li></ol>';
+    var d=document.createElement('div');d.className='cc-ov';d.style.zIndex=9500;
+    d.innerHTML='<div class="cc-card"><div class="cc-h"><i class="fas fa-mobile-screen-button"></i>Ana ekrana ekle</div><div class="cc-sub">Siteyi uygulama gibi kullanmak için:</div>'+steps+'<div class="cc-act" style="margin-top:12px"><button type="button" class="cc-btn pri">Tamam</button></div></div>';
+    d.onclick=function(e){if(e.target===d||e.target.closest('.cc-btn'))d.remove()};document.body.appendChild(d);
+  }
+  window.ccInstallApp=function(){
+    if(deferred){
+      var e=deferred;deferred=null;
+      try{e.prompt();var p=e.userChoice;if(p&&p.then)p.then(function(r){if(r&&r.outcome==='accepted')paint()})}catch(x){help()}
+    }else help();
+  };
+  window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferred=e;paint()});
+  window.addEventListener('appinstalled',function(){deferred=null;try{localStorage.setItem(KEY,String(Date.now()))}catch(e){}paint()});
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',paint);else paint();
 })();
 </script>
 </body>
