@@ -20366,5 +20366,128 @@ function ccAskTransfer(channelName,currentOwner){
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',paint);else paint();
 })();
 </script>
+
+<style>
+#chLinkModal{position:fixed;inset:0;z-index:100000;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.55)}
+#chLinkModal.open{display:flex}
+#chLinkModal .clm{width:100%;max-width:440px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+#chLinkModal h3{margin:0 0 4px;font-size:16px}
+#chLinkModal .clm-sub{margin:0 0 14px;font-size:12.5px;color:var(--text-muted)}
+#chLinkModal .clm-lbl{font-size:12px;font-weight:600;margin:10px 0 5px;color:var(--text-secondary)}
+#chLinkModal .clm-row{display:flex;gap:6px}
+#chLinkModal input{flex:1;min-width:0;padding:9px 10px;border-radius:9px;border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);font-size:13px}
+#chLinkModal button{border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);border-radius:9px;padding:0 12px;cursor:pointer;font-size:13px}
+#chLinkModal button:hover{border-color:var(--youtube-red)}
+#chLinkModal .clm-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+#chLinkModal .clm-foot button{height:36px}
+#ccInviteBanner{margin:0 0 12px;padding:10px 12px;border-radius:10px;background:rgba(201,100,66,.12);border:1px solid rgba(201,100,66,.35);font-size:13px;text-align:center;color:var(--text-primary)}
+</style>
+<script id="channelLinks">
+(function(){
+'use strict';
+var norm=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9_]/g,'')};
+function basePath(){
+  var segs=location.pathname.split('/');
+  while(segs.length&&(segs[segs.length-1]===''||/^index\.html?$/i.test(segs[segs.length-1])||/^(@|%40)/.test(segs[segs.length-1]))) segs.pop();
+  return location.origin+segs.join('/')+'/';
+}
+function linkFor(name,sub){
+  if(!/^https?:$/.test(location.protocol)) return location.href.split('#')[0].split('?')[0]+'#@'+name+(sub?'!abone':'');
+  return basePath()+'@'+name+(sub?'?abone=1':'');
+}
+function parse(){
+  var name=null,sub=false;
+  try{
+    var segs=location.pathname.split('/').filter(Boolean);
+    for(var i=0;i<segs.length;i++){var d=decodeURIComponent(segs[i]); if(d.charAt(0)==='@'){name=norm(d.slice(1));break;}}
+    var q=new URLSearchParams(location.search);
+    if(!name&&q.get('c')) name=norm(q.get('c'));
+    if(q.has('abone')) sub=true;
+    var h=location.hash.match(/^#@?([A-Za-z0-9_]+)(!abone)?$/);
+    if(!name&&h){name=norm(h[1]);} if(h&&h[2]) sub=true;
+  }catch(e){}
+  return name?{name:name,sub:sub}:null;
+}
+var target=parse(), saved=null;
+try{saved=JSON.parse(sessionStorage.getItem('ccTarget')||'null')}catch(e){}
+if(target){
+  try{sessionStorage.setItem('ccTarget',JSON.stringify(target))}catch(e){}
+  try{history.replaceState(null,'',basePath())}catch(e){}
+}else target=saved;
+
+/* davet bandı (giriş ekranı) */
+function banner(){
+  if(!target) return;
+  var ls=document.getElementById('login-screen'); if(!ls||document.getElementById('ccInviteBanner')) return;
+  var box=ls.querySelector('form,.login-box,.login-container,.login-card')||ls.firstElementChild||ls;
+  var b=document.createElement('div'); b.id='ccInviteBanner';
+  b.textContent='📺 #'+target.name+' kanalına davet edildin — giriş yapınca doğrudan açılacak.';
+  box.insertBefore(b,box.firstChild);
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',banner); else banner();
+
+/* giriş sonrası hedef kanala geç */
+if(target){
+  var tries=0,t=setInterval(async function(){
+    try{
+      if(++tries>400){clearInterval(t);return;}
+      if(typeof currentUser==='undefined'||!currentUser||typeof cachedChannels==='undefined'||!Object.keys(cachedChannels||{}).length) return;
+      if(tries<8) return;
+      clearInterval(t);
+      var n=target.name, ch=cachedChannels[n];
+      try{sessionStorage.removeItem('ccTarget')}catch(e){}
+      var bn=document.getElementById('ccInviteBanner'); if(bn) bn.remove();
+      if(!ch){addSystemMessage('❌ #'+n+' kanalı bulunamadı.');return;}
+      if(!canAccessHiddenChannel(n)){addSystemMessage('🔒 #'+n+' kanalına erişim yetkiniz yok.');return;}
+      await switchChannel(n);
+      if(target.sub&&typeof isSubscribedToChannel==='function'){
+        var already=await isSubscribedToChannel(n,currentUser.name);
+        if(!already&&confirm('#'+(ch.label||n)+' kanalına abone olmak ister misin?')) await subscribeToChannel(n,currentUser.name);
+      }
+    }catch(e){clearInterval(t)}
+  },700);
+}
+
+/* paylaşım penceresi */
+function copy(text,btn){
+  var done=function(){var o=btn.textContent;btn.textContent='✓ Kopyalandı';setTimeout(function(){btn.textContent=o},1400)};
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done,function(){fallback()}); else fallback();
+  function fallback(){var i=btn.parentNode.querySelector('input');i.select();try{document.execCommand('copy');done()}catch(e){}}
+}
+window.openChannelLinks=function(name){
+  name=name||currentChannel; var ch=cachedChannels[name]; if(!ch) return;
+  var m=document.getElementById('chLinkModal');
+  if(!m){m=document.createElement('div');m.id='chLinkModal';document.body.appendChild(m);
+    m.addEventListener('click',function(e){if(e.target===m)m.classList.remove('open')});}
+  var l1=linkFor(name,false), l2=linkFor(name,true);
+  var esc=function(v){return String(v).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
+  m.innerHTML='<div class="clm"><h3>🔗 #'+esc(ch.label||name)+' kanal bağlantıları</h3>'+
+   '<p class="clm-sub">Bağlantıya tıklayan kişi giriş yapınca doğrudan bu kanala gelir.</p>'+
+   '<div class="clm-lbl">Kanal linki</div><div class="clm-row"><input readonly value="'+esc(l1)+'"><button data-c="1">Kopyala</button></div>'+
+   '<div class="clm-lbl">Abone linki (açınca abonelik sorulur)</div><div class="clm-row"><input readonly value="'+esc(l2)+'"><button data-c="2">Kopyala</button></div>'+
+   '<div class="clm-foot">'+(navigator.share?'<button data-s="1">Paylaş…</button>':'')+'<button data-x="1">Kapat</button></div></div>';
+  m.querySelectorAll('input').forEach(function(i){i.addEventListener('focus',function(){i.select()})});
+  m.querySelectorAll('button[data-c]').forEach(function(b){b.onclick=function(){copy(b.parentNode.querySelector('input').value,b)}});
+  var sb=m.querySelector('[data-s]'); if(sb) sb.onclick=function(){navigator.share({title:'#'+(ch.label||name)+' — CETCETY',url:l1}).catch(function(){})};
+  m.querySelector('[data-x]').onclick=function(){m.classList.remove('open')};
+  m.classList.add('open');
+};
+
+/* kanal çubuğuna paylaş düğmesi */
+var orig=window.updateChannelActionBar;
+window.updateChannelActionBar=function(){
+  var r=orig.apply(this,arguments);
+  try{
+    var bar=document.getElementById('channelActionBar'), ch=cachedChannels[currentChannel];
+    if(bar&&!bar.classList.contains('hidden')&&ch&&!ch.isHidden&&currentChannel!=='admin_channel_global'){
+      var b=document.createElement('button'); b.className='channel-action-btn'; b.title='Kanal linkini paylaş';
+      b.innerHTML='<i class="fas fa-link"></i>'; b.onclick=function(){openChannelLinks(currentChannel)};
+      bar.insertBefore(b,bar.firstChild);
+    }
+  }catch(e){}
+  return r;
+};
+})();
+</script>
 </body>
 </html>
