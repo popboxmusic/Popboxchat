@@ -13670,65 +13670,86 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     })();
 
     let isSendingPrivateMessage = false;
+    /* kısa süreli önbellek: aynı kontrolü her mesajda sunucuya sormamak için */
+    const _ccCache = {};
+    function ccCached(key, ttl, fn) {
+        const c = _ccCache[key];
+        if (c && Date.now() - c.t < ttl) return Promise.resolve(c.v);
+        return Promise.resolve(fn()).then(v => { _ccCache[key] = { t: Date.now(), v: v }; return v; });
+    }
+
     async function sendPrivateMessage() {
-        if (isSendingPrivateMessage) return;
-        isSendingPrivateMessage = true;
-        
+        if (!privateChatWith || !currentPrivateChatId) { alert('❌ Önce bir kullanıcı seçin!'); return; }
+        const input = document.getElementById('private-input');
+        const text = input.value.trim();
+        if (!text) return;
+        if (!checkWriteLimit()) { addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı!'); return; }
+
+        const to = privateChatWith, chatId = currentPrivateChatId;
+        const restore = () => { if (!input.value) { input.value = text; autoResize(input); updatePrivateActionBtn(); } };
+        /* mesaj kutusu anında boşalır; sunucu kontrolleri arkada paralel çalışır */
+        input.value = '';
+        autoResize(input);
+        updatePrivateActionBtn();
+
         try {
-            if (!privateChatWith || !currentPrivateChatId) { alert('❌ Önce bir kullanıcı seçin!'); return; }
-            if (!checkWriteLimit()) { addSystemMessage('⚠️ Günlük mesaj limitine ulaşıldı!'); return; }
-            if (await checkBlockStatus(privateChatWith)) { alert('Bu kullanıcıya mesaj gönderemezsiniz!'); return; }
-                        
-            // 🆕 Süre dolmuş geçici + varsa ANINDA temizle
             const normalizedSelf = normalizeNick(currentUser.name);
             if (tempVerifiedUsers[normalizedSelf] && tempVerifiedUsers[normalizedSelf] <= Date.now()) {
                 delete tempVerifiedUsers[normalizedSelf];
-                if (tempVerifiedRef) {
-                    try { await tempVerifiedRef.child(normalizedSelf).remove(); } catch (e) {}
-                }
+                if (tempVerifiedRef) { try { tempVerifiedRef.child(normalizedSelf).remove().catch(() => {}); } catch (e) {} }
                 updateAllRoleVisibilityUI();
             }
-            const canSend = await checkBanBeforeMessage();
-            if (!canSend) return;
-            
-            const input = document.getElementById('private-input');
-            const text = input.value.trim();
-            if (!text) return;
-            
+            /* alıcının çevrimiçi durumu, engel ve ban kontrolleri aynı anda başlar */
+            const userP = usersRef ? usersRef.child(to).once('value') : null;
+            const [blocked, canSend] = await Promise.all([
+                ccCached('blk:' + to, 15000, () => checkBlockStatus(to)),
+                ccCached('ban:' + currentUser.name, 20000, () => checkBanBeforeMessage())
+            ]);
+            if (blocked) { restore(); alert('Bu kullanıcıya mesaj gönderemezsiniz!'); return; }
+            if (!canSend) { restore(); return; }
+
             const messageData = {
-                sender: currentUser.name, receiver: privateChatWith, text: text,
+                sender: currentUser.name, receiver: to, text: text,
                 timestamp: Date.now(),
                 time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                 avatar: currentProfileAvatar || null, isRead: false
             };
-            
-            const sent = await sendPendingMessage(privateChatWith, messageData);
+
+            const sent = await sendPendingMessage(to, messageData, userP, restore);
             if (sent) {
                 incrementWriteCount();
-                input.value = '';
-                autoResize(input);
-                updatePrivateActionBtn();
-                
-                if (typingTimeout[currentPrivateChatId]) clearTimeout(typingTimeout[currentPrivateChatId]);
-                if (typingRef) typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+                if (typingTimeout[chatId]) clearTimeout(typingTimeout[chatId]);
+                if (window._ccTypSent) window._ccTypSent[chatId] = 0;
+                if (typingRef) typingRef.child(chatId).child(currentUser.name).remove();
                 if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
-                if (window.AIBot && window.AIBot.isBot(privateChatWith)) window.AIBot.askPrivate(text);
-                setTimeout(() => archiveAndTrimPrivateChat(currentPrivateChatId), 500);
+                if (window.AIBot && window.AIBot.isBot(to)) window.AIBot.askPrivate(text);
+                /* fazla mesajları her seferinde değil, 8 mesajda bir temizle */
+                window._ccSendCount = (window._ccSendCount || 0) + 1;
+                if (window._ccSendCount % 8 === 0) setTimeout(() => archiveAndTrimPrivateChat(chatId), 1500);
+            } else {
+                restore();
+                addSystemMessage('❌ Mesaj gönderilemedi!');
             }
         } catch (error) {
             console.error('Mesaj gönderme hatası:', error);
+            restore();
             addSystemMessage('❌ Mesaj gönderilemedi!');
-        } finally {
-            setTimeout(() => { isSendingPrivateMessage = false; }, 300);
         }
     }
 
     function emitTyping() {
         if (!currentPrivateChatId || !privateChatWith || !typingRef) return;
-        if (typingTimeout[currentPrivateChatId]) clearTimeout(typingTimeout[currentPrivateChatId]);
-        typingRef.child(currentPrivateChatId).child(currentUser.name).set(true);
-        typingTimeout[currentPrivateChatId] = setTimeout(() => {
-            typingRef.child(currentPrivateChatId).child(currentUser.name).remove();
+        const id = currentPrivateChatId;
+        if (typingTimeout[id]) clearTimeout(typingTimeout[id]);
+        /* her tuş vuruşunda değil, en çok 2 saniyede bir yaz */
+        window._ccTypSent = window._ccTypSent || {};
+        if (Date.now() - (window._ccTypSent[id] || 0) > 2000) {
+            window._ccTypSent[id] = Date.now();
+            typingRef.child(id).child(currentUser.name).set(true);
+        }
+        typingTimeout[id] = setTimeout(() => {
+            window._ccTypSent[id] = 0;
+            typingRef.child(id).child(currentUser.name).remove();
         }, TYPING_TIMEOUT_DURATION);
     }
 
@@ -14165,24 +14186,28 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     // ============================================================
     // BEKLEYEN MESAJLAR
     // ============================================================
-    async function sendPendingMessage(toUser, messageData) {
+    async function sendPendingMessage(toUser, messageData, prefetchedUser, onFail) {
         if (!currentUser || !pendingMessagesRef) return false;
         try {
-            await rememberPrivateContact(toUser, true);
-            const userSnap = await usersRef.child(toUser).once('value');
+            /* kişi kaydı arkada yapılır, mesajı bekletmez */
+            rememberPrivateContact(toUser, true).catch(() => {});
+            const userSnap = await (prefetchedUser || usersRef.child(toUser).once('value'));
             const userData = userSnap.val();
             const isOnline = userData && (Date.now() - (userData.lastSeen || 0) < ONLINE_THRESHOLD);
-            
+            const fail = (err) => { console.error('Mesaj gönderme hatası:', err); addSystemMessage('❌ Mesaj iletilemedi!'); if (onFail) onFail(); };
+
             if (isOnline) {
                 const chatId = generateChatId(currentUser.name, toUser);
                 const messageRef = privateChatsRef.child(chatId).push();
-                await messageRef.set(messageData);
-                await updatePrivateContactMessageIndex(toUser, messageRef.key, messageData);
+                /* yerel olay anında tetiklenir: mesaj sunucu onayını beklemeden ekranda görünür */
+                messageRef.set(messageData)
+                    .then(() => updatePrivateContactMessageIndex(toUser, messageRef.key, messageData))
+                    .catch(fail);
                 return true;
             } else {
-                await pendingMessagesRef.child(toUser).child(currentUser.name).push({
+                pendingMessagesRef.child(toUser).child(currentUser.name).push({
                     ...messageData, originalTimestamp: messageData.timestamp, isPending: true
-                });
+                }).catch(fail);
                 addSystemMessage(`📨 ${toUser} şu an çevrimdışı. Mesajınız kaydedildi.`);
                 return true;
             }
@@ -14228,9 +14253,11 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         
         try {
             const now = Date.now();
-            const myBlockSnap = await blocksRef.child(currentUser.name).child(targetUser).once('value');
+            const [myBlockSnap, theirBlockSnap] = await Promise.all([
+                blocksRef.child(currentUser.name).child(targetUser).once('value'),
+                blocksRef.child(targetUser).child(currentUser.name).once('value')
+            ]);
             const myBlock = myBlockSnap.val();
-            const theirBlockSnap = await blocksRef.child(targetUser).child(currentUser.name).once('value');
             const theirBlock = theirBlockSnap.val();
             
             let myActive = false;
