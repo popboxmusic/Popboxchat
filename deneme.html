@@ -5152,7 +5152,7 @@
 .cc-err{font-size:12.5px;color:#e5484d;min-height:16px;margin-top:6px}
 
 /* özel sohbet gizlilik kalkanı */
-#pmShield{position:absolute;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:24px;background:rgba(12,12,12,.94);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);color:#fff}
+#pmShield{position:absolute;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:24px;background:#0c0c0c;color:#fff}
 #pmShield.show{display:flex}
 #pmShield i{font-size:34px;color:#e5484d}
 #pmShield b{font-size:16px}
@@ -20326,12 +20326,13 @@ function ccAskTransfer(channelName,currentOwner){
     if(ms)holdT=setTimeout(function(){if(!hidden)sh.classList.remove('show')},ms);
   }
   function wipeClipboard(){try{var pr=navigator.clipboard&&navigator.clipboard.writeText('Özel sohbetlerde ekran görüntüsü alınamaz.');if(pr&&pr.catch)pr.catch(function(){})}catch(e){}}
+  var lastShot=0;
   function shot(e){
     if(!isOpen())return;
     if(e&&e.preventDefault)try{e.preventDefault()}catch(x){}
+    var now=Date.now(); if(now-lastShot<1500)return; lastShot=now;
     wipeClipboard();
-    show('Ekran görüntüsü engellendi.',3500);
-    try{if(typeof addSystemMessage==='function')addSystemMessage('🚫 Özel sohbetlerde ekran görüntüsü alınamaz.')}catch(x){}
+    show('Ekran görüntüsü alınamaz. Bu sohbet gizlendi.',3000);
   }
   function isShotKey(e){
     if(e.key==='PrintScreen'||e.code==='PrintScreen')return true;
@@ -20344,9 +20345,16 @@ function ccAskTransfer(channelName,currentOwner){
   document.addEventListener('keydown',function(e){if(isShotKey(e))shot(e)},true);
   document.addEventListener('keyup',function(e){if(isShotKey(e))shot(e)},true);
   /* ekran alıntı araçları / uygulama değiştirme pencereyi odaktan çıkarır → içeriği gizle */
+  var touch=(window.matchMedia&&matchMedia('(pointer: coarse)').matches)||('ontouchstart' in window);
   function hide(){if(isOpen()){hidden=true;show('Gizliliği korumak için bu sohbet gizlendi. Geri dönünce yeniden görünür.')}}
+  /* pencere odağı kaybı: iframe'e (YouTube) tıklamak ya da telefonda klavye/bildirim sahte alarm üretir, bunlar yok sayılır */
+  function onBlur(){
+    if(touch)return;
+    if(document.hasFocus())return;   /* odak sadece iframe'e geçtiyse sayfa hâlâ odakta sayılır */
+    hide();
+  }
   function reveal(){hidden=false;clearTimeout(holdT);holdT=setTimeout(function(){if(!hidden)sh.classList.remove('show')},350)}
-  window.addEventListener('blur',hide);window.addEventListener('focus',reveal);
+  window.addEventListener('blur',function(){setTimeout(onBlur,60)});window.addEventListener('focus',reveal);
   document.addEventListener('visibilitychange',function(){document.hidden?hide():reveal()});
   window.addEventListener('pagehide',hide);
   pm.addEventListener('contextmenu',function(e){if(e.target.closest&&e.target.closest('.private-messages'))e.preventDefault()});
