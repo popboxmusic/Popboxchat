@@ -11402,9 +11402,13 @@
         if (!res || !res.blob || !res.blob.size) throw new Error('Video boş.');
         if (res.blob.size > PRIVATE_VIDEO_MAX_BYTES) throw new Error('Video çok büyük, daha kısa çekin.');
         const baseMime = (res.mime || res.blob.type || 'video/webm').split(';')[0];
-        const dataUrl = await readBlobAsDataUrl(new Blob([res.blob], { type: baseMime }));
         const videoId = database.ref('privateMedia').push().key;
         const dur = Math.max(1, Math.round(res.duration));
+        if (window.CETCETY_MEDIA && window.CETCETY_MEDIA.url) {
+            const vurl = await uploadMedia(new Blob([res.blob], { type: baseMime }), 'video');
+            if (vurl) return await sendPrivateAttachment({ video: true, videoId, videoUrl: vurl, videoDuration: dur, videoPoster: res.poster || null }, '🎬 Video gönderdi');
+        }
+        const dataUrl = await readBlobAsDataUrl(new Blob([res.blob], { type: baseMime }));
         const where = await storePrivateVideo(chatId, videoId, { data: dataUrl, mime: baseMime, duration: dur, createdAt: Date.now(), sender: currentUser.name });
         const ok = await sendPrivateAttachment({ video: true, videoId, videoDb: where, videoDuration: dur, videoPoster: res.poster || null }, '🎬 Video gönderdi');
         if (!ok) await removePrivateMedia(chatId, [videoId]);
@@ -11624,7 +11628,7 @@
     // ---------------- Balonda video oynatma ----------------
     function privateVideoHtml(message) {
         const poster = message.videoPoster ? `<img src="${message.videoPoster}" alt="">` : '';
-        return `<div class="pm-video" data-chat="${currentPrivateChatId}" data-vid="${message.videoId}" data-db="${message.videoDb || 'main'}" onclick="playPrivateVideo(this)">${poster}<span class="pm-play"><i class="fas fa-play"></i></span><span class="pm-vdur">${fmtVideoDur(message.videoDuration)}</span></div>`;
+        return `<div class="pm-video" data-chat="${currentPrivateChatId}" data-vid="${message.videoId}" data-url="${message.videoUrl ? String(message.videoUrl).replace(/"/g, '') : ''}" data-db="${message.videoDb || 'main'}" onclick="playPrivateVideo(this)">${poster}<span class="pm-play"><i class="fas fa-play"></i></span><span class="pm-vdur">${fmtVideoDur(message.videoDuration)}</span></div>`;
     }
 
     // "data:video/webm;codecs=vp8,opus;base64,XXXX" gibi bozuk başlıkları da çözer
@@ -11644,14 +11648,18 @@
         el.classList.add('loading');
         const label = el.querySelector('.pm-vdur');
         try {
+            const v = document.createElement('video');
+            v.className = 'pm-video-player';
+            if (el.dataset.url && /^https:\/\//.test(el.dataset.url)) {
+                v.src = el.dataset.url; v.preload = 'auto';
+            } else {
             const ref = mediaRef(el.dataset.db, el.dataset.chat, el.dataset.vid);
             if (!ref) throw new Error('yok');
             const data = (await ref.child('data').once('value')).val();
             if (!data) throw new Error('silinmiş');
             const blob = dataUrlToVideoBlob(data);
-            const v = document.createElement('video');
-            v.className = 'pm-video-player';
             v.src = URL.createObjectURL(blob);
+            }
             v.controls = true; v.autoplay = true; v.playsInline = true;
             const img = el.querySelector('img'); if (img) v.poster = img.src;
             el.replaceWith(v);
@@ -13980,7 +13988,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         });
     }
 
-    async function compressImageForChat(file) {
+    async function compressImageForChat(file, wantBlob) {
         if (!file || file.size === undefined) throw new Error('Geçersiz resim dosyası.');
         if (file.size > 20 * 1024 * 1024) throw new Error('Resim 20 MB sınırını aşıyor.');
         const source = await readBlobAsDataUrl(file);
@@ -13999,7 +14007,22 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
         const compressed = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.78));
         if (!compressed) throw new Error('Resim sıkıştırılamadı.');
+        if (wantBlob) return compressed;
         return readBlobAsDataUrl(compressed);
+    }
+
+    // ---- Worker (R2) medya yükleme: Firebase'e sadece link yazılır ----
+    window.CETCETY_MEDIA = Object.assign({ url: 'https://cetcety-media.kyazar07.workers.dev' }, window.CETCETY_MEDIA || {});
+    async function uploadMedia(blob, kind) {
+        const base = (window.CETCETY_MEDIA.url || '').replace(/\/+$/, '');
+        if (!base || !blob) return null;
+        try {
+            const r = await fetch(base + '/up?kind=' + kind + '&u=' + encodeURIComponent(currentUser ? currentUser.name : ''), {
+                method: 'POST', headers: { 'Content-Type': (blob.type || 'application/octet-stream').split(';')[0] }, body: blob });
+            if (!r.ok) return null;
+            const j = await r.json();
+            return j && j.url ? j.url : null;
+        } catch (e) { return null; }
     }
 
     async function sendPrivateAttachment(content, text) {
@@ -14097,7 +14120,13 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
 
     async function sendPrivateImage(file, text) {
         try {
-            await sendPrivateAttachment({ image: await compressImageForChat(file) }, text);
+            let img = null;
+            if (window.CETCETY_MEDIA && window.CETCETY_MEDIA.url) {
+                const blob = await compressImageForChat(file, true);
+                img = await uploadMedia(blob, 'image');
+                if (!img) img = await readBlobAsDataUrl(blob);   // worker olmazsa Firebase'e düş
+            } else img = await compressImageForChat(file);
+            await sendPrivateAttachment({ image: img }, text);
         } catch (error) {
             console.error('Resim hazırlanamadı:', error);
             addSystemMessage(`❌ Resim gönderilemedi: ${error.message}`);
