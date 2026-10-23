@@ -5366,6 +5366,7 @@
                     <div class="pl-up-row" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
                         <input type="text" id="plUpTitleWeb" class="playlist-title-input-small" placeholder="Başlık">
                         <input type="file" id="plUpFileWeb" accept="video/*" style="max-width:100%;font-size:12px;">
+                        <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="plUpLowWeb" checked> Düşük çözünürlük (360p, küçük dosya)</label>
                         <button type="button" class="playlist-add-btn-small" id="plUpBtnWeb" onclick="uploadVideoToPlaylist('Web')"><i class="fas fa-upload"></i> Yükle</button>
                         <span id="plUpStWeb" style="font-size:12px;opacity:.8;"></span>
                     </div>
@@ -5491,6 +5492,7 @@
                     <div class="pl-up-row" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
                         <input type="text" id="plUpTitleMobile" class="playlist-title-input-small" placeholder="Başlık">
                         <input type="file" id="plUpFileMobile" accept="video/*" style="max-width:100%;font-size:12px;">
+                        <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="plUpLowMobile" checked> Düşük çözünürlük (360p, küçük dosya)</label>
                         <button type="button" class="playlist-add-btn-small" id="plUpBtnMobile" onclick="uploadVideoToPlaylist('Mobile')"><i class="fas fa-upload"></i> Yükle</button>
                         <span id="plUpStMobile" style="font-size:12px;opacity:.8;"></span>
                     </div>
@@ -13453,6 +13455,59 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         form.querySelectorAll('.playlist-title-input-small:not([id^="plUp"]), .playlist-input-small, .playlist-add-btn-small:not([id^="plUp"])')
             .forEach(el => { el.style.display = up ? 'none' : ''; });
     }
+    // Videoyu tarayıcıda düşük çözünürlüğe (max 640px, ~350 kbps) yeniden kodlar. Gerçek zamanlı çalışır.
+    function lowResVideo(file, onProg) {
+        return new Promise((resolve, reject) => {
+            if (typeof MediaRecorder === 'undefined') return reject(new Error('Bu tarayıcı video küçültmeyi desteklemiyor.'));
+            const v = document.createElement('video');
+            v.playsInline = true; v.preload = 'auto';
+            const objUrl = URL.createObjectURL(file);
+            v.src = objUrl;
+            let rec, raf = 0, actx = null, finished = false;
+            const cleanup = () => { cancelAnimationFrame(raf); try { actx && actx.close(); } catch (e) {} URL.revokeObjectURL(objUrl); window.removeEventListener('beforeunload', warn); };
+            const warn = e => { e.preventDefault(); e.returnValue = ''; };
+            v.onerror = () => { cleanup(); reject(new Error('Video okunamadı (format desteklenmiyor olabilir).')); };
+            v.onloadedmetadata = async () => {
+                try {
+                    const sw = v.videoWidth, sh = v.videoHeight;
+                    const k = Math.min(1, 640 / Math.max(sw, sh));
+                    const w = Math.max(2, Math.round(sw * k / 2) * 2), h = Math.max(2, Math.round(sh * k / 2) * 2);
+                    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+                    const ctx = cv.getContext('2d');
+                    const stream = cv.captureStream(24);
+                    try {
+                        const AC = window.AudioContext || window.webkitAudioContext;
+                        actx = new AC();
+                        const dest = actx.createMediaStreamDestination();
+                        actx.createMediaElementSource(v).connect(dest);   // hoparlöre bağlı değil: sessiz kodlama
+                        dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+                    } catch (e) {}
+                    const c = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm', 'video/mp4'];
+                    const mime = c.find(t => MediaRecorder.isTypeSupported(t)) || '';
+                    const opts = { videoBitsPerSecond: 350000, audioBitsPerSecond: 40000 };
+                    if (mime) opts.mimeType = mime;
+                    try { rec = new MediaRecorder(stream, opts); } catch (e) { rec = new MediaRecorder(stream); }
+                    const chunks = [];
+                    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+                    rec.onstop = () => {
+                        if (finished) return; finished = true; cleanup();
+                        const type = (rec.mimeType || mime || 'video/webm').split(';')[0];
+                        resolve(new Blob(chunks, { type }));
+                    };
+                    const draw = () => {
+                        try { ctx.drawImage(v, 0, 0, w, h); } catch (e) {}
+                        if (onProg && v.duration) onProg(v.currentTime, v.duration);
+                        raf = requestAnimationFrame(draw);
+                    };
+                    v.onended = () => { if (rec.state !== 'inactive') rec.stop(); };
+                    window.addEventListener('beforeunload', warn);
+                    if (actx && actx.state === 'suspended') await actx.resume();
+                    rec.start(1000); draw();
+                    await v.play();
+                } catch (e) { cleanup(); reject(e); }
+            };
+        });
+    }
     async function uploadVideoToPlaylist(sfx) {
         const st = document.getElementById('plUpSt' + sfx);
         if (currentChannel !== 'plus') { st.textContent = 'Video yalnızca "plus" kanalına yüklenebilir.'; return; }
@@ -13463,12 +13518,20 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const btn = document.getElementById('plUpBtn' + sfx);
         btn.disabled = true; st.textContent = 'Yükleniyor…';
         const ch = currentChannel;
-        const mb = (f.size / 1048576).toFixed(0);
+        let file = f;
+        const low = document.getElementById('plUpLow' + sfx);
+        if (low && low.checked) {
+            try {
+                st.textContent = 'Küçültülüyor… (sekmeyi açık tut, video süresi kadar sürer)';
+                file = await lowResVideo(f, (t, d) => { st.textContent = 'Küçültülüyor… ' + Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0') + ' / ' + Math.floor(d / 60) + ':' + String(Math.floor(d % 60)).padStart(2, '0') + ' (sekmeyi açık tut)'; });
+            } catch (e) { btn.disabled = false; st.textContent = '❌ Küçültme başarısız: ' + (e.message || e); return; }
+        }
+        const mb = (file.size / 1048576).toFixed(0);
         const base = (window.CETCETY_MEDIA.url || '').replace(/\/+$/, '');
         const url = await new Promise(res => {
             const x = new XMLHttpRequest();
             x.open('POST', base + '/up?kind=video&u=' + encodeURIComponent(currentUser ? currentUser.name : ''));
-            x.setRequestHeader('Content-Type', (f.type || 'video/mp4').split(';')[0]);
+            x.setRequestHeader('Content-Type', (file.type || 'video/mp4').split(';')[0]);
             x.upload.onprogress = e => { if (e.lengthComputable) st.textContent = 'Yükleniyor… %' + Math.round(e.loaded / e.total * 100) + ' (' + mb + ' MB)'; };
             x.onerror = () => { st.textContent = '❌ Sunucuya ulaşılamadı veya bağlantı koptu (' + mb + ' MB). Dosya sunucu limitini aşıyor olabilir.'; res(null); };
             x.ontimeout = () => { st.textContent = '❌ Zaman aşımı.'; res(null); };
@@ -13477,7 +13540,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                 st.textContent = '❌ Sunucu reddetti: HTTP ' + x.status + (x.status === 413 ? ' (dosya çok büyük: ' + mb + ' MB)' : '') + ' ' + (x.responseText || '').slice(0, 80);
                 res(null);
             };
-            x.send(f);
+            x.send(file);
         });
         btn.disabled = false;
         if (!url) return;
