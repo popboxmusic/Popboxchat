@@ -1370,8 +1370,6 @@
             gap: 8px;
         }
         
-        .pl-tab { padding:5px 12px; border-radius:16px; border:1px solid var(--border-color); background:transparent; color:inherit; cursor:pointer; font-size:12px; }
-        .pl-tab.on { background:var(--accent-color, #6c5ce7); color:#fff; border-color:transparent; }
         .playlist-add-form {
             display: flex;
             gap: 8px;
@@ -5359,17 +5357,6 @@
                     </div>
                 </div>
                 <div class="playlist-add-form">
-                    <div class="pl-tabs" style="display:flex;gap:6px;width:100%;">
-                        <button type="button" class="pl-tab on" data-m="link" onclick="plAddMode(this,'link')">Link</button>
-                        <button type="button" class="pl-tab" data-m="up" onclick="plAddMode(this,'up')"><i class="fas fa-upload"></i> Video yükle</button>
-                    </div>
-                    <div class="pl-up-row" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
-                        <input type="text" id="plUpTitleWeb" class="playlist-title-input-small" placeholder="Başlık">
-                        <input type="file" id="plUpFileWeb" accept="video/*" style="max-width:100%;font-size:12px;">
-                        <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="plUpLowWeb" checked> Düşük çözünürlük (360p, küçük dosya)</label>
-                        <button type="button" class="playlist-add-btn-small" id="plUpBtnWeb" onclick="uploadVideoToPlaylist('Web')"><i class="fas fa-upload"></i> Yükle</button>
-                        <span id="plUpStWeb" style="font-size:12px;opacity:.8;"></span>
-                    </div>
                     <input type="text" id="playlistVideoTitleWeb" class="playlist-title-input-small" placeholder="Başlık">
                     <input type="text" id="playlistUrlWeb" class="playlist-input-small" placeholder="YouTube linki...">
                     <button class="playlist-add-btn-small" id="addVideoBtnWeb" onclick="addToPlaylistFromWeb()"><i class="fas fa-plus"></i> Ekle</button>
@@ -5485,18 +5472,7 @@
             </div>
         </div>
         <div class="playlist-add-form" style="padding: 0 16px 16px 16px;">
-            <div class="pl-tabs" style="display:flex;gap:6px;width:100%;">
-                        <button type="button" class="pl-tab on" data-m="link" onclick="plAddMode(this,'link')">Link</button>
-                        <button type="button" class="pl-tab" data-m="up" onclick="plAddMode(this,'up')"><i class="fas fa-upload"></i> Video yükle</button>
-                    </div>
-                    <div class="pl-up-row" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
-                        <input type="text" id="plUpTitleMobile" class="playlist-title-input-small" placeholder="Başlık">
-                        <input type="file" id="plUpFileMobile" accept="video/*" style="max-width:100%;font-size:12px;">
-                        <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="plUpLowMobile" checked> Düşük çözünürlük (360p, küçük dosya)</label>
-                        <button type="button" class="playlist-add-btn-small" id="plUpBtnMobile" onclick="uploadVideoToPlaylist('Mobile')"><i class="fas fa-upload"></i> Yükle</button>
-                        <span id="plUpStMobile" style="font-size:12px;opacity:.8;"></span>
-                    </div>
-                    <input type="text" id="playlistVideoTitleMobile" class="playlist-title-input-small" placeholder="Başlık">
+            <input type="text" id="playlistVideoTitleMobile" class="playlist-title-input-small" placeholder="Başlık">
             <input type="text" id="playlistUrlMobile" class="playlist-input-small" placeholder="YouTube linki...">
             <button class="playlist-add-btn-small" id="addVideoBtnMobile" onclick="addToPlaylistFromMobile()"><i class="fas fa-plus"></i> Ekle</button>
         </div>
@@ -7332,10 +7308,7 @@
 
     // 🆕 Düzeltildi: merkezi can() kullanır
     function canAddVideoToChannel(channelName, username) {
-        // Diğer kanallar: eski yetki sistemi (YouTube linki ekleme)
-        if (channelName !== 'plus') return can('video', channelName, username);
-        // Plus kanalında sadece owner ve admin video ekleyebilir
-        return isOwner || hasRoleInChannel('admin', channelName, username) || hasRole('admin');
+        return can('video', channelName, username);
     }
 
     function canModerateChannel(channelName, username) {
@@ -11503,13 +11476,16 @@
                     const poster = await grabVideoPoster(v);
                     try { v.pause(); } catch (e) {}
                     const t0 = Date.now();
-                    const small = await lowResVideoFast(file, (t, d, el) => {
+                    const parts = [].concat(await lowResVideoFast(file, (t, d, el) => {
                         const rem = (el && t > 0.5) ? el * (d - t) / t : (d - t);
                         setStatus('🎬 Video küçültülüyor... %' + Math.min(100, Math.round(t / d * 100)) + ' · kalan ' + plFmt(rem) + ' (sekmeyi açık tut)');
-                    });
-                    if (small && small.size) {
-                        setStatus('📤 Video gönderiliyor... (' + (small.size / 1048576).toFixed(1) + ' MB)');
-                        await sendPrivateVideo({ blob: small, duration: dur, poster, mime: 'video/webm' });
+                    }, 12 * 1024 * 1024, { maxSide: 480, fps: 12, bitrate: 220000 }));
+                    if (parts.length && parts[0] && parts[0].size) {
+                        for (let i = 0; i < parts.length; i++) {
+                            setStatus('📤 Video gönderiliyor... ' + (parts.length > 1 ? '(' + (i + 1) + '/' + parts.length + ') ' : '') + (parts[i].size / 1048576).toFixed(1) + ' MB');
+                            const pd = parts.length > 1 ? dur / parts.length : dur;
+                            await sendPrivateVideo({ blob: parts[i], duration: pd, poster: i === 0 ? poster : null, mime: 'video/webm' });
+                        }
                         return;
                     }
                 } catch (e) { console.warn('Hızlı küçültme olmadı, eski yönteme geçiliyor:', e); }
@@ -13084,7 +13060,7 @@
         const chKey = x => normalizeNick(x).replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u').replace(/[^a-z0-9]/g, '');
         const cleanName = normalizeNick(name).replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u').replace(/[^a-z0-9_]/g, '');
         if (!cleanName || cleanName.length < 2) { addSystemMessage('❌ Kanal adı en az 2 karakter olmalı!'); return; }
-        const RESERVED = ['genel', 'help', 'ai', 'plus', 'admin', 'owner', 'sistem', 'system', 'bot', 'moderator', 'adminchannelglobal'];
+        const RESERVED = ['genel', 'help', 'ai', 'admin', 'owner', 'sistem', 'system', 'bot', 'moderator', 'adminchannelglobal'];
         if (RESERVED.includes(chKey(cleanName)) || RESERVED.includes(chKey(label || ''))) { addSystemMessage('⛔ Bu ad ayrılmış, kullanılamaz!'); return; }
         const kName = chKey(cleanName), kLabel = chKey(label || '');
         const clash = Object.entries(cachedChannels).find(([k, c]) => {
@@ -13109,7 +13085,7 @@
     }
 
     async function deleteChannel(name) {
-        if (['genel', 'help', 'admin_channel_global', 'ai', 'plus'].includes(name)) { addSystemMessage('⛔ Sistem kanalları silinemez!'); return; }
+        if (['genel', 'help', 'admin_channel_global', 'ai'].includes(name)) { addSystemMessage('⛔ Sistem kanalları silinemez!'); return; }
         if (!can('deleteChannel', name)) { addSystemMessage('⛔ Bu kanalı silme yetkiniz yok!'); return; }
         if (Object.keys(cachedChannels).length <= 1) { addSystemMessage('⛔ Son kanal silinemez!'); return; }
         if (!confirm(`#${name} kanalını ve mesajlarını silmek istediğinize emin misiniz?`)) return;
@@ -13462,15 +13438,6 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         document.getElementById('playlistVideoTitleWeb').value = '';
     }
 
-    // ---- Plus kanalı: playliste video dosyası yükle (owner/admin) ----
-    function plAddMode(btn, mode) {
-        const form = btn.closest('.playlist-add-form');
-        form.querySelectorAll('.pl-tab').forEach(b => b.classList.toggle('on', b === btn));
-        const up = mode === 'up';
-        form.querySelector('.pl-up-row').style.display = up ? 'flex' : 'none';
-        form.querySelectorAll('.playlist-title-input-small:not([id^="plUp"]), .playlist-input-small, .playlist-add-btn-small:not([id^="plUp"])')
-            .forEach(el => { el.style.display = up ? 'none' : ''; });
-    }
     // Videoyu tarayıcıda düşük çözünürlüğe (max 640px, ~350 kbps) yeniden kodlar. Gerçek zamanlı çalışır.
     function lowResVideo(file, onProg) {
         return new Promise((resolve, reject) => {
@@ -13574,9 +13541,10 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const seg = cat([idb('18538067'), vint(segPayload.length), segPayload]);
         return new Blob([ebml, seg], { type: 'video/webm' });
     }
-    async function lowResVideoFast(file, onProg) {
-        if (!fastWebmSupported() || file.size > 1.2e9) return lowResVideo(file, onProg);
-        const VCFG = { codec: 'vp8', width: 0, height: 0, bitrate: 350000, framerate: 15 };
+    async function lowResVideoFast(file, onProg, maxBytes, opts) {
+        opts = opts || {};
+        if (!fastWebmSupported() || file.size > 1.2e9) { const one = await lowResVideo(file, onProg); return maxBytes ? [one] : one; }
+        const VCFG = { codec: 'vp8', width: 0, height: 0, bitrate: opts.bitrate || 300000, framerate: opts.fps || 15 };
         const ACFG = { codec: 'opus', sampleRate: 24000, numberOfChannels: 1, bitrate: 32000 };
         const objUrl = URL.createObjectURL(file);
         const v = document.createElement('video');
@@ -13586,17 +13554,17 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error('Video okunamadı (format desteklenmiyor olabilir).')); });
             const sw = v.videoWidth, sh = v.videoHeight, dur = v.duration;
             if (!sw || !sh || !isFinite(dur)) throw new Error('Video bilgisi okunamadı.');
-            const k = Math.min(1, 640 / Math.max(sw, sh));
+            const k = Math.min(1, (opts.maxSide || 640) / Math.max(sw, sh));
             const w = Math.max(2, Math.round(sw * k / 2) * 2), h = Math.max(2, Math.round(sh * k / 2) * 2);
             VCFG.width = w; VCFG.height = h;
-            if (!(await VideoEncoder.isConfigSupported(VCFG)).supported || !(await AudioEncoder.isConfigSupported(ACFG)).supported) { cleanup(); return lowResVideo(file, onProg); }
+            if (!(await VideoEncoder.isConfigSupported(VCFG)).supported || !(await AudioEncoder.isConfigSupported(ACFG)).supported) { cleanup(); const one = await lowResVideo(file, onProg); return maxBytes ? [one] : one; }
             const vChunks = [], aChunks = [];
             let encErr = null;
             const ve = new VideoEncoder({ output: (c) => { const d = new Uint8Array(c.byteLength); c.copyTo(d); vChunks.push({ ts: c.timestamp, key: c.type === 'key', data: d }); }, error: e => { encErr = e; } });
             ve.configure(VCFG);
             // --- ses: tüm dosyayı çöz, mono 24 kHz'e indir, opus'a kodla ---
             let hasAudio = false;
-            try {
+            const audioP = (async () => { try {
                 const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
                 const ctx = new AC(1, 1, 24000);
                 const buf = await ctx.decodeAudioData(await file.arrayBuffer());
@@ -13611,12 +13579,12 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                     if (ae.encodeQueueSize > 50) await new Promise(r => setTimeout(r, 10));
                 }
                 await ae.flush(); ae.close(); hasAudio = aChunks.length > 0;
-            } catch (e) { hasAudio = false; aChunks.length = 0; }
+            } catch (e) { hasAudio = false; aChunks.length = 0; } })();
             // --- görüntü: video hızlandırılmış oynar, kareler içerik zamanıyla kodlanır ---
             const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
             const cx = cv.getContext('2d');
-            let lastTs = -1, lastKey = -1e9, rate = 4, gapSum = 0, gapN = 0, lastMt = -1, t0 = Date.now(), lastAdj = Date.now();
-            const STEP = 1 / 15;
+            let lastTs = -1, lastKey = -1e9, rate = 6, gapSum = 0, gapN = 0, lastMt = -1, t0 = Date.now(), lastAdj = Date.now();
+            const STEP = 1 / (opts.fps || 15);
             v.playbackRate = rate;
             await new Promise((resolve, reject) => {
                 const onFrame = (now, meta) => {
@@ -13647,86 +13615,36 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                 v.requestVideoFrameCallback(onFrame);
                 v.play().catch(reject);
             });
+            await audioP;
             await ve.flush(); ve.close();
             if (encErr) throw encErr;
             if (!vChunks.length) throw new Error('Video karesi alınamadı.');
             if (onProg) onProg(dur, dur, (Date.now() - t0) / 1000);
-            const out = webmMux(vChunks, hasAudio ? aChunks : [], w, h, dur * 1000);
             cleanup();
-            return out;
+            if (!maxBytes) return webmMux(vChunks, hasAudio ? aChunks : [], w, h, dur * 1000);
+            // Parçalara böl: her parça maxBytes'ı aşmasın (anahtar karelerde kesilir)
+            const aRate = hasAudio ? aChunks.reduce((n, c) => n + c.data.length, 0) / dur : 0;
+            const cuts = [0]; let acc = 0, startTs = 0;
+            vChunks.forEach(c => {
+                if (c.key && c.ts > startTs && acc + aRate * ((c.ts - startTs) / 1e6) >= maxBytes * 0.9) { cuts.push(c.ts); startTs = c.ts; acc = 0; }
+                acc += c.data.length;
+            });
+            // bir parçanın boyutu fazla gelirse ve kesilemediyse bile devam eder (anahtar kare aralığı 4.5 sn)
+            cuts.push(Infinity);
+            const outs = [];
+            for (let i = 0; i < cuts.length - 1; i++) {
+                const a0 = cuts[i], a1 = cuts[i + 1];
+                const vp = vChunks.filter(c => c.ts >= a0 && c.ts < a1).map(c => ({ ts: c.ts - a0, key: c.key, data: c.data }));
+                const ap = aChunks.filter(c => c.ts >= a0 && c.ts < a1).map(c => ({ ts: c.ts - a0, data: c.data }));
+                if (!vp.length) continue;
+                const endTs = a1 === Infinity ? dur * 1e6 : a1;
+                outs.push(webmMux(vp, hasAudio ? ap : [], w, h, (endTs - a0) / 1000));
+            }
+            return outs;
         } catch (e) { cleanup(); throw e; }
     }
 
     function plFmt(sec) { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0'); }
-    // Yükle sekmesi sadece plus kanalında görünür; diğer kanallarda yalnızca YouTube linki formu kalır
-    function plSyncTabs() {
-        const isPlus = currentChannel === 'plus';
-        document.querySelectorAll('.playlist-add-form').forEach(f => {
-            const tabs = f.querySelector('.pl-tabs'); if (!tabs) return;
-            tabs.style.display = isPlus ? 'flex' : 'none';
-            if (!isPlus) {
-                const lk = tabs.querySelector('[data-m="link"]');
-                if (lk && !lk.classList.contains('on')) plAddMode(lk, 'link');
-            }
-        });
-    }
-    setInterval(plSyncTabs, 700);
-    window.plSyncTabs = plSyncTabs;
-    async function uploadVideoToPlaylist(sfx) {
-        const st = document.getElementById('plUpSt' + sfx);
-        if (currentChannel !== 'plus') { st.textContent = 'Video yalnızca "plus" kanalına yüklenebilir.'; return; }
-        if (!canAddVideoToChannel(currentChannel)) { st.textContent = 'Sadece owner ve admin video yükleyebilir.'; return; }
-        const f = document.getElementById('plUpFile' + sfx).files[0];
-        if (!f) { st.textContent = 'Önce bir video seç.'; return; }
-        if (!/^video\//.test(f.type)) { st.textContent = 'Geçerli bir video dosyası seç.'; return; }
-        const btn = document.getElementById('plUpBtn' + sfx);
-        btn.disabled = true; st.textContent = 'Yükleniyor…';
-        const ch = currentChannel;
-        let file = f;
-        const low = document.getElementById('plUpLow' + sfx);
-        if (low && low.checked) {
-            try {
-                st.textContent = 'Küçültülüyor… (sekmeyi açık tut, video süresi kadar sürer)';
-                file = await lowResVideoFast(f, (t, d, el) => { const pc = Math.min(100, Math.round(t / d * 100)); const rem = (el && t > 0.5) ? el * (d - t) / t : (d - t); st.textContent = 'Küçültülüyor %' + pc + ' · ' + plFmt(t) + ' / ' + plFmt(d) + ' · geçen ' + plFmt(el || 0) + ' · kalan ' + plFmt(rem) + ' (sekmeyi açık tut)'; });
-            } catch (e) { btn.disabled = false; st.textContent = '❌ Küçültme başarısız: ' + (e.message || e); return; }
-        }
-        const mb = (file.size / 1048576).toFixed(0);
-        const base = (window.CETCETY_MEDIA.url || '').replace(/\/+$/, '');
-        const url = await new Promise(res => {
-            const x = new XMLHttpRequest();
-            x.open('POST', base + '/up?kind=video&u=' + encodeURIComponent(currentUser ? currentUser.name : ''));
-            x.setRequestHeader('Content-Type', (file.type || 'video/mp4').split(';')[0]);
-            const tu = Date.now();
-            x.upload.onprogress = e => {
-                if (!e.lengthComputable) return;
-                const el = (Date.now() - tu) / 1000, sp = e.loaded / Math.max(el, 0.1), rem = (e.total - e.loaded) / Math.max(sp, 1);
-                st.textContent = 'Yükleniyor %' + Math.round(e.loaded / e.total * 100) + ' · ' + (e.loaded / 1048576).toFixed(1) + '/' + mb + ' MB · geçen ' + plFmt(el) + ' · kalan ' + plFmt(rem);
-            };
-            x.onerror = () => { st.textContent = '❌ Sunucuya ulaşılamadı veya bağlantı koptu (' + mb + ' MB). Dosya sunucu limitini aşıyor olabilir.'; res(null); };
-            x.ontimeout = () => { st.textContent = '❌ Zaman aşımı.'; res(null); };
-            x.onload = () => {
-                try { const j = JSON.parse(x.responseText); if (x.status < 300 && j && j.url) return res(j.url); } catch (e) {}
-                st.textContent = '❌ Sunucu reddetti: HTTP ' + x.status + (x.status === 413 ? ' (dosya çok büyük: ' + mb + ' MB)' : '') + ' ' + (x.responseText || '').slice(0, 80);
-                res(null);
-            };
-            x.send(file);
-        });
-        btn.disabled = false;
-        if (!url) return;
-        if (!database || !activeChannelPlaylistRef) { st.textContent = '❌ Liste bağlı değil.'; return; }
-        const title = (document.getElementById('plUpTitle' + sfx).value.trim() || f.name.replace(/\.[^.]+$/, '')).slice(0, 80);
-        const key = database.ref('channelVods/' + ch).push().key;
-        const vod = { id: 'up_' + key, title, url, addedBy: currentUser ? currentUser.name : 'Anonim', timestamp: Date.now() };
-        try {
-            await database.ref('channelVods/' + ch + '/' + key).set(vod);
-            activeChannelPlaylistRef.push(vod);
-            incrementWriteCount();
-            st.textContent = '✅ Yüklendi!';
-            document.getElementById('plUpFile' + sfx).value = '';
-            document.getElementById('plUpTitle' + sfx).value = '';
-        } catch (e) { st.textContent = '❌ Kaydedilemedi.'; }
-    }
-    window.plAddMode = plAddMode; window.uploadVideoToPlaylist = uploadVideoToPlaylist;
 
     function extractVideoId(url) {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -13746,8 +13664,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         { name: 'sinema', label: 'Sinema', order: 4 },
         { name: 'help', label: 'Help', order: -1, isHidden: true },
         { name: 'admin_channel_global', label: 'Admin Global', order: -2, isHidden: true, systemChannel: true, description: 'Sistem, Proxy, ban, şikayet ve kanal olayları' },
-        { name: 'ai', label: 'AI', order: 5, description: 'AI bilgi ve ödev yardım kanalı' },
-        { name: 'plus', label: 'Plus', order: 6, description: 'Video yüklenebilen tek kanal' }
+        { name: 'ai', label: 'AI', order: 5, description: 'AI bilgi ve ödev yardım kanalı' }
     ];
 
     async function loadChannels() {
@@ -16533,7 +16450,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         }
 
         let sel = null, pinCache = null;
-        const SYS_CH = ['genel', 'help', 'admin_channel_global', 'ai', 'plus'];
+        const SYS_CH = ['genel', 'help', 'admin_channel_global', 'ai'];
         const canPin = n => { try { return !!(window.canPinInChannel && window.canPinInChannel(n)); } catch (_) { return false; } };
         const canMan = n => { try { return !!currentUser && canManageChannel(n); } catch (_) { return false; } };
         function myChannels() {
@@ -20435,7 +20352,7 @@ setInterval(upd,700);upd();
 <script id="chCleanJs">
 (function(){
 'use strict';
-var KEEP=['genel','radyo','spor','haber','sinema','help','admin_channel_global','ai','plus'];
+var KEEP=['genel','radyo','spor','haber','sinema','help','admin_channel_global','ai'];
 var sig='';
 function $(i){return document.getElementById(i)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
