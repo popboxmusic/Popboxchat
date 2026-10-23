@@ -13463,9 +13463,24 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const btn = document.getElementById('plUpBtn' + sfx);
         btn.disabled = true; st.textContent = 'Yükleniyor…';
         const ch = currentChannel;
-        const url = await uploadMedia(f, 'video');
+        const mb = (f.size / 1048576).toFixed(0);
+        const base = (window.CETCETY_MEDIA.url || '').replace(/\/+$/, '');
+        const url = await new Promise(res => {
+            const x = new XMLHttpRequest();
+            x.open('POST', base + '/up?kind=video&u=' + encodeURIComponent(currentUser ? currentUser.name : ''));
+            x.setRequestHeader('Content-Type', (f.type || 'video/mp4').split(';')[0]);
+            x.upload.onprogress = e => { if (e.lengthComputable) st.textContent = 'Yükleniyor… %' + Math.round(e.loaded / e.total * 100) + ' (' + mb + ' MB)'; };
+            x.onerror = () => { st.textContent = '❌ Sunucuya ulaşılamadı veya bağlantı koptu (' + mb + ' MB). Dosya sunucu limitini aşıyor olabilir.'; res(null); };
+            x.ontimeout = () => { st.textContent = '❌ Zaman aşımı.'; res(null); };
+            x.onload = () => {
+                try { const j = JSON.parse(x.responseText); if (x.status < 300 && j && j.url) return res(j.url); } catch (e) {}
+                st.textContent = '❌ Sunucu reddetti: HTTP ' + x.status + (x.status === 413 ? ' (dosya çok büyük: ' + mb + ' MB)' : '') + ' ' + (x.responseText || '').slice(0, 80);
+                res(null);
+            };
+            x.send(f);
+        });
         btn.disabled = false;
-        if (!url) { st.textContent = '❌ Yükleme başarısız.'; return; }
+        if (!url) return;
         if (!database || !activeChannelPlaylistRef) { st.textContent = '❌ Liste bağlı değil.'; return; }
         const title = (document.getElementById('plUpTitle' + sfx).value.trim() || f.name.replace(/\.[^.]+$/, '')).slice(0, 80);
         const key = database.ref('channelVods/' + ch).push().key;
