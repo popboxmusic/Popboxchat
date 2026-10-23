@@ -7308,6 +7308,8 @@
 
     // 🆕 Düzeltildi: merkezi can() kullanır
     function canAddVideoToChannel(channelName, username) {
+        // Video yalnızca "plus" kanalına eklenebilir
+        if (channelName !== 'plus') return false;
         return can('video', channelName, username);
     }
 
@@ -13037,7 +13039,7 @@
         const chKey = x => normalizeNick(x).replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u').replace(/[^a-z0-9]/g, '');
         const cleanName = normalizeNick(name).replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u').replace(/[^a-z0-9_]/g, '');
         if (!cleanName || cleanName.length < 2) { addSystemMessage('❌ Kanal adı en az 2 karakter olmalı!'); return; }
-        const RESERVED = ['genel', 'help', 'ai', 'admin', 'owner', 'sistem', 'system', 'bot', 'moderator', 'adminchannelglobal'];
+        const RESERVED = ['genel', 'help', 'ai', 'plus', 'admin', 'owner', 'sistem', 'system', 'bot', 'moderator', 'adminchannelglobal'];
         if (RESERVED.includes(chKey(cleanName)) || RESERVED.includes(chKey(label || ''))) { addSystemMessage('⛔ Bu ad ayrılmış, kullanılamaz!'); return; }
         const kName = chKey(cleanName), kLabel = chKey(label || '');
         const clash = Object.entries(cachedChannels).find(([k, c]) => {
@@ -13062,7 +13064,7 @@
     }
 
     async function deleteChannel(name) {
-        if (['genel', 'help', 'admin_channel_global', 'ai'].includes(name)) { addSystemMessage('⛔ Sistem kanalları silinemez!'); return; }
+        if (['genel', 'help', 'admin_channel_global', 'ai', 'plus'].includes(name)) { addSystemMessage('⛔ Sistem kanalları silinemez!'); return; }
         if (!can('deleteChannel', name)) { addSystemMessage('⛔ Bu kanalı silme yetkiniz yok!'); return; }
         if (Object.keys(cachedChannels).length <= 1) { addSystemMessage('⛔ Son kanal silinemez!'); return; }
         if (!confirm(`#${name} kanalını ve mesajlarını silmek istediğinize emin misiniz?`)) return;
@@ -13391,6 +13393,10 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     function updateMobileUI() {}
 
     function addToPlaylistFromWeb() {
+        if (currentChannel !== 'plus') {
+            alert('Video yalnızca "plus" kanalına eklenebilir.');
+            return;
+        }
         if (!canAddVideoToChannel(currentChannel)) {
             alert('Bu işlem için yetkiniz yok!');
             return;
@@ -13433,7 +13439,8 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         { name: 'sinema', label: 'Sinema', order: 4 },
         { name: 'help', label: 'Help', order: -1, isHidden: true },
         { name: 'admin_channel_global', label: 'Admin Global', order: -2, isHidden: true, systemChannel: true, description: 'Sistem, Proxy, ban, şikayet ve kanal olayları' },
-        { name: 'ai', label: 'AI', order: 5, description: 'AI bilgi ve ödev yardım kanalı' }
+        { name: 'ai', label: 'AI', order: 5, description: 'AI bilgi ve ödev yardım kanalı' },
+        { name: 'plus', label: 'Plus', order: 6, description: 'Video yüklenebilen tek kanal' }
     ];
 
     async function loadChannels() {
@@ -14569,6 +14576,10 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     }
 
     function addToPlaylistFromMobile() {
+        if (currentChannel !== 'plus') {
+            alert('Video yalnızca "plus" kanalına eklenebilir.');
+            return;
+        }
         if (!canAddVideoToChannel(currentChannel)) {
             alert('Bu işlem için yetkiniz yok!');
             return;
@@ -16219,7 +16230,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         }
 
         let sel = null, pinCache = null;
-        const SYS_CH = ['genel', 'help', 'admin_channel_global', 'ai'];
+        const SYS_CH = ['genel', 'help', 'admin_channel_global', 'ai', 'plus'];
         const canPin = n => { try { return !!(window.canPinInChannel && window.canPinInChannel(n)); } catch (_) { return false; } };
         const canMan = n => { try { return !!currentUser && canManageChannel(n); } catch (_) { return false; } };
         function myChannels() {
@@ -20121,7 +20132,7 @@ setInterval(upd,700);upd();
 <script id="chCleanJs">
 (function(){
 'use strict';
-var KEEP=['genel','radyo','spor','haber','sinema','help','admin_channel_global','ai'];
+var KEEP=['genel','radyo','spor','haber','sinema','help','admin_channel_global','ai','plus'];
 var sig='';
 function $(i){return document.getElementById(i)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
@@ -20333,19 +20344,6 @@ function ccAskTransfer(channelName,currentOwner){
     var now=Date.now(); if(now-lastShot<1500)return; lastShot=now;
     wipeClipboard();
     show('Ekran görüntüsü alınamaz. Bu sohbet gizlendi.',3000);
-    /* karşı tarafa aynı özel sohbet penceresinde sistem mesajı yaz */
-    try{
-      var cid=window.currentPrivateChatId||(typeof currentPrivateChatId!=='undefined'?currentPrivateChatId:null);
-      var me=(typeof currentUser!=='undefined'&&currentUser)?currentUser.name:null;
-      if(cid&&me&&typeof privateChatsRef!=='undefined'&&privateChatsRef){
-        var nm=String(me).replace(/[<>&"']/g,'');
-        privateChatsRef.child(cid).push({
-          sender:'System',isNotification:true,screenshotBy:me,
-          text:'📸 <strong>'+nm+'</strong> sohbet ekranının görüntüsünü aldı.',
-          timestamp:Date.now(),time:new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})
-        });
-      }
-    }catch(x){}
   }
   function isShotKey(e){
     if(e.key==='PrintScreen'||e.code==='PrintScreen')return true;
