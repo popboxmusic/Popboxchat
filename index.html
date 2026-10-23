@@ -1370,6 +1370,8 @@
             gap: 8px;
         }
         
+        .pl-tab { padding:5px 12px; border-radius:16px; border:1px solid var(--border-color); background:transparent; color:inherit; cursor:pointer; font-size:12px; }
+        .pl-tab.on { background:var(--accent-color, #6c5ce7); color:#fff; border-color:transparent; }
         .playlist-add-form {
             display: flex;
             gap: 8px;
@@ -5357,6 +5359,16 @@
                     </div>
                 </div>
                 <div class="playlist-add-form">
+                    <div class="pl-tabs" style="display:flex;gap:6px;width:100%;">
+                        <button type="button" class="pl-tab on" data-m="link" onclick="plAddMode(this,'link')">Link</button>
+                        <button type="button" class="pl-tab" data-m="up" onclick="plAddMode(this,'up')"><i class="fas fa-upload"></i> Video yükle</button>
+                    </div>
+                    <div class="pl-up-row" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
+                        <input type="text" id="plUpTitleWeb" class="playlist-title-input-small" placeholder="Başlık">
+                        <input type="file" id="plUpFileWeb" accept="video/*" style="max-width:100%;font-size:12px;">
+                        <button type="button" class="playlist-add-btn-small" id="plUpBtnWeb" onclick="uploadVideoToPlaylist('Web')"><i class="fas fa-upload"></i> Yükle</button>
+                        <span id="plUpStWeb" style="font-size:12px;opacity:.8;"></span>
+                    </div>
                     <input type="text" id="playlistVideoTitleWeb" class="playlist-title-input-small" placeholder="Başlık">
                     <input type="text" id="playlistUrlWeb" class="playlist-input-small" placeholder="YouTube linki...">
                     <button class="playlist-add-btn-small" id="addVideoBtnWeb" onclick="addToPlaylistFromWeb()"><i class="fas fa-plus"></i> Ekle</button>
@@ -5472,7 +5484,17 @@
             </div>
         </div>
         <div class="playlist-add-form" style="padding: 0 16px 16px 16px;">
-            <input type="text" id="playlistVideoTitleMobile" class="playlist-title-input-small" placeholder="Başlık">
+            <div class="pl-tabs" style="display:flex;gap:6px;width:100%;">
+                        <button type="button" class="pl-tab on" data-m="link" onclick="plAddMode(this,'link')">Link</button>
+                        <button type="button" class="pl-tab" data-m="up" onclick="plAddMode(this,'up')"><i class="fas fa-upload"></i> Video yükle</button>
+                    </div>
+                    <div class="pl-up-row" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
+                        <input type="text" id="plUpTitleMobile" class="playlist-title-input-small" placeholder="Başlık">
+                        <input type="file" id="plUpFileMobile" accept="video/*" style="max-width:100%;font-size:12px;">
+                        <button type="button" class="playlist-add-btn-small" id="plUpBtnMobile" onclick="uploadVideoToPlaylist('Mobile')"><i class="fas fa-upload"></i> Yükle</button>
+                        <span id="plUpStMobile" style="font-size:12px;opacity:.8;"></span>
+                    </div>
+                    <input type="text" id="playlistVideoTitleMobile" class="playlist-title-input-small" placeholder="Başlık">
             <input type="text" id="playlistUrlMobile" class="playlist-input-small" placeholder="YouTube linki...">
             <button class="playlist-add-btn-small" id="addVideoBtnMobile" onclick="addToPlaylistFromMobile()"><i class="fas fa-plus"></i> Ekle</button>
         </div>
@@ -7310,7 +7332,8 @@
     function canAddVideoToChannel(channelName, username) {
         // Video yalnızca "plus" kanalına eklenebilir
         if (channelName !== 'plus') return false;
-        return can('video', channelName, username);
+        // Plus kanalında sadece owner ve admin video ekleyebilir
+        return isOwner || hasRoleInChannel('admin', channelName, username) || hasRole('admin');
     }
 
     function canModerateChannel(channelName, username) {
@@ -13420,6 +13443,43 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         document.getElementById('playlistUrlWeb').value = '';
         document.getElementById('playlistVideoTitleWeb').value = '';
     }
+
+    // ---- Plus kanalı: playliste video dosyası yükle (owner/admin) ----
+    function plAddMode(btn, mode) {
+        const form = btn.closest('.playlist-add-form');
+        form.querySelectorAll('.pl-tab').forEach(b => b.classList.toggle('on', b === btn));
+        const up = mode === 'up';
+        form.querySelector('.pl-up-row').style.display = up ? 'flex' : 'none';
+        form.querySelectorAll('.playlist-title-input-small:not([id^="plUp"]), .playlist-input-small, .playlist-add-btn-small:not([id^="plUp"])')
+            .forEach(el => { el.style.display = up ? 'none' : ''; });
+    }
+    async function uploadVideoToPlaylist(sfx) {
+        const st = document.getElementById('plUpSt' + sfx);
+        if (currentChannel !== 'plus') { st.textContent = 'Video yalnızca "plus" kanalına yüklenebilir.'; return; }
+        if (!canAddVideoToChannel(currentChannel)) { st.textContent = 'Sadece owner ve admin video yükleyebilir.'; return; }
+        const f = document.getElementById('plUpFile' + sfx).files[0];
+        if (!f) { st.textContent = 'Önce bir video seç.'; return; }
+        if (!/^video\//.test(f.type)) { st.textContent = 'Geçerli bir video dosyası seç.'; return; }
+        const btn = document.getElementById('plUpBtn' + sfx);
+        btn.disabled = true; st.textContent = 'Yükleniyor…';
+        const ch = currentChannel;
+        const url = await uploadMedia(f, 'video');
+        btn.disabled = false;
+        if (!url) { st.textContent = '❌ Yükleme başarısız.'; return; }
+        if (!database || !activeChannelPlaylistRef) { st.textContent = '❌ Liste bağlı değil.'; return; }
+        const title = (document.getElementById('plUpTitle' + sfx).value.trim() || f.name.replace(/\.[^.]+$/, '')).slice(0, 80);
+        const key = database.ref('channelVods/' + ch).push().key;
+        const vod = { id: 'up_' + key, title, url, addedBy: currentUser ? currentUser.name : 'Anonim', timestamp: Date.now() };
+        try {
+            await database.ref('channelVods/' + ch + '/' + key).set(vod);
+            activeChannelPlaylistRef.push(vod);
+            incrementWriteCount();
+            st.textContent = '✅ Yüklendi!';
+            document.getElementById('plUpFile' + sfx).value = '';
+            document.getElementById('plUpTitle' + sfx).value = '';
+        } catch (e) { st.textContent = '❌ Kaydedilemedi.'; }
+    }
+    window.plAddMode = plAddMode; window.uploadVideoToPlaylist = uploadVideoToPlaylist;
 
     function extractVideoId(url) {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
