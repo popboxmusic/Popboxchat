@@ -8048,6 +8048,7 @@
                 const targetRef = currentChannel === 'genel' ? messagesRef : database.ref(`channelMessages/${currentChannel}`);
                 await targetRef.push(messageData);
                 incrementWriteCount();
+                try { if (window.mnAfterSend) window.mnAfterSend(text, currentChannel); } catch (e) {}
                 input.value = '';
                 autoResize(input);
                 if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
@@ -10452,7 +10453,7 @@
         }
         let html = '';
         notifications.slice(0, 20).forEach(notif => {
-            const icon = notif.type === 'private' ? 'fas fa-lock' : (notif.type === 'admin' ? 'fas fa-exclamation-triangle' : 'fas fa-info-circle');
+            const icon = notif.type === 'private' ? 'fas fa-lock' : notif.type === 'mention' ? 'fas fa-at' : (notif.type === 'admin' ? 'fas fa-exclamation-triangle' : 'fas fa-info-circle');
             html += `
                 <div class="notification-item ${notif.read ? '' : 'unread'}" onclick="handleNotificationClick('${notif.id}')">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
@@ -10477,6 +10478,7 @@
         updateNotificationPanel();
         closeNotificationPanel();
         if (notification.type === 'private') openPrivateChat(notification.sender);
+        else if (notification.type === 'mention' && notification.channel && window.mnGo) window.mnGo(notification.channel);
     }
 
     function clearAllNotifications() {
@@ -13383,6 +13385,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                 </div>
             </div>
         `;
+        try { if (window.mnDecorate) window.mnDecorate(messageDiv, message); } catch (e) {}
         container.appendChild(messageDiv);
         
         if (!skipScroll && wasAtBottom) {
@@ -13787,6 +13790,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             chatRef.on('child_changed', (snap) => {
                 if (currentPrivateChatId !== chatId) return;
                 const m = snap.val();
+                if (m && window.pmRefresh) { try { window.pmRefresh(snap.key, m); } catch (e) {} }
                 if (m && m.sender === currentUser.name) updatePrivateTick(snap.key, !!m.isRead);
             });
             chatRef.on('child_added', (snapshot) => {
@@ -13909,6 +13913,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                 </div>
             </div>
         `;
+        try { if (window.pmDecorate) window.pmDecorate(messageDiv, message); } catch (e) {}
         container.appendChild(messageDiv);
         const bubbles = container.querySelectorAll('.private-msg');
         for (let i = 0; i < bubbles.length - PRIVATE_MESSAGE_LIMIT; i++) bubbles[i].remove();
@@ -14006,6 +14011,10 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                 time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                 avatar: currentProfileAvatar || null, isRead: false
             };
+            if (window.__pmReply && window.__pmReply.id) {
+                messageData.replyTo = { id: String(window.__pmReply.id), sender: String(window.__pmReply.sender || ''), text: String(window.__pmReply.text || '').slice(0, 100) };
+                if (window.pmClearReply) window.pmClearReply();
+            }
 
             const sent = await sendPendingMessage(to, messageData, userP, restore);
             if (sent) {
@@ -20852,7 +20861,7 @@ window.updateChannelActionBar=function(){
     G = null;
     if (!narrow() || e.touches.length !== 1) return;
     var t = e.target;
-    if (t.closest && t.closest('input,textarea,select,[contenteditable="true"],video,.vt-ptrack')) return;
+    if (t.closest && t.closest('input,textarea,select,[contenteditable="true"],video,.vt-ptrack,#privateMessages .pm-bubble,#pmMenu,#pmNote')) return;
     var f = find(t); if (!f) return;
     var tc = e.touches[0];
     G = { el: f.el, cfg: f.cfg, x: tc.clientX, y: tc.clientY, t: Date.now(), lock: null, tgt: t, dx: 0, dy: 0 };
@@ -20905,6 +20914,353 @@ window.updateChannelActionBar=function(){
     if (m.contains(e.target) || (e.target.closest && e.target.closest('.mobile-menu-btn'))) return;
     call('toggleMobileMenu');
   }, true);
+})();
+
+</script>
+<script>
+/* ===== CETCETY: özel sohbet — yanıtla (kaydır), emoji tepkisi, mesaja not ===== */
+(function () {
+  'use strict';
+  var EMO = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+  var reply = null, menuEl = null, noteEl = null, replyChat = null;
+  function $(i) { return document.getElementById(i); }
+  function g(n) { try { return (0, eval)('typeof ' + n + '!=="undefined"?' + n + ':null'); } catch (e) { return null; } }
+  function meName() { var u = g('currentUser'); return u && u.name; }
+  function nk(n) { return String(n || '').toLowerCase().replace(/[.#$\[\]\/]/g, '_'); }
+  function msgRef(key) { var r = g('privateChatsRef'), c = g('currentPrivateChatId'); return r && c ? r.child(c).child(key) : null; }
+  function mk(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+  function plain(s) { var d = document.createElement('div'); d.innerHTML = String(s || ''); return (d.textContent || '').trim(); }
+  function preview(m) { if (m.image) return '📷 Fotoğraf'; if (m.audio) return '🎤 Ses mesajı'; if (m.video) return '🎬 Video'; return plain(m.text).slice(0, 100); }
+  function toast(t) { try { if (typeof addSystemMessage === 'function') return addSystemMessage(t); } catch (e) {} }
+
+  /* ---------- stil ---------- */
+  var st = document.createElement('style');
+  st.textContent =
+    '#privateMessages .private-msg{position:relative}' +
+    '.pm-quote{border-left:3px solid var(--youtube-red);background:rgba(0,0,0,.07);border-radius:8px;padding:4px 8px;margin:0 0 5px;font-size:12.5px;cursor:pointer;max-width:100%;overflow:hidden}' +
+    '.pm-quote b{display:block;color:var(--youtube-red);font-size:12px}' +
+    '.pm-quote span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;opacity:.85;word-break:break-word}' +
+    '.pm-rx{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}' +
+    '.pm-rx:empty,.pm-notes:empty{display:none}' +
+    '.pm-rx .rx{background:var(--bg-primary);border:1px solid var(--border-color);border-radius:12px;padding:1px 7px;font-size:13px;cursor:pointer;line-height:1.5;-webkit-tap-highlight-color:transparent}' +
+    '.pm-rx .rx.mine{border-color:var(--youtube-red);background:rgba(201,100,66,.14)}' +
+    '.pm-notes .pm-note{font-size:12.5px;margin-top:5px;padding:4px 8px;border-radius:8px;background:rgba(224,168,0,.16);border-left:3px solid #e0a800;word-break:break-word;cursor:pointer}' +
+    '.pm-notes .pm-note b{margin-right:4px}' +
+    '.pm-more{position:absolute;top:2px;right:4px;width:22px;height:22px;border:0;border-radius:50%;background:var(--bg-hover);color:var(--text-muted);font-size:11px;display:none;align-items:center;justify-content:center;cursor:pointer;padding:0}' +
+    '@media (hover:hover){.pm-bubble:hover .pm-more{display:flex}}' +
+    '.pm-swipe-ic{position:absolute;left:8px;top:50%;margin-top:-15px;width:30px;height:30px;border-radius:50%;background:var(--bg-hover);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:13px;opacity:0;pointer-events:none;z-index:0}' +
+    '.pm-flash .pm-bubble{animation:pmFlash 1.2s ease}@keyframes pmFlash{0%,60%{box-shadow:0 0 0 3px var(--youtube-red)}100%{box-shadow:0 1px 1px rgba(0,0,0,.08)}}' +
+    '#pmReplyBar{display:none;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-secondary);border-top:1px solid var(--border-color);flex:0 0 auto}' +
+    '#pmReplyBar.show{display:flex}' +
+    '#pmReplyBar .rb{flex:1;min-width:0;border-left:3px solid var(--youtube-red);padding-left:8px}' +
+    '#pmReplyBar b{display:block;font-size:12.5px;color:var(--youtube-red)}' +
+    '#pmReplyBar span{display:block;font-size:13px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '#pmReplyBar button{width:32px;height:32px;border-radius:50%;border:0;background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer}' +
+    '#pmMenu{position:fixed;z-index:3300;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:18px;box-shadow:var(--shadow-xl);padding:6px;min-width:210px;max-width:calc(100vw - 16px)}' +
+    '.pm-emorow{display:flex;gap:2px;padding:2px 2px 6px;border-bottom:1px solid var(--border-color);margin-bottom:4px}' +
+    '.pm-emorow button{font-size:24px;line-height:1;background:none;border:0;border-radius:50%;width:40px;height:40px;cursor:pointer;padding:0}' +
+    '.pm-emorow button.sel,.pm-emorow button:active{background:var(--bg-hover)}' +
+    '.pm-act{display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:10px;font-size:15px;cursor:pointer;color:var(--text-primary)}' +
+    '.pm-act:active,.pm-act:hover{background:var(--bg-hover)}.pm-act i{width:18px;text-align:center;color:var(--text-muted)}.pm-act.danger,.pm-act.danger i{color:#e5484d}' +
+    '#pmNote{position:fixed;left:0;right:0;bottom:0;z-index:3300;background:var(--bg-primary);border-top:1px solid var(--border-color);border-radius:20px 20px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px));box-shadow:0 -8px 30px rgba(0,0,0,.25)}' +
+    '#pmNote textarea{width:100%;box-sizing:border-box;min-height:70px;border:1px solid var(--border-color);border-radius:12px;padding:10px 12px;font:inherit;font-size:16px;background:var(--bg-tertiary);color:var(--text-primary);resize:none}' +
+    '#pmNote .nb{display:flex;gap:8px;margin-top:10px;justify-content:flex-end}#pmNote .nb button{border:0;border-radius:20px;padding:9px 18px;font-size:14px;cursor:pointer;background:var(--bg-tertiary);color:var(--text-primary)}#pmNote .nb .pri{background:var(--youtube-red);color:#fff}#pmNote .nt{font-size:13px;color:var(--text-muted);margin-bottom:8px}' +
+    '@media (min-width:769px){#pmNote{left:50%;right:auto;width:420px;transform:translateX(-50%);bottom:24px;border-radius:20px;border:1px solid var(--border-color)}}';
+  document.head.appendChild(st);
+
+  /* ---------- yanıt çubuğu ---------- */
+  function bar() {
+    var b = $('pmReplyBar'); if (b) return b;
+    var area = document.querySelector('#privateModal .private-input-area'); if (!area) return null;
+    b = mk('div'); b.id = 'pmReplyBar';
+    b.innerHTML = '<div class="rb"><b></b><span></span></div><button type="button" aria-label="Yanıtı kaldır"><i class="fas fa-times"></i></button>';
+    b.querySelector('button').onclick = clearReply;
+    area.parentNode.insertBefore(b, area); return b;
+  }
+  function setReply(m) {
+    var b = bar(); if (!b) return;
+    reply = { id: m.id, sender: m.sender, text: preview(m).slice(0, 100) };
+    window.__pmReply = reply; replyChat = g('currentPrivateChatId');
+    b.querySelector('b').textContent = m.sender === meName() ? 'Kendine yanıt' : m.sender + ' kişisine yanıt';
+    b.querySelector('span').textContent = reply.text; b.classList.add('show');
+    var inp = $('private-input'); if (inp) try { inp.focus(); } catch (e) {}
+  }
+  function clearReply() { reply = null; window.__pmReply = null; replyChat = null; var b = $('pmReplyBar'); if (b) b.classList.remove('show'); }
+  window.pmClearReply = clearReply;
+  setInterval(function () { if (reply && g('currentPrivateChatId') !== replyChat) clearReply(); }, 800);
+
+  /* ---------- mesaj süsleme ---------- */
+  function scrollTo(id) {
+    var el = $('private_msg_' + id); if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('pm-flash'); setTimeout(function () { el.classList.remove('pm-flash'); }, 1300);
+  }
+  function render(div) {
+    var m = div._pm || {}, me = nk(meName());
+    var rx = div.querySelector('.pm-rx'), nt = div.querySelector('.pm-notes');
+    if (rx) {
+      rx.innerHTML = ''; var by = {}, mine = null;
+      Object.keys(m.reactions || {}).forEach(function (k) { var r = m.reactions[k]; if (!r || !r.e) return; (by[r.e] = by[r.e] || []).push(r.u || k); if (k === me) mine = r.e; });
+      Object.keys(by).forEach(function (e) {
+        var s = mk('span', 'rx' + (mine === e ? ' mine' : ''), e + (by[e].length > 1 ? ' ' + by[e].length : '')); s.title = by[e].join(', ');
+        s.onclick = function (ev) { ev.stopPropagation(); react(div, e); }; rx.appendChild(s);
+      });
+    }
+    if (nt) {
+      nt.innerHTML = '';
+      Object.keys(m.notes || {}).forEach(function (k) {
+        var n = m.notes[k]; if (!n || !n.t) return;
+        var d = mk('div', 'pm-note'); var b = mk('b', null, '📝 ' + (n.u || k) + ':'); d.appendChild(b); d.appendChild(document.createTextNode(' ' + n.t));
+        d.onclick = function (ev) { ev.stopPropagation(); if (k === me) noteSheet(div); }; nt.appendChild(d);
+      });
+    }
+  }
+  window.pmDecorate = function (div, m) {
+    var bub = div.querySelector('.pm-bubble'); if (!bub || div._pmDone) return;
+    div._pmDone = true; div._pm = { id: m.id, sender: m.sender, text: m.text, image: m.image, audio: m.audio, video: m.video, reactions: m.reactions || {}, notes: m.notes || {} };
+    if (m.replyTo && m.replyTo.id) {
+      var q = mk('div', 'pm-quote'); q.appendChild(mk('b', null, m.replyTo.sender || '')); q.appendChild(mk('span', null, m.replyTo.text || ''));
+      q.onclick = function (e) { e.stopPropagation(); scrollTo(m.replyTo.id); };
+      bub.insertBefore(q, bub.firstChild);
+    }
+    var content = bub.querySelector('.pm-content'), meta = bub.querySelector('.pm-meta');
+    var nt = mk('div', 'pm-notes'), rx = mk('div', 'pm-rx');
+    if (meta) { bub.insertBefore(nt, meta); bub.appendChild(rx); } else { bub.appendChild(nt); bub.appendChild(rx); }
+    var more = mk('button', 'pm-more'); more.type = 'button'; more.innerHTML = '<i class="fas fa-chevron-down"></i>'; more.title = 'Seçenekler';
+    more.onclick = function (e) { e.stopPropagation(); openMenu(div, more.getBoundingClientRect()); }; bub.appendChild(more);
+    var ic = mk('div', 'pm-swipe-ic'); ic.innerHTML = '<i class="fas fa-reply"></i>'; div.insertBefore(ic, div.firstChild); div._ic = ic;
+    bub.addEventListener('contextmenu', function (e) { e.preventDefault(); openMenu(div, { left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY }); });
+    attachTouch(div, bub);
+    render(div);
+  };
+  window.pmRefresh = function (key, m) {
+    var div = $('private_msg_' + key); if (!div || !div._pm) return;
+    div._pm.reactions = m.reactions || {}; div._pm.notes = m.notes || {}; render(div);
+  };
+
+  /* ---------- dokunma: kaydır = yanıtla, basılı tut = menü ---------- */
+  function attachTouch(div, bub) {
+    var s = null, timer = 0;
+    function cancelLP() { clearTimeout(timer); timer = 0; }
+    bub.addEventListener('touchstart', function (e) {
+      s = null; if (e.touches.length !== 1) return;
+      if (e.target.closest && e.target.closest('audio,video,a,button,.rx,.pm-note,.pm-quote')) return;
+      var t = e.touches[0]; s = { x: t.clientX, y: t.clientY, lock: false, dx: 0 };
+      cancelLP(); timer = setTimeout(function () { if (s && !s.lock) { var r = bub.getBoundingClientRect(); s = null; try { navigator.vibrate && navigator.vibrate(12); } catch (e) {} openMenu(div, r); } }, 480);
+    }, { passive: true });
+    bub.addEventListener('touchmove', function (e) {
+      if (!s) return; var t = e.touches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
+      if (!s.lock) {
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) cancelLP();
+        if (dx > 12 && dx > Math.abs(dy) * 1.5) s.lock = true; else if (Math.abs(dy) > 12) { s = null; return; } else return;
+      }
+      s.dx = Math.max(0, Math.min(dx, 90)); bub.style.transition = 'none'; bub.style.transform = 'translateX(' + s.dx + 'px)';
+      if (div._ic) div._ic.style.opacity = String(Math.min(1, s.dx / 55));
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    function end() {
+      cancelLP(); var d = s; s = null;
+      bub.style.transition = 'transform .18s ease'; bub.style.transform = ''; if (div._ic) div._ic.style.opacity = '0';
+      if (d && d.lock && d.dx >= 55) { try { navigator.vibrate && navigator.vibrate(15); } catch (e) {} setReply(div._pm); }
+    }
+    bub.addEventListener('touchend', end, { passive: true }); bub.addEventListener('touchcancel', end, { passive: true });
+  }
+
+  /* ---------- tepki ---------- */
+  function react(div, emoji) {
+    var r = msgRef(div._pm.id), me = meName(); if (!r || !me) return;
+    var k = nk(me), cur = (div._pm.reactions || {})[k], rr = r.child('reactions').child(k);
+    div._pm.reactions = div._pm.reactions || {};
+    if (cur && cur.e === emoji) { delete div._pm.reactions[k]; rr.remove(); }
+    else { div._pm.reactions[k] = { e: emoji, u: me }; rr.set({ e: emoji, u: me }); }
+    render(div);
+  }
+
+  /* ---------- menü ---------- */
+  function closeMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
+  function openMenu(div, rect) {
+    closeMenu(); var m = div._pm, mine = m.sender === meName(), me = nk(meName());
+    menuEl = mk('div'); menuEl.id = 'pmMenu';
+    var row = mk('div', 'pm-emorow'), cur = (m.reactions || {})[me];
+    EMO.forEach(function (e) { var b = mk('button', cur && cur.e === e ? 'sel' : '', e); b.type = 'button'; b.onclick = function () { closeMenu(); react(div, e); }; row.appendChild(b); });
+    menuEl.appendChild(row);
+    function act(icon, label, fn, cls) { var a = mk('div', 'pm-act' + (cls ? ' ' + cls : '')); a.innerHTML = '<i class="fas ' + icon + '"></i>'; a.appendChild(document.createTextNode(label)); a.onclick = function () { closeMenu(); fn(); }; menuEl.appendChild(a); }
+    act('fa-reply', 'Yanıtla', function () { setReply(m); });
+    act('fa-note-sticky', (m.notes && m.notes[me]) ? 'Notumu düzenle' : 'Not ekle', function () { noteSheet(div); });
+    var txt = plain(m.text); if (txt) act('fa-copy', 'Kopyala', function () { try { navigator.clipboard.writeText(txt); } catch (e) {} });
+    if (mine) act('fa-trash-can', 'Sil', function () { try { deletePrivateMessage(m.id, g('currentPrivateChatId')); } catch (e) {} }, 'danger');
+    document.body.appendChild(menuEl);
+    var w = menuEl.offsetWidth, h = menuEl.offsetHeight, vw = innerWidth, vh = innerHeight;
+    var x = Math.min(Math.max(8, (rect.left + rect.right) / 2 - w / 2), vw - w - 8);
+    var y = rect.top - h - 8; if (y < 8) y = Math.min(rect.bottom + 8, vh - h - 8);
+    menuEl.style.left = x + 'px'; menuEl.style.top = Math.max(8, y) + 'px';
+  }
+  document.addEventListener('mousedown', function (e) { if (menuEl && !menuEl.contains(e.target)) closeMenu(); }, true);
+  document.addEventListener('touchstart', function (e) { if (menuEl && !menuEl.contains(e.target)) closeMenu(); }, { capture: true, passive: true });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeMenu(); closeNote(); } });
+  var pm = $('privateMessages'); if (pm) pm.addEventListener('scroll', closeMenu, { passive: true });
+
+  /* ---------- not ---------- */
+  function closeNote() { if (noteEl) { noteEl.remove(); noteEl = null; } }
+  function noteSheet(div) {
+    closeNote(); var m = div._pm, me = nk(meName()), cur = (m.notes || {})[me];
+    noteEl = mk('div'); noteEl.id = 'pmNote';
+    noteEl.innerHTML = '<div class="nt"></div><textarea maxlength="140" placeholder="Bu mesaja not yaz (iki kişi de görür)…"></textarea><div class="nb"><button type="button" data-a="x">İptal</button>' + (cur ? '<button type="button" data-a="d">Notu sil</button>' : '') + '<button type="button" class="pri" data-a="s">Kaydet</button></div>';
+    noteEl.querySelector('.nt').textContent = '“' + preview(m).slice(0, 60) + '”';
+    var ta = noteEl.querySelector('textarea'); ta.value = cur ? cur.t : '';
+    noteEl.onclick = function (e) {
+      var a = e.target.getAttribute && e.target.getAttribute('data-a'); if (!a) return;
+      var r = msgRef(m.id), me2 = meName(); m.notes = m.notes || {};
+      if (a === 's') { var t = ta.value.trim().slice(0, 140); if (t && r) { m.notes[me] = { u: me2, t: t, ts: Date.now() }; r.child('notes').child(me).set({ u: me2, t: t, ts: Date.now() }); } else if (!t && r) { delete m.notes[me]; r.child('notes').child(me).remove(); } }
+      if (a === 'd' && r) { delete m.notes[me]; r.child('notes').child(me).remove(); }
+      closeNote(); render(div);
+    };
+    document.body.appendChild(noteEl); setTimeout(function () { try { ta.focus(); } catch (e) {} }, 60);
+  }
+})();
+
+</script>
+<script>
+/* ===== CETCETY: @nick bahsetme (bildirim + vurgu + öneri) ===== */
+(function () {
+  'use strict';
+  var RX = /(^|[\s(])@([\p{L}\p{N}_.\-]{2,20})/gu;
+  function $(i) { return document.getElementById(i); }
+  function g(n) { try { return (0, eval)('typeof ' + n + '!=="undefined"?' + n + ':null'); } catch (e) { return null; } }
+  function me() { var u = g('currentUser'); return u && u.name; }
+  function nk(n) { return String(n || '').toLowerCase().replace(/[.#$\[\]\/]/g, '_'); }
+  function db() { return g('database') || window.database; }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  var st = document.createElement('style');
+  st.textContent =
+    '.mn{color:var(--youtube-red);font-weight:700;background:rgba(201,100,66,.12);border-radius:6px;padding:0 3px}' +
+    '.mn.me{background:var(--youtube-red);color:#fff}' +
+    '#messages .message-item.mention-me{background:rgba(201,100,66,.10);box-shadow:inset 3px 0 0 var(--youtube-red);border-radius:10px}' +
+    '#mnSug{position:fixed;z-index:3200;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:14px;box-shadow:var(--shadow-xl);padding:4px;max-height:220px;overflow:auto;min-width:180px}' +
+    '#mnSug div{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;font-size:15px;cursor:pointer;color:var(--text-primary)}' +
+    '#mnSug div:active,#mnSug div.on,#mnSug div:hover{background:var(--bg-hover)}#mnSug i{color:var(--text-muted);font-size:12px}' +
+    '#mnToast{position:fixed;left:50%;top:max(12px,env(safe-area-inset-top));transform:translate(-50%,-140%);z-index:99998;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-left:4px solid var(--youtube-red);border-radius:14px;box-shadow:var(--shadow-xl);padding:10px 14px;width:min(92vw,380px);cursor:pointer;transition:transform .3s ease;font-size:14px}' +
+    '#mnToast.show{transform:translate(-50%,0)}#mnToast b{display:block;color:var(--youtube-red);margin-bottom:2px}#mnToast span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.9}';
+  document.head.appendChild(st);
+
+  /* ---------- mesajda vurgu ---------- */
+  function wrapMentions(root, meN) {
+    var found = false, w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), nodes = [], n;
+    while ((n = w.nextNode())) nodes.push(n);
+    nodes.forEach(function (t) {
+      var s = t.nodeValue; RX.lastIndex = 0; if (!RX.test(s)) return; RX.lastIndex = 0;
+      var frag = document.createDocumentFragment(), last = 0, m;
+      while ((m = RX.exec(s))) {
+        var start = m.index + m[1].length;
+        if (start > last) frag.appendChild(document.createTextNode(s.slice(last, start)));
+        var sp = document.createElement('span'); sp.className = 'mn' + (meN && nk(m[2]) === meN ? ' me' : ''); sp.textContent = '@' + m[2];
+        if (meN && nk(m[2]) === meN) found = true; frag.appendChild(sp); last = start + 1 + m[2].length;
+      }
+      if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+      t.parentNode.replaceChild(frag, t);
+    });
+    return found;
+  }
+  window.mnDecorate = function (div) {
+    var t = div.querySelector('.message-text'); if (!t || !/@/.test(t.textContent)) return;
+    var me0 = me(); if (wrapMentions(t, me0 ? nk(me0) : null) && div.querySelector('.message-user') && div.querySelector('.message-user').dataset.nick !== me0) div.classList.add('mention-me');
+  };
+
+  /* ---------- gönderim: kişiye bildirim yaz ---------- */
+  function resolve(token) {
+    var online = g('cachedOnlineUsers') || {}, low = token.toLowerCase(), keys = Object.keys(online), i;
+    for (i = 0; i < keys.length; i++) if (keys[i].toLowerCase() === low) return Promise.resolve(keys[i]);
+    var D = db(), reg = g('registeredUsersRef'); if (!reg) return Promise.resolve(null);
+    return reg.child(token).once('value').then(function (s) { return s.val() ? token : null; }, function () { return null; });
+  }
+  window.mnAfterSend = function (text, channel) {
+    var D = db(), u = me(); if (!D || !u || !text) return;
+    var seen = {}, toks = [], m; RX.lastIndex = 0;
+    while ((m = RX.exec(text)) && toks.length < 5) { var k = m[2].toLowerCase(); if (!seen[k] && k !== u.toLowerCase()) { seen[k] = 1; toks.push(m[2]); } }
+    toks.forEach(function (tok) {
+      resolve(tok).then(function (nick) {
+        if (!nick || nick.toLowerCase() === u.toLowerCase()) return;
+        var pr = D.ref('mentions/' + nk(nick)).push({ from: u, ch: channel || 'genel', text: String(text).replace(/<[^>]*>/g, '').slice(0, 120), ts: Date.now() });
+        if (pr && pr.catch) pr.catch(function () {});
+      });
+    });
+  };
+
+  /* ---------- alım: bildirim ---------- */
+  var toastEl = null, toastTimer = 0;
+  function toast(from, ch, text) {
+    if (!toastEl) { toastEl = document.createElement('div'); toastEl.id = 'mnToast'; document.body.appendChild(toastEl); }
+    toastEl.innerHTML = '<b></b><span></span>'; toastEl.firstChild.textContent = from + ' senden bahsetti · #' + ch; toastEl.lastChild.textContent = text;
+    toastEl.onclick = function () { toastEl.classList.remove('show'); go(ch); };
+    requestAnimationFrame(function () { toastEl.classList.add('show'); });
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 5500);
+  }
+  function go(ch) { try { if (typeof switchChannel === 'function') switchChannel(ch); var v = $('vitrin'); if (v && v.classList.contains('show')) v.classList.remove('show'); } catch (e) {} }
+  window.mnGo = go;
+  var listenFor = null, ref = null;
+  function listen() {
+    var D = db(), u = me(); if (!D || !u || listenFor === nk(u)) return;
+    if (ref) { try { ref.off(); } catch (e) {} }
+    listenFor = nk(u); var key = 'cc_mn_seen_' + listenFor, seenTs = 0;
+    try { seenTs = +localStorage.getItem(key) || 0; } catch (e) {}
+    var first = !seenTs; if (first) seenTs = Date.now();
+    ref = D.ref('mentions/' + listenFor).orderByChild('ts').limitToLast(15);
+    var batch = 0;
+    ref.on('child_added', function (sn) {
+      var v = sn.val(); if (!v || !v.ts || v.ts <= seenTs) return;
+      seenTs = Math.max(seenTs, v.ts); try { localStorage.setItem(key, String(seenTs)); } catch (e) {}
+      var from = String(v.from || '?'), ch = String(v.ch || 'genel'), txt = String(v.text || '');
+      try {
+        if (typeof addNotification === 'function') {
+          addNotification(from, 'senden bahsetti (#' + esc(ch) + '): ' + esc(txt), 'mention', false);
+          var n = g('notifications'); if (n && n[0]) n[0].channel = ch;
+        }
+      } catch (e) {}
+      if (++batch <= 3) toast(from, ch, txt);
+      setTimeout(function () { batch = Math.max(0, batch - 1); }, 4000);
+    });
+    // 7 günden eski bahsetmeleri kendi kutundan temizle
+    D.ref('mentions/' + listenFor).orderByChild('ts').endAt(Date.now() - 7 * 864e5).once('value').then(function (s) { s.forEach(function (c) { c.ref.remove(); }); }, function () {});
+  }
+  setInterval(function () { try { listen(); } catch (e) {} }, 1500);
+
+  /* ---------- yazarken @ önerisi ---------- */
+  var sug = null, sel = 0, cur = null;
+  function hide() { if (sug) { sug.remove(); sug = null; } cur = null; }
+  function names(q) {
+    var online = g('cachedOnlineUsers') || {}, u = me(), low = q.toLowerCase();
+    return Object.keys(online).filter(function (n) { return n !== u && n.toLowerCase().indexOf(low) === 0; }).sort().slice(0, 6);
+  }
+  function show(inp, q, start) {
+    var list = names(q); if (!list.length) return hide();
+    cur = { inp: inp, start: start, q: q }; sel = 0;
+    if (!sug) { sug = document.createElement('div'); sug.id = 'mnSug'; document.body.appendChild(sug); }
+    sug.innerHTML = '';
+    list.forEach(function (n, i) {
+      var d = document.createElement('div'); d.className = i === 0 ? 'on' : ''; d.innerHTML = '<i class="fas fa-at"></i>'; d.appendChild(document.createTextNode(n));
+      d.onmousedown = d.ontouchstart = function (e) { e.preventDefault(); pick(n); }; sug.appendChild(d);
+    });
+    var r = inp.getBoundingClientRect(); sug.style.left = Math.max(8, r.left) + 'px'; sug.style.bottom = (innerHeight - r.top + 8) + 'px';
+  }
+  function pick(n) {
+    if (!cur) return; var inp = cur.inp, v = inp.value, end = cur.start + 1 + cur.q.length;
+    inp.value = v.slice(0, cur.start) + '@' + n + ' ' + v.slice(end); var pos = cur.start + n.length + 2; hide();
+    try { inp.focus(); inp.setSelectionRange(pos, pos); } catch (e) {}
+    try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+  }
+  document.addEventListener('input', function (e) {
+    var inp = e.target; if (!inp || inp.id !== 'message-input') return;
+    var pos = inp.selectionStart || 0, left = inp.value.slice(0, pos), m = /(^|\s)@([\p{L}\p{N}_.\-]{0,20})$/u.exec(left);
+    if (!m) return hide(); show(inp, m[2], pos - m[2].length - 1);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (!sug || !cur) return;
+    var items = sug.children;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[sel].className = ''; sel = (sel + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length; items[sel].className = 'on'; }
+    else if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) { e.preventDefault(); e.stopPropagation(); pick(items[sel].textContent); }
+    else if (e.key === 'Escape') hide();
+  }, true);
+  document.addEventListener('click', function (e) { if (sug && !sug.contains(e.target)) hide(); });
 })();
 
 </script>
