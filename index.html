@@ -6463,6 +6463,7 @@
                 <button class="private-follow-btn" id="privateFollowBtn" onclick="togglePrivateFollow()" title="Takip Et">
                     <i class="fas fa-user-plus"></i>
                 </button>
+                <button class="private-action-btn" id="privateCallBtn" onclick="startVideoCall()" title="Görüntülü ara"><i class="fas fa-video"></i></button>
                 <button class="private-action-btn report" onclick="openReportModal()" title="Şikayet Et"><i class="fas fa-exclamation-triangle"></i></button>
                 <button class="private-action-btn block" onclick="openBlockModal()" id="blockUserBtn" title="Engelle"><i class="fas fa-ban"></i></button>
                 <button class="private-action-btn" onclick="closePrivateChat()" title="Kapat"><i class="fas fa-times"></i></button>
@@ -20756,6 +20757,293 @@ window.updateChannelActionBar=function(){
   return r;
 };
 })();
+</script>
+<script>
+/* ===== CETCETY: özel sohbette görüntülü arama (WebRTC, düşük kalite / düşük veri) ===== */
+(function () {
+  'use strict';
+  var ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }].concat(window.CETCETY_TURN || []) };
+  var VIDEO_BPS = 150000, AUDIO_BPS = 24000, RING_MS = 45000;
+  var S = null, inboxRef = null, inboxFor = null, ringTimer = null, ui = null, incoming = null;
+
+  function db() { try { return database; } catch (e) { return null; } }
+  function me() { try { return currentUser && currentUser.name; } catch (e) { return null; } }
+  function key(n) { return String(n || '').toLowerCase().replace(/[.#$\[\]\/]/g, '_'); }
+  function $(id) { return document.getElementById(id); }
+  function fmt(s) { s = Math.max(0, Math.floor(s)); var m = Math.floor(s / 60), r = s % 60; return (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r; }
+
+  /* ---------- arayüz ---------- */
+  function buildUI() {
+    if (ui) return ui;
+    var st = document.createElement('style');
+    st.textContent =
+      '#vcall{position:fixed;inset:0;z-index:2147483000;background:#0b141a;color:#fff;display:none;flex-direction:column;font-family:inherit;-webkit-user-select:none;user-select:none}' +
+      '#vcall.show{display:flex}' +
+      '#vcRemote{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#0b141a}' +
+      '#vcLocal{position:absolute;top:max(16px,env(safe-area-inset-top));right:14px;width:104px;height:150px;object-fit:cover;border-radius:14px;background:#222;box-shadow:0 4px 18px rgba(0,0,0,.5);transform:scaleX(-1);z-index:3;touch-action:none}' +
+      '#vcLocal.back{transform:none}#vcLocal.full{inset:0;top:0;right:0;width:100%;height:100%;border-radius:0;z-index:1}' +
+      '#vcTop{position:absolute;top:0;left:0;right:0;padding:max(18px,env(safe-area-inset-top)) 130px 40px 18px;background:linear-gradient(#000a,#0000);z-index:2;pointer-events:none}' +
+      '#vcName{font-size:20px;font-weight:600;text-shadow:0 1px 4px #0008}#vcSt{font-size:14px;opacity:.85;margin-top:2px}' +
+      '#vcAvatar{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);width:112px;height:112px;border-radius:50%;background:#2a3942;display:none;align-items:center;justify-content:center;font-size:48px;font-weight:600;z-index:1}' +
+      '#vcBar{position:absolute;left:0;right:0;bottom:0;padding:26px 20px max(26px,env(safe-area-inset-bottom));display:flex;justify-content:center;align-items:center;gap:18px;background:linear-gradient(#0000,#000b);z-index:4}' +
+      '.vcb{width:58px;height:58px;border-radius:50%;border:0;background:#ffffff26;color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent}' +
+      '.vcb.off{background:#fff;color:#111}.vcb.end{background:#e53935;width:66px;height:66px}.vcb.acc{background:#25d366;width:66px;height:66px}' +
+      '.vcb:active{transform:scale(.94)}' +
+      '#vcData{position:absolute;left:18px;bottom:max(104px,calc(env(safe-area-inset-bottom) + 96px));font-size:12px;opacity:.7;z-index:4}' +
+      '@media (min-width:700px){#vcLocal{width:170px;height:120px}#vcRemote{object-fit:contain}}';
+    document.head.appendChild(st);
+    var d = document.createElement('div'); d.id = 'vcall';
+    d.innerHTML = '<video id="vcRemote" autoplay playsinline></video><div id="vcAvatar"></div><video id="vcLocal" autoplay playsinline muted></video>' +
+      '<div id="vcTop"><div id="vcName"></div><div id="vcSt"></div></div><div id="vcData"></div>' +
+      '<div id="vcBar"></div>';
+    document.body.appendChild(d);
+    ui = { root: d, remote: $('vcRemote'), local: $('vcLocal'), name: $('vcName'), st: $('vcSt'), bar: $('vcBar'), avatar: $('vcAvatar'), data: $('vcData') };
+    return ui;
+  }
+  function btn(cls, icon, title, fn) {
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'vcb ' + cls; b.title = title;
+    b.innerHTML = '<i class="fas ' + icon + '"></i>'; b.onclick = fn; return b;
+  }
+  function showUI(peer, status) {
+    buildUI(); ui.name.textContent = peer; ui.st.textContent = status || '';
+    ui.avatar.textContent = (peer || '?').charAt(0).toUpperCase();
+    ui.root.classList.add('show');
+  }
+  function setBar(kind) {
+    ui.bar.innerHTML = '';
+    if (kind === 'incoming') {
+      ui.bar.appendChild(btn('end', 'fa-phone-slash', 'Reddet', declineCall));
+      ui.bar.appendChild(btn('acc', 'fa-video', 'Cevapla', acceptCall));
+    } else {
+      var mic = btn('', 'fa-microphone', 'Mikrofon', function () { toggle('audio', mic, 'fa-microphone', 'fa-microphone-slash'); });
+      var cam = btn('', 'fa-video', 'Kamera', function () { toggle('video', cam, 'fa-video', 'fa-video-slash'); });
+      var flip = btn('', 'fa-camera-rotate', 'Kamerayı çevir', flipCamera);
+      ui.bar.appendChild(cam); ui.bar.appendChild(flip); ui.bar.appendChild(mic);
+      ui.bar.appendChild(btn('end', 'fa-phone-slash', 'Kapat', function () { endCall('Arama bitti'); }));
+    }
+  }
+  function toggle(kind, b, on, off) {
+    if (!S || !S.local) return;
+    var tr = kind === 'audio' ? S.local.getAudioTracks() : S.local.getVideoTracks();
+    tr.forEach(function (t) { t.enabled = !t.enabled; });
+    var en = tr[0] && tr[0].enabled;
+    b.classList.toggle('off', !en); b.querySelector('i').className = 'fas ' + (en ? on : off);
+  }
+
+  /* ---------- zil sesi ---------- */
+  var actx = null, ringIv = null;
+  function startRing(isIncoming) {
+    stopRing();
+    var beep = function () {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+        actx = actx || new AC(); if (actx.state === 'suspended') actx.resume();
+        var o = actx.createOscillator(), g = actx.createGain();
+        o.frequency.value = isIncoming ? 520 : 425; g.gain.value = 0.07; o.connect(g); g.connect(actx.destination);
+        o.start(); o.stop(actx.currentTime + (isIncoming ? 0.9 : 1.0));
+      } catch (e) {}
+      try { if (isIncoming && navigator.vibrate) navigator.vibrate([500, 300, 500]); } catch (e) {}
+    };
+    beep(); ringIv = setInterval(beep, 2400);
+  }
+  function stopRing() { if (ringIv) { clearInterval(ringIv); ringIv = null; } try { navigator.vibrate && navigator.vibrate(0); } catch (e) {} }
+
+  /* ---------- medya ---------- */
+  async function getMedia(facing) {
+    var v = { width: { ideal: 480, max: 640 }, height: { ideal: 270, max: 360 }, frameRate: { ideal: 15, max: 20 }, facingMode: facing || 'user' };
+    var a = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    try { return await navigator.mediaDevices.getUserMedia({ audio: a, video: v }); }
+    catch (e) {
+      try { return await navigator.mediaDevices.getUserMedia({ audio: a, video: false }); }   // kamera yoksa sadece ses
+      catch (e2) { throw new Error('Kamera/mikrofon izni verilmedi.'); }
+    }
+  }
+  function limitSenders(pc) {
+    pc.getSenders().forEach(function (s) {
+      if (!s.track) return;
+      try {
+        var p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+        if (s.track.kind === 'video') { p.encodings[0].maxBitrate = VIDEO_BPS; p.encodings[0].maxFramerate = 15; p.degradationPreference = 'maintain-framerate'; }
+        else p.encodings[0].maxBitrate = AUDIO_BPS;
+        s.setParameters(p).catch(function () {});
+      } catch (e) {}
+    });
+  }
+  function makePC(stream) {
+    var pc = new RTCPeerConnection(ICE);
+    stream.getTracks().forEach(function (t) { pc.addTrack(t, stream); });
+    var rs = new MediaStream();
+    pc.ontrack = function (e) { e.streams && e.streams[0] ? (ui.remote.srcObject = e.streams[0]) : (rs.addTrack(e.track), ui.remote.srcObject = rs); ui.remote.play && ui.remote.play().catch(function () {}); ui.avatar.style.display = 'none'; };
+    pc.onconnectionstatechange = function () {
+      if (!S || S.pc !== pc) return;
+      if (pc.connectionState === 'connected') onConnected();
+      else if (pc.connectionState === 'failed') endCall('Bağlantı kurulamadı (ağ engelliyor olabilir).');
+      else if (pc.connectionState === 'disconnected') { ui.st.textContent = 'Bağlantı zayıf…'; clearTimeout(S.dc); S.dc = setTimeout(function () { if (S && S.pc === pc && pc.connectionState !== 'connected') endCall('Bağlantı koptu'); }, 8000); }
+    };
+    return pc;
+  }
+  function onConnected() {
+    if (!S || S.connectedAt) return;
+    S.connectedAt = Date.now(); clearTimeout(ringTimer); stopRing();
+    ui.avatar.style.display = ui.remote.srcObject && ui.remote.srcObject.getVideoTracks().length ? 'none' : 'flex';
+    S.tick = setInterval(function () {
+      ui.st.textContent = fmt((Date.now() - S.connectedAt) / 1000);
+    }, 500);
+    S.stats = setInterval(async function () {
+      try {
+        var r = await S.pc.getStats(), b = 0;
+        r.forEach(function (x) { if ((x.type === 'inbound-rtp' || x.type === 'outbound-rtp') && !x.isRemote) b += (x.bytesReceived || 0) + (x.bytesSent || 0); });
+        ui.data.textContent = (b / 1048576).toFixed(1) + ' MB';
+      } catch (e) {}
+    }, 3000);
+    try { navigator.wakeLock && navigator.wakeLock.request('screen').then(function (w) { S && (S.wl = w); }).catch(function () {}); } catch (e) {}
+  }
+  async function flipCamera() {
+    if (!S || !S.local) return;
+    try {
+      S.facing = S.facing === 'environment' ? 'user' : 'environment';
+      var ns = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 480, max: 640 }, height: { ideal: 270, max: 360 }, frameRate: { ideal: 15, max: 20 }, facingMode: S.facing } });
+      var nt = ns.getVideoTracks()[0]; if (!nt) return;
+      var sender = S.pc.getSenders().find(function (s) { return s.track && s.track.kind === 'video'; });
+      if (sender) await sender.replaceTrack(nt);
+      S.local.getVideoTracks().forEach(function (t) { t.stop(); S.local.removeTrack(t); });
+      S.local.addTrack(nt); ui.local.srcObject = S.local;
+      ui.local.classList.toggle('back', S.facing === 'environment');
+    } catch (e) {}
+  }
+
+  /* ---------- sinyal (Firebase) ---------- */
+  function watch(ref, ev, fn) { ref.on(ev, fn); S.refs.push([ref, ev, fn]); }
+  function listenCommon() {
+    var D = db(), base = D.ref('calls/' + S.id);
+    var otherCand = S.role === 'caller' ? 'calleeCand' : 'callerCand';
+    watch(base.child(otherCand), 'child_added', function (sn) {
+      var c = sn.val(); if (!c) return;
+      if (S.pc.remoteDescription) S.pc.addIceCandidate(c).catch(function () {}); else S.pending.push(c);
+    });
+    watch(base.child('state'), 'value', function (sn) {
+      var v = sn.val();
+      if (!S || !v) return;
+      if (v === 'declined') endCall('Arama reddedildi', true);
+      else if (v === 'busy') endCall('Kullanıcı başka aramada', true);
+      else if (v === 'missed') endCall('Cevap yok', true);
+      else if (v === 'ended') endCall('Arama bitti', true);
+    });
+  }
+  function flushPending() { if (!S) return; var p = S.pending.splice(0); p.forEach(function (c) { S.pc.addIceCandidate(c).catch(function () {}); }); }
+  function wireIce(candPath) {
+    var D = db();
+    S.pc.onicecandidate = function (e) { if (e.candidate && S) D.ref('calls/' + S.id + '/' + candPath).push(e.candidate.toJSON()); };
+  }
+
+  window.startVideoCall = async function () {
+    var D = db(), u = me(), peer = null;
+    try { peer = privateChatWith; } catch (e) {}
+    if (!D || !u || !peer) return;
+    if (S) return;
+    if (!window.RTCPeerConnection || !navigator.mediaDevices) { alert('Bu tarayıcı görüntülü aramayı desteklemiyor.'); return; }
+    try { if (typeof checkBlockStatus === 'function' && await checkBlockStatus(peer)) { alert('Bu kullanıcıyı arayamazsınız.'); return; } } catch (e) {}
+    var id = D.ref('calls').push().key;
+    S = { id: id, peer: peer, role: 'caller', refs: [], pending: [], facing: 'user' };
+    buildUI(); showUI(peer, 'Aranıyor…'); ui.avatar.style.display = 'flex'; setBar('call');
+    try {
+      S.local = await getMedia('user');
+      ui.local.srcObject = S.local; ui.local.classList.remove('back');
+      if (!S.local.getVideoTracks().length) ui.local.style.display = 'none'; else ui.local.style.display = '';
+      S.pc = makePC(S.local); limitSenders(S.pc); wireIce('callerCand');
+      var offer = await S.pc.createOffer(); await S.pc.setLocalDescription(offer);
+      var base = D.ref('calls/' + id);
+      await base.set({ caller: u, callee: peer, state: 'ringing', ts: Date.now(), offer: { type: offer.type, sdp: offer.sdp } });
+      base.child('state').onDisconnect().set('ended');
+      await D.ref('callInbox/' + key(peer)).set({ id: id, from: u, ts: Date.now() });
+      D.ref('callInbox/' + key(peer)).onDisconnect().remove();
+      listenCommon();
+      watch(base.child('answer'), 'value', function (sn) {
+        var a = sn.val(); if (!a || !S || S.pc.remoteDescription) return;
+        S.pc.setRemoteDescription(a).then(flushPending).catch(function () {});
+        ui.st.textContent = 'Bağlanıyor…'; stopRing();
+      });
+      startRing(false);
+      ringTimer = setTimeout(function () { if (S && !S.connectedAt) { try { db().ref('calls/' + id + '/state').set('missed'); } catch (e) {} endCall('Cevap yok', true); } }, RING_MS);
+    } catch (e) { endCall(e.message || 'Arama başlatılamadı'); }
+  };
+
+  function listenInbox() {
+    var D = db(), u = me();
+    if (!D || !u) return;
+    if (inboxFor === key(u)) return;
+    if (inboxRef) { try { inboxRef.off(); } catch (e) {} }
+    inboxFor = key(u); inboxRef = D.ref('callInbox/' + inboxFor);
+    inboxRef.on('value', async function (sn) {
+      var v = sn.val(); if (!v || !v.id) return;
+      try {
+        if (Date.now() - (v.ts || 0) > 60000) { inboxRef.remove(); return; }
+        if (S || incoming) { if (!(incoming && incoming.id === v.id)) { D.ref('calls/' + v.id + '/state').set('busy'); inboxRef.remove(); } return; }
+        var c = (await D.ref('calls/' + v.id).once('value')).val();
+        if (!c || c.state !== 'ringing' || key(c.callee) !== key(u)) { inboxRef.remove(); return; }
+        try { if (typeof checkBlockStatus === 'function' && await checkBlockStatus(c.caller)) { D.ref('calls/' + v.id + '/state').set('declined'); inboxRef.remove(); return; } } catch (e) {}
+        incoming = { id: v.id, from: c.caller, offer: c.offer };
+        S = { id: v.id, peer: c.caller, role: 'callee', refs: [], pending: [], facing: 'user', ringing: true };
+        showUI(c.caller, 'Görüntülü arama'); ui.avatar.style.display = 'flex'; ui.local.style.display = 'none'; ui.local.srcObject = null; setBar('incoming');
+        startRing(true);
+        var base = D.ref('calls/' + v.id);
+        watch(base.child('state'), 'value', function (s2) { var x = s2.val(); if (S && S.ringing && x && x !== 'ringing') endCall('Cevapsız arama', true); });
+      } catch (e) {}
+    });
+  }
+
+  async function acceptCall() {
+    if (!S || !incoming) return;
+    var D = db(), inc = incoming; S.ringing = false; stopRing();
+    ui.st.textContent = 'Bağlanıyor…'; setBar('call');
+    try {
+      S.local = await getMedia('user');
+      ui.local.srcObject = S.local; ui.local.style.display = S.local.getVideoTracks().length ? '' : 'none';
+      S.pc = makePC(S.local); limitSenders(S.pc); wireIce('calleeCand');
+      await S.pc.setRemoteDescription(inc.offer); flushPending();
+      var ans = await S.pc.createAnswer(); await S.pc.setLocalDescription(ans);
+      var base = D.ref('calls/' + S.id);
+      listenCommon();
+      await base.child('answer').set({ type: ans.type, sdp: ans.sdp });
+      await base.child('state').set('accepted');
+      base.child('state').onDisconnect().set('ended');
+      try { inboxRef.remove(); } catch (e) {}
+    } catch (e) { endCall(e.message || 'Arama cevaplanamadı'); }
+  }
+  function declineCall() {
+    if (!S) return;
+    try { db().ref('calls/' + S.id + '/state').set('declined'); inboxRef && inboxRef.remove(); } catch (e) {}
+    endCall('', true);
+  }
+
+  function endCall(msg, remote) {
+    var s = S; if (!s) return;
+    S = null; incoming = null; clearTimeout(ringTimer); stopRing();
+    var D = db();
+    try { s.refs.forEach(function (r) { r[0].off(r[1], r[2]); }); } catch (e) {}
+    clearInterval(s.tick); clearInterval(s.stats); clearTimeout(s.dc);
+    try { s.wl && s.wl.release(); } catch (e) {}
+    try { s.local && s.local.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    try { s.pc && s.pc.close(); } catch (e) {}
+    var dur = s.connectedAt ? Math.round((Date.now() - s.connectedAt) / 1000) : 0;
+    if (D) {
+      try {
+        if (!remote) D.ref('calls/' + s.id + '/state').set(s.ringing ? 'declined' : 'ended');
+        if (s.role === 'caller') { D.ref('callInbox/' + key(s.peer)).remove(); setTimeout(function () { try { D.ref('calls/' + s.id).remove(); } catch (e) {} }, 4000); }
+      } catch (e) {}
+    }
+    if (ui) {
+      if (msg) { ui.st.textContent = msg + (dur ? ' · ' + fmt(dur) : ''); setTimeout(function () { if (!S) { ui.root.classList.remove('show'); ui.remote.srcObject = null; ui.local.srcObject = null; ui.data.textContent = ''; } }, 1400); }
+      else { ui.root.classList.remove('show'); ui.remote.srcObject = null; ui.local.srcObject = null; ui.data.textContent = ''; }
+    }
+  }
+  window.__vcEnd = endCall;
+  window.addEventListener('beforeunload', function () { if (S) { try { db().ref('calls/' + S.id + '/state').set('ended'); } catch (e) {} } });
+
+  // giriş yapıldığında gelen arama dinleyicisini bağla
+  setInterval(function () { try { if (me() && db()) listenInbox(); else if (inboxRef && !me()) { inboxRef.off(); inboxRef = null; inboxFor = null; } } catch (e) {} }, 1500);
+})();
+
 </script>
 </body>
 </html>
