@@ -20800,6 +20800,115 @@ window.updateChannelActionBar=function(){
 }
 </style>
 <script>
+/* ===== CETCETY: mobil panelleri kaydırarak kapatma ===== */
+(function () {
+  'use strict';
+  function $(i) { return document.getElementById(i); }
+  function call(n) { try { var f = window[n]; if (typeof f === 'function') f.apply(null, [].slice.call(arguments, 1)); } catch (e) {} }
+  function shown(el) { if (!el) return false; var cs = getComputedStyle(el); return cs.display !== 'none' && cs.visibility !== 'hidden'; }
+  // dir: kapanma yönü. left = sola kaydır, right = sağa kaydır, down = aşağı kaydır, x = sağa veya sola
+  var PANELS = [
+    { sel: '#mobileMenu', dir: 'left', on: function (e) { return e.classList.contains('active'); }, close: function () { call('toggleMobileMenu'); } },
+    { sel: '#usersSidebar', dir: 'right', on: function (e) { return e.classList.contains('active'); }, close: function () { call('toggleUserList'); } },
+    { sel: '#notificationPanel', dir: 'x', on: function (e) { return e.classList.contains('active'); }, close: function () { call('closeNotificationPanel'); } },
+    { sel: '#playlistDrawer', dir: 'down', on: function (e) { return e.classList.contains('active'); }, close: function () { call('togglePlaylistDrawer'); } },
+    { sel: '.role-panel', dir: 'right', on: function (e) { return e.classList.contains('active'); }, close: function (e) { var b = e.querySelector('.role-panel-header button'); if (b) b.click(); } },
+    { sel: '#privateModal', dir: 'right', on: function (e) { return e.style.display === 'flex'; }, close: function () { call('closePrivateChat'); } },
+    { sel: '#profileModal', dir: 'right', on: function (e) { return shown(e); }, close: function () { call('closeProfileModal'); } },
+    { sel: '#vitrin #vtSide', dir: 'left', on: function (e) { var v = $('vitrin'); return !!(v && v.classList.contains('side') && shown(e)); }, close: function () { call('vtToggleSide', false); } }
+  ];
+  function narrow() { return window.innerWidth <= 1023; }
+  var G = null;
+
+  function hScrollable(el, stop) {
+    for (; el && el !== stop && el.nodeType === 1; el = el.parentElement) {
+      var cs = getComputedStyle(el);
+      if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') && el.scrollWidth > el.clientWidth + 2) return true;
+    }
+    return false;
+  }
+  function vScrolled(el, stop) {
+    for (; el && el.nodeType === 1; el = el.parentElement) {
+      var cs = getComputedStyle(el);
+      if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 2 && el.scrollTop > 2) return true;
+      if (el === stop) break;
+    }
+    return false;
+  }
+  function find(target) {
+    for (var i = 0; i < PANELS.length; i++) {
+      var p = PANELS[i], el = target.closest ? target.closest(p.sel) : null;
+      if (el && p.on(el)) return { cfg: p, el: el };
+    }
+    return null;
+  }
+  function setT(el, tx, ty, anim) {
+    el.style.transition = anim ? 'transform .2s ease, opacity .2s ease' : 'none';
+    el.style.transform = 'translate3d(' + tx + 'px,' + ty + 'px,0)';
+  }
+  function reset(el) { el.style.transition = ''; el.style.transform = ''; el.style.opacity = ''; }
+
+  document.addEventListener('touchstart', function (e) {
+    G = null;
+    if (!narrow() || e.touches.length !== 1) return;
+    var t = e.target;
+    if (t.closest && t.closest('input,textarea,select,[contenteditable="true"],video,.vt-ptrack')) return;
+    var f = find(t); if (!f) return;
+    var tc = e.touches[0];
+    G = { el: f.el, cfg: f.cfg, x: tc.clientX, y: tc.clientY, t: Date.now(), lock: null, tgt: t, dx: 0, dy: 0 };
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function (e) {
+    if (!G) return;
+    var tc = e.touches[0], dx = tc.clientX - G.x, dy = tc.clientY - G.y, d = G.cfg.dir;
+    if (!G.lock) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      var horiz = Math.abs(dx) > Math.abs(dy) * 1.4, vert = Math.abs(dy) > Math.abs(dx) * 1.4;
+      var okX = (d === 'x') || (d === 'left' && dx < 0) || (d === 'right' && dx > 0);
+      var okY = d === 'down' && dy > 0;
+      if (horiz && okX && !hScrollable(G.tgt, G.el)) G.lock = 'x';
+      else if (vert && okY && !vScrolled(G.tgt, G.el)) G.lock = 'y';
+      else { G = null; return; }
+    }
+    if (G.lock === 'x') {
+      var v = d === 'left' ? Math.min(0, dx) : d === 'right' ? Math.max(0, dx) : dx;
+      G.dx = v; setT(G.el, v, 0, false);
+      G.el.style.opacity = String(Math.max(0.4, 1 - Math.abs(v) / (G.el.offsetWidth * 1.4)));
+    } else {
+      var w = Math.max(0, dy); G.dy = w; setT(G.el, 0, w, false);
+    }
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  function end() {
+    var g = G; G = null; if (!g || !g.lock) return;
+    var dt = Math.max(1, Date.now() - g.t), el = g.el, cfg = g.cfg;
+    var dist = g.lock === 'x' ? Math.abs(g.dx) : g.dy;
+    var size = g.lock === 'x' ? el.offsetWidth : el.offsetHeight;
+    var fast = dist / dt > 0.5 && dist > 40;
+    if (dist > Math.min(110, size * 0.3) || fast) {
+      var tx = g.lock === 'x' ? (g.dx < 0 ? -size * 1.05 : size * 1.05) : 0, ty = g.lock === 'y' ? size * 1.05 : 0;
+      setT(el, tx, ty, true); el.style.opacity = '0';
+      setTimeout(function () { try { cfg.close(el); } catch (e) {} reset(el); }, 190);
+    } else {
+      setT(el, 0, 0, true);
+      setTimeout(function () { reset(el); }, 210);
+    }
+  }
+  document.addEventListener('touchend', end, { passive: true });
+  document.addEventListener('touchcancel', end, { passive: true });
+
+  // menü açıkken boşluğa dokununca da kapansın
+  document.addEventListener('click', function (e) {
+    var m = $('mobileMenu');
+    if (!m || !m.classList.contains('active') || !narrow()) return;
+    if (m.contains(e.target) || (e.target.closest && e.target.closest('.mobile-menu-btn'))) return;
+    call('toggleMobileMenu');
+  }, true);
+})();
+
+</script>
+<script>
 /* ===== CETCETY: mobil uygulama görünümü ===== */
 (function () {
   'use strict';
