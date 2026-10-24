@@ -21309,7 +21309,10 @@ window.updateChannelActionBar=function(){
 (function () {
   'use strict';
   var ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }].concat(window.CETCETY_TURN || []) };
-  var VIDEO_BPS = 150000, AUDIO_BPS = 24000, RING_MS = 45000;
+  var RING_MS = 45000;
+  // Telefonda (dokunmatik / dar ekran) daha düşük kalite: az ısınma, uzun görüşmede kasma yok
+  function LOW() { try { return matchMedia('(pointer:coarse)').matches || innerWidth <= 768; } catch (e) { return false; } }
+  function P() { return LOW() ? { w: 320, wm: 426, h: 180, hm: 240, fps: 12, fpsm: 15, vbps: 90000, abps: 20000 } : { w: 480, wm: 640, h: 270, hm: 360, fps: 15, fpsm: 20, vbps: 150000, abps: 24000 }; }
   var S = null, inboxRef = null, inboxFor = null, ringTimer = null, ui = null, incoming = null;
 
   function db() { try { return database; } catch (e) { return null; } }
@@ -21396,7 +21399,7 @@ window.updateChannelActionBar=function(){
 
   /* ---------- medya ---------- */
   async function getMedia(facing) {
-    var v = { width: { ideal: 480, max: 640 }, height: { ideal: 270, max: 360 }, frameRate: { ideal: 15, max: 20 }, facingMode: facing || 'user' };
+    var q = P(), v = { width: { ideal: q.w, max: q.wm }, height: { ideal: q.h, max: q.hm }, frameRate: { ideal: q.fps, max: q.fpsm }, facingMode: facing || 'user' };
     var a = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
     try { return await navigator.mediaDevices.getUserMedia({ audio: a, video: v }); }
     catch (e) {
@@ -21409,8 +21412,8 @@ window.updateChannelActionBar=function(){
       if (!s.track) return;
       try {
         var p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-        if (s.track.kind === 'video') { p.encodings[0].maxBitrate = VIDEO_BPS; p.encodings[0].maxFramerate = 15; p.degradationPreference = 'maintain-framerate'; }
-        else p.encodings[0].maxBitrate = AUDIO_BPS;
+        if (s.track.kind === 'video') { p.encodings[0].maxBitrate = P().vbps; p.encodings[0].maxFramerate = P().fps; p.degradationPreference = 'maintain-framerate'; }
+        else p.encodings[0].maxBitrate = P().abps;
         s.setParameters(p).catch(function () {});
       } catch (e) {}
     });
@@ -21418,6 +21421,15 @@ window.updateChannelActionBar=function(){
   function makePC(stream) {
     var pc = new RTCPeerConnection(ICE);
     stream.getTracks().forEach(function (t) { pc.addTrack(t, stream); });
+    if (LOW()) {
+      try {
+        pc.getTransceivers().forEach(function (tr) {
+          if (!tr.sender || !tr.sender.track || tr.sender.track.kind !== 'video' || !tr.setCodecPreferences || !RTCRtpSender.getCapabilities) return;
+          var cs = RTCRtpSender.getCapabilities('video').codecs, h = cs.filter(function (c) { return /h264/i.test(c.mimeType); }), o = cs.filter(function (c) { return !/h264/i.test(c.mimeType); });
+          if (h.length) tr.setCodecPreferences(h.concat(o));
+        });
+      } catch (e) {}
+    }
     var rs = new MediaStream();
     pc.ontrack = function (e) { e.streams && e.streams[0] ? (ui.remote.srcObject = e.streams[0]) : (rs.addTrack(e.track), ui.remote.srcObject = rs); ui.remote.play && ui.remote.play().catch(function () {}); ui.avatar.style.display = 'none'; };
     pc.onconnectionstatechange = function () {
@@ -21448,7 +21460,7 @@ window.updateChannelActionBar=function(){
     if (!S || !S.local) return;
     try {
       S.facing = S.facing === 'environment' ? 'user' : 'environment';
-      var ns = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 480, max: 640 }, height: { ideal: 270, max: 360 }, frameRate: { ideal: 15, max: 20 }, facingMode: S.facing } });
+      var ns = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: P().w, max: P().wm }, height: { ideal: P().h, max: P().hm }, frameRate: { ideal: P().fps, max: P().fpsm }, facingMode: S.facing } });
       var nt = ns.getVideoTracks()[0]; if (!nt) return;
       var sender = S.pc.getSenders().find(function (s) { return s.track && s.track.kind === 'video'; });
       if (sender) await sender.replaceTrack(nt);
