@@ -8065,6 +8065,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
                 autoResize(input);
                 if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
                 if (currentChannel === 'ai' && window.AIBot) window.AIBot.askInChannel(text);
+                if (currentChannel === 'borsa' && window.bxAsk) window.bxAsk(text);
                 setTimeout(() => trimServerMessages(currentChannel), 2000);
             } catch (error) {
                 addSystemMessage('❌ Mesaj gönderilemedi!');
@@ -20921,6 +20922,74 @@ setTimeout(function(){attach();sync()},800);
   function open() { build(); page.classList.add('show'); render(); load(true); clearInterval(timer); timer = setInterval(function () { if (!document.hidden && page.classList.contains('show') && !$('bxDet').classList.contains('show')) load(true); }, 30000); }
   function close() { if (!page) return; page.classList.remove('show'); $('bxDet').classList.remove('show'); clearInterval(timer); }
   window.bxOpen = open; window.bxClose = close;
+
+  /* ---------- Borsa botu: kanala otomatik özet + !komutlar ---------- */
+  var BOT = 'Borsa Bot', BCH = 'borsa', EVERY = 30 * 60 * 1000;
+  function colr(c) { return c > 0.005 ? '#1fa971' : c < -0.005 ? '#e5484d' : '#999'; }
+  function chg(it) { return '<span style="color:' + colr(it.c) + ';font-weight:700">' + fc(it.c) + '</span>'; }
+  function ln(ic, lab, it, suf) { return it ? ic + ' ' + lab + ': <b>' + fp(it.p) + (suf || '') + '</b> ' + chg(it) : ''; }
+  function short(s) { return s.replace('.IS', '').replace('-USD', '').replace('=X', '').replace('=F', ''); }
+  function hhmm() { return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); }
+  function botPost(html) {
+    var d = window.database; if (!d) return Promise.resolve();
+    return d.ref('channelMessages/' + BCH).push({ sender: BOT, text: html, type: 'supervisor', isBotMessage: true, timestamp: Date.now(), time: hhmm(), avatar: null, channel: BCH });
+  }
+  function fetchAll() {
+    var M = {}; return Promise.all(['idx', 'fx', 'gold', 'coin', 'bist'].map(function (k) { return api('t=q&g=' + k).then(function (j) { (j.items || []).forEach(function (it) { M[it.s] = it; it.grp = k; }); }).catch(function () {}); })).then(function () { return M; });
+  }
+  function summaryHtml(M) {
+    var r = [], u = M['USDTRY=X'], o = M['GC=F'], gram = u && o ? { p: o.p * u.p / 31.1035, c: ((1 + o.c / 100) * (1 + u.c / 100) - 1) * 100 } : null;
+    r.push('📊 <b>Piyasa özeti · ' + hhmm() + '</b>');
+    r.push(ln('🇹🇷', 'BIST 100', M['XU100.IS']));
+    r.push([ln('💵', 'Dolar', u), ln('💶', 'Euro', M['EURTRY=X'])].filter(Boolean).join(' &nbsp;·&nbsp; '));
+    r.push([ln('🥇', 'Gram altın', gram, ' ₺'), ln('🌍', 'Ons', o, ' $')].filter(Boolean).join(' &nbsp;·&nbsp; '));
+    r.push([ln('₿', 'BTC', M['BTC-USD'], ' $'), ln('◆', 'ETH', M['ETH-USD'], ' $')].filter(Boolean).join(' &nbsp;·&nbsp; '));
+    var bl = Object.keys(M).map(function (k) { return M[k]; }).filter(function (x) { return x.grp === 'bist'; }).sort(function (a, b) { return b.c - a.c; });
+    if (bl.length >= 6) {
+      r.push('🚀 Yükselen: ' + bl.slice(0, 3).map(function (x) { return '<b>' + short(x.s) + '</b> ' + chg(x); }).join(', '));
+      r.push('🔻 Düşen: ' + bl.slice(-3).reverse().map(function (x) { return '<b>' + short(x.s) + '</b> ' + chg(x); }).join(', '));
+      var al = bl.filter(function (x) { return x.sig && x.sig.indexOf('AL') >= 0 && x.sig.indexOf('SAT') < 0; }).sort(function (a, b) { return b.score - a.score; }).slice(0, 3);
+      var sa = bl.filter(function (x) { return x.sig && x.sig.indexOf('SAT') >= 0; }).sort(function (a, b) { return a.score - b.score; }).slice(0, 3);
+      if (al.length) r.push('🟢 Teknik AL: ' + al.map(function (x) { return '<b>' + short(x.s) + '</b>'; }).join(', '));
+      if (sa.length) r.push('🔴 Teknik SAT: ' + sa.map(function (x) { return '<b>' + short(x.s) + '</b>'; }).join(', '));
+    }
+    r.push('<small style="opacity:.7">Yatırım tavsiyesi değildir · Komutlar: !piyasa !dolar !euro !altın !btc !eth !thyao · Detay için 📈 Canlı Piyasa</small>');
+    return r.filter(Boolean).join('<br>');
+  }
+  function summaryNow() { return fetchAll().then(function (M) { if (Object.keys(M).length < 3) return; return botPost(summaryHtml(M)); }); }
+  function tick() {
+    try {
+      var d = window.database, u = g('currentUser'), ch = g('cachedChannels') || {};
+      if (!d || !u || document.hidden || !ch[BCH]) return;
+      d.ref('bot/borsa/last').transaction(function (cur) { var n = Date.now(); return (!cur || n - cur >= EVERY) ? n : undefined; }, function (err, ok) { if (!err && ok) summaryNow().catch(function () {}); }, false);
+    } catch (e) {}
+  }
+  setInterval(tick, 90000); setTimeout(tick, 15000);
+  var ALIAS = { dolar: 'USDTRY=X', usd: 'USDTRY=X', euro: 'EURTRY=X', eur: 'EURTRY=X', sterlin: 'GBPTRY=X', gbp: 'GBPTRY=X', frank: 'CHFTRY=X', ons: 'GC=F', gümüş: 'SI=F', gumus: 'SI=F', petrol: 'BZ=F', brent: 'BZ=F', btc: 'BTC-USD', bitcoin: 'BTC-USD', eth: 'ETH-USD', ethereum: 'ETH-USD', sol: 'SOL-USD', xrp: 'XRP-USD', doge: 'DOGE-USD', bnb: 'BNB-USD', bist: 'XU100.IS', bist100: 'XU100.IS', bist30: 'XU030.IS', nasdaq: '^IXIC', sp500: '^GSPC', dax: '^GDAXI' };
+  function quoteHtml(it) {
+    var cur = it.cur === 'TRY' ? ' ₺' : it.cur === 'USD' ? ' $' : it.cur ? ' ' + it.cur : '';
+    return '📌 <b>' + esc(it.n) + '</b> (' + esc(short(it.s)) + '): <b>' + fp(it.p) + cur + '</b> ' + chg(it) +
+      (it.rsi != null ? '<br>RSI ' + Math.round(it.rsi) + ' · Teknik görünüm: <b>' + esc(it.sig || 'NÖTR') + '</b>' : '') + '<br><small style="opacity:.7">Yatırım tavsiyesi değildir.</small>';
+  }
+  var lastAsk = 0;
+  window.bxAsk = function (text) {
+    var m = /^\s*!\s*([^\s]+)/.exec(String(text || '')); if (!m) return;
+    var now = Date.now(); if (now - lastAsk < 3000) return; lastAsk = now;
+    var k = m[1].toLowerCase(), key = k.replace(/ı/g, 'i');
+    if (key === 'piyasa' || key === 'ozet' || key === 'özet' || key === 'borsa') { summaryNow().catch(function () {}); return; }
+    if (key === 'altin' || key === 'gram' || key === 'altın') {
+      Promise.all([api('t=q&s=GC%3DF'), api('t=q&s=USDTRY%3DX')]).then(function (a) {
+        var o = a[0].items[0], u = a[1].items[0]; if (!o || !u) return; var gram = o.p * u.p / 31.1035;
+        botPost('🥇 <b>Altın</b><br>Gram: <b>' + fp(gram) + ' ₺</b> · Çeyrek ≈ <b>' + fp(gram * 1.6065) + ' ₺</b> · Yarım ≈ <b>' + fp(gram * 3.213) + ' ₺</b> · Tam ≈ <b>' + fp(gram * 6.6) + ' ₺</b><br>Ons: <b>' + fp(o.p) + ' $</b> ' + chg(o) + '<br><small style="opacity:.7">Hesaplanan değerdir, kuyumcu fiyatından farklı olabilir.</small>');
+      }).catch(function () {}); return;
+    }
+    var sym = ALIAS[k] || ALIAS[key] || (/^[a-zA-Z0-9.\-^=]{2,12}$/.test(m[1]) ? m[1].toUpperCase() : null); if (!sym) return;
+    function go(s) { return api('t=q&s=' + encodeURIComponent(s)).then(function (j) { return (j.items || [])[0]; }); }
+    var tries = (!ALIAS[k] && sym.indexOf('.') < 0 && sym.indexOf('-') < 0 && sym.indexOf('=') < 0) ? [sym + '.IS', sym] : [sym];
+    tries.reduce(function (p, s) { return p.then(function (r) { return r || go(s).catch(function () { return null; }); }); }, Promise.resolve(null)).then(function (it) {
+      botPost(it ? quoteHtml(it) : '❓ <b>' + esc(m[1]) + '</b> bulunamadı. Örnek: !thyao !dolar !btc !altın !piyasa');
+    }).catch(function () {});
+  };
   /* borsa kanalında yüzen düğme */
   var fab = document.createElement('button'); fab.id = 'bxFab'; fab.type = 'button'; fab.innerHTML = '📈 Canlı Piyasa'; fab.onclick = open; document.body.appendChild(fab);
   setInterval(function () { var c = g('activeChannelName') || g('currentChannel'); var on = c === 'borsa' && !(page && page.classList.contains('show')); fab.classList.toggle('show', on); }, 600);
