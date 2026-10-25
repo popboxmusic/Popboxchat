@@ -13027,6 +13027,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
                     <button class="role-list-btn" onclick="event.stopPropagation(); toggleChannelLocked('${name}')" title="${channel.isLocked ? 'Sessizi Aç' : 'Sessize Al'}">
                         <i class="fas fa-volume-${channel.isLocked ? 'mute' : 'up'}"></i>
                     </button>
+                    <button class="role-list-btn" onclick="event.stopPropagation(); renameChannelPrompt('${name}')" title="Kanal adını değiştir"><i class="fas fa-pen"></i></button>
                     ${mayTransfer ? `<button class="role-list-btn" onclick="event.stopPropagation(); transferChannelPrompt('${name}')" title="Sahipliği Devret"><i class="fas fa-exchange-alt"></i></button>` : ''}
                     <button class="role-list-btn danger" onclick="event.stopPropagation(); deleteChannel('${name}')" title="Kanalı Sil">
                         <i class="far fa-trash-alt"></i>
@@ -13240,6 +13241,35 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             addSystemMessage('❌ Kanal devri başarısız!');
         }
     }
+
+    async function renameChannelPrompt(name) {
+        const channel = cachedChannels[name];
+        if (!channel || !currentUser) return;
+        if (name === 'genel' || channel.systemChannel || name === 'help' || name === 'admin_channel_global') {
+            addSystemMessage('⛔ Bu kanalın adı değiştirilemez.'); return;
+        }
+        const unlimited = isOwner || hasRole('admin');
+        const mine = channel.owner && normalizeNick(channel.owner) === normalizeNick(currentUser.name) && hasRole('coadmin');
+        if (!unlimited && !mine) { addSystemMessage('⛔ Kanal adını sadece owner, admin veya kanalın sahibi değiştirebilir.'); return; }
+        const WAIT = 15 * 24 * 60 * 60 * 1000;
+        if (!unlimited && channel.labelChangedAt && Date.now() - channel.labelChangedAt < WAIT) {
+            const left = Math.ceil((WAIT - (Date.now() - channel.labelChangedAt)) / 86400000);
+            addSystemMessage('⏳ Kanal adı 15 günde bir değiştirilebilir. Kalan: ' + left + ' gün.'); return;
+        }
+        let v = prompt('Yeni kanal adı (2-30 karakter)' + (unlimited ? '' : '\nDikkat: sonraki değişiklik 15 gün sonra yapılabilir.'), channel.label || name);
+        if (v == null) return;
+        v = v.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
+        if (v.length < 2 || v.length > 30) { addSystemMessage('❌ Kanal adı 2-30 karakter olmalı.'); return; }
+        if (v === (channel.label || name)) return;
+        try {
+            const upd = { label: v };
+            if (!unlimited) { upd.labelChangedAt = Date.now(); upd.labelChangedBy = currentUser.name; }
+            await channelsRef.child(name).update(upd);
+            addSystemMessage('✅ Kanal adı "' + v + '" olarak değiştirildi.');
+            try { await sendToAdminChannel('✏️ **KANAL ADI**: #' + name + ' → **' + v + '**\nYetkili: ' + currentUser.name); } catch (e) {}
+        } catch (e) { addSystemMessage('❌ Kanal adı değiştirilemedi.'); }
+    }
+    window.renameChannelPrompt = renameChannelPrompt;
 
     function createChannelPrompt() {
         const name = prompt('Kanal adı (harf/rakam/_):');
