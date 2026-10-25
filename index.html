@@ -15785,11 +15785,11 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const ADMIN_CH = 'admin_channel_global', AI_CH = 'ai';
         const cfg = window.AI_BOT_CONFIG = Object.assign({
             NAME: 'AI', ICON: '🤖',
-            ENDPOINT: '',
+            ENDPOINT: '',   // ← Cloudflare Worker adresini buraya yaz: 'https://ai.KULLANICI.workers.dev'  (AI_ENDPOINT)
             MAX_Q: 500, COOLDOWN_MS: 3000
         }, window.AI_BOT_CONFIG || {});
         const hhmm = () => new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-        const clean = t => String(t).replace(/[<>]/g, '').trim().slice(0, 900);
+        const clean = t => String(t).replace(/[<>]/g, '').trim().slice(0, 1800);
         const key = n => normalizeNick(n).replace(/[.#$\[\]\/]/g, '_');
 
         const LANG = { ingilizce:'en', ingilizcesi:'en', ingilizceye:'en', ingilizcede:'en', almanca:'de', almancası:'de', almancaya:'de',
@@ -15899,14 +15899,18 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             } catch (_) {}
             return null;
         }
+        const HIST = {};
         const INTRO = cfg.ICON + ' Merhaba! Ben AI — bilgi ve arama botuyum. Soruyu nasıl yazarsan yaz anlarım. Cevaplara kaynak linki eklerim. Bana özelden de yazabilirsin.';
         async function think(q) {
             q = String(q).trim().slice(0, cfg.MAX_Q);
-            if (cfg.ENDPOINT) {
+            let ep = cfg.ENDPOINT; try { ep = ep || localStorage.getItem('laafleAiEndpoint') || ''; } catch (_) {}
+            if (ep) {
                 try {
-                    const r = await fetch(cfg.ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ question: q, user: currentUser ? currentUser.name : '' }) });
-                    if (r.ok) { const j = await r.json(); if (j && j.reply) return clean(j.reply); }
+                    const uk = currentUser ? key(currentUser.name) : '_';
+                    const hs = HIST[uk] = HIST[uk] || [];
+                    const r = await fetch(ep, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ question: q, user: currentUser ? currentUser.name : '', history: hs.slice(-8) }) });
+                    if (r.ok) { const j = await r.json(); if (j && j.reply) { hs.push({ role: 'user', content: q }, { role: 'assistant', content: String(j.reply).slice(0, 800) }); if (hs.length > 12) hs.splice(0, hs.length - 12); return clean(j.reply); } }
                 } catch (_) {}
             }
             const m = tryMath(q); if (m !== null) return '🧮 Sonuç: ' + clean(m);
