@@ -7589,8 +7589,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
         if (hasRole('admin')) return true;
         if (!currentUser || !channel) return false;
         // Kanal sahibi Co-Admin kendi kanalını yönetir
-        if (channel.owner && normalizeNick(channel.owner) === normalizeNick(currentUser.name)
-            && hasRole('coadmin')) {
+        if (channel.owner && normalizeNick(channel.owner) === normalizeNick(currentUser.name)) {
             return true;
         }
         return false;
@@ -12995,7 +12994,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
         const container = document.getElementById('channelManageList');
         const createButton = document.querySelector('.channel-manage-create');
         if (!container) return;
-        if (createButton) createButton.style.display = (hasRole('admin') || isOwner) ? 'inline-flex' : 'none';
+        if (createButton) createButton.style.display = (hasRole('admin') || isOwner || (currentUser && currentUser.isRegistered)) ? 'inline-flex' : 'none';
         
         const channels = Object.entries(cachedChannels)
             .filter(([name]) => canAccessHiddenChannel(name))
@@ -13069,9 +13068,14 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
     }
 
     async function createChannel(name, label) {
-        if (!can('createChannel')) {
-            addSystemMessage('⛔ Kanal açmak için Co-Admin ve üstü yetki gerekli!');
+        const _admin = isOwner || hasRole('admin');
+        if (!_admin && !(currentUser && currentUser.isRegistered)) {
+            addSystemMessage('⛔ Kanal açmak için kayıtlı kullanıcı olmalısınız!');
             return;
+        }
+        if (!_admin) {
+            const _mine = Object.values(cachedChannels).filter(c => c && c.owner && normalizeNick(c.owner) === normalizeNick(currentUser.name)).length;
+            if (_mine >= 3) { addSystemMessage('⛔ En fazla 3 kanal açabilirsiniz.'); return; }
         }
         // Benzerlik anahtarı: büyük/küçük harf, Türkçe harfler (ç ğ ı ö ş ü), boşluk ve _ yok sayılır
         const chKey = x => normalizeNick(x).replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u').replace(/[^a-z0-9]/g, '');
@@ -13249,7 +13253,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             addSystemMessage('⛔ Bu kanalın adı değiştirilemez.'); return;
         }
         const unlimited = isOwner || hasRole('admin');
-        const mine = channel.owner && normalizeNick(channel.owner) === normalizeNick(currentUser.name) && hasRole('coadmin');
+        const mine = channel.owner && normalizeNick(channel.owner) === normalizeNick(currentUser.name);
         if (!unlimited && !mine) { addSystemMessage('⛔ Kanal adını sadece owner, admin veya kanalın sahibi değiştirebilir.'); return; }
         const WAIT = 15 * 24 * 60 * 60 * 1000;
         if (!unlimited && channel.labelChangedAt && Date.now() - channel.labelChangedAt < WAIT) {
@@ -15923,6 +15927,21 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                 { label: 'Vikipedi\'de ara', url: 'https://tr.wikipedia.org/w/index.php?search=' + g }]);
         }
 
+        function botState(nick, on) {
+            try {
+                const id = generateChatId(nick, cfg.NAME);
+                if (typeof typingRef !== 'undefined' && typingRef) { const r = typingRef.child(id).child(cfg.NAME); on ? r.set(true) : r.remove(); }
+            } catch (_) {}
+        }
+        function markRead(nick) {
+            try {
+                const ref = privateChatsRef.child(generateChatId(nick, cfg.NAME));
+                ref.limitToLast(8).once('value', s => {
+                    const o = s.val() || {};
+                    Object.keys(o).forEach(k => { const m = o[k]; if (m && m.sender === nick && !m.isRead) ref.child(k).update({ isRead: true, readAt: Date.now() }); });
+                });
+            } catch (_) {}
+        }
         let busyUntil = 0;
         const guard = () => { if (Date.now() < busyUntil) return false; busyUntil = Date.now() + cfg.COOLDOWN_MS; return true; };
         window.AIBot = {
@@ -15930,7 +15949,8 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             async askInChannel(text) {
                 if (!guard() || !currentUser) return;
                 const nick = currentUser.name;
-                const a = await think(text);
+                setTimeout(() => markRead(nick), 400); botState(nick, true);
+                let a; try { a = await think(text); } finally { botState(nick, false); }
                 let sent = false;
                 try {
                     await privateChatsRef.child(generateChatId(nick, cfg.NAME)).push({
@@ -15948,7 +15968,8 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             async askPrivate(text) {
                 if (!guard() || !currentUser) return;
                 const nick = currentUser.name;
-                const a = await think(text);
+                setTimeout(() => markRead(nick), 400); botState(nick, true);
+                let a; try { a = await think(text); } finally { botState(nick, false); }
                 await privateChatsRef.child(generateChatId(nick, cfg.NAME)).push({
                     sender: cfg.NAME, receiver: nick, text: a, timestamp: Date.now(), time: hhmm(), avatar: null, isRead: false });
             }
@@ -16559,7 +16580,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             const p = $('channelAdminPanel'); if (!p) return;
             const list = $('chpList'), det = $('chpDetail'), chs = myChannels();
             list.innerHTML = '';
-            if (isOwner || hasRole('admin')) { const b = document.createElement('button'); b.className = 'chp-btn primary'; b.style.cssText = 'width:100%;margin-bottom:8px'; b.dataset.act = 'new'; b.innerHTML = '<i class="fas fa-plus"></i> Yeni kanal'; list.appendChild(b); }
+            if (isOwner || hasRole('admin') || (currentUser && currentUser.isRegistered)) { const b = document.createElement('button'); b.className = 'chp-btn primary'; b.style.cssText = 'width:100%;margin-bottom:8px'; b.dataset.act = 'new'; b.innerHTML = '<i class="fas fa-plus"></i> Yeni kanal'; list.appendChild(b); }
             chs.forEach(([n, c]) => {
                 const b = document.createElement('button'); b.className = 'chp-item' + (n === sel ? ' sel' : ''); b.dataset.act = 'pick'; b.dataset.ch = n;
                 b.innerHTML = '<i class="fas fa-hashtag"></i><span class="n"></span>' + (c.isHidden ? '<i class="far fa-eye-slash" style="color:#A8782A"></i>' : '') + (c.isLocked ? '<i class="fas fa-volume-mute" style="color:#B5452F"></i>' : '');
@@ -18178,6 +18199,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     return n==='genel'?DEF_GENEL:null;
   }
   function vtitleOf(n,id){var l=plOf(n)||[];for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i].title;return (showcase[n]&&showcase[n].videoId===id&&showcase[n].title)||''}
+  function canChm(){try{var f=g('hasRole',null),m=g('canManageChannel',null),c=g('cachedChannels',{});var u=g('currentUser',null);return !!(isOwn()||(u&&u.isRegistered)||(f&&f('admin'))||(m&&Object.keys(c).some(function(k){return m(k)})))}catch(e){return false}}
   function chLabel(n){var c=chans[n]||{};return n==='genel'?'Laafle':(c.label||n)}
   function chTitle(n){var c=chans[n]||{},v=vidOf(n);return heads[n]||c.description||(v&&vtitleOf(n,v))||('#'+chLabel(n))}
   function chAvatar(n){var o=(chans[n]||{}).owner,a=o&&avatars[o];return '<div class="vt-chava">'+(a?'<img src="'+esc(a)+'" alt="">':'<span>'+esc(String(o||n).charAt(0).toUpperCase())+'</span>')+'</div>'}
@@ -18578,6 +18600,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
      +'<div class="vt-hr"></div>'
      +sideList('sub','Aboneliklerim',mySubs.map(function(c){return '<button class="vt-row" data-ch="'+esc(c)+'"><i class="fas fa-hashtag"></i><span class="n">'+esc(chLabel(c))+'</span></button>'}),'Abone olduğun kanal yok.')
      +(isOwn()?'<div class="vt-hr"></div><div class="vt-sec">♛ Yönetim</div>'+OWN_ROWS.map(function(r){return '<button class="vt-row" data-own="'+r[0]+'"><i class="'+r[1]+'"></i><span class="n">'+r[2]+'</span></button>'}).join(''):'')
+     +(canChm()?'<button class="vt-row" data-act="chm"><i class="fas fa-sliders-h"></i><span class="n">Kanal yönetimi · Kanal aç</span></button>':'')
      +'<div class="vt-hr"></div><div class="vt-sec">Ayarlar</div><button class="vt-row" data-act="theme"><i class="fas fa-moon"></i><span class="n">Gece / Gündüz</span></button>'
      +'<button class="vt-row" data-act="logout"><i class="fas fa-right-from-bracket"></i><span class="n">Çıkış</span></button>';
     if(h!==lastSide){s.innerHTML=h;lastSide=h}
@@ -18608,6 +18631,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     var a=el.dataset.act;
     if(a==='home')vtToggleSide(false);
     else if(a==='an'){vtToggleSide(false);window.anOpenFirst&&window.anOpenFirst()}
+    else if(a==='chm'){vtToggleSide(false);try{window.toggleChannelAdminPanel&&window.toggleChannelAdminPanel()}catch(_){}}
     else if(a==='profile')window.openProfileModal&&window.openProfileModal();
     else if(a==='more'){sideX[el.dataset.k]=!sideX[el.dataset.k];lastSide='';renderSide()}
     else if(a==='theme')window.toggleTheme&&window.toggleTheme();
@@ -20594,6 +20618,8 @@ setTimeout(function(){attach();sync()},800);
     '.pf-it img,.pf-it video{width:100%;height:100%;object-fit:cover;display:block}' +
     '.pf-it .ov{position:absolute;left:0;right:0;bottom:0;padding:18px 7px 6px;background:linear-gradient(#0000,#000a);color:#fff;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:5px}' +
     '.pf-it .fl{position:absolute;top:6px;right:6px;background:#e5484d;color:#fff;font-size:11px;border-radius:8px;padding:1px 6px}' +
+    '#pfList{position:absolute;inset:0;z-index:5;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center}#pfList.show{display:flex}.pf-sheet{width:min(520px,100%);max-height:78%;display:flex;flex-direction:column;background:var(--bg-primary);border-radius:18px 18px 0 0;overflow:hidden}.pf-sh{display:flex;align-items:center;justify-content:space-between;padding:8px 8px 8px 18px;border-bottom:1px solid var(--border-color)}.pf-sb{overflow-y:auto;padding:6px 0 calc(10px + env(safe-area-inset-bottom,0px))}.pf-ur{display:flex;align-items:center;gap:12px;padding:9px 18px;cursor:pointer}.pf-ur:active{background:var(--bg-hover)}.pf-ur .pf-av,.pf-ur .an-av{width:42px;height:42px;flex:0 0 42px;font-size:17px;box-shadow:none}.pf-lk{cursor:pointer}' +
+    '.pf-ch{padding:14px 18px}.pf-ch h4{margin:14px 0 8px;font-size:14px}.pf-ch input{display:block;width:100%;box-sizing:border-box;margin-bottom:8px;padding:10px 12px;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);font:inherit}.pf-ch p{font-size:12.5px;color:var(--text-muted);margin:8px 0}.pf-chr{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--border-color)}.pf-chr span{display:flex;gap:6px}.pf-chr button{border:0;border-radius:8px;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);font:inherit;font-size:12.5px;cursor:pointer}' +
     '.pf-empty{padding:46px 24px;text-align:center;color:var(--text-muted);font-size:14px;grid-column:1/-1}' +
     '.pf-sum{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:14px 14px 4px}' +
     '.pf-sum div{background:var(--bg-tertiary);border-radius:14px;padding:12px;text-align:center}.pf-sum b{display:block;font-size:22px}.pf-sum span{font-size:12px;color:var(--text-muted)}' +
@@ -20613,6 +20639,26 @@ setTimeout(function(){attach();sync()},800);
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && page.classList.contains('show') && !document.querySelector('#anViewer.show,#anIns.show,#anUp.show,#profileModal[style*="flex"]')) close(); });
     return page;
   }
+  function bioHtml(t) {
+    var chs = g('cachedChannels') || {}, idx = {};
+    function nk(x) { return String(x || '').toLowerCase().replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u').replace(/[^a-z0-9]/g, ''); }
+    Object.keys(chs).forEach(function (k) { idx[nk(k)] = k; if (chs[k] && chs[k].label) idx[nk(chs[k].label)] = k; });
+    return esc(t).replace(/(https?:\/\/[^\s<]+)|(^|[\s(])#([A-Za-z0-9_ÇĞİıÖŞÜçğöşü]{2,30})/g, function (m, url, pre, tag) {
+      if (url) return '<a href="' + url + '" target="_blank" rel="noopener noreferrer nofollow" style="color:var(--youtube-red)">' + url + '</a>';
+      var k = idx[nk(tag)];
+      return k ? pre + '<a href="#" data-pf="bch" data-k="' + esc(k) + '" style="color:var(--youtube-red);font-weight:600">#' + esc(chs[k].label || k) + '</a>' : m;
+    });
+  }
+  function showList(kind) {
+    var D = db(); if (!D || !cur) return; var name = cur;
+    D.ref('follows/' + name).once('value', function (s) {
+      var o = s.val() || {}, ks = Object.keys(o).filter(function (k) { return kind === 'followers' ? !!(o[k] && o[k].isFollower) : !(o[k] && o[k].isFollower); });
+      var box = $('pfList'); if (!box) { box = document.createElement('div'); box.id = 'pfList'; page.appendChild(box); box.addEventListener('click', function (e) { if (e.target === box || e.target.closest('[data-pf="lx"]')) { box.classList.remove('show'); return; } var r = e.target.closest('[data-u]'); if (r) { box.classList.remove('show'); open(r.dataset.u); } }); }
+      box.innerHTML = '<div class="pf-sheet"><div class="pf-sh"><b>' + (kind === 'followers' ? 'Takipçiler' : 'Takip edilenler') + ' (' + ks.length + ')</b><button class="pf-ib" data-pf="lx" aria-label="Kapat"><i class="fas fa-times"></i></button></div><div class="pf-sb">' +
+        (ks.length ? ks.map(function (k) { return '<div class="pf-ur" data-u="' + esc(k) + '">' + (window.anAvHtml ? window.anAvHtml(k, 'pf-av s') : '') + '<b>' + esc(k) + '</b></div>'; }).join('') : '<div class="pf-empty">Liste boş.</div>') + '</div></div>';
+      box.classList.add('show');
+    }, function () {});
+  }
   function role(name) { var u = (g('cachedOnlineUsers') || {})[name]; try { return u && u.role && typeof getRoleLabel === 'function' ? getRoleLabel(u.role) : ''; } catch (e) { return ''; } }
   function render(info) {
     var body = $('pfBody'), u = me(), mine = u && u.name === cur, can = mine || isOwn();
@@ -20624,17 +20670,24 @@ setTimeout(function(){attach();sync()},800);
     } else if (u) {
       btns = '<button class="pf-btn' + (info.following ? '' : ' pri') + '" data-pf="follow">' + (info.following ? 'Takip ediliyor' : 'Takip et') + '</button><button class="pf-btn" data-pf="msg">Mesaj</button>';
     }
-    body.innerHTML = '<div class="pf-head">' + avH + '<div class="pf-stats"><div><b id="pfC">' + items.length + '</b><span>laaf</span></div><div><b>' + fmtN(info.followers) + '</b><span>Takipçi</span></div><div><b>' + fmtN(info.following_n) + '</b><span>Takip</span></div></div></div>' +
+    body.innerHTML = '<div class="pf-head">' + avH + '<div class="pf-stats"><div><b id="pfC">' + items.length + '</b><span>laaf</span></div><div class="pf-lk" data-pf="fl" data-k="followers"><b>' + fmtN(info.followers) + '</b><span>Takipçi</span></div><div class="pf-lk" data-pf="fl" data-k="following"><b>' + fmtN(info.following_n) + '</b><span>Takip</span></div></div></div>' +
       '<div class="pf-name">' + esc(cur) + '<span class="pf-role">' + esc(info.role || role(cur)) + '</span></div>' +
-      (info.bio ? '<div class="pf-bio">' + esc(info.bio) + '</div>' : '') +
+      (info.bio ? '<div class="pf-bio">' + bioHtml(info.bio) + '</div>' : '') +
       '<div class="pf-btns">' + btns + '</div>' + (mine && !upOk ? '<div class="pf-note">Video ekleme owner tarafından açıldığında yükleyebilirsin.</div>' : '') +
-      '<div class="pf-tabs"><button class="pf-tab' + (tab === 'g' ? ' on' : '') + '" data-pf="tg" aria-label="laaf videoları"><i class="fas fa-th"></i></button>' + (can ? '<button class="pf-tab' + (tab === 'a' ? ' on' : '') + '" data-pf="ta" aria-label="Analiz"><i class="fas fa-chart-bar"></i></button>' : '') + '</div>' +
+      '<div class="pf-tabs"><button class="pf-tab' + (tab === 'g' ? ' on' : '') + '" data-pf="tg" aria-label="laaf videoları"><i class="fas fa-th"></i></button>' + (mine ? '<button class="pf-tab' + (tab === 'c' ? ' on' : '') + '" data-pf="tc" aria-label="Kanal aç"><i class="fas fa-hashtag"></i></button>' : '') + (can ? '<button class="pf-tab' + (tab === 'a' ? ' on' : '') + '" data-pf="ta" aria-label="Analiz"><i class="fas fa-chart-bar"></i></button>' : '') + '</div>' +
       '<div id="pfTabBody"></div>';
     renderTab();
   }
   function thumb(v) { return v.poster ? '<img src="' + esc(v.poster) + '" alt="" loading="lazy">' : '<video src="' + esc(v.url) + '#t=0.3" muted playsinline preload="metadata"></video>'; }
   function renderTab() {
     var b = $('pfTabBody'); if (!b) return; var can = (me() && me().name === cur) || isOwn();
+    if (tab === 'c' && me() && me().name === cur) {
+      var chs = g('cachedChannels') || {}, mineL = Object.keys(chs).filter(function (k) { var c = chs[k]; return c && c.owner && String(c.owner).toLowerCase() === cur.toLowerCase(); });
+      var regd = !!(me().isRegistered || isOwn());
+      b.innerHTML = '<div class="pf-ch">' + (regd ? '<h4>Yeni kanal aç</h4><input id="pfChN" maxlength="24" placeholder="Kanal adı (harf, rakam, _)" autocomplete="off"><input id="pfChL" maxlength="30" placeholder="Görünecek ad (isteğe bağlı)" autocomplete="off"><button class="pf-btn pri" data-pf="mk">Kanalı aç</button><p>Kanalı açan kişi o kanalın sahibi ve Co-Admin\'i olur. En fazla 3 kanal açılabilir.</p>' : '<p>Kanal açmak için kayıtlı kullanıcı olmalısın.</p>') +
+        '<h4>Kanallarım</h4>' + (mineL.length ? mineL.map(function (k) { return '<div class="pf-chr"><b>#' + esc(chs[k].label || k) + '</b><span><button data-pf="cgo" data-k="' + esc(k) + '">Git</button><button data-pf="cmg" data-k="' + esc(k) + '">Yönet</button><button data-pf="crn" data-k="' + esc(k) + '">Ad</button></span></div>'; }).join('') : '<p>Henüz kanalın yok.</p>') + '</div>';
+      return;
+    }
     if (tab === 'a' && can) {
       var tot = { v: 0, l: 0, c: 0, w: 0 };
       items.forEach(function (it) { var s = stats[it.id] || {}; tot.v += s.views || 0; tot.l += Math.max(0, s.likes || 0); tot.c += s.completes || 0; tot.w += s.watchSec || 0; });
@@ -20693,6 +20746,17 @@ setTimeout(function(){attach();sync()},800);
     else if (k === 'edit') { try { if (ORIG) ORIG(); } catch (x) {} }
     else if (k === 'up') { if (window.anUploadOpen) window.anUploadOpen(); }
     else if (k === 'tg') { tab = 'g'; page.querySelectorAll('.pf-tab').forEach(function (t) { t.classList.toggle('on', t.dataset.pf === 'tg'); }); renderTab(); }
+    else if (k === 'tc') { tab = 'c'; page.querySelectorAll('.pf-tab').forEach(function (t) { t.classList.toggle('on', t.dataset.pf === 'tc'); }); renderTab(); }
+    else if (k === 'mk') {
+      var nn = ($('pfChN') || {}).value || '', ll = ($('pfChL') || {}).value || '';
+      if (!nn.trim()) return; b.disabled = true;
+      Promise.resolve(window.createChannel && window.createChannel(nn, ll || nn)).then(function () { setTimeout(function () { b.disabled = false; renderTab(); }, 900); }, function () { b.disabled = false; });
+    }
+    else if (k === 'cgo') { var kk = b.dataset.k; close(); try { switchChannel(kk); } catch (x) {} }
+    else if (k === 'cmg') { try { window.openChannelAdminPanel && window.openChannelAdminPanel(b.dataset.k); } catch (x) {} }
+    else if (k === 'crn') { try { window.renameChannelPrompt && window.renameChannelPrompt(b.dataset.k); } catch (x) {} }
+    else if (k === 'fl') showList(b.dataset.k);
+    else if (k === 'bch') { e.preventDefault(); var ck = b.dataset.k; close(); try { switchChannel(ck); } catch (x) {} }
     else if (k === 'ta') { tab = 'a'; page.querySelectorAll('.pf-tab').forEach(function (t) { t.classList.toggle('on', t.dataset.pf === 'ta'); }); renderTab(); }
     else if (k === 'play') { if (window.anPlay) window.anPlay(items.map(function (x) { return x; }), +b.dataset.i); }
     else if (k === 'ins') { var it = items.filter(function (x) { return x.id === b.dataset.id; })[0]; if (it && window.anInsight) window.anInsight(it); }
