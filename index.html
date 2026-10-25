@@ -8066,6 +8066,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
                 if (usersRef) usersRef.child(currentUser.name).update({ lastSeen: Date.now() });
                 if (currentChannel === 'ai' && window.AIBot) window.AIBot.askInChannel(text);
                 if (currentChannel === 'borsa' && window.bxAsk) window.bxAsk(text);
+                if (currentChannel === 'haber' && window.hxAsk) window.hxAsk(text);
                 setTimeout(() => trimServerMessages(currentChannel), 2000);
             } catch (error) {
                 addSystemMessage('❌ Mesaj gönderilemedi!');
@@ -18596,6 +18597,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
      +'<button class="vt-row" data-act="home"><i class="fas fa-house"></i><span class="n">Anasayfa</span></button>'
      +'<button class="vt-row" data-act="an"><i class="fas fa-film"></i><span class="n">laaf</span></button>'
      +'<button class="vt-row" data-act="bx"><i class="fas fa-chart-line"></i><span class="n">Borsa · Piyasa</span></button>'
+     +'<button class="vt-row" data-act="hx"><i class="far fa-newspaper"></i><span class="n">Haberler</span></button>'
      +'<div class="vt-hr"></div>'
      +sideList('msg','Mesajlar',contacts.map(function(x){return userRow(x,online,unread,false)}),'Henüz sohbet yok.')
      +'<div class="vt-hr"></div>'
@@ -18635,6 +18637,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     if(a==='home')vtToggleSide(false);
     else if(a==='an'){vtToggleSide(false);window.anOpenFirst&&window.anOpenFirst()}
     else if(a==='bx'){vtToggleSide(false);window.bxOpen&&window.bxOpen()}
+    else if(a==='hx'){vtToggleSide(false);window.hxOpen&&window.hxOpen()}
     else if(a==='chm'){vtToggleSide(false);try{window.toggleChannelAdminPanel&&window.toggleChannelAdminPanel()}catch(_){}}
     else if(a==='profile')window.openProfileModal&&window.openProfileModal();
     else if(a==='more'){sideX[el.dataset.k]=!sideX[el.dataset.k];lastSide='';renderSide()}
@@ -20996,6 +20999,95 @@ setTimeout(function(){attach();sync()},800);
 })();
 
 </script>
+<script id="hxJs">
+/* ===== Laafle: Haber paneli + Haber Bot ===== */
+(function () {
+  'use strict';
+  var EP = (window.BORSA_CONFIG && window.BORSA_CONFIG.ENDPOINT) || 'https://laafle-borsa.kyazar07.workers.dev';
+  var KINDS = [['gundem', 'Gündem'], ['siyaset', 'Siyaset'], ['ekonomi', 'Ekonomi'], ['dunya', 'Dünya'], ['spor', 'Spor'], ['teknoloji', 'Teknoloji'], ['saglik', 'Sağlık']];
+  var MAP = { ekonomi: 'genel' }, page = null, tab = 'gundem', data = {}, ts = {}, timer = null, q = '', seenKey = 'hx_seen';
+  function $(i) { return document.getElementById(i); }
+  function g(n) { try { return (0, eval)('typeof ' + n + '!=="undefined"?' + n + ':null'); } catch (e) { return null; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function api(k) { return fetch(EP + '/?t=news&k=' + (MAP[k] || k)).then(function (r) { if (!r.ok) throw new Error('x'); return r.json(); }); }
+  function ago(d) { var t = Date.parse(d); if (!t) return ''; var m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'şimdi'; if (m < 60) return m + ' dk önce'; if (m < 1440) return Math.floor(m / 60) + ' sa önce'; return Math.floor(m / 1440) + ' gün önce'; }
+  function okLink(u) { return /^https?:\/\//i.test(u || ''); }
+  var st = document.createElement('style');
+  st.textContent = '#hxPage{position:fixed;inset:0;z-index:2400;background:var(--bg-primary);color:var(--text-primary);display:none;flex-direction:column;height:var(--app-h,100dvh)}#hxPage.show{display:flex;animation:pfIn .2s ease}' +
+    '#hxPage .bx-n{display:flex;gap:10px;align-items:flex-start}#hxPage .bx-n .dot{flex:0 0 8px;height:8px;border-radius:50%;background:var(--youtube-red);margin-top:6px}#hxPage .bx-n .tx{min-width:0}' +
+    '#hxPage input.hx-q{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:1px solid var(--border-color);background:var(--bg-tertiary);color:var(--text-primary);font:inherit;margin:4px 0 8px}' +
+    '#hxFab{position:fixed;right:14px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:1400;border:0;border-radius:24px;padding:11px 16px;background:var(--youtube-red);color:#fff;font:inherit;font-weight:700;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.35);display:none;cursor:pointer}#hxFab.show{display:block}';
+  document.head.appendChild(st);
+  function seen() { try { return JSON.parse(localStorage.getItem(seenKey) || '{}'); } catch (e) { return {}; } }
+  function build() {
+    if (page) return page;
+    page = document.createElement('div'); page.id = 'hxPage';
+    page.innerHTML = '<div class="bx-top"><button class="pf-ib" data-hx="back" aria-label="Geri"><i class="fas fa-arrow-left"></i></button><b>📰 Haberler <span class="bx-live"><i></i><span id="hxClock">canlı</span></span></b><button class="pf-ib" data-hx="ref" aria-label="Yenile"><i class="fas fa-rotate"></i></button></div><div class="bx-tabs" id="hxTabs"></div><div class="bx-sc"><div class="bx-in" id="hxBody"></div></div>';
+    document.body.appendChild(page);
+    page.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-hx]'); if (!b) return; var k = b.dataset.hx;
+      if (k === 'back') close(); else if (k === 'ref') load(true);
+      else if (k === 'tab') { tab = b.dataset.k; q = ''; render(); if (!data[tab]) load(true); var sc = page.querySelector('.bx-sc'); if (sc) sc.scrollTop = 0; }
+    });
+    page.addEventListener('input', function (e) { if (e.target.id === 'hxQ') { q = e.target.value.trim().toLowerCase(); render(); } });
+    return page;
+  }
+  function load(force) {
+    var k = tab; if (!force && ts[k] && Date.now() - ts[k] < 50000) return;
+    api(k).then(function (j) { data[k] = j.items || []; ts[k] = Date.now(); render(); }).catch(function () { if (!data[k]) data[k] = []; render(); });
+  }
+  function render() {
+    if (!page || !page.classList.contains('show')) return;
+    $('hxTabs').innerHTML = KINDS.map(function (t) { return '<button class="bx-tb' + (tab === t[0] ? ' on' : '') + '" data-hx="tab" data-k="' + t[0] + '">' + t[1] + '</button>'; }).join('');
+    var a = data[tab], sn = seen(), h = '<input class="hx-q" id="hxQ" placeholder="Haberlerde ara…" value="' + esc(q) + '" autocomplete="off">';
+    if (!a) h += '<div class="bx-empty">Haberler yükleniyor…</div>';
+    else {
+      var f = q ? a.filter(function (x) { return x.title.toLowerCase().indexOf(q) >= 0; }) : a;
+      h += f.length ? f.map(function (n) { var nw = !sn[n.link] && Date.parse(n.date) > Date.now() - 3600000; return okLink(n.link) ? '<a class="bx-n" href="' + esc(n.link) + '" target="_blank" rel="noopener noreferrer">' + (nw ? '<span class="dot"></span>' : '') + '<span class="tx"><b>' + esc(n.title) + '</b><small>' + esc(n.src || '') + (n.date ? ' · ' + ago(n.date) : '') + '</small></span></a>' : ''; }).join('') : '<div class="bx-empty">Haber bulunamadı.</div>';
+    }
+    h += '<div class="bx-warn" style="margin-top:12px">Haberler çeşitli haber kaynaklarının RSS yayınlarından otomatik derlenir; içerik ilgili kaynağa aittir ve doğruluğu Laafle tarafından doğrulanmaz.</div>';
+    var sc = page.querySelector('.bx-sc'), top = sc ? sc.scrollTop : 0, hadQ = document.activeElement && document.activeElement.id === 'hxQ';
+    $('hxBody').innerHTML = h; if (sc) sc.scrollTop = top; if (hadQ) { var qi = $('hxQ'); qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); }
+    $('hxClock').textContent = ts[tab] ? new Date(ts[tab]).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'yükleniyor';
+  }
+  function open() { build(); page.classList.add('show'); render(); load(true); clearInterval(timer); timer = setInterval(function () { if (!document.hidden && page.classList.contains('show')) load(true); }, 60000); }
+  function close() {
+    if (!page) return; page.classList.remove('show'); clearInterval(timer);
+    try { var sn = seen(); (data[tab] || []).forEach(function (n) { sn[n.link] = 1; }); var ks = Object.keys(sn); if (ks.length > 400) ks.slice(0, ks.length - 400).forEach(function (k) { delete sn[k]; }); localStorage.setItem(seenKey, JSON.stringify(sn)); } catch (e) {}
+  }
+  window.hxOpen = open; window.hxClose = close;
+
+  /* ---------- Haber Bot ---------- */
+  var BOT = 'Haber Bot', CH = 'haber', EVERY = 30 * 60 * 1000;
+  function hhmm() { return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); }
+  function post(html) { var d = window.database; if (!d) return Promise.resolve(); return d.ref('channelMessages/' + CH).push({ sender: BOT, text: html, type: 'supervisor', isBotMessage: true, timestamp: Date.now(), time: hhmm(), avatar: null, channel: CH }); }
+  function list(title, items, n) {
+    var r = ['📰 <b>' + esc(title) + ' · ' + hhmm() + '</b>'];
+    items.filter(function (x) { return okLink(x.link); }).slice(0, n).forEach(function (x, i) { r.push((i + 1) + '. <a href="' + esc(x.link) + '" target="_blank" rel="noopener noreferrer" style="color:var(--youtube-red)">' + esc(x.title) + '</a> <small style="opacity:.65">' + esc(x.src || '') + '</small>'); });
+    r.push('<small style="opacity:.7">Komutlar: !haber !siyaset !ekonomi !dünya !spor !teknoloji !sağlık · Tümü için 📰 Haberler</small>');
+    return r.join('<br>');
+  }
+  function send(k, title, n) { return api(k).then(function (j) { if ((j.items || []).length) return post(list(title, j.items, n)); return post('📰 Şu an <b>' + esc(title) + '</b> haberleri alınamadı, biraz sonra tekrar dene.'); }); }
+  function tick() {
+    try {
+      var d = window.database, u = g('currentUser'), ch = g('cachedChannels') || {};
+      if (!d || !u || document.hidden || !ch[CH]) return;
+      d.ref('bot/haber/last').transaction(function (cur) { var n = Date.now(); return (!cur || n - cur >= EVERY) ? n : undefined; }, function (err, ok) { if (!err && ok) send('gundem', 'Gündem özeti', 6).catch(function () {}); }, false);
+    } catch (e) {}
+  }
+  setInterval(tick, 100000); setTimeout(tick, 20000);
+  var CMD = { haber: ['gundem', 'Gündem özeti', 6], gundem: ['gundem', 'Gündem özeti', 6], gündem: ['gundem', 'Gündem özeti', 6], ekonomi: ['ekonomi', 'Ekonomi haberleri', 5], siyaset: ['siyaset', 'Siyaset haberleri', 5], dunya: ['dunya', 'Dünya haberleri', 5], dünya: ['dunya', 'Dünya haberleri', 5], spor: ['spor', 'Spor haberleri', 5], teknoloji: ['teknoloji', 'Teknoloji haberleri', 5], saglik: ['saglik', 'Sağlık haberleri', 5], sağlık: ['saglik', 'Sağlık haberleri', 5] };
+  var last = 0;
+  window.hxAsk = function (text) {
+    var m = /^\s*!\s*([^\s]+)/.exec(String(text || '')); if (!m) return; var c = CMD[m[1].toLowerCase()]; if (!c) return;
+    var n = Date.now(); if (n - last < 3000) return; last = n; send(c[0], c[1], c[2]).catch(function () {});
+  };
+  var fab = document.createElement('button'); fab.id = 'hxFab'; fab.type = 'button'; fab.innerHTML = '📰 Haberler'; fab.onclick = open; document.body.appendChild(fab);
+  setInterval(function () { var c = g('activeChannelName') || g('currentChannel'); fab.classList.toggle('show', c === CH && !(page && page.classList.contains('show'))); }, 600);
+})();
+
+</script>
+
 
 
 <script id="mnavJs">
