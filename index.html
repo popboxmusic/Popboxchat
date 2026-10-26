@@ -19110,7 +19110,20 @@ function ytVideos(cid){
   return ytNoKey(cid);
 }
 /* API anahtarı yoksa: RSS (son 15, gerçek tarihli) + kanalın "yüklemeler" sayfasından ~100 videoya kadar */
+function ytWorkerBase(){var p=YT.proxy||'';return p.replace(/\?url=.*$/,'').replace(/\/$/,'')}
+function ytViaWorker(cid){
+  var b=ytWorkerBase();if(!b||!/^https:\/\//.test(b))return Promise.reject(new Error('x'));
+  return fetch(b+'/?cid='+cid).then(function(r){if(!r.ok)throw new Error('x');return r.json()}).then(function(j){if(!j||!j.vids||!j.vids.length)throw new Error('x');return j});
+}
 function ytNoKey(cid){
+  return ytViaWorker(cid).then(function(j){
+    var latest=Date.now(),known=j.vids.filter(function(v){return v.pub}).map(function(v){return v.pub});
+    var oldest=known.length?Math.min.apply(null,known):Date.now(),lastIdx=-1,out=[];
+    j.vids.forEach(function(v,i){if(v.pub){lastIdx=i;out.push({id:v.id,title:v.title,pub:v.pub})}else out.push({id:v.id,title:v.title,pub:(lastIdx>=0?oldest:latest)-(i-Math.max(lastIdx,0))*3600000})});
+    return{title:j.title||'',vids:out};
+  }).catch(function(){return ytNoKeyOld(cid)});
+}
+function ytNoKeyOld(cid){
   var rss=ytRss(cid).catch(function(){return null});
   var pl=ytPlaylistScrape(cid).catch(function(){return[]});
   return Promise.all([rss,pl]).then(function(r){
