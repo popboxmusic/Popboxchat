@@ -22563,7 +22563,7 @@ window.updateChannelActionBar=function(){
   }
 
   function endCall(msg, remote) {
-    var s = S; if (!s) return;
+    var s = S; if (!s) { incoming = null; vcHide(); return; }
     S = null; incoming = null; clearTimeout(ringTimer); stopRing();
     var D = db();
     try { s.refs.forEach(function (r) { r[0].off(r[1], r[2]); }); } catch (e) {}
@@ -22579,11 +22579,15 @@ window.updateChannelActionBar=function(){
       } catch (e) {}
     }
     if (ui) {
-      if (msg) { ui.st.textContent = msg + (dur ? ' · ' + fmt(dur) : ''); setTimeout(function () { if (!S) { ui.root.classList.remove('show'); ui.remote.srcObject = null; ui.local.srcObject = null; ui.data.textContent = ''; } }, 1400); }
-      else { ui.root.classList.remove('show'); ui.remote.srcObject = null; ui.local.srcObject = null; ui.data.textContent = ''; }
+      if (msg) { ui.st.textContent = msg + (dur ? ' · ' + fmt(dur) : ''); ui.root.classList.remove('mini'); setTimeout(function () { if (!S) vcHide(); }, 1400); }
+      else vcHide();
     }
   }
   window.__vcEnd = endCall;
+  function vcHide() { try { if (!ui) return; ui.root.classList.remove('show'); ui.root.classList.remove('mini'); ui.remote.srcObject = null; ui.local.srcObject = null; ui.data.textContent = ''; } catch (e) {} }
+  // Güvenlik ağı: aktif arama yokken ekran açık kaldıysa (örn. karşı taraf kapattı, hata oldu) kapat
+  var vcStale = 0;
+  setInterval(function () { try { if (ui && ui.root.classList.contains('show') && !S) { if (++vcStale >= 2) { vcStale = 0; vcHide(); } } else vcStale = 0; } catch (e) {} }, 1500);
   window.addEventListener('beforeunload', function () { if (S) { try { db().ref('calls/' + S.id + '/state').set('ended'); } catch (e) {} } });
 
   // giriş yapıldığında gelen arama dinleyicisini bağla
