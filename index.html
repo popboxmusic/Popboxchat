@@ -6859,8 +6859,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
         OWNER_CONFIG: {
             username: 'mateky',
             role: 'owner',
-            isHidden: true,
-            password: 'kumsal07@'
+            isHidden: true
         }
     };
 
@@ -8946,7 +8945,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
                 return await verifyOwnerPassword(password);
             }
             const userRegistered = await isRegisteredUserSecure(username);
-            return userRegistered && userRegistered.password === password;
+            return !!userRegistered && await window.pwCheck(userRegistered, password, username);
         } catch (error) { return false; }
     }
 
@@ -9371,8 +9370,9 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
             return;
         }
         try {
+            const _ph = await window.pwMake(password);
             await registeredUsersRef.child(username).set({
-                password: password, role: role, email: email,
+                passHash: _ph.h, passSalt: _ph.s, passAlgo: _ph.a, role: role, email: email,
                 registeredBy: currentUser.name, registeredAt: Date.now(),
                 isRegistered: true
             });
@@ -10660,7 +10660,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
             }
             
             // 🆕 Popup olarak göster (sohbete kaydedilmez)
-            showPasswordPopup(targetRec.originalName, targetRec.password || 'Kayıtsız');
+            showPasswordPopup(targetRec.originalName, 'Şifreler güvenlik için şifreli saklanır, görüntülenemez. Unutan kullanıcı için /sifresifirla kullanın.');
             return;
         }
         if (command === 'komut') { openCommandModal(); return; }
@@ -12502,7 +12502,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
         const newPassword = document.getElementById('newPassword').value;
         currentProfileBio = bio;
         if (newPassword && currentUser.isRegistered) {
-            registeredUsersRef.child(currentUser.name).update({ password: newPassword });
+            window.pwMake(newPassword).then(function (h) { return registeredUsersRef.child(currentUser.name).update({ passHash: h.h, passSalt: h.s, passAlgo: h.a, password: null }); });
             incrementWriteCount();
         }
         if (profilesRef && currentUser) {
@@ -14821,11 +14821,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
 
     async function initOwnerPassword() {
         try {
-            const ownerPassword = SECURE_CONFIG.OWNER_CONFIG.password;
-            const salt = "cetcety_secure_salt_2024";
-            const combinedPassword = ownerPassword + salt;
-            const hashedPassword = await sha256(combinedPassword);
-            ownerPasswordHash = { hash: hashedPassword, salt: salt };
+            /* owner şifresi artık sunucuda (laafle-auth worker) doğrulanıyor */
         } catch (error) { console.error("Owner şifre sistemi başlatma hatası:", error); }
     }
 
@@ -14838,9 +14834,10 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
 
     async function verifyOwnerPassword(inputPassword) {
         try {
-            if (!ownerPasswordHash || !ownerPasswordHash.salt) await initOwnerPassword();
-            const inputHash = await sha256(inputPassword + ownerPasswordHash.salt);
-            return inputHash === ownerPasswordHash.hash;
+            const ep = (window.AUTH_CONFIG && window.AUTH_CONFIG.ENDPOINT) || 'https://laafle-auth.kyazar07.workers.dev';
+            const r = await fetch(ep + '/owner', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: String(inputPassword || '') }) });
+            if (r.status === 429) { try { showLoginError('⏳ Çok fazla hatalı deneme. 10 dakika sonra tekrar dene.'); } catch (e) {} return false; }
+            const j = await r.json(); return j && j.ok === true;
         } catch (error) { return false; }
     }
 
@@ -16462,7 +16459,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                     const targetIsAdmin = rec.role === 'admin' || adminList.some(x => nk(x) === nk(rec.originalName)) || SECURE_CONFIG.DEFAULT_ADMINS.some(x => nk(x) === nk(rec.originalName));
                     if (targetIsAdmin && !isOwner) { addSystemMessage('⛔ Admin şifresini yalnızca Owner sıfırlayabilir.'); return true; }
                     const tmp = tempPassword();
-                    await registeredUsersRef.child(rec.originalName).update({ password: tmp, passwordResetAt: Date.now(), passwordResetBy: currentUser.name });
+                    const _th = await window.pwMake(tmp); await registeredUsersRef.child(rec.originalName).update({ passHash: _th.h, passSalt: _th.s, passAlgo: _th.a, password: null, passwordResetAt: Date.now(), passwordResetBy: currentUser.name });
                     try { await database.ref('passwordResets/' + dbKey(rec.originalName)).remove(); } catch (_) {}
                     incrementWriteCount();
                     addSystemMessage('🔑 <strong>' + escapeHtml(rec.originalName) + '</strong> için geçici şifre: <strong>' + tmp + '</strong>');
@@ -17400,7 +17397,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
             const clash = await guestNickClash(nick);
             if (clash) return err('⚠️ "' + clash + '" nicki şu an kullanımda. Başka bir ad seçin.');
 
-            const record = { password: pass, role: 'user', email: email, registeredBy: 'self', registeredAt: Date.now(), isRegistered: true };
+            const _sh = await window.pwMake(pass); const record = { passHash: _sh.h, passSalt: _sh.s, passAlgo: _sh.a, role: 'user', email: email, registeredBy: 'self', registeredAt: Date.now(), isRegistered: true };
             const tx = await registeredUsersRef.child(nick).transaction(cur => cur ? undefined : record);
             if (!tx.committed) return err('❌ Bu kullanıcı adı az önce başkası tarafından alındı.');
 
@@ -22662,7 +22659,7 @@ window.updateChannelActionBar=function(){
       var nick=await ask(u.email,sug);
       if(!nick) return;
       var pw=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(function(x){return x.toString(16).padStart(2,'0');}).join('');
-      await registeredUsersRef.child(nick).set({password:pw,role:'user',email:(u.email||'').toLowerCase(),registeredBy:'google',registeredAt:Date.now(),isRegistered:true,googleUid:u.uid});
+      var _gh=await window.pwMake(pw);await registeredUsersRef.child(nick).set({passHash:_gh.h,passSalt:_gh.s,passAlgo:_gh.a,role:'user',email:(u.email||'').toLowerCase(),registeredBy:'google',registeredAt:Date.now(),isRegistered:true,googleUid:u.uid});
       await database.ref('googleLinks/'+u.uid).set(nick);
       rec=await isRegisteredUserSecure(nick);
     }
@@ -22833,6 +22830,26 @@ window.updateChannelActionBar=function(){
   }
   setInterval(tick,30000);setTimeout(tick,4000);
   setInterval(function(){var c=g('activeChannelName')||g('currentChannel');if(c!==curCh&&db()&&me())bindChannel(c);},1500);
+})();
+</script>
+
+<script id="pwJs">
+(function () {
+  function hex(b) { return Array.from(new Uint8Array(b), function (x) { return x.toString(16).padStart(2, '0'); }).join(''); }
+  async function derive(pw, salt) {
+    var k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+    return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 150000 }, k, 256));
+  }
+  window.pwMake = async function (pw) { var s = hex(crypto.getRandomValues(new Uint8Array(16))); return { h: await derive(String(pw), s), s: s, a: 'pbkdf2-150k' }; };
+  window.pwCheck = async function (rec, pw, nick) {
+    pw = String(pw == null ? '' : pw);
+    if (rec.passHash && rec.passSalt) return (await derive(pw, rec.passSalt)) === rec.passHash;
+    if (rec.password != null && rec.password === pw) { // eski düz metin kayıt: doğruysa hashe çevir, düz metni sil
+      try { var h = await window.pwMake(pw); await registeredUsersRef.child(rec.originalName || nick).update({ passHash: h.h, passSalt: h.s, passAlgo: h.a, password: null }); } catch (e) {}
+      return true;
+    }
+    return false;
+  };
 })();
 </script>
 </body>
