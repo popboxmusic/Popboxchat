@@ -13855,7 +13855,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                             message.isRead = true;
                         }
                         appendPrivateMessageToUI({ id: snapshot.key, ...message });
-                        setTimeout(() => archiveAndTrimPrivateChat(chatId), 100);
+                        if (existingMessageIds.size > PRIVATE_MESSAGE_LIMIT) { clearTimeout(window._ccTrimT); window._ccTrimT = setTimeout(() => archiveAndTrimPrivateChat(chatId), 5000); }
                         
                         if (message.sender !== currentUser.name && !message.isNotification && message.sender !== 'System') {
                             notifyIncomingPrivateMessage(privateChatWith, message, snapshot.key);
@@ -21256,7 +21256,8 @@ function sticky(boxId,inputId,mineClass,isOpen){
   var stick=true;
   function box(){return document.getElementById(boxId)}
   function toBottom(){var b=box();if(b&&isOpen())b.scrollTop=b.scrollHeight}
-  function settle(){toBottom();requestAnimationFrame(toBottom);[60,160,320,600,900].forEach(function(t){setTimeout(function(){if(stick)toBottom()},t)})}
+  var sBusy=false;
+  function settle(){toBottom();if(sBusy)return;sBusy=true;requestAnimationFrame(toBottom);[60,160,320,600,900].forEach(function(t){setTimeout(function(){if(stick)toBottom()},t)});setTimeout(function(){sBusy=false},950)}
   function bind(){
     var b=box();if(!b||b.dataset.stick)return;b.dataset.stick='1';
     b.addEventListener('scroll',function(){stick=(b.scrollHeight-b.scrollTop-b.clientHeight)<90},{passive:true});
@@ -21278,10 +21279,15 @@ function sticky(boxId,inputId,mineClass,isOpen){
 }
 var pm=sticky('privateMessages','private-input','pm-out',function(){var m=document.getElementById('privateModal');return !!m&&m.style.display==='flex'});
 var ch=sticky('messages','message-input','mine',function(){var b=document.getElementById('messages');return !!b&&b.clientHeight>0});
+var vvQ=false;
 function vvFix(){
-  if(window.innerWidth<=768&&(pm.isOpen()||document.body.classList.contains('mobile-chat-keyboard-open'))){window.scrollTo(0,0);if(document.scrollingElement)document.scrollingElement.scrollTop=0}
-  if(pm.isOpen()&&pm.isStick())pm.settle();
-  if(ch.isStick()&&document.activeElement&&document.activeElement.id==='message-input')ch.settle();
+  if(vvQ)return;vvQ=true;
+  requestAnimationFrame(function(){
+    vvQ=false;
+    if(window.innerWidth<=768&&(pm.isOpen()||document.body.classList.contains('mobile-chat-keyboard-open'))){if(window.scrollY>0||(document.scrollingElement&&document.scrollingElement.scrollTop>0)){window.scrollTo(0,0);if(document.scrollingElement)document.scrollingElement.scrollTop=0}}
+    if(pm.isOpen()&&pm.isStick())pm.settle();
+    if(ch.isStick()&&document.activeElement&&document.activeElement.id==='message-input')ch.settle();
+  });
 }
 if(window.visualViewport){window.visualViewport.addEventListener('resize',vvFix,{passive:true});window.visualViewport.addEventListener('scroll',vvFix,{passive:true})}
 window.addEventListener('resize',function(){if(pm.isOpen()&&pm.isStick())pm.settle()},{passive:true});
@@ -21289,6 +21295,26 @@ var _o=window.openPrivateChat;
 if(typeof _o==='function')window.openPrivateChat=async function(){pm.reset();var r=await _o.apply(this,arguments);pm.bind();pm.reset();pm.settle();return r};
 var _sw=window.switchChannel;
 if(typeof _sw==='function')window.switchChannel=function(){ch.reset();var r=_sw.apply(this,arguments);setTimeout(function(){ch.reset();ch.settle()},300);return r};
+/* Gönder'e basınca klavye kapanmasın (WhatsApp gibi): odak yazı kutusunda kalır */
+(function(){
+  var had=0,hadT=0;
+  function inp(){return document.getElementById('private-input')}
+  function mark(){var i=inp();had=(i&&document.activeElement===i)?1:0;hadT=Date.now()}
+  function bindSend(){
+    var b=document.getElementById('privateSendBtn');if(!b||b.dataset.kbk)return;b.dataset.kbk='1';
+    b.addEventListener('pointerdown',function(e){mark();if(had)e.preventDefault()});
+    b.addEventListener('mousedown',function(e){if(had)e.preventDefault()});
+    b.addEventListener('touchstart',function(){mark()},{passive:true});
+  }
+  var o=window.sendPrivateMessage;
+  if(typeof o==='function')window.sendPrivateMessage=function(){
+    var i=inp(),keep=!!i&&(document.activeElement===i||(had&&Date.now()-hadT<1500));
+    var r=o.apply(this,arguments);
+    if(keep&&i){try{i.focus({preventScroll:true})}catch(e){i.focus()}}
+    had=0;return r;
+  };
+  bindSend();setInterval(bindSend,2000);
+})();
 pm.bind();ch.bind();setInterval(function(){pm.bind();ch.bind()},1500);
 })();
 </script>
