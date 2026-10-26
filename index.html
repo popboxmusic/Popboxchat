@@ -21004,7 +21004,7 @@ setTimeout(function(){attach();sync()},800);
 (function () {
   'use strict';
   var EP = (window.HABER_CONFIG && window.HABER_CONFIG.ENDPOINT) || 'https://haber-worker.kyazar07.workers.dev';
-  var KINDS = [['sondakika', '🔴 Son Dakika'], ['gundem', 'Gündem'], ['siyaset', 'Siyaset'], ['ekonomi', 'Ekonomi'], ['dunya', 'Dünya'], ['spor', 'Spor'], ['teknoloji', 'Teknoloji'], ['saglik', 'Sağlık'], ['magazin', 'Magazin'], ['yasam', 'Yaşam'], ['kultur', 'Kültür-Sanat'], ['egitim', 'Eğitim'], ['kripto', 'Kripto'], ['yerel', 'Yerel']];
+  var KINDS = [['sondakika', '🔴 Son Dakika'], ['tum', '📰 Tüm Haberler']], ALLC = 'gundem,siyaset,ekonomi,dunya,spor,teknoloji,saglik,magazin,yasam,kultur,egitim,kripto,yerel', rawFirst = null;
   var page = null, tab = 'sondakika', data = {}, ts = {}, timer = null, q = '', seenKey = 'hx_seen', lastErr = '';
   function $(i) { return document.getElementById(i); }
   function g(n) { try { return (0, eval)('typeof ' + n + '!=="undefined"?' + n + ':null'); } catch (e) { return null; } }
@@ -21018,10 +21018,24 @@ setTimeout(function(){attach();sync()},800);
     if (typeof j === 'object') Object.keys(j).forEach(function (k) { collect(j[k], out, d + 1); });
     return out;
   }
+  function fixUrl(s) { s = String(s || '').trim(); if (/^\/\//.test(s)) s = 'https:' + s; return s.replace(/^http:\/\//i, 'https://'); }
+  var IMGK = /img|image|resim|gorsel|görsel|foto|thumb|poster|cover|kapak|media|enclosure|picture|pic/i, IMGX = /\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i;
+  function deepImg(v, key, d) {
+    if (v == null || d > 3) return '';
+    if (typeof v === 'string') {
+      var s = v.trim();
+      if (/^(https?:)?\/\/\S+$/i.test(s) && (IMGX.test(s) || IMGK.test(key || ''))) return fixUrl(s);
+      var m = /<img[^>]+src=["']([^"']+)["']/i.exec(s) || /(?:url|src)=["']([^"']+\.(?:jpe?g|png|webp|gif|avif)[^"']*)["']/i.exec(s); if (m) return fixUrl(m[1]);
+      return '';
+    }
+    if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) { var r = deepImg(v[i], key, d + 1); if (r) return r; } return ''; }
+    if (typeof v === 'object') { var ks = Object.keys(v); for (var j = 0; j < ks.length; j++) { var r2 = deepImg(v[ks[j]], IMGK.test(ks[j]) ? ks[j] : key, d + 1); if (r2) return r2; } }
+    return '';
+  }
   function findImg(o) {
-    var v = pick(o, ['resim', 'gorsel', 'görsel', 'image', 'img', 'imageUrl', 'image_url', 'thumbnail', 'thumb', 'foto', 'fotograf', 'photo', 'enclosure', 'media', 'kapak']);
-    var s = str(v); if (okLink(s)) return s;
-    var ks = Object.keys(o); for (var i = 0; i < ks.length; i++) { var x = o[ks[i]]; if (typeof x === 'string' && /^https?:\/\/\S+\.(jpe?g|png|webp|gif|avif)(\?\S*)?$/i.test(x)) return x; if (/img|image|resim|gorsel|foto|thumb/i.test(ks[i])) { var t = str(x); if (okLink(t)) return t; } }
+    var ks = Object.keys(o), i, r;
+    for (i = 0; i < ks.length; i++) if (IMGK.test(ks[i])) { r = deepImg(o[ks[i]], ks[i], 0); if (r) return r; }
+    for (i = 0; i < ks.length; i++) { r = deepImg(o[ks[i]], '', 0); if (r) return r; }
     return '';
   }
   function norm(o) {
@@ -21031,10 +21045,10 @@ setTimeout(function(){attach();sync()},800);
     return { title: t, link: l, img: findImg(o), src: str(pick(o, ['kaynakAd', 'kaynak_adi', 'kaynak', 'source', 'site'])), ms: ms || 0, sum: sm.slice(0, 220), cat: str(pick(o, ['kategori', 'category'])) };
   }
   function fetchKind(k) {
-    return fetch(EP + '/haber?kategori=' + encodeURIComponent(k)).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function (j) {
-      var seen = {}, out = [];
-      collect(j, [], 0).map(norm).forEach(function (n) { var key = n.title.slice(0, 60).toLowerCase(); if (!n.title || !okLink(n.link) || seen[key]) return; seen[key] = 1; out.push(n); });
-      out.sort(function (a, b) { return b.ms - a.ms; }); return out.slice(0, 60);
+    return fetch(EP + '/haber?kategori=' + (k === 'tum' ? ALLC : encodeURIComponent(k))).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function (j) {
+      var seen = {}, out = [], raw = collect(j, [], 0); if (raw[0]) rawFirst = raw[0];
+      raw.map(norm).forEach(function (n) { var key = n.title.slice(0, 60).toLowerCase(); if (!n.title || !okLink(n.link) || seen[key]) return; seen[key] = 1; out.push(n); });
+      out.sort(function (a, b) { return b.ms - a.ms; }); return out.slice(0, k === 'tum' ? 150 : 60);
     });
   }
   window.HABER = { fetch: fetchKind };
@@ -21055,11 +21069,12 @@ setTimeout(function(){attach();sync()},800);
   function build() {
     if (page) return page;
     page = document.createElement('div'); page.id = 'hxPage';
-    page.innerHTML = '<div class="bx-top"><button class="pf-ib" data-hx="back" aria-label="Geri"><i class="fas fa-arrow-left"></i></button><b>📰 Haberler <span class="bx-live"><i></i><span id="hxClock">canlı</span></span></b><button class="pf-ib" data-hx="ref" aria-label="Yenile"><i class="fas fa-rotate"></i></button></div><div class="bx-tabs" id="hxTabs"></div><div class="bx-sc"><div class="bx-in" id="hxBody"></div></div>';
+    page.innerHTML = '<div class="bx-top"><button class="pf-ib" data-hx="back" aria-label="Geri"><i class="fas fa-arrow-left"></i></button><b>📰 Haberler <span class="bx-live"><i></i><span id="hxClock" data-hx="dbg">canlı</span></span></b><button class="pf-ib" data-hx="ref" aria-label="Yenile"><i class="fas fa-rotate"></i></button></div><div class="bx-tabs" id="hxTabs"></div><div class="bx-sc"><div class="bx-in" id="hxBody"></div></div>';
     document.body.appendChild(page);
     page.addEventListener('click', function (e) {
       var b = e.target.closest('[data-hx]'); if (!b) return; var k = b.dataset.hx;
       if (k === 'back') close(); else if (k === 'ref') load(true);
+      else if (k === 'dbg') { var pr = $('hxDbg'); if (pr) { pr.remove(); return; } pr = document.createElement('pre'); pr.id = 'hxDbg'; pr.style.cssText = 'position:fixed;left:8px;right:8px;top:60px;max-height:60%;overflow:auto;background:#000d;color:#9f9;font-size:11px;padding:10px;border-radius:10px;z-index:9;white-space:pre-wrap;word-break:break-all'; pr.textContent = rawFirst ? JSON.stringify(rawFirst, null, 1).slice(0, 2500) : 'veri yok'; pr.onclick = function () { pr.remove(); }; page.appendChild(pr); }
       else if (k === 'tab') { tab = b.dataset.k; q = ''; render(); if (!data[tab]) load(true); var sc = page.querySelector('.bx-sc'); if (sc) sc.scrollTop = 0; }
     });
     page.addEventListener('input', function (e) { if (e.target.id === 'hxQ') { q = e.target.value.trim().toLowerCase(); render(); } });
