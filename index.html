@@ -10956,16 +10956,17 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
     // ============================================================
     async function logout() {
         if (!confirm('Çıkış yapmak istediğinize emin misiniz?')) return;
+        window.__loggingOut = true;                              // çıkış sırasında yeniden bağlanma silme işaretini iptal etmesin
         
         try {
+            /* silme işareti ilk iş olarak yazılır; sonraki adımlardan biri hata verse bile kaybolmaz */
+            if (currentUser) { try { await schedulePrivateWipe(currentUser.name); } catch (e) {} }
             if (currentUser && usersRef) {
                 usersRef.child(currentUser.name).update({ isOnline: false, lastSeen: Date.now() });
             }
             
             if (currentUser) {
-                await leaveChannelPresence(activeChannelName);
-                
-                await schedulePrivateWipe(currentUser.name);   // 3 dk sonra tüm özel yazışmalar tamamen silinir
+                try { await leaveChannelPresence(activeChannelName); } catch (e) {}
                 
                 if (privateContactsListListener && privateContactsRef) {
                     privateContactsRef.child(currentUser.name).off('child_added', privateContactsListListener);
@@ -14184,7 +14185,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
 
     // Kullanıcı çevrimiçi: bekleyen silme işaretini kaldır; bağlantı koparsa (sekme kapanırsa) işaret otomatik yazılsın
     async function armPrivateWipe(user) {
-        if (!database || !user) return;
+        if (!database || !user || window.__loggingOut) return;
         const ref = database.ref('privateWipes/' + wipeKey(user));
         try {
             await ref.onDisconnect().set({ user: user, leftAt: firebase.database.ServerValue.TIMESTAMP });
