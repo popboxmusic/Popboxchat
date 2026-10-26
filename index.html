@@ -20802,7 +20802,7 @@ setTimeout(function(){attach();sync()},800);
 (function () {
   'use strict';
   var EP = (window.BORSA_CONFIG && window.BORSA_CONFIG.ENDPOINT) || 'https://laafle-borsa.kyazar07.workers.dev';
-  var page = null, tab = 'ozet', D = {}, news = {}, newsK = 'genel', timer = null, lastTs = 0, sortK = 'c', q = '', busy = false, searchRes = null;
+  var page = null, tab = 'ozet', D = {}, news = {}, newsK = 'genel', timer = null, lastTs = 0, sortK = 'c', q = '', busy = false, searchRes = null, wsLast = 0, newsTs = 0;
   function $(i) { return document.getElementById(i); }
   function g(n) { try { return (0, eval)('typeof ' + n + '!=="undefined"?' + n + ':null'); } catch (e) { return null; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -20842,6 +20842,8 @@ setTimeout(function(){attach();sync()},800);
     '.bx-sh h3{margin:0;font-size:18px}.bx-big{font-size:28px;font-weight:800;margin:6px 0 0}.bx-kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.bx-kv div{background:var(--bg-tertiary);border-radius:10px;padding:8px;text-align:center}.bx-kv small{display:block;font-size:11px;color:var(--text-muted)}.bx-kv b{font-size:14px}' +
     '.bx-why{margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.55;color:var(--text-secondary)}.bx-chip{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.bx-chip button{border:0;border-radius:14px;padding:6px 11px;background:var(--bg-tertiary);color:var(--text-primary);font:inherit;font-size:12.5px;cursor:pointer}' +
     '#bxFab{position:fixed;right:14px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:1400;border:0;border-radius:24px;padding:11px 16px;background:var(--youtube-red);color:#fff;font:inherit;font-weight:700;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.35);display:none;cursor:pointer}#bxFab.show{display:block}' +
+    '.bx-sh{width:min(900px,100%)!important}.bx-ivs{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:8px 0}.bx-ivs button{border:0;border-radius:12px;padding:6px 11px;background:var(--bg-tertiary);color:var(--text-primary);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}.bx-ivs button.on{background:var(--youtube-red);color:#fff}.bx-ivs .sp2{flex:1}' +
+    '.bx-cw{position:relative;width:100%;height:320px;background:var(--bg-tertiary);border-radius:12px;overflow:hidden;touch-action:pan-y}.bx-cw canvas{width:100%;height:100%;display:block}.bx-rd{font-size:11.5px;min-height:16px;color:var(--text-muted);margin:4px 2px;font-variant-numeric:tabular-nums}.bx-bd{display:inline-block;font-size:10.5px;font-weight:800;border-radius:8px;padding:2px 7px;background:var(--bg-tertiary);color:var(--text-muted);margin-left:6px}.bx-bd.lv{background:#1fa97122;color:#1fa971}' +
     '.bx-empty{padding:30px 10px;text-align:center;color:var(--text-muted);font-size:14px}';
   document.head.appendChild(st);
 
@@ -20860,8 +20862,8 @@ setTimeout(function(){attach();sync()},800);
   function api(params) { return fetch(EP + '/?' + params).then(function (r) { if (!r.ok) throw new Error('x'); return r.json(); }); }
   function groupsFor(t) { return t === 'ozet' ? ['idx', 'fx', 'gold', 'coin', 'bist'] : t === 'news' ? [] : [t]; }
   function load(force) {
-    if (busy && !force) return; busy = true; var gs = groupsFor(tab), ps = gs.map(function (k) { return api('t=q&g=' + k).then(function (j) { (j.items || []).forEach(function (it) { D[it.s] = Object.assign(D[it.s] || {}, it, { grp: k }); }); lastTs = Date.now(); }); });
-    if (tab === 'news' || tab === 'ozet') { var nk = tab === 'ozet' ? 'genel' : newsK; if (window.HABER) ps.push(window.HABER.fetch(nk === 'coin' ? 'kripto' : 'ekonomi').then(function (a) { news[nk] = a.map(function (n) { return { title: n.title, link: n.link, src: n.src, date: n.ms || '' }; }).slice(0, 30); })); }
+    if (busy && !force) return; busy = true; var gs = groupsFor(tab), ps = gs.map(function (k) { return api('t=q&g=' + k).then(function (j) { (j.items || []).forEach(function (it) { if (k === 'coin' && Date.now() - wsLast < 8000 && D[it.s]) { it = Object.assign({}, it); delete it.p; delete it.c; delete it.h; delete it.l; } D[it.s] = Object.assign(D[it.s] || {}, it, { grp: k }); }); lastTs = Date.now(); }); });
+    if ((tab === 'news' || tab === 'ozet') && (!news[tab === 'ozet' ? 'genel' : newsK] || Date.now() - newsTs > 120000)) { newsTs = Date.now(); var nk = tab === 'ozet' ? 'genel' : newsK; if (window.HABER) ps.push(window.HABER.fetch(nk === 'coin' ? 'kripto' : 'ekonomi').then(function (a) { news[nk] = a.map(function (n) { return { title: n.title, link: n.link, src: n.src, date: n.ms || '' }; }).slice(0, 30); })); }
     Promise.all(ps.map(function (p) { return p.catch(function () { return null; }); })).then(function () { busy = false; render(); });
   }
   function doSearch(t) { api('t=search&q=' + encodeURIComponent(t)).then(function (j) { if (q === t) { searchRes = j.items || []; render(); } }).catch(function () {}); }
@@ -20919,29 +20921,130 @@ setTimeout(function(){attach();sync()},800);
     }
     b.innerHTML = h; if (sc) sc.scrollTop = top; if (hadQ) { var qi = $('bxQ'); if (qi) { qi.focus(); qi.setSelectionRange(qi.value.length, qi.value.length); } }
   }
+  /* ---------- Mum grafiği ---------- */
+  var IVS = [['1m', '1dk'], ['5m', '5dk'], ['15m', '15dk'], ['1h', '1sa'], ['1d', '1G'], ['1w', '1H']], IVSEC = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '1d': 86400, '1w': 604800 };
+  var CH = { sym: null, iv: '1d', d: null, n: 0, hov: -1, tm: null, base: null, raf: 0, crypto: false };
+  function isCrypto(s) { return /-USD$/.test(s || ''); }
+  function chartLoad() {
+    var s = CH.sym, iv = CH.iv;
+    return api('t=chart&s=' + encodeURIComponent(s) + '&i=' + iv).then(function (j) {
+      if (CH.sym !== s || CH.iv !== iv) return; CH.d = j; CH.hov = -1;
+      var bd = $('bxBd'); if (bd) bd.innerHTML = (j.delayed ? '<span class="bx-bd">≈15 dk gecikmeli</span>' : isCrypto(s) ? '<span class="bx-bd lv">● CANLI</span>' : '<span class="bx-bd">' + (j.st === 'REGULAR' ? 'piyasa açık' : j.st ? 'piyasa kapalı' : '') + '</span>');
+      if (j.p != null && !(isCrypto(s) && Date.now() - wsLast < 8000)) setLive(j.p, true); else chartDraw();
+    });
+  }
+  function fmtT(t, iv) { var d = new Date(t * 1000); return (iv === '1d' || iv === '1w') ? d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); }
+  function setLive(p, noTick) {
+    if (!CH.sym || p == null || isNaN(p)) return;
+    var d = CH.d, el = document.querySelector('#bxDet .bx-big');
+    if (el && CH.base) { var c = (p - CH.base) / CH.base * 100; el.innerHTML = fp(p) + ' <span class="' + cls(c) + '" style="font-size:16px">' + fc(c) + '</span>'; }
+    if (d && d.t && d.t.length) {
+      var n = d.t.length - 1, sec = IVSEC[CH.iv] || 86400, now = Math.floor(Date.now() / 1000);
+      if (!noTick || true) {
+        if ((CH.iv !== '1d' && CH.iv !== '1w') && now >= d.t[n] + sec && isCrypto(CH.sym)) { d.t.push(Math.floor(now / sec) * sec); d.o.push(p); d.h.push(p); d.l.push(p); d.c.push(p); d.v.push(0); }
+        else { d.c[n] = p; if (p > d.h[n]) d.h[n] = p; if (p < d.l[n]) d.l[n] = p; }
+      }
+    }
+    chartSched();
+  }
+  function chartSched() { if (CH.raf) return; CH.raf = requestAnimationFrame(function () { CH.raf = 0; chartDraw(); }); }
+  function chartDraw() {
+    var cv = $('bxCv'); if (!cv || !CH.d || !CH.d.t || !CH.d.t.length) return;
+    var d = CH.d, len = d.t.length, vis = Math.min(len, CH.n || (innerWidth < 640 ? 60 : 110)), st = len - vis;
+    var W = cv.clientWidth, H = cv.clientHeight; if (!W || !H) return; var dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    var x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H);
+    var cs = getComputedStyle(page), muted = (cs.getPropertyValue('--text-muted') || '#888').trim() || '#888', grid = 'rgba(128,128,128,.18)', UP = '#1fa971', DN = '#e5484d';
+    var padR = 62, padB = 18, volH = Math.round(H * .17), top = 6, ph = H - padB - volH - top - 4, pw = W - padR, cw = pw / vis;
+    var mn = 1e99, mx = -1e99, vm = 0, i;
+    for (i = st; i < len; i++) { if (d.l[i] < mn) mn = d.l[i]; if (d.h[i] > mx) mx = d.h[i]; if (d.v[i] > vm) vm = d.v[i]; }
+    var sm = []; for (i = 0; i < len; i++) { if (i < 19) { sm.push(null); continue; } var sum = 0; for (var k = i - 19; k <= i; k++) sum += d.c[k]; sm.push(sum / 20); }
+    for (i = st; i < len; i++) if (sm[i] != null) { if (sm[i] < mn) mn = sm[i]; if (sm[i] > mx) mx = sm[i]; }
+    if (mx === mn) { mx += 1; mn -= 1; } var pad = (mx - mn) * .05; mx += pad; mn -= pad;
+    function Y(p) { return top + (mx - p) / (mx - mn) * ph; }
+    x.font = '11px system-ui,sans-serif'; x.textBaseline = 'middle'; x.fillStyle = muted; x.strokeStyle = grid; x.lineWidth = 1;
+    for (i = 0; i <= 4; i++) { var py = top + ph * i / 4, pv = mx - (mx - mn) * i / 4; x.beginPath(); x.moveTo(0, Math.round(py) + .5); x.lineTo(pw, Math.round(py) + .5); x.stroke(); x.textAlign = 'left'; x.fillText(fp(pv), pw + 4, py); }
+    x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+    var step = Math.max(1, Math.floor(vis / (W < 500 ? 3 : 6)));
+    for (i = st; i < len; i += step) { var cx = (i - st + .5) * cw; if (cx > 30 && cx < pw - 30) x.fillText(fmtT(d.t[i], CH.iv).replace(/ \d\d:\d\d$/, W < 500 ? '' : '$&'), cx, H - 4); }
+    var bw = Math.max(1, Math.min(14, cw * .66));
+    for (i = st; i < len; i++) {
+      var cx2 = (i - st + .5) * cw, up = d.c[i] >= d.o[i], col = up ? UP : DN;
+      if (vm > 0 && d.v[i]) { x.globalAlpha = .35; x.fillStyle = col; var vh = d.v[i] / vm * volH; x.fillRect(cx2 - bw / 2, H - padB - vh, bw, vh); x.globalAlpha = 1; }
+      x.strokeStyle = col; x.fillStyle = col; x.lineWidth = 1; x.beginPath(); x.moveTo(Math.round(cx2) + .5, Y(d.h[i])); x.lineTo(Math.round(cx2) + .5, Y(d.l[i])); x.stroke();
+      var y1 = Y(Math.max(d.o[i], d.c[i])), y2 = Y(Math.min(d.o[i], d.c[i])); x.fillRect(cx2 - bw / 2, y1, bw, Math.max(1, y2 - y1));
+    }
+    x.strokeStyle = '#e8a33d'; x.lineWidth = 1.4; x.beginPath(); var st2 = false;
+    for (i = st; i < len; i++) if (sm[i] != null) { var sx = (i - st + .5) * cw; st2 ? x.lineTo(sx, Y(sm[i])) : x.moveTo(sx, Y(sm[i])); st2 = true; } x.stroke();
+    var lp = d.c[len - 1], ly = Y(lp), lc = lp >= d.o[len - 1] ? UP : DN;
+    x.setLineDash([3, 3]); x.strokeStyle = lc; x.lineWidth = 1; x.beginPath(); x.moveTo(0, ly); x.lineTo(pw, ly); x.stroke(); x.setLineDash([]);
+    x.fillStyle = lc; x.fillRect(pw, ly - 9, padR, 18); x.fillStyle = '#fff'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillText(fp(lp), pw + 4, ly);
+    var rd = $('bxRd');
+    if (CH.hov >= st && CH.hov < len) {
+      var hi = CH.hov, hx = (hi - st + .5) * cw; x.strokeStyle = muted; x.setLineDash([4, 3]); x.beginPath(); x.moveTo(hx, top); x.lineTo(hx, H - padB); x.stroke(); x.setLineDash([]);
+      if (rd) rd.innerHTML = fmtT(d.t[hi], CH.iv) + ' · A <b>' + fp(d.o[hi]) + '</b> Y <b>' + fp(d.h[hi]) + '</b> D <b>' + fp(d.l[hi]) + '</b> K <b class="' + (d.c[hi] >= d.o[hi] ? 'up' : 'dn') + '">' + fp(d.c[hi]) + '</b>' + (d.v[hi] ? ' · Hacim ' + nf(0).format(d.v[hi]) : '');
+    } else if (rd) { var li = len - 1; rd.innerHTML = fmtT(d.t[li], CH.iv) + ' · A <b>' + fp(d.o[li]) + '</b> Y <b>' + fp(d.h[li]) + '</b> D <b>' + fp(d.l[li]) + '</b> K <b>' + fp(d.c[li]) + '</b> · <span style="color:#e8a33d">— SMA20</span>'; }
+    cv._g = { st: st, cw: cw, len: len };
+  }
+  function chartEvents(cv) {
+    function pos(e) { var g2 = cv._g; if (!g2) return; var r = cv.getBoundingClientRect(), i = g2.st + Math.floor((e.clientX - r.left) / g2.cw); CH.hov = i >= g2.st && i < g2.len ? i : -1; chartSched(); }
+    cv.addEventListener('pointermove', pos); cv.addEventListener('pointerdown', pos);
+    cv.addEventListener('pointerleave', function () { CH.hov = -1; chartSched(); });
+    cv.addEventListener('wheel', function (e) { e.preventDefault(); chartZoom(e.deltaY > 0 ? 1.2 : 1 / 1.2); }, { passive: false });
+  }
+  function chartZoom(f) { var len = CH.d && CH.d.t ? CH.d.t.length : 100, cur = CH.n || (innerWidth < 640 ? 60 : 110); CH.n = Math.max(15, Math.min(len, Math.round(cur * f))); chartSched(); }
+  function closeDet() { clearInterval(CH.tm); CH.sym = null; var b = $('bxDet'); if (b) b.classList.remove('show'); }
   function detail(sym) {
     var box = $('bxDet'); box.classList.add('show'); box.innerHTML = '<div class="bx-sh"><div class="bx-empty">Yükleniyor…</div></div>';
+    clearInterval(CH.tm); CH.sym = sym; CH.d = null; CH.hov = -1; CH.n = 0; CH.crypto = isCrypto(sym); if (CH.crypto) wsEnsure(sym);
     api('t=q&s=' + encodeURIComponent(sym)).then(function (j) {
       var it = (j.items || [])[0]; if (!it) throw 0; D[it.s] = Object.assign(D[it.s] || {}, it);
-      var h = it.hist || it.spark || [];
-      box.innerHTML = '<div class="bx-sh"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h3>' + esc(it.n) + '</h3><small style="color:var(--text-muted)">' + esc(it.s) + (it.cur ? ' · ' + esc(it.cur) : '') + '</small></div><button class="pf-ib" data-bx="dx" aria-label="Kapat"><i class="fas fa-times"></i></button></div>' +
-        '<div class="bx-big">' + fp(it.p) + ' <span class="' + cls(it.c) + '" style="font-size:16px">' + fc(it.c) + '</span></div><div style="margin:10px 0">' + spark(h, 560, 120).replace('width="560" height="120"', 'style="width:100%;height:120px" preserveAspectRatio="none"') + '</div>' +
+      CH.base = it.p / (1 + (it.c || 0) / 100); if (!(CH.base > 0)) CH.base = it.p;
+      box.innerHTML = '<div class="bx-sh"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h3>' + esc(it.n) + '<span id="bxBd"></span></h3><small style="color:var(--text-muted)">' + esc(it.s) + (it.cur ? ' · ' + esc(it.cur) : '') + '</small></div><button class="pf-ib" data-bx="dx" aria-label="Kapat"><i class="fas fa-times"></i></button></div>' +
+        '<div class="bx-big">' + fp(it.p) + ' <span class="' + cls(it.c) + '" style="font-size:16px">' + fc(it.c) + '</span></div>' +
+        '<div class="bx-ivs">' + IVS.map(function (v) { return '<button data-bx="iv" data-k="' + v[0] + '"' + (v[0] === CH.iv ? ' class="on"' : '') + '>' + v[1] + '</button>'; }).join('') + '<span class="sp2"></span><button data-bx="zo" title="Yakınlaştır">＋</button><button data-bx="zi" title="Uzaklaştır">－</button></div>' +
+        '<div class="bx-cw"><canvas id="bxCv"></canvas></div><div class="bx-rd" id="bxRd"></div>' +
         '<div class="bx-kv"><div><small>Günlük yüksek</small><b>' + fp(it.h) + '</b></div><div><small>Günlük düşük</small><b>' + fp(it.l) + '</b></div><div><small>RSI (14)</small><b>' + (it.rsi != null ? it.rsi.toFixed(0) : '—') + '</b></div><div><small>SMA 20</small><b>' + fp(it.sma20) + '</b></div><div><small>SMA 50</small><b>' + fp(it.sma50) + '</b></div><div><small>52H Yük/Düş</small><b style="font-size:12px">' + fp(it.h52) + ' / ' + fp(it.l52) + '</b></div></div>' +
         '<div style="display:flex;align-items:center;gap:10px"><b>Teknik görünüm:</b> ' + sigB(it.sig || 'NÖTR') + '<small style="color:var(--text-muted)">puan ' + (it.score > 0 ? '+' : '') + it.score + ' / ±6</small></div><ul class="bx-why">' + (it.why || []).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' +
         '<div class="bx-warn" style="margin-top:12px">Yatırım tavsiyesi değildir. Yalnızca geçmiş fiyat verisinden otomatik hesaplanan teknik özet; karar vermeden önce kendi araştırmanı yap.</div></div>';
+      chartEvents($('bxCv')); chartLoad().catch(function () { var r = $('bxRd'); if (r) r.textContent = 'Grafik verisi alınamadı.'; });
+      CH.tm = setInterval(function () { if (document.hidden || CH.sym !== sym) return; if (CH.crypto && Date.now() - wsLast < 8000 && (CH.tick = (CH.tick || 0) + 1) % 12) return; chartLoad().catch(function () {}); }, 5000);
     }).catch(function () { box.innerHTML = '<div class="bx-sh"><div class="bx-empty">Veri alınamadı.</div><div class="bx-chip"><button data-bx="dx">Kapat</button></div></div>'; });
   }
+  /* ---------- Kripto: Binance WebSocket (gerçek zamanlı) ---------- */
+  var ws = null, wsRetry = 0, wsTimer = null, wsRen = 0, COINS = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'TRX', 'LINK', 'TON', 'DOT'];
+  function wsEnsure(extra) {
+    if (!window.WebSocket || !page || !page.classList.contains('show')) return;
+    var want = COINS.slice(); if (extra && isCrypto(extra)) { var b = extra.replace('-USD', ''); if (want.indexOf(b) < 0) want.push(b); }
+    var key = want.join(','); if (ws && ws._k === key) return; try { if (ws) { ws._x = 1; ws.close(); } } catch (e) {}
+    try {
+      ws = new WebSocket('wss://stream.binance.com:9443/stream?streams=' + want.map(function (c) { return c.toLowerCase() + 'usdt@miniTicker'; }).join('/')); ws._k = key;
+      ws.onmessage = function (e) {
+        try {
+          var m = JSON.parse(e.data).data; if (!m || !m.s) return; var sym = m.s.replace(/USDT$/, '') + '-USD', p = +m.c, o = +m.o; if (!(p > 0)) return;
+          wsLast = Date.now(); wsRetry = 0; var x = D[sym]; if (x) { x.p = p; if (o > 0) x.c = (p - o) / o * 100; x.h = +m.h; x.l = +m.l; }
+          if (CH.sym === sym) setLive(p); else if (!wsRen) wsRen = setTimeout(function () { wsRen = 0; if (page && page.classList.contains('show') && !$('bxDet').classList.contains('show') && (tab === 'coin' || tab === 'ozet')) render(); }, 1200);
+          var lv = $('bxClock'); if (lv && (tab === 'coin' || tab === 'ozet')) lv.textContent = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        } catch (er) {}
+      };
+      ws.onclose = function () { var me = ws; if (me && me._x) return; ws = null; if (page && page.classList.contains('show')) { clearTimeout(wsTimer); wsTimer = setTimeout(function () { wsEnsure(CH.sym); }, Math.min(30000, 2000 * (++wsRetry))); } };
+      ws.onerror = function () { try { ws.close(); } catch (e) {} };
+    } catch (e) { ws = null; }
+  }
+  function wsStop() { clearTimeout(wsTimer); try { if (ws) { ws._x = 1; ws.close(); } } catch (e) {} ws = null; }
   function onClick(e) {
-    var b = e.target.closest('[data-bx]'); if (!b) { if (e.target.id === 'bxDet') $('bxDet').classList.remove('show'); return; } var k = b.dataset.bx;
+    var b = e.target.closest('[data-bx]'); if (!b) { if (e.target.id === 'bxDet') closeDet(); return; } var k = b.dataset.bx;
     if (k === 'back') close(); else if (k === 'ref') load(true);
     else if (k === 'tab') { tab = b.dataset.k; render(); load(true); var sc = page.querySelector('.bx-sc'); if (sc) sc.scrollTop = 0; }
     else if (k === 'sort') { sortK = b.dataset.k; render(); }
     else if (k === 'nk') { newsK = b.dataset.k; render(); if (!news[newsK]) load(true); }
     else if (k === 'det') detail(b.dataset.s);
-    else if (k === 'dx') $('bxDet').classList.remove('show');
+    else if (k === 'iv') { CH.iv = b.dataset.k; CH.n = 0; [].forEach.call(document.querySelectorAll('#bxDet [data-bx=iv]'), function (x) { x.classList.toggle('on', x === b); }); chartLoad().catch(function () {}); }
+    else if (k === 'zo') chartZoom(1 / 1.3); else if (k === 'zi') chartZoom(1.3);
+    else if (k === 'dx') closeDet();
   }
-  function open() { build(); page.classList.add('show'); render(); load(true); clearInterval(timer); timer = setInterval(function () { if (!document.hidden && page.classList.contains('show') && !$('bxDet').classList.contains('show')) load(true); }, 30000); }
-  function close() { if (!page) return; page.classList.remove('show'); $('bxDet').classList.remove('show'); clearInterval(timer); }
+  function open() { build(); page.classList.add('show'); render(); load(true); clearInterval(timer); timer = setInterval(function () { if (!document.hidden && page.classList.contains('show') && !$('bxDet').classList.contains('show')) load(true); }, 5000); wsEnsure(); }
+  function close() { if (!page) return; page.classList.remove('show'); closeDet(); clearInterval(timer); wsStop(); }
   window.bxOpen = open; window.bxClose = close;
 
   /* ---------- Borsa botu: kanala otomatik özet + !komutlar ---------- */
