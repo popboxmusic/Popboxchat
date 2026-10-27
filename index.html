@@ -6855,7 +6855,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
     };
 
     const SECURE_CONFIG = {
-        DEFAULT_ADMINS: ['cetcety', 'cetcetyadmin'],
+        DEFAULT_ADMINS: [],
         OWNER_CONFIG: {
             username: 'mateky',
             role: 'owner',
@@ -8797,6 +8797,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
                     showLoginError('⚠️ "' + _clash + '" nicki şu an kullanımda.\n' + await nickSuggestionText(rawNick));
                     return;
                 }
+                try { if (window.srvGuest) await window.srvGuest(rawNick); } catch (e) {}
                 await completeLogin(rawNick, 'user', false, null);
             }
             
@@ -13565,7 +13566,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const str = s => enc.encode(s);
         const hasA = aChunks.length > 0;
         const ebml = el('1A45DFA3', [el('4286', uint(1)), el('42F7', uint(1)), el('42F2', uint(4)), el('42F3', uint(8)), el('4282', str('webm')), el('4287', uint(4)), el('4285', uint(2))]);
-        const info = el('1549A966', [el('2AD7B1', uint(1000000)), el('4489', f64(durMs)), el('4D80', str('cetcety')), el('5741', str('cetcety'))]);
+        const info = el('1549A966', [el('2AD7B1', uint(1000000)), el('4489', f64(durMs)), el('4D80', str('laafle')), el('5741', str('laafle'))]);
         const vTrack = el('AE', [el('D7', uint(1)), el('73C5', uint(1)), el('83', uint(1)), el('9C', uint(0)), el('86', str('V_VP8')), el('E0', [el('B0', uint(w)), el('BA', uint(h))])]);
         const opusHead = Uint8Array.from([0x4F, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64, 1, 1, 0x38, 0x01, 0xC0, 0x5D, 0, 0, 0, 0, 0]);   // 24000 Hz, mono, preskip 312
         const aTrack = hasA ? el('AE', [el('D7', uint(2)), el('73C5', uint(2)), el('83', uint(2)), el('9C', uint(0)), el('86', str('A_OPUS')), el('63A2', opusHead), el('56AA', uint(6500000)), el('56BB', uint(80000000)), el('E1', [el('B5', f64(24000)), el('9F', uint(1))])]) : new Uint8Array(0);
@@ -14221,21 +14222,8 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     }
 
     async function sweepPrivateWipes() {
-        if (!database || !isFirebaseConnected || !privateChatsRef || !privateContactsRef) return;
-        try {
-            const snap = await database.ref('privateWipes').once('value');
-            const all = snap.val() || {};
-            const now = serverNow();
-            for (const [key, rec] of Object.entries(all)) {
-                if (!rec || !rec.user || !rec.leftAt) continue;
-                if (now - rec.leftAt < PRIVATE_WIPE_DELAY_MS) continue;
-                if (currentUser && wipeKey(currentUser.name) === key) continue;
-                const again = await database.ref('privateWipes/' + key).once('value');   // bu arada geri döndüyse silme
-                if (!again.exists()) continue;
-                await wipePrivateDataOf(rec.user);
-                await database.ref('privateWipes/' + key).remove();
-            }
-        } catch (e) {}
+        if (!isFirebaseConnected || !window.srvCall) return;
+        try { await window.srvCall('/sweep', {}); } catch (e) {}   // silme işi sunucuda yapılır
     }
 
     function startPrivateWipeService() {
@@ -19785,7 +19773,7 @@ init();
         }).then(function (r) {
             localStorage.setItem('adPriv', JSON.stringify(r[1]));
             return db().ref('adSettings/pubKey').set(r[0]).then(function () {
-                var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(r[1])], { type: 'application/json' })); a.download = 'cetcety-odeme-anahtari-YEDEK.json'; a.click();
+                var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(r[1])], { type: 'application/json' })); a.download = 'laafle-odeme-anahtari-YEDEK.json'; a.click();
                 alert('Anahtar oluşturuldu. İndirilen YEDEK dosyasını güvenli yerde saklayın; kaybederseniz IBAN bilgileri açılamaz.');
             });
         }).catch(function () { alert('Anahtar oluşturulamadı (yetki?)'); });
@@ -20177,7 +20165,7 @@ function avatar(n){
   if(AV[n]!=null)return AV[n];
   var a=null;try{a=((g('userProfiles',{})[n]||{}).avatar)||((me()&&me().name===n)?g('currentProfileAvatar',null):null)||((g('cachedOnlineUsers',{})[n]||{}).avatar)}catch(e){}
   if(a){AV[n]=a;return a}
-  if(!AVreq[n]&&db()&&n!=='CETCETY'){AVreq[n]=1;try{db().ref('profiles/'+safeKey(n)+'/avatar').once('value',function(s){AV[n]=s.val()||'';lastSig=''},function(){delete AVreq[n]})}catch(e){}}
+  if(!AVreq[n]&&db()){AVreq[n]=1;try{db().ref('profiles/'+safeKey(n)+'/avatar').once('value',function(s){AV[n]=s.val()||'';lastSig=''},function(){delete AVreq[n]})}catch(e){}}
   return '';
 }
 function avHtml(n,cls){var a=avatar(n);return '<span class="'+(cls||'an-av')+'">'+(a?'<img src="'+esc(a)+'" alt="">':'<b>'+esc(String(n||'?').charAt(0).toUpperCase())+'</b>')+'</span>'}
@@ -21767,7 +21755,7 @@ window.updateChannelActionBar=function(){
 }
 </style>
 <script>
-/* ===== CETCETY: mobil panelleri kaydırarak kapatma ===== */
+/* ===== Laafle: mobil panelleri kaydırarak kapatma ===== */
 (function () {
   'use strict';
   function $(i) { return document.getElementById(i); }
@@ -21877,7 +21865,7 @@ window.updateChannelActionBar=function(){
 
 </script>
 <script>
-/* ===== CETCETY: özel sohbet — yanıtla (kaydır), emoji tepkisi, mesaja not ===== */
+/* ===== Laafle: özel sohbet — yanıtla (kaydır), emoji tepkisi, mesaja not ===== */
 (function () {
   'use strict';
   var EMO = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -22079,7 +22067,7 @@ window.updateChannelActionBar=function(){
 
 </script>
 <script>
-/* ===== CETCETY: @nick bahsetme (bildirim + vurgu + öneri) ===== */
+/* ===== Laafle: @nick bahsetme (bildirim + vurgu + öneri) ===== */
 (function () {
   'use strict';
   var RX = /(^|[\s(])@([\p{L}\p{N}_.\-]{2,20})/gu;
@@ -22224,7 +22212,7 @@ window.updateChannelActionBar=function(){
 
 </script>
 <script>
-/* ===== CETCETY: mobil uygulama görünümü ===== */
+/* ===== Laafle: mobil uygulama görünümü ===== */
 (function () {
   'use strict';
   var mq = window.matchMedia('(max-width:768px)');
@@ -22264,7 +22252,7 @@ window.updateChannelActionBar=function(){
 })();
 </script>
 <script>
-/* ===== CETCETY: özel sohbette görüntülü arama (WebRTC, düşük kalite / düşük veri) ===== */
+/* ===== Laafle: özel sohbette görüntülü arama (WebRTC, düşük kalite / düşük veri) ===== */
 (function () {
   'use strict';
   var ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }].concat(window.CETCETY_TURN || []) };
@@ -22389,6 +22377,14 @@ window.updateChannelActionBar=function(){
       } catch (e) {}
     });
   }
+  var iceAt = 0;
+  async function loadIce() { // TURN (varsa) sunucudan alınır; yoksa yalnızca STUN
+    if (Date.now() - iceAt < 600000 || !window.srvCall) return; iceAt = Date.now();
+    try {
+      var r = await Promise.race([window.srvCall('/turn', {}, true), new Promise(function (res) { setTimeout(function () { res(null); }, 3500); })]);
+      if (r && r.ok && r.iceServers && r.iceServers.length) ICE = { iceServers: r.iceServers.concat([{ urls: ['stun:stun.l.google.com:19302'] }]) };
+    } catch (e) {}
+  }
   function makePC(stream) {
     var pc = new RTCPeerConnection(ICE);
     stream.getTracks().forEach(function (t) { pc.addTrack(t, stream); });
@@ -22472,6 +22468,7 @@ window.updateChannelActionBar=function(){
     if (S) return;
     if (!window.RTCPeerConnection || !navigator.mediaDevices) { alert('Bu tarayıcı görüntülü aramayı desteklemiyor.'); return; }
     try { if (typeof checkBlockStatus === 'function' && await checkBlockStatus(peer)) { alert('Bu kullanıcıyı arayamazsınız.'); return; } } catch (e) {}
+    try { await loadIce(); } catch (e) {}
     var id = D.ref('calls').push().key;
     S = { id: id, peer: peer, role: 'caller', refs: [], pending: [], facing: 'user' };
     buildUI(); showUI(peer, 'Aranıyor…'); ui.avatar.style.display = 'flex'; setBar('call');
@@ -22525,6 +22522,7 @@ window.updateChannelActionBar=function(){
     if (!S || !incoming) return;
     var D = db(), inc = incoming; S.ringing = false; stopRing();
     ui.st.textContent = 'Bağlanıyor…'; setBar('call');
+    try { await loadIce(); } catch (e) {}
     try {
       S.local = await getMedia('user');
       ui.local.srcObject = S.local; ui.local.style.display = S.local.getVideoTracks().length ? '' : 'none';
@@ -22825,6 +22823,7 @@ window.updateChannelActionBar=function(){
     return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 150000 }, k, 256));
   }
   window.pwDerive = derive;
+  window.srvGuest = async function (nick) { var r = await window.srvCall('/guest', { nick: nick }); if (r && r.ok && r.token) return window.authSignIn(r.token); return false; };
   window.srvCall = async function (path, body, auth) {
     var ep = (window.AUTH_CONFIG && window.AUTH_CONFIG.ENDPOINT) || 'https://laafle-auth.kyazar07.workers.dev', h = { 'Content-Type': 'application/json' };
     try {
