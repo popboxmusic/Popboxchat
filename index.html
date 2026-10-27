@@ -6855,7 +6855,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
     };
 
     const SECURE_CONFIG = {
-        DEFAULT_ADMINS: ['cetcety', 'cetcetyadmin'],
+        DEFAULT_ADMINS: [],
         OWNER_CONFIG: {
             username: 'mateky',
             role: 'owner',
@@ -8797,6 +8797,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
                     showLoginError('⚠️ "' + _clash + '" nicki şu an kullanımda.\n' + await nickSuggestionText(rawNick));
                     return;
                 }
+                try { if (window.srvGuest) await window.srvGuest(rawNick); } catch (e) {}
                 await completeLogin(rawNick, 'user', false, null);
             }
             
@@ -13565,7 +13566,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
         const str = s => enc.encode(s);
         const hasA = aChunks.length > 0;
         const ebml = el('1A45DFA3', [el('4286', uint(1)), el('42F7', uint(1)), el('42F2', uint(4)), el('42F3', uint(8)), el('4282', str('webm')), el('4287', uint(4)), el('4285', uint(2))]);
-        const info = el('1549A966', [el('2AD7B1', uint(1000000)), el('4489', f64(durMs)), el('4D80', str('cetcety')), el('5741', str('cetcety'))]);
+        const info = el('1549A966', [el('2AD7B1', uint(1000000)), el('4489', f64(durMs)), el('4D80', str('laafle')), el('5741', str('laafle'))]);
         const vTrack = el('AE', [el('D7', uint(1)), el('73C5', uint(1)), el('83', uint(1)), el('9C', uint(0)), el('86', str('V_VP8')), el('E0', [el('B0', uint(w)), el('BA', uint(h))])]);
         const opusHead = Uint8Array.from([0x4F, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64, 1, 1, 0x38, 0x01, 0xC0, 0x5D, 0, 0, 0, 0, 0]);   // 24000 Hz, mono, preskip 312
         const aTrack = hasA ? el('AE', [el('D7', uint(2)), el('73C5', uint(2)), el('83', uint(2)), el('9C', uint(0)), el('86', str('A_OPUS')), el('63A2', opusHead), el('56AA', uint(6500000)), el('56BB', uint(80000000)), el('E1', [el('B5', f64(24000)), el('9F', uint(1))])]) : new Uint8Array(0);
@@ -14221,21 +14222,8 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     }
 
     async function sweepPrivateWipes() {
-        if (!database || !isFirebaseConnected || !privateChatsRef || !privateContactsRef) return;
-        try {
-            const snap = await database.ref('privateWipes').once('value');
-            const all = snap.val() || {};
-            const now = serverNow();
-            for (const [key, rec] of Object.entries(all)) {
-                if (!rec || !rec.user || !rec.leftAt) continue;
-                if (now - rec.leftAt < PRIVATE_WIPE_DELAY_MS) continue;
-                if (currentUser && wipeKey(currentUser.name) === key) continue;
-                const again = await database.ref('privateWipes/' + key).once('value');   // bu arada geri döndüyse silme
-                if (!again.exists()) continue;
-                await wipePrivateDataOf(rec.user);
-                await database.ref('privateWipes/' + key).remove();
-            }
-        } catch (e) {}
+        if (!isFirebaseConnected || !window.srvCall) return;
+        try { await window.srvCall('/sweep', {}); } catch (e) {}   // silme işi sunucuda yapılır
     }
 
     function startPrivateWipeService() {
@@ -19785,7 +19773,7 @@ init();
         }).then(function (r) {
             localStorage.setItem('adPriv', JSON.stringify(r[1]));
             return db().ref('adSettings/pubKey').set(r[0]).then(function () {
-                var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(r[1])], { type: 'application/json' })); a.download = 'cetcety-odeme-anahtari-YEDEK.json'; a.click();
+                var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(r[1])], { type: 'application/json' })); a.download = 'laafle-odeme-anahtari-YEDEK.json'; a.click();
                 alert('Anahtar oluşturuldu. İndirilen YEDEK dosyasını güvenli yerde saklayın; kaybederseniz IBAN bilgileri açılamaz.');
             });
         }).catch(function () { alert('Anahtar oluşturulamadı (yetki?)'); });
@@ -20177,7 +20165,7 @@ function avatar(n){
   if(AV[n]!=null)return AV[n];
   var a=null;try{a=((g('userProfiles',{})[n]||{}).avatar)||((me()&&me().name===n)?g('currentProfileAvatar',null):null)||((g('cachedOnlineUsers',{})[n]||{}).avatar)}catch(e){}
   if(a){AV[n]=a;return a}
-  if(!AVreq[n]&&db()&&n!=='CETCETY'){AVreq[n]=1;try{db().ref('profiles/'+safeKey(n)+'/avatar').once('value',function(s){AV[n]=s.val()||'';lastSig=''},function(){delete AVreq[n]})}catch(e){}}
+  if(!AVreq[n]&&db()){AVreq[n]=1;try{db().ref('profiles/'+safeKey(n)+'/avatar').once('value',function(s){AV[n]=s.val()||'';lastSig=''},function(){delete AVreq[n]})}catch(e){}}
   return '';
 }
 function avHtml(n,cls){var a=avatar(n);return '<span class="'+(cls||'an-av')+'">'+(a?'<img src="'+esc(a)+'" alt="">':'<b>'+esc(String(n||'?').charAt(0).toUpperCase())+'</b>')+'</span>'}
@@ -21767,7 +21755,7 @@ window.updateChannelActionBar=function(){
 }
 </style>
 <script>
-/* ===== CETCETY: mobil panelleri kaydırarak kapatma ===== */
+/* ===== Laafle: mobil panelleri kaydırarak kapatma ===== */
 (function () {
   'use strict';
   function $(i) { return document.getElementById(i); }
@@ -21877,7 +21865,7 @@ window.updateChannelActionBar=function(){
 
 </script>
 <script>
-/* ===== CETCETY: özel sohbet — yanıtla (kaydır), emoji tepkisi, mesaja not ===== */
+/* ===== Laafle: özel sohbet — yanıtla (kaydır), emoji tepkisi, mesaja not ===== */
 (function () {
   'use strict';
   var EMO = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -22079,7 +22067,7 @@ window.updateChannelActionBar=function(){
 
 </script>
 <script>
-/* ===== CETCETY: @nick bahsetme (bildirim + vurgu + öneri) ===== */
+/* ===== Laafle: @nick bahsetme (bildirim + vurgu + öneri) ===== */
 (function () {
   'use strict';
   var RX = /(^|[\s(])@([\p{L}\p{N}_.\-]{2,20})/gu;
@@ -22224,7 +22212,7 @@ window.updateChannelActionBar=function(){
 
 </script>
 <script>
-/* ===== CETCETY: mobil uygulama görünümü ===== */
+/* ===== Laafle: mobil uygulama görünümü ===== */
 (function () {
   'use strict';
   var mq = window.matchMedia('(max-width:768px)');
@@ -22264,7 +22252,7 @@ window.updateChannelActionBar=function(){
 })();
 </script>
 <script>
-/* ===== CETCETY: özel sohbette görüntülü arama (WebRTC, düşük kalite / düşük veri) ===== */
+/* ===== Laafle: özel sohbette görüntülü arama (WebRTC, düşük kalite / düşük veri) ===== */
 (function () {
   'use strict';
   var ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }].concat(window.CETCETY_TURN || []) };
@@ -22389,6 +22377,14 @@ window.updateChannelActionBar=function(){
       } catch (e) {}
     });
   }
+  var iceAt = 0;
+  async function loadIce() { // TURN (varsa) sunucudan alınır; yoksa yalnızca STUN
+    if (Date.now() - iceAt < 600000 || !window.srvCall) return; iceAt = Date.now();
+    try {
+      var r = await Promise.race([window.srvCall('/turn', {}, true), new Promise(function (res) { setTimeout(function () { res(null); }, 3500); })]);
+      if (r && r.ok && r.iceServers && r.iceServers.length) ICE = { iceServers: r.iceServers.concat([{ urls: ['stun:stun.l.google.com:19302'] }]) };
+    } catch (e) {}
+  }
   function makePC(stream) {
     var pc = new RTCPeerConnection(ICE);
     stream.getTracks().forEach(function (t) { pc.addTrack(t, stream); });
@@ -22472,6 +22468,7 @@ window.updateChannelActionBar=function(){
     if (S) return;
     if (!window.RTCPeerConnection || !navigator.mediaDevices) { alert('Bu tarayıcı görüntülü aramayı desteklemiyor.'); return; }
     try { if (typeof checkBlockStatus === 'function' && await checkBlockStatus(peer)) { alert('Bu kullanıcıyı arayamazsınız.'); return; } } catch (e) {}
+    try { await loadIce(); } catch (e) {}
     var id = D.ref('calls').push().key;
     S = { id: id, peer: peer, role: 'caller', refs: [], pending: [], facing: 'user' };
     buildUI(); showUI(peer, 'Aranıyor…'); ui.avatar.style.display = 'flex'; setBar('call');
@@ -22525,6 +22522,7 @@ window.updateChannelActionBar=function(){
     if (!S || !incoming) return;
     var D = db(), inc = incoming; S.ringing = false; stopRing();
     ui.st.textContent = 'Bağlanıyor…'; setBar('call');
+    try { await loadIce(); } catch (e) {}
     try {
       S.local = await getMedia('user');
       ui.local.srcObject = S.local; ui.local.style.display = S.local.getVideoTracks().length ? '' : 'none';
@@ -22825,6 +22823,7 @@ window.updateChannelActionBar=function(){
     return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 150000 }, k, 256));
   }
   window.pwDerive = derive;
+  window.srvGuest = async function (nick) { var r = await window.srvCall('/guest', { nick: nick }); if (r && r.ok && r.token) return window.authSignIn(r.token); return false; };
   window.srvCall = async function (path, body, auth) {
     var ep = (window.AUTH_CONFIG && window.AUTH_CONFIG.ENDPOINT) || 'https://laafle-auth.kyazar07.workers.dev', h = { 'Content-Type': 'application/json' };
     try {
@@ -22888,6 +22887,103 @@ window.updateChannelActionBar=function(){
     return n;
   };
 
+})();
+</script>
+<script id="trJs">
+(function(){
+  function g(n){try{return (0,eval)('typeof '+n+'!=="undefined"?'+n+':undefined');}catch(e){return undefined;}}
+  function D(){return g('database')||window.database;}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function dayKey(t){var d=new Date(t||Date.now());return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
+  function sk(s){return String(s||'').replace(/[.#$\[\]\/]/g,'_').slice(0,40)||'x';}
+  function inc(ref){try{ref.transaction(function(v){return (v||0)+1;});}catch(e){}}
+  /* ---- sayaç: sekme başına 1 ziyaret + günlük tekil giriş ---- */
+  var logged=false,seen=false;
+  function track(){
+    var db=D(); if(!db||logged)return;
+    var ss=null;try{ss=sessionStorage.getItem('tr_v');}catch(e){}
+    var day=dayKey(),base=db.ref('analytics/days/'+day);
+    if(!seen&&ss!==day){
+      seen=true;try{sessionStorage.setItem('tr_v',day);}catch(e){}
+      inc(base.child('views'));inc(base.child('h/'+new Date().getHours()));
+      inc(base.child('dev/'+(/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)?'mobil':'masaustu')));
+      var rf='dogrudan';try{if(document.referrer){var h=new URL(document.referrer).hostname;if(h&&h!==location.hostname)rf=h;}}catch(e){}
+      inc(base.child('ref/'+sk(rf)));
+    }
+    var u=g('currentUser');
+    if(u&&u.name){logged=true;try{base.child('u/'+sk(u.name)).set(Date.now());}catch(e){}}
+  }
+  setInterval(track,2500);
+  /* ---- panel ---- */
+  var st=document.createElement('style');
+  st.textContent='.trW{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}.trS{background:var(--bg-secondary,#1e1f22);color:var(--text-primary,#fff);width:min(720px,100%);max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px 28px;font-size:14px}@media(min-width:760px){.trW{align-items:center}.trS{border-radius:18px}}.trS h3{margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}.trS h4{margin:16px 0 6px;font-size:13px;opacity:.8}.trK{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}.trK div{background:var(--bg-tertiary,#2b2d31);border-radius:12px;padding:10px}.trK b{display:block;font-size:22px}.trK span{font-size:11.5px;opacity:.7}.trB{display:flex;align-items:flex-end;gap:3px;height:110px}.trB i{flex:1;background:#5865f2;border-radius:3px 3px 0 0;min-height:2px;position:relative}.trL{display:flex;gap:3px;font-size:9.5px;opacity:.6;margin-top:3px}.trL i{flex:1;text-align:center;font-style:normal}.trS button.trX{border:0;border-radius:10px;padding:8px 12px;background:var(--bg-tertiary,#2b2d31);color:inherit;font:inherit;cursor:pointer}.trS pre{white-space:pre-wrap;background:var(--bg-tertiary,#2b2d31);border-radius:10px;padding:10px;font-size:12px;line-height:1.5}';
+  document.head.appendChild(st);
+  function bars(vals,labels,h){
+    var mx=Math.max.apply(null,vals.concat([1]));
+    return '<div class="trB">'+vals.map(function(v,i){return '<i style="height:'+Math.max(2,Math.round(v/mx*100))+'%" title="'+esc(labels[i])+': '+v+'"></i>';}).join('')+'</div><div class="trL">'+labels.map(function(l,i){return '<i>'+(h?(i%3===0?l:''):l)+'</i>';}).join('')+'</div>';
+  }
+  async function open(){
+    if(document.querySelector('.trW'))return;
+    var w=document.createElement('div');w.className='trW';
+    w.innerHTML='<div class="trS"><h3><span>📊 Site Trafiği</span><button class="trX" id="trC">Kapat</button></h3><div id="trBody">Yükleniyor…</div></div>';
+    document.body.appendChild(w);w.onclick=function(e){if(e.target===w)w.remove();};w.querySelector('#trC').onclick=function(){w.remove();};
+    var db=D(),body=w.querySelector('#trBody');
+    try{
+      var res=await Promise.all([db.ref('analytics/days').orderByKey().limitToLast(14).once('value'),db.ref('onlineUsers').once('value')]);
+      var days=res[0].val()||{},on=res[1].val()||{},now=Date.now(),onN=0;
+      Object.keys(on).forEach(function(k){var u=on[k];if(u&&u.isOnline!==false&&now-(u.lastSeen||0)<90000&&!u.isHidden)onN++;});
+      var keys=[];for(var i=13;i>=0;i--)keys.push(dayKey(now-i*86400000));
+      var views=keys.map(function(k){return (days[k]&&days[k].views)||0;}),uniq=keys.map(function(k){return days[k]&&days[k].u?Object.keys(days[k].u).length:0;});
+      var t=days[dayKey()]||{},tu=t.u?Object.keys(t.u).length:0;
+      var hrs=[];for(var h=0;h<24;h++)hrs.push((t.h&&t.h[h])||0);
+      var sum=function(a){return a.reduce(function(x,y){return x+y;},0);};
+      var devs=t.dev||{},refs=t.ref||{};
+      var ref14={};keys.forEach(function(k){var r=days[k]&&days[k].ref;if(r)Object.keys(r).forEach(function(x){ref14[x]=(ref14[x]||0)+r[x];});});
+      var rl=Object.keys(ref14).sort(function(a,b){return ref14[b]-ref14[a];}).slice(0,6);
+      body.innerHTML='<div class="trK"><div><b>'+onN+'</b><span>Şu an çevrimiçi</span></div><div><b>'+(t.views||0)+'</b><span>Bugün ziyaret</span></div><div><b>'+tu+'</b><span>Bugün giriş yapan kişi</span></div><div><b>'+sum(views)+'</b><span>Son 14 gün ziyaret</span></div></div>'
+       +'<h4>Son 14 gün · ziyaret</h4>'+bars(views,keys.map(function(k){return k.slice(8);}))
+       +'<h4>Son 14 gün · giriş yapan kişi</h4>'+bars(uniq,keys.map(function(k){return k.slice(8);}))
+       +'<h4>Bugün · saate göre ziyaret</h4>'+bars(hrs,hrs.map(function(_,i){return String(i);}),true)
+       +'<h4>Bugün · cihaz</h4><div>📱 Mobil: <b>'+(devs.mobil||0)+'</b> &nbsp; 💻 Masaüstü: <b>'+(devs.masaustu||0)+'</b></div>'
+       +'<h4>Nereden geldiler (14 gün)</h4><div>'+(rl.length?rl.map(function(x){return esc(x.replace(/_/g,'.'))+': <b>'+ref14[x]+'</b>';}).join('<br>'):'—')+'</div>'
+       +'<p style="opacity:.6;font-size:11.5px;margin-top:14px">Sayım bu sürümden itibaren başlar. “Ziyaret” = tarayıcı sekmesi başına günde 1; çerez/IP tutulmaz.</p>'
+       +'<h4>Bağlantı tanısı</h4><button class="trX" id="trD">Tanı testini çalıştır</button><pre id="trDo" style="display:none"></pre>';
+      body.querySelector('#trD').onclick=diag;
+    }catch(e){body.textContent='Okunamadı: '+(e&&e.message||e)+' (analytics kuralları yayınlandı mı?)';}
+  }
+  /* ---- tanı: DM / arama / presence neden çalışmıyor ---- */
+  async function diag(){
+    var o=document.getElementById('trDo');o.style.display='block';var L=[];function p(s){L.push(s);o.textContent=L.join('\n');}
+    var db=D(),u=g('currentUser'),me=u&&u.name;p('Kullanıcı: '+me+' ('+(u&&u.role)+')');
+    var cu=null;try{cu=firebase.auth().currentUser;}catch(e){}
+    if(!cu)p('❌ Firebase oturumu YOK (sunucu girişi tamamlanmamış)');
+    else{try{var t=await cu.getIdTokenResult();p('✅ Firebase oturumu var · uid '+cu.uid);p('   token nick="'+t.claims.nick+'" role='+t.claims.role+' us='+t.claims.us);if(t.claims.nick!==me)p('❌ token nick ≠ kullanıcı adı → özel mesaj kuralı reddeder');}catch(e){p('❌ token okunamadı '+e.message);}}
+    var conn=await new Promise(function(r){db.ref('.info/connected').once('value',function(s){r(s.val());});});p((conn?'✅':'❌')+' Firebase bağlantısı: '+conn);
+    async function tw(path,label){try{await db.ref(path).set({t:Date.now()});await db.ref(path).remove();p('✅ yazma/silme: '+label);}catch(e){p('❌ '+label+' → '+(e&&e.code||e.message));}}
+    await tw('calls/_diag_'+sk(me),'calls');
+    await tw('callInbox/_diag_'+sk(me),'callInbox');
+    await tw('onlineUsers/_diag_'+sk(me),'onlineUsers');
+    var peer='zz_diag';var a=[me,peer].sort();await tw('privateChats/chat_'+a[0]+'_'+a[1],'privateChats (özel mesaj)');
+    await tw('pendingMessages/'+peer+'/'+me+'/_d','pendingMessages');
+    try{var ref=db.ref('onlineUsers/_diag2_'+sk(me));await ref.set({isOnline:true});await ref.onDisconnect().update({isOnline:false});var sn=await ref.once('value');p('✅ onDisconnect kaydı kabul edildi');await ref.onDisconnect().cancel();await ref.remove();}catch(e){p('❌ onDisconnect → '+(e&&e.code||e.message));}
+    try{var tr=await window.srvCall('/turn',{},true);p(tr&&tr.ok?'✅ TURN sunucusu hazır ('+(tr.iceServers||[]).length+' adres)':'⚠️ TURN: '+(tr&&tr.error||'kapalı')+' (sadece STUN ile aranıyor)');}catch(e){p('⚠️ TURN alınamadı');}
+    try{
+      var found={};var pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});pc.createDataChannel('x');
+      pc.onicecandidate=function(e){if(e.candidate){var m=/ typ (\w+)/.exec(e.candidate.candidate);if(m)found[m[1]]=1;}};
+      await pc.setLocalDescription(await pc.createOffer());await new Promise(function(r){setTimeout(r,4000);});pc.close();
+      p('ICE adayları: '+(Object.keys(found).join(', ')||'hiç yok')+(found.srflx?'  ✅ STUN çalışıyor':'  ❌ STUN yanıt vermedi (ağ UDP engelliyor olabilir → TURN gerekir)'));
+    }catch(e){p('❌ WebRTC testi: '+e.message);}
+    p('— bitti. Bu yazıyı ekran görüntüsüyle bana gönder.');
+  }
+  window.trOpen=open;window.laafleDiag=diag;
+  /* menü: yalnızca owner */
+  function sync(){
+    var m=document.getElementById('chatOverflowMenu');if(!m)return;
+    var is=!!g('isOwner'),ex=m.querySelector('.mk-tr');
+    if(is&&!ex){var b=document.createElement('button');b.type='button';b.className='chat-menu-action mk-tr';b.textContent='📊 Site trafiği';b.onclick=function(){m.hidden=true;open();};m.insertBefore(b,m.firstChild);}
+    if(!is&&ex)ex.remove();
+  }
+  setInterval(sync,700);
 })();
 </script>
 </body>
