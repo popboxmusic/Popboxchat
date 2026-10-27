@@ -8797,6 +8797,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
                     showLoginError('⚠️ "' + _clash + '" nicki şu an kullanımda.\n' + await nickSuggestionText(rawNick));
                     return;
                 }
+                try { if (window.srvGuest) await window.srvGuest(rawNick); } catch (e) {}
                 await completeLogin(rawNick, 'user', false, null);
             }
             
@@ -14221,21 +14222,8 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
     }
 
     async function sweepPrivateWipes() {
-        if (!database || !isFirebaseConnected || !privateChatsRef || !privateContactsRef) return;
-        try {
-            const snap = await database.ref('privateWipes').once('value');
-            const all = snap.val() || {};
-            const now = serverNow();
-            for (const [key, rec] of Object.entries(all)) {
-                if (!rec || !rec.user || !rec.leftAt) continue;
-                if (now - rec.leftAt < PRIVATE_WIPE_DELAY_MS) continue;
-                if (currentUser && wipeKey(currentUser.name) === key) continue;
-                const again = await database.ref('privateWipes/' + key).once('value');   // bu arada geri döndüyse silme
-                if (!again.exists()) continue;
-                await wipePrivateDataOf(rec.user);
-                await database.ref('privateWipes/' + key).remove();
-            }
-        } catch (e) {}
+        if (!isFirebaseConnected || !window.srvCall) return;
+        try { await window.srvCall('/sweep', {}); } catch (e) {}   // silme işi sunucuda yapılır
     }
 
     function startPrivateWipeService() {
@@ -22825,6 +22813,7 @@ window.updateChannelActionBar=function(){
     return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 150000 }, k, 256));
   }
   window.pwDerive = derive;
+  window.srvGuest = async function (nick) { var r = await window.srvCall('/guest', { nick: nick }); if (r && r.ok && r.token) return window.authSignIn(r.token); return false; };
   window.srvCall = async function (path, body, auth) {
     var ep = (window.AUTH_CONFIG && window.AUTH_CONFIG.ENDPOINT) || 'https://laafle-auth.kyazar07.workers.dev', h = { 'Content-Type': 'application/json' };
     try {
