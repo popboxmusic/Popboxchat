@@ -18537,10 +18537,11 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
     var o=online[x],on=o&&Date.now()-(o.lastSeen||0)<g('ONLINE_THRESHOLD',60000),n=unread[x]||0;
     return '<button class="vt-row" data-dm="'+esc(x)+'">'+avatarHtml(x)+'<span class="n">'+esc(x)+(mutual?' ✓':'')+'</span>'+(n?'<span class="vt-unread">'+n+'</span>':'')+'<span class="vt-dot'+(on?' on':'')+'"></span></button>';
   }
-  var OWN_ROWS=[['home','fas fa-house','Anasayfa reklamları'],['ch','fas fa-tv','Kanal bazlı reklamlar'],['all','fas fa-globe','Tüm kanallar / sohbet reklamı'],['earn','fas fa-money-bill-wave','Kazançlar & ödemeler'],['an','fas fa-film','laaf videoları'],['clean','fas fa-broom','Kanal temizliği'],['panel','fas fa-crown','Owner paneli']];
+  var OWN_ROWS=[['home','fas fa-house','Anasayfa reklamları'],['ch','fas fa-tv','Kanal bazlı reklamlar'],['all','fas fa-globe','Tüm kanallar / sohbet reklamı'],['earn','fas fa-money-bill-wave','Kazançlar & ödemeler'],['traffic','fas fa-chart-area','Site trafiği · Bağlantı tanısı'],['an','fas fa-film','laaf videoları'],['clean','fas fa-broom','Kanal temizliği'],['panel','fas fa-crown','Owner paneli']];
   document.addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('[data-own]');if(!b||!isOwn())return;
     var k=b.dataset.own;try{vtToggleSide(false)}catch(_){}
+    if(k==='traffic'){try{window.trOpen&&window.trOpen()}catch(_){}return}
     if(k==='panel'){try{window.toggleOwnerPanel&&toggleOwnerPanel()}catch(_){}return}
     if(k==='clean'){try{var _oc=document.getElementById('ownerPanel');if(!_oc.classList.contains('active'))toggleOwnerPanel();switchOwnerTab('dashboard');setTimeout(function(){var s=document.getElementById('ownChanCleanSec');s&&s.scrollIntoView({behavior:'smooth',block:'start'})},200)}catch(_){}return}
     if(k==='an'){try{var _op=document.getElementById('ownerPanel');if(!_op.classList.contains('active'))toggleOwnerPanel();switchOwnerTab('anvideo')}catch(_){}return}
@@ -22379,9 +22380,10 @@ window.updateChannelActionBar=function(){
   }
   var iceAt = 0;
   async function loadIce() { // TURN (varsa) sunucudan alınır; yoksa yalnızca STUN
-    if (Date.now() - iceAt < 600000 || !window.srvCall) return; iceAt = Date.now();
+    if (Date.now() - iceAt < 600000 || !window.srvCall) return;
     try {
       var r = await Promise.race([window.srvCall('/turn', {}, true), new Promise(function (res) { setTimeout(function () { res(null); }, 3500); })]);
+      if (r && r.ok !== undefined) iceAt = Date.now();
       if (r && r.ok && r.iceServers && r.iceServers.length) ICE = { iceServers: r.iceServers.concat([{ urls: ['stun:stun.l.google.com:19302'] }]) };
     } catch (e) {}
   }
@@ -22497,6 +22499,7 @@ window.updateChannelActionBar=function(){
   function listenInbox() {
     var D = db(), u = me();
     if (!D || !u) return;
+    try { loadIce(); } catch (e) {}
     if (inboxFor === key(u)) return;
     if (inboxRef) { try { inboxRef.off(); } catch (e) {} }
     inboxFor = key(u); inboxRef = D.ref('callInbox/' + inboxFor);
@@ -22973,6 +22976,9 @@ window.updateChannelActionBar=function(){
       await pc.setLocalDescription(await pc.createOffer());await new Promise(function(r){setTimeout(r,4000);});pc.close();
       p('ICE adayları: '+(Object.keys(found).join(', ')||'hiç yok')+(found.srflx?'  ✅ STUN çalışıyor':'  ❌ STUN yanıt vermedi (ağ UDP engelliyor olabilir → TURN gerekir)'));
     }catch(e){p('❌ WebRTC testi: '+e.message);}
+    try{var ts=[];for(var i=0;i<4;i++){var t0=performance.now();var rf=db.ref('calls/_lat_'+sk(me));await rf.set({i:i});await rf.once('value');ts.push(Math.round(performance.now()-t0));}await db.ref('calls/_lat_'+sk(me)).remove();p('⏱ Firebase yazma+okuma gecikmesi (ms): '+ts.join(', '));}catch(e){p('⏱ gecikme ölçülemedi');}
+    try{var t1=performance.now();await fetch((window.AUTH_CONFIG&&window.AUTH_CONFIG.ENDPOINT||'https://laafle-auth.kyazar07.workers.dev')+'/');p('⏱ Worker gecikmesi: '+Math.round(performance.now()-t1)+' ms');}catch(e){}
+    try{var n=0,t2=performance.now();var ids=['x'];p('⏱ Sayfa yüklü sekme sayısı/zamanlayıcı: '+(performance.getEntriesByType('resource').length)+' kaynak');}catch(e){}
     p('— bitti. Bu yazıyı ekran görüntüsüyle bana gönder.');
   }
   window.trOpen=open;window.laafleDiag=diag;
@@ -22984,6 +22990,15 @@ window.updateChannelActionBar=function(){
     if(!is&&ex)ex.remove();
   }
   setInterval(sync,700);
+  function mob(){
+    var mm=document.getElementById('mobileMenu');if(!mm)return;
+    var is=!!g('isOwner'),t=mm.querySelector('.mk-trm'),lo=mm.querySelector('.mk-lo');
+    if(is&&!t){t=document.createElement('div');t.className='mobile-menu-item mk-trm';t.innerHTML='<div class="menu-icon"><i class="fas fa-chart-area"></i></div><div class="menu-text">Site trafiği</div>';t.onclick=function(){try{toggleMobileMenu();}catch(e){}open();};mm.appendChild(t);}
+    if(!is&&t)t.remove();
+    if(!lo){lo=document.createElement('div');lo.className='mobile-menu-item mk-lo';lo.innerHTML='<div class="menu-icon"><i class="fas fa-right-from-bracket"></i></div><div class="menu-text">Güvenli çıkış</div>';lo.onclick=function(){try{toggleMobileMenu();}catch(e){}try{window.logout();}catch(e){}};mm.appendChild(lo);}
+    else if(lo!==mm.lastElementChild)mm.appendChild(lo);
+  }
+  setInterval(mob,900);
 })();
 </script>
 </body>
