@@ -22377,6 +22377,14 @@ window.updateChannelActionBar=function(){
       } catch (e) {}
     });
   }
+  var iceAt = 0;
+  async function loadIce() { // TURN (varsa) sunucudan alınır; yoksa yalnızca STUN
+    if (Date.now() - iceAt < 600000 || !window.srvCall) return; iceAt = Date.now();
+    try {
+      var r = await Promise.race([window.srvCall('/turn', {}, true), new Promise(function (res) { setTimeout(function () { res(null); }, 3500); })]);
+      if (r && r.ok && r.iceServers && r.iceServers.length) ICE = { iceServers: r.iceServers.concat([{ urls: ['stun:stun.l.google.com:19302'] }]) };
+    } catch (e) {}
+  }
   function makePC(stream) {
     var pc = new RTCPeerConnection(ICE);
     stream.getTracks().forEach(function (t) { pc.addTrack(t, stream); });
@@ -22460,6 +22468,7 @@ window.updateChannelActionBar=function(){
     if (S) return;
     if (!window.RTCPeerConnection || !navigator.mediaDevices) { alert('Bu tarayıcı görüntülü aramayı desteklemiyor.'); return; }
     try { if (typeof checkBlockStatus === 'function' && await checkBlockStatus(peer)) { alert('Bu kullanıcıyı arayamazsınız.'); return; } } catch (e) {}
+    try { await loadIce(); } catch (e) {}
     var id = D.ref('calls').push().key;
     S = { id: id, peer: peer, role: 'caller', refs: [], pending: [], facing: 'user' };
     buildUI(); showUI(peer, 'Aranıyor…'); ui.avatar.style.display = 'flex'; setBar('call');
@@ -22513,6 +22522,7 @@ window.updateChannelActionBar=function(){
     if (!S || !incoming) return;
     var D = db(), inc = incoming; S.ringing = false; stopRing();
     ui.st.textContent = 'Bağlanıyor…'; setBar('call');
+    try { await loadIce(); } catch (e) {}
     try {
       S.local = await getMedia('user');
       ui.local.srcObject = S.local; ui.local.style.display = S.local.getVideoTracks().length ? '' : 'none';
