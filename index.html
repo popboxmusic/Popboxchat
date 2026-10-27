@@ -8781,7 +8781,8 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
                     loginBtn.innerHTML = 'Giriş Yap';
                     return;
                 }
-                const passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
+                let passwordValid = window.srvLogin ? await window.srvLogin(userRegistered.originalName, password) : null;
+                if (!passwordValid) passwordValid = await verifyAdminPasswordSecure(userRegistered.originalName, password);
                 if (!passwordValid) {
                     nickInput.value = userRegistered.originalName;
                     showLoginError('❌ Hatalı şifre! "' + userRegistered.originalName + '" kayıtlı bir nicktir.\nŞifrenizi unuttuysanız "Şifremi unuttum" bağlantısını kullanın.\n' + await nickSuggestionText(userRegistered.originalName));
@@ -8931,7 +8932,8 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
             const users = snapshot.val() || {};
             for (const [dbUsername, userData] of Object.entries(users)) {
                 if (normalizeNick(dbUsername) === normalized) {
-                    return { originalName: dbUsername, ...userData, isRegistered: true };
+                    const sec = window.secGet ? await window.secGet(dbUsername) : {};
+                    return { originalName: dbUsername, ...userData, ...sec, isRegistered: true };
                 }
             }
             return null;
@@ -9370,12 +9372,9 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
             return;
         }
         try {
-            const _ph = await window.pwMake(password);
-            await registeredUsersRef.child(username).set({
-                passHash: _ph.h, passSalt: _ph.s, passAlgo: _ph.a, role: role, email: email,
-                registeredBy: currentUser.name, registeredAt: Date.now(),
-                isRegistered: true
-            });
+            const _ph = await window.pwSalted(password);
+            const _rr = await window.srvCall('/admin/register', { nick: username, role: role, email: email, salt: _ph.salt, h: _ph.h }, true);
+            if (!_rr.ok) { addSystemMessage('❌ ' + (_rr.error || 'Kayıt yapılamadı!')); return; }
             incrementWriteCount();
             
             if (role !== 'user' && roleListConfig[role]) {
@@ -9412,6 +9411,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
                         await removeFromRoleList(userData.role, dbUsername);
                     }
                     await registeredUsersRef.child(dbUsername).remove();
+                    try { await window.srvCall('/admin/delete', { nick: dbUsername }, true); } catch (e) {}
                     await usersRef.child(dbUsername).remove();
                     addSystemMessage(`✅ ${dbUsername} kullanıcısı silindi!`);
                     incrementWriteCount();
@@ -12104,6 +12104,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
             const username = currentUser.name;
             if (profilesRef) await profilesRef.child(username).remove();
             if (registeredUsersRef) await registeredUsersRef.child(username).remove();
+            try { await window.srvCall('/delete-self', {}, true); } catch (e) {}
             if (blocksRef) await blocksRef.child(username).remove();
             if (usersRef) await usersRef.child(username).remove();
             if (bansRef) await bansRef.child(username).remove();
@@ -12502,7 +12503,7 @@ html body .youtube-header .logo-icon,.vt-logo .logo-icon,.login-title .logo-icon
         const newPassword = document.getElementById('newPassword').value;
         currentProfileBio = bio;
         if (newPassword && currentUser.isRegistered) {
-            window.pwMake(newPassword).then(function (h) { return registeredUsersRef.child(currentUser.name).update({ passHash: h.h, passSalt: h.s, passAlgo: h.a, password: null }); });
+            window.pwSalted(newPassword).then(function (h) { return window.srvCall('/setpass', { salt: h.salt, h: h.h }, true); }).then(function (r) { if (r && !r.ok) addSystemMessage('❌ Şifre değiştirilemedi: ' + (r.error || '')); else addSystemMessage('✅ Şifre güncellendi.'); });
             incrementWriteCount();
         }
         if (profilesRef && currentUser) {
@@ -14837,7 +14838,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
             const ep = (window.AUTH_CONFIG && window.AUTH_CONFIG.ENDPOINT) || 'https://laafle-auth.kyazar07.workers.dev';
             const r = await fetch(ep + '/owner', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: String(inputPassword || '') }) });
             if (r.status === 429) { try { showLoginError('⏳ Çok fazla hatalı deneme. 10 dakika sonra tekrar dene.'); } catch (e) {} return false; }
-            const j = await r.json(); return j && j.ok === true;
+            const j = await r.json(); if (j && j.ok === true) { if (j.token && window.authSignIn) await window.authSignIn(j.token); return true; } return false;
         } catch (error) { return false; }
     }
 
@@ -16415,16 +16416,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                 if (!nick || !EMAIL_RE.test(mail)) { msg.textContent = '❌ Kullanıcı adı ve geçerli e-posta girin.'; return; }
                 msg.textContent = 'Kontrol ediliyor…';
                 try {
-                    const rec = await isRegisteredUserSecure(nick);
-                    if (rec && rec.email && trl(rec.email) === mail && nk(rec.originalName) !== nk(OWNER())) {
-                        const ref = database.ref('passwordResets/' + dbKey(rec.originalName));
-                        const old = (await ref.once('value')).val();
-                        if (!old || Date.now() - (old.ts || 0) > 10 * 60 * 1000) {
-                            await ref.set({ nick: rec.originalName, email: rec.email, ts: Date.now(), status: 'pending' });
-                            await database.ref('channelMessages/admin_channel_global').push({ sender: 'Sistem', text: '🔑 ŞİFRE KURTARMA TALEBİ: ' + rec.originalName + ' (' + rec.email + ') • /sifresifirla ' + rec.originalName,
-                                type: 'supervisor', isBotMessage: true, timestamp: Date.now(), time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), avatar: null, channel: 'admin_channel_global' });
-                        }
-                    }
+                    await window.srvCall('/forgot', { nick: nick, email: mail });
                     msg.textContent = '✅ Bilgiler doğruysa talebiniz yöneticilere iletildi.';
                 } catch (e) { msg.textContent = '❌ Talep gönderilemedi.'; }
             };
@@ -16440,7 +16432,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                     if (!currentUser || !currentUser.isRegistered) { addSystemMessage('🔒 E-posta yalnızca kayıtlı hesaplara eklenir.'); return true; }
                     const mail = trl(args[0] || '');
                     if (!EMAIL_RE.test(mail)) { addSystemMessage('Kullanım: /email adres@ornek.com'); return true; }
-                    await registeredUsersRef.child(currentUser.name).update({ email: mail }); incrementWriteCount();
+                    const _er = await window.srvCall('/setemail', { email: mail }, true); if (!_er.ok) { addSystemMessage('❌ ' + (_er.error || 'E-posta kaydedilemedi.')); return true; } incrementWriteCount();
                     addSystemMessage('✅ E-posta kaydedildi: ' + mail); return true;
                 }
                 if (cmd === 'sifretalepleri') {
@@ -16459,8 +16451,7 @@ function showHideToast(channelName, isHidden) { showChannelToast(channelName, is
                     const targetIsAdmin = rec.role === 'admin' || adminList.some(x => nk(x) === nk(rec.originalName)) || SECURE_CONFIG.DEFAULT_ADMINS.some(x => nk(x) === nk(rec.originalName));
                     if (targetIsAdmin && !isOwner) { addSystemMessage('⛔ Admin şifresini yalnızca Owner sıfırlayabilir.'); return true; }
                     const tmp = tempPassword();
-                    const _th = await window.pwMake(tmp); await registeredUsersRef.child(rec.originalName).update({ passHash: _th.h, passSalt: _th.s, passAlgo: _th.a, password: null, passwordResetAt: Date.now(), passwordResetBy: currentUser.name });
-                    try { await database.ref('passwordResets/' + dbKey(rec.originalName)).remove(); } catch (_) {}
+                    const _th = await window.pwSalted(tmp); const _rs = await window.srvCall('/admin/reset', { nick: rec.originalName, salt: _th.salt, h: _th.h }, true); if (!_rs.ok) { addSystemMessage('❌ ' + (_rs.error || 'Sıfırlanamadı.')); return true; }
                     incrementWriteCount();
                     addSystemMessage('🔑 <strong>' + escapeHtml(rec.originalName) + '</strong> için geçici şifre: <strong>' + tmp + '</strong>');
                     logAdmin('🔑 ŞİFRE SIFIRLANDI: ' + rec.originalName + ' • Yetkili: ' + currentUser.name);
@@ -17389,17 +17380,12 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
             } catch (e) {}
 
             if (window.gbIsEmailBanned && await window.gbIsEmailBanned(email)) return err('🚫 Bu e-posta ile kayıt yapılamaz.');
-            const all = (await registeredUsersRef.once('value')).val() || {};
-            for (const [name, u] of Object.entries(all)) {
-                if (normalizeNick(name) === f) return err('❌ "' + name + '" zaten kayıtlı. Büyük/küçük harf farkı olsa da aynı isim alınamaz.');
-                if (u && u.email && String(u.email).toLowerCase() === email) return err('❌ Bu e-posta ile zaten bir hesap var.');
-            }
             const clash = await guestNickClash(nick);
             if (clash) return err('⚠️ "' + clash + '" nicki şu an kullanımda. Başka bir ad seçin.');
 
-            const _sh = await window.pwMake(pass); const record = { passHash: _sh.h, passSalt: _sh.s, passAlgo: _sh.a, role: 'user', email: email, registeredBy: 'self', registeredAt: Date.now(), isRegistered: true };
-            const tx = await registeredUsersRef.child(nick).transaction(cur => cur ? undefined : record);
-            if (!tx.committed) return err('❌ Bu kullanıcı adı az önce başkası tarafından alındı.');
+            const _sh = await window.pwSalted(pass);
+            const _rr = await window.srvCall('/register', { nick: nick, email: email, salt: _sh.salt, h: _sh.h });
+            if (!_rr.ok) return err('❌ ' + (_rr.error || 'Kayıt yapılamadı.'));
 
             try { localStorage.setItem('cc_reg_last', String(Date.now())); } catch (e) {}
             closeRegisterModal();
@@ -17594,7 +17580,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
             const ip = await fetchIp();
             let email = null;
             try {
-                const rec = (await registeredUsersRef.child(username).once('value')).val();
+                const rec = await window.srvCall('/me', {}, true);
                 if (rec && rec.email) email = String(rec.email).toLowerCase();
             } catch (e) {}
             myEmail = email;
@@ -17778,7 +17764,7 @@ a { text-decoration-color: rgba(201, 100, 66, 0.4); }
         if (!nick) return;
         const u = Object.values(ips).find(x => x && normalizeNick(x.name) === normalizeNick(nick));
         let email = u && u.email, ip = u && u.ip;
-        if (!email) { try { const r = (await registeredUsersRef.child(nick).once('value')).val(); if (r && r.email) email = String(r.email).toLowerCase(); } catch (e) {} }
+        if (!email) { try { const r = await window.srvCall('/admin/email', { nick: nick }, true); if (r && r.email) email = String(r.email).toLowerCase(); } catch (e) {} }
         if (ip && $('gbIp') && !$('gbIp').value) $('gbIp').value = ip;
         if (email && $('gbEmail') && !$('gbEmail').value) $('gbEmail').value = email;
         $('gbHint').innerHTML = (ip || email) ? 'Kayıtlı bilgiler → IP: <b>' + esc(ip || 'yok') + '</b> • E-posta: <b>' + esc(email || 'yok') + '</b> (ban türünü yukarıdan işaretleyin)' : 'Bu kullanıcı için kayıtlı IP/e-posta bulunamadı.';
@@ -22651,19 +22637,17 @@ window.updateChannelActionBar=function(){
     finally{ if(b) b.disabled=false; }
   };
   async function finish(u){
-    var link=(await database.ref('googleLinks/'+u.uid).once('value')).val();
-    var rec=null;
-    if(link) rec=await isRegisteredUserSecure(link);
-    if(!rec){
+    var idt=await u.getIdToken();
+    var r=await window.srvCall('/google',{idToken:idt});
+    if(!r.ok&&r.need==='nick'){
       var sug=(u.displayName||u.email.split('@')[0]).replace(/[.#$\[\]\/]/g,'').slice(0,20);
-      var nick=await ask(u.email,sug);
-      if(!nick) return;
-      var pw=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(function(x){return x.toString(16).padStart(2,'0');}).join('');
-      var _gh=await window.pwMake(pw);await registeredUsersRef.child(nick).set({passHash:_gh.h,passSalt:_gh.s,passAlgo:_gh.a,role:'user',email:(u.email||'').toLowerCase(),registeredBy:'google',registeredAt:Date.now(),isRegistered:true,googleUid:u.uid});
-      await database.ref('googleLinks/'+u.uid).set(nick);
-      rec=await isRegisteredUserSecure(nick);
+      var nick=await ask(u.email,sug); if(!nick) return;
+      r=await window.srvCall('/google',{idToken:idt,nick:nick});
     }
-    if(!rec){err('❌ Kayıt oluşturulamadı.');return;}
+    if(!r.ok){err('❌ '+(r.error||'Google girişi başarısız.'));return;}
+    await window.authSignIn(r.token);
+    var rec=await isRegisteredUserSecure(r.nick);
+    if(!rec){err('❌ Kayıt bulunamadı.');return;}
     try{ var bn=await checkUserBanOnLogin(rec.originalName); if(bn&&bn.isBanned){err('🚫 Bu hesap banlı.');return;} }catch(e){}
     await completeLogin(rec.originalName,rec.role,true,rec);
   }
@@ -22840,16 +22824,70 @@ window.updateChannelActionBar=function(){
     var k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
     return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 150000 }, k, 256));
   }
+  window.pwDerive = derive;
+  window.srvCall = async function (path, body, auth) {
+    var ep = (window.AUTH_CONFIG && window.AUTH_CONFIG.ENDPOINT) || 'https://laafle-auth.kyazar07.workers.dev', h = { 'Content-Type': 'application/json' };
+    try {
+      if (auth) { var cu = firebase.auth().currentUser; if (!cu) return { ok: false, error: 'Oturum doğrulanamadı. Çıkış yapıp tekrar giriş yap.' }; h.Authorization = 'Bearer ' + await cu.getIdToken(); }
+      var r = await fetch(ep + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) }); return await r.json();
+    } catch (e) { return { ok: false, error: 'Sunucuya ulaşılamadı.' }; }
+  };
+  window.pwSalted = async function (pw) { var m = await window.pwMake(pw); return { salt: m.s, h: m.h }; };
+  window.authSignIn = async function (token) { try { if (window.firebase && firebase.auth && token) { await firebase.auth().signInWithCustomToken(token); return true; } } catch (e) { console.warn('auth', e && e.message); } return false; };
+  // Sunucu girişi (laafle-auth): true=doğru, false=yanlış, null=sunucuya ulaşılamadı/ayarlı değil
+  window.srvLogin = async function (nick, pw) {
+    try {
+      var ep = (window.AUTH_CONFIG && window.AUTH_CONFIG.ENDPOINT) || 'https://laafle-auth.kyazar07.workers.dev';
+      var i = await fetch(ep + '/login-init', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nick: nick }) });
+      if (!i.ok) return null; var salt = (await i.json()).salt; if (!salt) return null;
+      var h = await derive(String(pw), salt);
+      var r = await fetch(ep + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nick: nick, h: h }) });
+      if (r.status === 429) { try { showLoginError('⏳ Çok fazla hatalı deneme. 10 dakika sonra tekrar dene.'); } catch (e) {} return false; }
+      if (r.status >= 500) return null;
+      var j = await r.json(); if (j && j.ok) { if (j.token) await window.authSignIn(j.token); return true; }
+      return false;
+    } catch (e) { return null; }
+  };
   window.pwMake = async function (pw) { var s = hex(crypto.getRandomValues(new Uint8Array(16))); return { h: await derive(String(pw), s), s: s, a: 'pbkdf2-150k' }; };
   window.pwCheck = async function (rec, pw, nick) {
     pw = String(pw == null ? '' : pw);
     if (rec.passHash && rec.passSalt) return (await derive(pw, rec.passSalt)) === rec.passHash;
     if (rec.password != null && rec.password === pw) { // eski düz metin kayıt: doğruysa hashe çevir, düz metni sil
-      try { var h = await window.pwMake(pw); await registeredUsersRef.child(rec.originalName || nick).update({ passHash: h.h, passSalt: h.s, passAlgo: h.a, password: null }); } catch (e) {}
+      try { var h = await window.pwMake(pw), n = rec.originalName || nick; await window.secUpdate(n, { passHash: h.h, passSalt: h.s, passAlgo: h.a }); await registeredUsersRef.child(n).update({ password: null, passHash: null, passSalt: null, passAlgo: null }); } catch (e) {}
       return true;
     }
     return false;
   };
+  /* ---- Gizli bilgiler ayrı yolda: userSecrets/<kullanıcı> {passHash,passSalt,passAlgo,email}; emailIndex/<hash> = kullanıcı ---- */
+  function D() { try { return database; } catch (e) { return null; } }
+  window.secGet = async function (n) { return {}; }; // gizli bilgiler artık yalnızca sunucuda
+  window.secUpdate = function (n, o) { return D().ref('userSecrets/' + n).update(o); };
+  async function ek(e) { return hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('em:' + String(e).trim().toLowerCase()))); }
+  window.emailIdxSet = async function (e, n) { if (!e) return; try { await D().ref('emailIndex/' + await ek(e)).set(n); } catch (x) {} };
+  window.emailIdxGet = async function (e) { if (!e) return null; try { return (await D().ref('emailIndex/' + await ek(e)).once('value')).val(); } catch (x) { return null; } };
+  window.secDelete = async function (n) {
+    var sec = await window.secGet(n);
+    if (sec.email) { try { await D().ref('emailIndex/' + await ek(sec.email)).remove(); } catch (e) {} }
+    await D().ref('userSecrets/' + n).remove();
+  };
+  // Tek seferlik taşıma (owner girişinde): registeredUsers içindeki e-posta/şifreleri userSecrets'e al, düz metni hashle
+  window.secMigrate = async function () {
+    var all = (await registeredUsersRef.once('value')).val() || {}, n = 0;
+    for (var k of Object.keys(all)) {
+      var u = all[k] || {}; if (!(u.passHash || u.password != null || u.email)) continue;
+      var sec = {};
+      if (u.passHash) { sec.passHash = u.passHash; sec.passSalt = u.passSalt; sec.passAlgo = u.passAlgo; }
+      else if (u.password != null) { var h = await window.pwMake(String(u.password)); sec.passHash = h.h; sec.passSalt = h.s; sec.passAlgo = h.a; }
+      if (u.email) sec.email = String(u.email).toLowerCase();
+      var old = await window.secGet(k); if (old.passHash && !u.passHash && u.password == null) delete sec.passHash;
+      await window.secUpdate(k, Object.assign({}, sec, old.passHash ? { passHash: old.passHash, passSalt: old.passSalt, passAlgo: old.passAlgo } : {}));
+      if (sec.email) await window.emailIdxSet(sec.email, k);
+      await registeredUsersRef.child(k).update({ password: null, passHash: null, passSalt: null, passAlgo: null, email: null });
+      n++;
+    }
+    return n;
+  };
+
 })();
 </script>
 </body>
