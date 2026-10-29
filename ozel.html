@@ -656,6 +656,52 @@ document.addEventListener('fullscreenchange',()=>{
   const i=b.querySelector('i');if(i)i.className='fas '+(on?'fa-compress':'fa-expand');
 });
 
+// ============================================================
+// ÖZEL MESAJ ARŞİV TEMİZLİĞİ (Çıkıştan 3 dk sonra)
+// ============================================================
+function startPrivateWipeService() {
+  if (window.__wipeStarted || !database) return;
+  window.__wipeStarted = true;
+  setTimeout(sweepPrivateWipes, 4000);
+  setInterval(sweepPrivateWipes, 30000);
+}
+async function sweepPrivateWipes() {
+  if (!isFirebaseConnected || !database) return;
+  try {
+    const snap = await database.ref('privateWipes').once('value');
+    const all = snap.val() || {};
+    for (const [k, v] of Object.entries(all)) {
+      if (v && v.user && Date.now() - v.leftAt > 180000) {
+        await wipePrivateDataOf(v.user);
+        await database.ref('privateWipes/' + k).remove();
+      }
+    }
+  } catch (e) {}
+}
+async function wipePrivateDataOf(user) {
+  if (!database || !user) return;
+  const jobs = [];
+  let peers = [];
+  try {
+    const s = await privateContactsRef.child(user).once('value');
+    peers = Object.keys(s.val() || {});
+  } catch (e) {}
+  peers.forEach(p => {
+    jobs.push(privateChatsRef.child(generateChatId(user, p)).remove());
+    jobs.push(privateContactsRef.child(p).child(user).remove());
+  });
+  jobs.push(privateContactsRef.child(user).remove());
+  await Promise.allSettled(jobs);
+}
+async function armPrivateWipe(user) {
+  if (!database || !user || window.__loggingOut) return;
+  try {
+    const ref = database.ref('privateWipes/' + normalizeNick(user).replace(/[.#$\[\]\/]/g, '_'));
+    await ref.onDisconnect().set({ user, leftAt: firebase.database.ServerValue.TIMESTAMP });
+    await ref.remove();
+  } catch (e) {}
+}
+
 function initializeFirebase(){
   try{
     firebase.initializeApp(firebaseConfig);
