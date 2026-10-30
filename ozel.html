@@ -8,7 +8,7 @@
 <meta name="color-scheme" content="light dark">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
 <meta name="theme-color" content="#00a884">
-<title>Özel – Mesajlaşma</title>
+<title>Laafle — Özel Mesajlaşma</title>
 <link rel="icon" type="image/png" href="favicon-64.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -242,6 +242,7 @@ body::before{
 .pm-meta{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:2px;line-height:1;user-select:none;font-size:11px;color:var(--wa-msg-time);}
 .pm-time{font-size:11px;color:var(--wa-msg-time);}
 .pm-ticks{font-size:12px;color:var(--wa-msg-time);opacity:.75;display:inline-flex;align-items:center;}
+.pm-ticks.delivered{opacity:1;}
 .pm-ticks.read{color:#34B7F1;opacity:1;}
 
 .pm-del{position:absolute;right:-40px;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:50%;border:1px solid var(--wa-border);background:var(--wa-panel);color:#ea0038;font-size:12px;display:none;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.1);}
@@ -912,6 +913,8 @@ body::before{
       });
     } catch (err) {
       console.error('Firebase init:', err);
+      const errBox = document.getElementById('loginError');
+      if (errBox) { errBox.textContent = 'Sunucu başlatılamadı. Firebase yapılandırmasını kontrol edin.'; errBox.style.display = 'block'; }
     }
   }
 
@@ -934,6 +937,10 @@ body::before{
 
     if (rawNick.length < 2 || rawNick.length > 20) {
       showLoginError('Kullanıcı adı 2-20 karakter olmalı');
+      return;
+    }
+    if (!/^[\p{L}\p{N}_-]+$/u.test(rawNick)) {
+      showLoginError('Kullanıcı adında yalnızca harf, rakam, alt çizgi ve tire kullanın.');
       return;
     }
     if (!isFirebaseConnected) {
@@ -1177,7 +1184,7 @@ body::before{
       chatRef.on('child_changed', s => {
         if (currentPrivateChatId !== chatId) return;
         const m = s.val();
-        if (m) updatePrivateTick(s.key, !!m.isRead);
+        if (m) updatePrivateTick(s.key, !!m.isDelivered, !!m.isRead);
       });
 
       chatRef.on('child_added', s => {
@@ -1187,7 +1194,8 @@ body::before{
         if (!m) return;
         if (!document.getElementById(`private_msg_${s.key}`)) {
           if (m.sender !== currentUser.name && !m.isRead) {
-            chatRef.child(s.key).update({ isRead: true, readAt: Date.now() });
+            chatRef.child(s.key).update({ isDelivered: true, deliveredAt: Date.now(), isRead: true, readAt: Date.now() });
+            m.isDelivered = true;
             m.isRead = true;
           }
           appendPrivateMessageUI({ id: s.key, ...m });
@@ -1220,7 +1228,8 @@ body::before{
     const reads = [];
     arr.forEach(m => {
       if (m.sender !== currentUser.name && !m.isRead) {
-        reads.push(privateChatsRef.child(currentPrivateChatId).child(m.id).update({ isRead: true, readAt: Date.now() }));
+        reads.push(privateChatsRef.child(currentPrivateChatId).child(m.id).update({ isDelivered: true, deliveredAt: Date.now(), isRead: true, readAt: Date.now() }));
+        m.isDelivered = true;
         m.isRead = true;
       }
       appendPrivateMessageUI(m);
@@ -1274,7 +1283,8 @@ body::before{
       content = secEsc(m.text || '').replace(/\n/g, '<br>');
     }
 
-    const ticks = isMine ? `<span class="pm-ticks${m.isRead ? ' read' : ''}"><i class="fas fa-check-double"></i></span>` : '';
+    const tickIcon = (m.isDelivered || m.isRead) ? 'fa-check-double' : 'fa-check';
+    const ticks = isMine ? `<span class="pm-ticks${(m.isDelivered || m.isRead) ? ' delivered' : ''}${m.isRead ? ' read' : ''}" title="${m.isRead ? 'Okundu' : ((m.isDelivered || m.isRead) ? 'İletildi' : 'Gönderildi')}"><i class="fas ${tickIcon}"></i></span>` : '';
 
     d.innerHTML = `
       ${delBtn}
@@ -1290,10 +1300,15 @@ body::before{
     c.scrollTop = c.scrollHeight;
   }
 
-  function updatePrivateTick(id, isRead) {
-    const el = document.querySelector(`#private_msg_${id} .pm-ticks`);
+  function updatePrivateTick(id, isDelivered, isRead) {
+    const el = document.getElementById(`private_msg_${id}`)?.querySelector('.pm-ticks');
     if (!el) return;
+    const delivered = !!(isDelivered || isRead);
+    el.classList.toggle('delivered', delivered);
     el.classList.toggle('read', !!isRead);
+    el.title = isRead ? 'Okundu' : (delivered ? 'İletildi' : 'Gönderildi');
+    const icon = el.querySelector('i');
+    if (icon) icon.className = `fas ${delivered ? 'fa-check-double' : 'fa-check'}`;
   }
 
   function showImageModal(src) {
@@ -1394,6 +1409,7 @@ body::before{
         timestamp: Date.now(),
         time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
         avatar: currentProfileAvatar || null,
+        isDelivered: false,
         isRead: false
       };
 
@@ -1425,6 +1441,7 @@ body::before{
       timestamp: Date.now(),
       time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
       avatar: currentProfileAvatar || null,
+      isDelivered: false,
       isRead: false
     };
     try {
@@ -1949,16 +1966,33 @@ body::before{
     if (!currentUser || !privateChatsRef || !nick || nick === currentUser.name || nick === privateChatWith) return;
     if (contactListeners[nick]) return;
     const cid = generateChatId(currentUser.name, nick);
-    const query = privateChatsRef.child(cid).limitToLast(1);
+    const chatRef = privateChatsRef.child(cid);
+    const query = chatRef.limitToLast(PRIVATE_MESSAGE_LIMIT);
     const entry = { query, listener: null };
     contactListeners[nick] = entry;
 
-    query.once('value').then(snap => {
-      if (contactListeners[nick] !== entry || privateChatWith === nick) return;
-      const initialIds = new Set(Object.keys(snap.val() || {}));
+    query.once('value').then(async snap => {
+      if (contactListeners[nick] !== entry) return;
+      const initialMessages = snap.val() || {};
+      const initialIds = new Set(Object.keys(initialMessages));
+      let unread = 0;
+      const deliveryJobs = [];
+      Object.entries(initialMessages).forEach(([id, m]) => {
+        if (!m || m.sender === currentUser.name || m.sender === 'System' || m.isNotification) return;
+        if (!m.isRead) unread++;
+        if (!m.isDelivered) deliveryJobs.push(chatRef.child(id).update({ isDelivered: true, deliveredAt: Date.now() }));
+      });
+      if (privateChatWith !== nick && unread > 0) privateUnreadCounts[nick] = unread;
+      if (deliveryJobs.length) Promise.allSettled(deliveryJobs);
+      updateTotalUnreadBadge();
+      renderChatList();
+
       entry.listener = s => {
         if (initialIds.has(s.key)) { initialIds.delete(s.key); return; }
         const m = s.val();
+        if (m && m.sender !== currentUser.name && !m.isDelivered) {
+          chatRef.child(s.key).update({ isDelivered: true, deliveredAt: Date.now() }).catch(() => {});
+        }
         if (m) notifyIncomingPrivateMessage(nick, m, s.key);
       };
       query.on('child_added', entry.listener);
@@ -2424,13 +2458,30 @@ body::before{
     if (callSession) callSession.refs.push([ref, ev, fn]);
   }
 
+  async function addRemoteCandidate(candidate) {
+    if (!callSession || !callSession.pc || !candidate) return;
+    if (!callSession.pc.remoteDescription) {
+      callSession.pendingCandidates = callSession.pendingCandidates || [];
+      callSession.pendingCandidates.push(candidate);
+      return;
+    }
+    try { await callSession.pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.warn('ICE adayı eklenemedi:', e); }
+  }
+
+  async function flushPendingCandidates() {
+    if (!callSession || !callSession.pc || !callSession.pc.remoteDescription) return;
+    const queue = callSession.pendingCandidates || [];
+    callSession.pendingCandidates = [];
+    for (const candidate of queue) await addRemoteCandidate(candidate);
+  }
+
   function listenCallCommon() {
     if (!callSession) return;
     const base = database.ref('calls/' + callSession.id);
     const otherCand = callSession.role === 'caller' ? 'calleeCand' : 'callerCand';
     watchCall(base.child(otherCand), 'child_added', sn => {
       const c = sn.val();
-      if (c && callSession && callSession.pc) callSession.pc.addIceCandidate(c).catch(() => {});
+      if (c) addRemoteCandidate(c);
     });
     watchCall(base.child('state'), 'value', sn => {
       const v = sn.val();
@@ -2463,6 +2514,7 @@ body::before{
       peer: privateChatWith,
       role: 'caller',
       refs: [],
+      pendingCandidates: [],
       audio: audioOnly,
       pc: null,
       local: null
@@ -2504,7 +2556,7 @@ body::before{
       watchCall(base.child('answer'), 'value', sn => {
         const a = sn.val();
         if (a && callSession && callSession.pc && !callSession.pc.remoteDescription) {
-          callSession.pc.setRemoteDescription(a).catch(() => {});
+          callSession.pc.setRemoteDescription(a).then(flushPendingCandidates).catch(e => console.error('Yanıt açıklaması kurulamadı:', e));
         }
       });
 
@@ -2552,6 +2604,7 @@ body::before{
           peer: c.caller,
           role: 'callee',
           refs: [],
+          pendingCandidates: [],
           ringing: true,
           audio: c.mode === 'audio',
           pc: null,
@@ -2569,9 +2622,10 @@ body::before{
     });
   }
 
+  let callInboxPollTimer = null;
   function startCallInboxListener() {
     listenCallInbox();
-    setInterval(listenCallInbox, 5000);
+    if (!callInboxPollTimer) callInboxPollTimer = setInterval(listenCallInbox, 5000);
   }
 
   async function acceptCall() {
@@ -2593,6 +2647,7 @@ body::before{
 
       const c = (await database.ref('calls/' + s.id).once('value')).val();
       await s.pc.setRemoteDescription(c.offer);
+      await flushPendingCandidates();
 
       const answer = await s.pc.createAnswer();
       await s.pc.setLocalDescription(answer);
@@ -2687,8 +2742,6 @@ body::before{
     const nick = document.getElementById('login-nick');
     if (nick) nick.focus();
   });
-
-  setInterval(sweepPrivateWipes, 30000);
 
   setInterval(() => {
     if (currentUser && privateChatWith) {
