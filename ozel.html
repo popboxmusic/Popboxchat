@@ -541,6 +541,11 @@ body::before{
     </div>
 
     <div class="chat-active" id="chatActive">
+      <div id="pmShield">
+        <svg viewBox="0 0 24 24" width="40" height="40" fill="#ea0038" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 0 1 6.3 12.9L7.1 5.7A7.96 7.96 0 0 1 12 4zM5.7 7.1l11.2 11.2A8 8 0 0 1 5.7 7.1z"/></svg>
+        <b>Sohbet gizlendi</b>
+        <span id="pmShieldTxt">Gizliliği korumak için bu sohbet gizlendi.</span>
+      </div>
       <div class="chat-header">
         <div class="chat-header-left">
           <button class="back-btn" onclick="closePrivateChat()"><i class="fas fa-arrow-left"></i></button>
@@ -633,11 +638,6 @@ body::before{
 
   <div class="private-messages" id="dmMessages"></div>
 
-  <div id="pmShield">
-    <i class="fas fa-ban"></i>
-    <b>Özel sohbetlerde ekran görüntüsü alınamaz</b>
-    <span id="pmShieldTxt">Gizliliği korumak için bu sohbet gizlendi.</span>
-  </div>
 </div>
 
 <div class="report-modal" id="reportModal">
@@ -1908,7 +1908,7 @@ body::before{
 
     const prev = privateChatWith;
     if (prev && currentPrivateChatId && privateChatsRef) {
-      privateChatsRef.child(currentPrivateChatId).off();
+      detachChatListeners();
       if (typingRef) typingRef.child(currentPrivateChatId).off();
     }
 
@@ -1944,13 +1944,14 @@ body::before{
       cameraStream = null;
     }
 
-    if (privateChatsRef && currentPrivateChatId) {
-      privateChatsRef.child(currentPrivateChatId).off();
-    }
+    detachChatListeners();
     if (typingRef && currentPrivateChatId) {
       typingRef.child(currentPrivateChatId).off();
     }
 
+    const pmBox = document.getElementById('privateMessages');
+    if (pmBox) pmBox.innerHTML = '';
+    Object.keys(msgCache).forEach(k => delete msgCache[k]);
     peerTyping = false;
     cancelReply();
     const closedNick = privateChatWith;
@@ -1967,8 +1968,22 @@ body::before{
   }
   window.closePrivateChat = closePrivateChat;
 
+  // Açık sohbetin dinleyicileri: yalnızca BUNLARI kaldır (ref.off() bildirim dinleyicisini de öldürüyordu)
+  let chatListeners = null;
+  function detachChatListeners() {
+    if (!chatListeners) return;
+    const { ref, added, changed, removed } = chatListeners;
+    try {
+      if (added) ref.off('child_added', added);
+      if (changed) ref.off('child_changed', changed);
+      if (removed) ref.off('child_removed', removed);
+    } catch (e) {}
+    chatListeners = null;
+  }
+
   function loadPrivateMessages() {
     if (!currentPrivateChatId || !privateChatsRef) return;
+    detachChatListeners();
     const chatId = currentPrivateChatId;
     const chatRef = privateChatsRef.child(chatId);
     const container = document.getElementById('privateMessages');
@@ -1980,18 +1995,16 @@ body::before{
       const existing = new Set(Object.keys(messages || {}));
       updatePrivateMessages(messages);
 
-      chatRef.off('child_added');
-      chatRef.off('child_changed');
-      chatRef.off('child_removed');
+      detachChatListeners();
 
-      chatRef.on('child_removed', s => {
+      const onRemoved = s => {
         if (currentPrivateChatId !== chatId) return;
         const el = document.getElementById(`private_msg_${s.key}`);
         if (el) el.remove();
         delete msgCache[s.key];
-      });
+      };
 
-      chatRef.on('child_changed', s => {
+      const onChanged = s => {
         if (currentPrivateChatId !== chatId) return;
         const m = s.val();
         if (m) {
@@ -1999,9 +2012,9 @@ body::before{
           if (msgCache[s.key]) msgCache[s.key] = { ...msgCache[s.key], ...m, id: s.key };
           renderReactions(s.key, m.reactions);
         }
-      });
+      };
 
-      chatRef.on('child_added', s => {
+      const onAdded = s => {
         if (currentPrivateChatId !== chatId || existing.has(s.key)) return;
         existing.add(s.key);
         const m = s.val();
@@ -2016,7 +2029,12 @@ body::before{
           if (m.sender !== currentUser.name) notifyIncomingPrivateMessage(privateChatWith, m, s.key);
         }
         setTimeout(() => archiveAndTrimPrivateChat(chatId), 1500);
-      });
+      };
+
+      chatRef.on('child_removed', onRemoved);
+      chatRef.on('child_changed', onChanged);
+      chatRef.on('child_added', onAdded);
+      chatListeners = { ref: chatRef, added: onAdded, changed: onChanged, removed: onRemoved };
     }).catch(err => {
       console.error('Mesaj yükleme hatası:', err);
       container.innerHTML = '<div class="private-empty-state">Mesajlar yüklenemedi.</div>';
