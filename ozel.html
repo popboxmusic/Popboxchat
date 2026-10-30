@@ -488,6 +488,10 @@ body::before{
 .pm-trash:hover{background:rgba(234,0,56,.16);}
 :root[data-theme="dark"] .pm-trash{background:rgba(255,255,255,.08);}
 </style>
+<style>
+.chat-active{position:relative;}
+#privateMessages img,#privateMessages video{-webkit-touch-callout:none;-webkit-user-drag:none;user-select:none;}
+</style>
 </head>
 <body>
 
@@ -2109,7 +2113,7 @@ body::before{
     if (m.image && secUrl(m.image)) {
       content = `<img src="${secUrl(m.image)}" class="message-image" onclick="showImageModal(this.src)">`;
     } else if (m.audio && secUrl(m.audio)) {
-      content = `<audio src="${secUrl(m.audio)}" controls class="pm-audio"></audio>`;
+      content = `<audio src="${secUrl(m.audio)}" controls controlsList="nodownload noplaybackrate" class="pm-audio"></audio>`;
     } else if (m.video) {
       content = `<div class="pm-video" data-vid="${secEsc(m.videoId || '')}" onclick="playPrivateVideo(this)"><span class="pm-play"><i class="fas fa-play"></i></span><span class="pm-vdur">${formatDuration(m.videoDuration)}</span></div>`;
     } else if (m.file) {
@@ -2312,6 +2316,8 @@ body::before{
       const v = document.createElement('video');
       v.className = 'pm-video-player';
       v.controls = true;
+      v.setAttribute('controlsList', 'nodownload noplaybackrate');
+      v.disablePictureInPicture = true;
       v.autoplay = true;
       v.playsInline = true;
       const vid = el.dataset.vid;
@@ -3302,28 +3308,29 @@ body::before{
   window.toggleTheme = toggleTheme;
   applyTheme(getTheme(), false);
 
+  // Gizlilik kalkanı. DİKKAT: Web sayfası telefonun ekran görüntüsü düğmesini ENGELLEYEMEZ.
+  // Burada yapılabilenler: uygulama arka plana gidince / sekme gizlenince / yazdırma ve PrintScreen
+  // tuşlarında sohbeti gizlemek (uygulama değiştirici önizlemesi ve bazı yakalama araçları için).
   function attachShield() {
-    const modal = document.getElementById('privateModal');
-    if (!modal) return;
+    if (window.__shieldAttached) return;
+    const area = document.getElementById('chatActive');
     const shieldEl = document.getElementById('pmShield');
-    if (!shieldEl) return;
+    if (!area || !shieldEl) return;
+    window.__shieldAttached = true;
 
+    let holdTimer = null;
     const show = (msg, ms) => {
       const t = document.getElementById('pmShieldTxt');
       if (t && msg) t.textContent = msg;
       shieldEl.classList.add('show');
-      if (window.__shieldHoldTimer) clearTimeout(window.__shieldHoldTimer);
-      if (ms) window.__shieldHoldTimer = setTimeout(() => {
-        if (!window.__shieldHidden) shieldEl.classList.remove('show');
-      }, ms);
+      clearTimeout(holdTimer);
+      if (ms) holdTimer = setTimeout(() => { if (!window.__shieldHidden) shieldEl.classList.remove('show'); }, ms);
     };
+    const hide = () => { window.__shieldHidden = false; clearTimeout(holdTimer); shieldEl.classList.remove('show'); };
+    const away = () => { if (!privateChatWith) return; window.__shieldHidden = true; show('Gizliliği korumak için bu sohbet gizlendi.'); };
 
     const wipeClipboard = () => {
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText('Özel sohbetlerde ekran görüntüsü alınamaz.').catch(() => {});
-        }
-      } catch (e) {}
+      try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText('Gizli sohbet').catch(() => {}); } catch (e) {}
     };
 
     let lastShot = 0;
@@ -3333,26 +3340,33 @@ body::before{
       if (now - lastShot < 1500) return;
       lastShot = now;
       wipeClipboard();
-      show('Ekran görüntüsü alınamaz. Bu sohbet gizlendi.', 3000);
+      if (privateChatWith) show('Ekran görüntüsü tuşu algılandı. Sohbet gizlendi.', 3000);
     };
-
     const isShotKey = (e) => {
       if (e.key === 'PrintScreen' || e.code === 'PrintScreen') return true;
       const k = (e.key || '').toLowerCase();
       if (e.metaKey && e.shiftKey && ['s', '3', '4', '5', '6'].includes(k)) return true;
       if (e.ctrlKey && e.shiftKey && k === 's') return true;
-      if (e.altKey && (e.key === 'PrintScreen' || e.code === 'PrintScreen')) return true;
       return false;
     };
-
     document.addEventListener('keydown', e => { if (isShotKey(e)) shot(e); }, true);
     document.addEventListener('keyup', e => { if (isShotKey(e)) shot(e); }, true);
 
-    window.addEventListener('beforeprint', () => shieldEl.classList.add('show'));
-    window.addEventListener('afterprint', () => shieldEl.classList.remove('show'));
+    window.addEventListener('beforeprint', away);
+    window.addEventListener('afterprint', hide);
 
-    modal.addEventListener('contextmenu', e => {
-      if (e.target.closest && e.target.closest('.private-messages')) e.preventDefault();
+    // uygulama değiştirici / ana ekrana dönüş / sekme değişimi
+    document.addEventListener('visibilitychange', () => { if (document.hidden) away(); else hide(); });
+    window.addEventListener('pagehide', away);
+    window.addEventListener('pageshow', hide);
+    // dokunmatik cihazlarda pencere odağı kaybında da gizle (bildirim gölgesi, ekran kaydı arayüzü vb.)
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+      window.addEventListener('blur', away);
+      window.addEventListener('focus', hide);
+    }
+
+    area.addEventListener('contextmenu', e => {
+      if (e.target.closest && e.target.closest('#privateMessages') && e.target.closest('img,video,audio')) e.preventDefault();
     });
   }
 
