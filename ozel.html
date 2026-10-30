@@ -482,6 +482,12 @@ body::before{
 .reply-bar button{background:none;border:none;font-size:18px;color:var(--wa-text-muted);cursor:pointer;}
 .pm-bubble{touch-action:pan-y;}
 </style>
+<style>
+.pm-trash{align-self:center;flex-shrink:0;width:34px;height:34px;margin:0 6px;border:none;border-radius:50%;background:rgba(0,0,0,.06);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+.pm-trash svg{width:19px;height:19px;fill:#ea0038;}
+.pm-trash:hover{background:rgba(234,0,56,.16);}
+:root[data-theme="dark"] .pm-trash{background:rgba(255,255,255,.08);}
+</style>
 </head>
 <body>
 
@@ -798,6 +804,7 @@ body::before{
   let capturedMedia = null;
 
   const contactListeners = {};
+  const syncedContacts = {};
   const privateAlertedMessageIds = new Set();
   let privateContactsListListener = null;
   let privateContactsChangedListener = null;
@@ -1473,13 +1480,34 @@ body::before{
   function wipeKey(user) {
     return normalizeNick(user).replace(/[.#$\[\]\/]/g, '_');
   }
+  let wipeRearmTimer = null;
+  function scheduleWipeRearm() {
+    clearTimeout(wipeRearmTimer);
+    wipeRearmTimer = setTimeout(() => { if (currentUser) armPrivateWipe(currentUser.name); }, 800);
+  }
+  function flashNotice(text, ms) {
+    let el = document.getElementById('flashNotice');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'flashNotice';
+      el.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:10001;background:#b3261e;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;max-width:92vw;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.35);';
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.style.display = 'block';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.display = 'none'; }, ms || 7000);
+  }
   async function armPrivateWipe(user) {
     if (!database || !user || window.__loggingOut) return;
     try {
       const ref = database.ref('privateWipes/' + wipeKey(user));
-      await ref.onDisconnect().set({ user, leftAt: firebase.database.ServerValue.TIMESTAMP });
+      await ref.onDisconnect().set({ user, leftAt: firebase.database.ServerValue.TIMESTAMP, peers: privateContacts.slice(0, 200) });
       await ref.remove();
-    } catch (e) {}
+    } catch (e) {
+      console.error('Silme kaydı yazılamadı:', e);
+      flashNotice('⚠ Güvenli silme etkinleştirilemedi (Firebase kuralları: privateWipes). ' + (e && e.message ? e.message : ''));
+    }
   }
   async function removePrivateMedia(chatId, videoIds) {
     const jobs = [];
@@ -1491,13 +1519,21 @@ body::before{
     }
     await Promise.allSettled(jobs);
   }
-  async function wipePrivateDataOf(user) {
+  async function wipePrivateDataOf(user, hintPeers) {
     if (!database || !user) return;
     const jobs = [];
-    let peers = [];
+    const peers = new Set((Array.isArray(hintPeers) ? hintPeers : []).filter(n => typeof n === 'string' && n && n !== user));
     try {
-      const s = await privateContactsRef.child(user).once('value');
-      peers = Object.keys(s.val() || {});
+      const sn = await privateContactsRef.child(user).once('value');
+      Object.keys(sn.val() || {}).forEach(n => peers.add(n));
+    } catch (e) {}
+    try { // kişi listesinde olmasa bile bu nickin sohbetlerini bul (anahtar aralığı)
+      const prefix = 'chat_' + user + '_';
+      const rs = await privateChatsRef.orderByKey().startAt(prefix).endAt(prefix + '\uf8ff').once('value');
+      Object.keys(rs.val() || {}).forEach(key => {
+        const peer = key.slice(prefix.length);
+        if (peer && generateChatId(user, peer) === key) peers.add(peer);
+      });
     } catch (e) {}
     peers.forEach(p => {
       const cid = generateChatId(user, p);
@@ -1509,6 +1545,14 @@ body::before{
     });
     jobs.push(privateContactsRef.child(user).remove());
     if (pendingMessagesRef) jobs.push(pendingMessagesRef.child(user).remove());
+    // çıkan kullanıcı diğerlerinin listesinde görünmesin
+    if (usersRef && !(currentUser && currentUser.name === user)) {
+      try {
+        const us = await usersRef.child(user).once('value');
+        const uv = us.val();
+        if (uv && (uv.isOnline === false || (Date.now() - (uv.lastSeen || 0)) > ONLINE_THRESHOLD)) jobs.push(usersRef.child(user).remove());
+      } catch (e) {}
+    }
     await Promise.allSettled(jobs);
   }
   async function sweepPrivateWipes() {
@@ -1518,7 +1562,7 @@ body::before{
       const all = snap.val() || {};
       for (const [k, v] of Object.entries(all)) {
         if (v && v.user && (Date.now() + (window.__srvOff || 0)) - v.leftAt > WIPE_DELAY_MS) {
-          await wipePrivateDataOf(v.user);
+          await wipePrivateDataOf(v.user, v.peers);
           await database.ref('privateWipes/' + k).remove();
         }
       }
@@ -1528,10 +1572,11 @@ body::before{
     if (window.__wipeStarted || !database) return;
     window.__wipeStarted = true;
     setTimeout(sweepPrivateWipes, 4000);
-    setInterval(sweepPrivateWipes, 30000);
+    setInterval(sweepPrivateWipes, 15000);
   }
 
   function initializeFirebase() {
+    try { localStorage.removeItem('laafle-nick'); } catch (e) {}
     if (savedNick()) {
       const ls = document.getElementById('login-screen');
       if (ls) ls.classList.add('auto');
@@ -1581,6 +1626,9 @@ body::before{
     if (usersRef) {
       usersRef.on('value', snap => {
         cachedOnlineUsers = snap.val() || {};
+        if (currentUser) {
+          Object.keys(cachedOnlineUsers).filter(n => n !== currentUser.name && cachedOnlineUsers[n] && cachedOnlineUsers[n].isOnline !== false).slice(0, 30).forEach(n => startContactListener(n));
+        }
         renderChatList();
         updateTotalUnreadBadge();
         if (currentPrivateChatId) updateChatHeaderStatus();
@@ -1591,9 +1639,7 @@ body::before{
   function validNick(n) {
     return typeof n === 'string' && n.length >= 2 && n.length <= 20 && /^[\p{L}\p{N}_-]+$/u.test(n);
   }
-  function savedNick() {
-    try { const n = localStorage.getItem('laafle-nick'); return validNick(n) ? n : null; } catch (e) { return null; }
-  }
+  function savedNick() { return null; } // güvenli çıkış: nick asla saklanmaz
   async function autoLogin() {
     if (currentUser || window.__autoLoginBusy) return;
     const saved = savedNick();
@@ -1652,7 +1698,6 @@ body::before{
       });
 
       currentUser = { name: rawNick, isRegistered: false, role: 'user' };
-      try { localStorage.setItem('laafle-nick', rawNick); } catch (e) {}
       window.currentUser = currentUser;
 
       try { await sweepPrivateWipes(); } catch (e) {}
@@ -2058,7 +2103,11 @@ body::before{
     const tickIcon = (m.isDelivered || m.isRead) ? 'fa-check-double' : 'fa-check';
     const ticks = isMine ? `<span class="pm-ticks${(m.isDelivered || m.isRead) ? ' delivered' : ''}${m.isRead ? ' read' : ''}" title="${m.isRead ? 'Okundu' : ((m.isDelivered || m.isRead) ? 'İletildi' : 'Gönderildi')}"><i class="fas ${tickIcon}"></i></span>` : '';
 
+    const trashBtn = isMine
+      ? `<button type="button" class="pm-trash" title="Mesajı sil (herkesten)" onclick="deletePrivateMessage('${secNick(m.id)}','${currentPrivateChatId}')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM19 4h-3.5l-1-1h-5l-1 1H5v2h14z"/></svg></button>`
+      : '';
     d.innerHTML = `
+      ${trashBtn}
       <div class="pm-bubble">
         <button type="button" class="pm-more" title="Seçenekler" onclick="openMsgMenu(event,'${secNick(m.id)}')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.4 9 12 13.6 16.6 9 18 10.4l-6 6-6-6z"/></svg></button>
         ${quote}
@@ -2311,6 +2360,7 @@ body::before{
       };
 
       if (replyTo) data.replyTo = { id: replyTo.id, sender: replyTo.sender, text: replyTo.text };
+      await ensureReciprocalContact(privateChatWith);
       await privateChatsRef.child(currentPrivateChatId).push(data);
       incrementWriteCount();
       cancelReply();
@@ -2346,6 +2396,7 @@ body::before{
     };
     try {
       if (replyTo) data.replyTo = { id: replyTo.id, sender: replyTo.sender, text: replyTo.text };
+      await ensureReciprocalContact(privateChatWith);
       await privateChatsRef.child(currentPrivateChatId).push(data);
       incrementWriteCount();
       cancelReply();
@@ -2844,28 +2895,19 @@ body::before{
   function privateContactsStorageKey() {
     return currentUser ? `cetcety_private_contacts_${currentUser.name}` : null;
   }
-  function savePrivateContactsLocally() {
-    const k = privateContactsStorageKey();
-    if (!k) return;
-    try { localStorage.setItem(k, JSON.stringify(privateContacts)); } catch (e) {}
-  }
+  function savePrivateContactsLocally() { /* güvenli çıkış: kişiler yerelde saklanmaz */ }
   function addPrivateContactToList(nick) {
     if (!currentUser || !nick || nick === currentUser.name) return false;
     if (privateContacts.includes(nick)) return false;
     privateContacts.unshift(nick);
-    savePrivateContactsLocally();
+    scheduleWipeRearm();
     return true;
   }
 
   function loadPrivateContacts() {
     if (!currentUser) return;
     privateContacts = [];
-    try {
-      const saved = JSON.parse(localStorage.getItem(privateContactsStorageKey()) || '[]');
-      if (Array.isArray(saved)) {
-        privateContacts = [...new Set(saved.filter(n => typeof n === 'string' && n && n !== currentUser.name))];
-      }
-    } catch (e) {}
+    try { localStorage.removeItem(privateContactsStorageKey()); } catch (e) {}
 
     if (privateContactsRef) {
       const ref = privateContactsRef.child(currentUser.name);
@@ -2883,6 +2925,22 @@ body::before{
         if (snap.key) renderChatList();
       };
       ref.on('child_changed', privateContactsChangedListener, () => {});
+
+      // karşı taraf silindi / çıkış süresi doldu -> listeden kalksın
+      ref.off('child_removed');
+      ref.on('child_removed', snap => {
+        const n = snap.key;
+        if (!n) return;
+        if (privateChatWith === n) closePrivateChat();
+        const i = privateContacts.indexOf(n);
+        if (i >= 0) privateContacts.splice(i, 1);
+        stopContactListener(n);
+        delete privateUnreadCounts[n];
+        delete typingNicks[n];
+        delete syncedContacts[n];
+        updateTotalUnreadBadge();
+        renderChatList();
+      }, () => {});
     }
     renderChatList();
   }
@@ -2902,6 +2960,11 @@ body::before{
     if (privateChatWith !== nick) startContactListener(nick);
   }
   window.rememberPrivateContact = rememberPrivateContact;
+  async function ensureReciprocalContact(nick) {
+    if (!nick || syncedContacts[nick]) return;
+    syncedContacts[nick] = true;
+    try { await rememberPrivateContact(nick, true); } catch (e) {}
+  }
 
   function startContactListener(nick) {
     if (!currentUser || !privateChatsRef || !nick || nick === currentUser.name || nick === privateChatWith) return;
@@ -2923,7 +2986,11 @@ body::before{
         if (!m.isRead) unread++;
         if (!m.isDelivered) deliveryJobs.push(chatRef.child(id).update({ isDelivered: true, deliveredAt: Date.now() }));
       });
-      if (privateChatWith !== nick && unread > 0) privateUnreadCounts[nick] = unread;
+      if (privateChatWith !== nick && unread > 0) {
+        privateUnreadCounts[nick] = unread;
+        const lastUnread = Object.values(initialMessages).filter(x => x && x.sender !== currentUser.name && x.sender !== 'System' && !x.isNotification && !x.isRead).sort((x, y) => (x.timestamp || 0) - (y.timestamp || 0)).pop();
+        if (lastUnread) addNotif(nick, previewOf(lastUnread));
+      }
       if (deliveryJobs.length) Promise.allSettled(deliveryJobs);
       updateTotalUnreadBadge();
       renderChatList();
