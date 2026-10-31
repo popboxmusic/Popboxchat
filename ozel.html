@@ -308,11 +308,6 @@ body::before{
 .stop-recording-btn i{font-size:15px;}
 .cancel-recording{width:38px;height:38px;border-radius:50%;background:var(--wa-panel);border:1px solid var(--wa-border);color:var(--wa-text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 
-#pmShield{position:absolute;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:24px;background:#0c0c0c;color:#fff;}
-#pmShield.show{display:flex;}
-#pmShield i{font-size:34px;color:#ea0038;}
-#pmShield b{font-size:16px;}
-#pmShield span{font-size:13px;opacity:.75;max-width:300px;line-height:1.5;}
 
 @media (min-width:1000px){
   .private-modal{left:auto;right:0;width:min(720px,55%);border-left:1px solid var(--wa-border);box-shadow:-8px 0 30px rgba(0,0,0,.15);}
@@ -492,6 +487,10 @@ body::before{
 .chat-active{position:relative;}
 #privateMessages img,#privateMessages video{-webkit-touch-callout:none;-webkit-user-drag:none;user-select:none;}
 </style>
+<style>
+.app-container{transform:translateY(var(--vv-top,0px));}
+#privateMessages{overscroll-behavior:contain;}
+</style>
 </head>
 <body>
 
@@ -545,11 +544,6 @@ body::before{
     </div>
 
     <div class="chat-active" id="chatActive">
-      <div id="pmShield">
-        <svg viewBox="0 0 24 24" width="40" height="40" fill="#ea0038" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 0 1 6.3 12.9L7.1 5.7A7.96 7.96 0 0 1 12 4zM5.7 7.1l11.2 11.2A8 8 0 0 1 5.7 7.1z"/></svg>
-        <b>Sohbet gizlendi</b>
-        <span id="pmShieldTxt">Gizliliği korumak için bu sohbet gizlendi.</span>
-      </div>
       <div class="chat-header">
         <div class="chat-header-left">
           <button class="back-btn" onclick="closePrivateChat()"><i class="fas fa-arrow-left"></i></button>
@@ -758,7 +752,9 @@ body::before{
   const ONLINE_THRESHOLD = 60000;
   const PING_INTERVAL = 30000;
   const TYPING_TIMEOUT_DURATION = 3000;
-  const WIPE_DELAY_MS = 2 * 60 * 1000;
+  const WIPE_EXIT_MS = 2 * 60 * 1000;   // sayfa kapatma / yenileme / Çıkış Yap
+  const WIPE_DROP_MS = 5 * 60 * 1000;   // sadece bağlantı koptu (telefon uykuya girdi, ağ değişti)
+  const WIPE_DELAY_MS = WIPE_EXIT_MS;
   const RING_MS = 45000;
 
   /* ===== DÜŞÜK KALİTE AYARLARI (veri tasarrufu) ===== */
@@ -819,6 +815,13 @@ body::before{
   const typingNicks = {};
   const msgCache = {};
   let replyTo = null;
+  let chatStick = true;
+  function scrollChatToBottom() {
+    const c = document.getElementById('privateMessages');
+    if (!c) return;
+    c.scrollTop = c.scrollHeight;
+    requestAnimationFrame(() => { c.scrollTop = c.scrollHeight; });
+  }
 
   let callSession = null;
   let callInboxListener = null;
@@ -1502,17 +1505,32 @@ body::before{
     clearTimeout(el._t);
     el._t = setTimeout(() => { el.style.display = 'none'; }, ms || 7000);
   }
-  async function armPrivateWipe(user) {
+  async function armPrivateWipe(user, kind, keepRecord) {
     if (!database || !user || window.__loggingOut) return;
     try {
       const ref = database.ref('privateWipes/' + wipeKey(user));
-      await ref.onDisconnect().set({ user, leftAt: firebase.database.ServerValue.TIMESTAMP, peers: privateContacts.slice(0, 200) });
-      await ref.remove();
+      await ref.onDisconnect().set({ user, kind: kind || 'drop', leftAt: firebase.database.ServerValue.TIMESTAMP, peers: privateContacts.slice(0, 200) });
+      if (!keepRecord) await ref.remove();
     } catch (e) {
       console.error('Silme kaydı yazılamadı:', e);
       flashNotice('⚠ Güvenli silme etkinleştirilemedi (Firebase kuralları: privateWipes). ' + (e && e.message ? e.message : ''));
     }
   }
+
+  // Bağlantı her (yeniden) kurulduğunda: çevrimiçi durumu + silme kaydı yeniden hazırlanır, eski kayıt temizlenir
+  function handleReconnect() {
+    if (!currentUser || !usersRef) return;
+    try {
+      usersRef.child(currentUser.name).update({ isOnline: true, lastSeen: Date.now() });
+      usersRef.child(currentUser.name).onDisconnect().update({ isOnline: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+    } catch (e) {}
+    armPrivateWipe(currentUser.name);
+  }
+  window.addEventListener('pagehide', () => { if (currentUser && !window.__loggingOut) armPrivateWipe(currentUser.name, 'exit', true); });
+  window.addEventListener('pageshow', e => { if (e.persisted) handleReconnect(); });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && currentUser && isFirebaseConnected) handleReconnect();
+  });
   async function removePrivateMedia(chatId, videoIds) {
     const jobs = [];
     if (!database) return;
@@ -1559,18 +1577,36 @@ body::before{
     }
     await Promise.allSettled(jobs);
   }
-  async function sweepPrivateWipes() {
+  async function sweepPrivateWipes(opts) {
     if (!isFirebaseConnected || !database) return;
+    if (window.__sweeping) return;
+    window.__sweeping = true;
     try {
       const snap = await database.ref('privateWipes').once('value');
       const all = snap.val() || {};
+      const now = Date.now() + (window.__srvOff || 0);
       for (const [k, v] of Object.entries(all)) {
-        if (v && v.user && (Date.now() + (window.__srvOff || 0)) - v.leftAt > WIPE_DELAY_MS) {
-          await wipePrivateDataOf(v.user, v.peers);
-          await database.ref('privateWipes/' + k).remove();
+        if (!v || !v.user || typeof v.leftAt !== 'number') continue;
+        const limit = v.kind === 'exit' ? WIPE_EXIT_MS : WIPE_DROP_MS;
+        if (now - v.leftAt <= limit) continue;
+        const isSelf = currentUser && v.user === currentUser.name;
+        // kullanıcı şu an çevrimiçiyse bu eski bir kayıttır: silme, kaydı temizle
+        if (!(opts && opts.loginSweep && isSelf)) {
+          let alive = false;
+          try {
+            const us = await usersRef.child(v.user).once('value');
+            const uv = us.val();
+            alive = !!(uv && uv.isOnline === true && (Date.now() - (uv.lastSeen || 0)) < 5 * 60 * 1000);
+          } catch (e) {}
+          if (alive) { try { await database.ref('privateWipes/' + k).remove(); } catch (e) {} continue; }
         }
+        // kayıt hâlâ aynı mı? (bu arada kullanıcı dönmüş olabilir)
+        const fresh = (await database.ref('privateWipes/' + k).once('value')).val();
+        if (!fresh || fresh.leftAt !== v.leftAt) continue;
+        await wipePrivateDataOf(v.user, v.peers);
+        await database.ref('privateWipes/' + k).remove();
       }
-    } catch (e) {}
+    } catch (e) {} finally { window.__sweeping = false; }
   }
   function startPrivateWipeService() {
     if (window.__wipeStarted || !database) return;
@@ -1611,11 +1647,10 @@ body::before{
           window.privateContactsRef = privateContactsRef;
           setupGlobalListeners();
           if (currentUser) {
+            handleReconnect();
             loadUserProfile(currentUser.name);
             loadBlockedUsers();
             startCallInboxListener();
-          } else {
-            autoLogin();
           }
         }
       });
@@ -1627,6 +1662,8 @@ body::before{
   }
 
   function setupGlobalListeners() {
+    if (window.__globalListenersOn) return; // her yeniden bağlanmada tekrar eklenmesin
+    window.__globalListenersOn = true;
     if (usersRef) {
       usersRef.on('value', snap => {
         cachedOnlineUsers = snap.val() || {};
@@ -1704,7 +1741,7 @@ body::before{
       currentUser = { name: rawNick, isRegistered: false, role: 'user' };
       window.currentUser = currentUser;
 
-      try { await sweepPrivateWipes(); } catch (e) {}
+      try { await sweepPrivateWipes({ loginSweep: true }); } catch (e) {}
       armPrivateWipe(rawNick);
 
       document.getElementById('login-screen').style.display = 'none';
@@ -1740,7 +1777,7 @@ body::before{
     try {
       const user = currentUser && currentUser.name;
       if (user && database) {
-        await database.ref('privateWipes/' + wipeKey(user)).set({ user, leftAt: firebase.database.ServerValue.TIMESTAMP });
+        await database.ref('privateWipes/' + wipeKey(user)).set({ user, kind: 'exit', leftAt: firebase.database.ServerValue.TIMESTAMP, peers: privateContacts.slice(0, 200) });
         if (usersRef) await usersRef.child(user).update({ isOnline: false, lastSeen: Date.now() });
       }
     } catch (e) {}
@@ -1819,7 +1856,12 @@ body::before{
     renderBell();
   }
 
+  let chatListTimer = null;
   function renderChatList() {
+    if (chatListTimer) return;
+    chatListTimer = setTimeout(() => { chatListTimer = null; renderChatListNow(); }, 80);
+  }
+  function renderChatListNow() {
     const container = document.getElementById('chatList');
     if (!container) return;
     if (!currentUser) { container.innerHTML = ''; return; }
@@ -1988,6 +2030,7 @@ body::before{
   function loadPrivateMessages() {
     if (!currentPrivateChatId || !privateChatsRef) return;
     detachChatListeners();
+    chatStick = true;
     const chatId = currentPrivateChatId;
     const chatRef = privateChatsRef.child(chatId);
     const container = document.getElementById('privateMessages');
@@ -2143,7 +2186,7 @@ body::before{
     `;
     c.appendChild(d);
     renderReactions(m.id, m.reactions);
-    c.scrollTop = c.scrollHeight;
+    if (isMine || chatStick) scrollChatToBottom();
   }
 
   /* ---- tepkiler ---- */
@@ -2249,6 +2292,29 @@ body::before{
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { closeMsgMenu(); cancelReply(); } });
 
   // dokunmatik: uzun bas = menü, sağa kaydır = yanıtla; sağ tık = menü
+  // klavye açılınca görünür alana göre boyutlan; mesajlar klavyenin altında kalmasın
+  (function initViewport() {
+    const root = document.documentElement;
+    const vv = window.visualViewport;
+    const apply = () => {
+      const h = vv ? vv.height : window.innerHeight;
+      root.style.setProperty('--app-h', Math.round(h) + 'px');
+      root.style.setProperty('--vv-top', (vv ? Math.round(vv.offsetTop) : 0) + 'px');
+      if (chatStick) scrollChatToBottom();
+    };
+    if (vv) { vv.addEventListener('resize', apply); vv.addEventListener('scroll', apply); }
+    window.addEventListener('resize', apply);
+    window.addEventListener('orientationchange', () => setTimeout(apply, 200));
+    apply();
+    const c = document.getElementById('privateMessages');
+    if (c) {
+      c.addEventListener('scroll', () => { chatStick = (c.scrollHeight - c.scrollTop - c.clientHeight) < 140; }, { passive: true });
+      c.addEventListener('load', e => { if (chatStick && e.target && e.target.tagName === 'IMG') scrollChatToBottom(); }, true);
+    }
+    const inp = document.getElementById('private-input');
+    if (inp) inp.addEventListener('focus', () => { chatStick = true; setTimeout(scrollChatToBottom, 150); setTimeout(scrollChatToBottom, 450); });
+  })();
+
   (function initMsgGestures() {
     const c = document.getElementById('privateMessages');
     if (!c) return;
@@ -3308,67 +3374,7 @@ body::before{
   window.toggleTheme = toggleTheme;
   applyTheme(getTheme(), false);
 
-  // Gizlilik kalkanı. DİKKAT: Web sayfası telefonun ekran görüntüsü düğmesini ENGELLEYEMEZ.
-  // Burada yapılabilenler: uygulama arka plana gidince / sekme gizlenince / yazdırma ve PrintScreen
-  // tuşlarında sohbeti gizlemek (uygulama değiştirici önizlemesi ve bazı yakalama araçları için).
-  function attachShield() {
-    if (window.__shieldAttached) return;
-    const area = document.getElementById('chatActive');
-    const shieldEl = document.getElementById('pmShield');
-    if (!area || !shieldEl) return;
-    window.__shieldAttached = true;
-
-    let holdTimer = null;
-    const show = (msg, ms) => {
-      const t = document.getElementById('pmShieldTxt');
-      if (t && msg) t.textContent = msg;
-      shieldEl.classList.add('show');
-      clearTimeout(holdTimer);
-      if (ms) holdTimer = setTimeout(() => { if (!window.__shieldHidden) shieldEl.classList.remove('show'); }, ms);
-    };
-    const hide = () => { window.__shieldHidden = false; clearTimeout(holdTimer); shieldEl.classList.remove('show'); };
-    const away = () => { if (!privateChatWith) return; window.__shieldHidden = true; show('Gizliliği korumak için bu sohbet gizlendi.'); };
-
-    const wipeClipboard = () => {
-      try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText('Gizli sohbet').catch(() => {}); } catch (e) {}
-    };
-
-    let lastShot = 0;
-    const shot = (e) => {
-      if (e && e.preventDefault) try { e.preventDefault(); } catch (x) {}
-      const now = Date.now();
-      if (now - lastShot < 1500) return;
-      lastShot = now;
-      wipeClipboard();
-      if (privateChatWith) show('Ekran görüntüsü tuşu algılandı. Sohbet gizlendi.', 3000);
-    };
-    const isShotKey = (e) => {
-      if (e.key === 'PrintScreen' || e.code === 'PrintScreen') return true;
-      const k = (e.key || '').toLowerCase();
-      if (e.metaKey && e.shiftKey && ['s', '3', '4', '5', '6'].includes(k)) return true;
-      if (e.ctrlKey && e.shiftKey && k === 's') return true;
-      return false;
-    };
-    document.addEventListener('keydown', e => { if (isShotKey(e)) shot(e); }, true);
-    document.addEventListener('keyup', e => { if (isShotKey(e)) shot(e); }, true);
-
-    window.addEventListener('beforeprint', away);
-    window.addEventListener('afterprint', hide);
-
-    // uygulama değiştirici / ana ekrana dönüş / sekme değişimi
-    document.addEventListener('visibilitychange', () => { if (document.hidden) away(); else hide(); });
-    window.addEventListener('pagehide', away);
-    window.addEventListener('pageshow', hide);
-    // dokunmatik cihazlarda pencere odağı kaybında da gizle (bildirim gölgesi, ekran kaydı arayüzü vb.)
-    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
-      window.addEventListener('blur', away);
-      window.addEventListener('focus', hide);
-    }
-
-    area.addEventListener('contextmenu', e => {
-      if (e.target.closest && e.target.closest('#privateMessages') && e.target.closest('img,video,audio')) e.preventDefault();
-    });
-  }
+  function attachShield() {}
 
   const ICE_SERVERS = {
     iceServers: [
@@ -3858,4 +3864,4 @@ body::before{
 })();
 </script>
 </body>
-</html> 
+</html>
