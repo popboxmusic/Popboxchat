@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Popbox Çoklu Panel</title>
+<style>
+  :root {
+    --bg: #0e0f14; --panel: #171923; --line: #2a2e3d; --text: #e8eaf2; --muted: #8a90a6; --accent: #ff4d8d; --ok: #4dd6a4;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  h1 { font-size: 17px; margin: 0 10px 0 0; font-weight: 700; letter-spacing: .2px; }
+  button, select, input { font: inherit; color: var(--text); background: #20243200; border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; }
+  button { cursor: pointer; background: #202432; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1a0510; font-weight: 600; }
+  select { background: #202432; }
+  #msg { color: var(--muted); font-size: 13px; margin-left: auto; }
+  #msg.err { color: #ff8a8a; }
+  main { flex: 1; min-height: 0; display: grid; gap: 6px; padding: 6px; }
+  .slot { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+  .bar { display: flex; gap: 6px; padding: 6px; border-bottom: 1px solid var(--line); }
+  .bar input { flex: 1; min-width: 0; padding: 5px 9px; background: #0e0f14; }
+  .bar button { padding: 5px 9px; }
+  .view { flex: 1; min-height: 0; position: relative; background: #000; }
+  .view iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 20px; }
+  .slot.focus { grid-column: 1 / -1; grid-row: 1 / 3; }
+  @media (max-width: 700px) { main { grid-template-columns: 1fr !important; grid-auto-rows: 60vh; overflow-y: auto; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Popbox Çoklu Panel</h1>
+  <button class="primary" id="add">Kutu ekle</button>
+  <label>Düzen
+    <select id="layout">
+      <option value="auto">Otomatik</option>
+      <option value="row">Yan yana</option>
+      <option value="col">Alt alta</option>
+    </select>
+  </label>
+  <button id="muteAll">Hepsini sustur</button>
+  <button id="pauseAll">Hepsini durdur</button>
+  <span id="msg">En fazla 6 kutu. Her kutuya farklı bir video veya yayın linki gir.</span>
+</header>
+<main id="grid"></main>
+
+<script>
+(function () {
+  var MAX = 6;
+  var grid = document.getElementById('grid');
+  var msg = document.getElementById('msg');
+  var slots = []; // {id, videoId, muted, focus}
+  var counter = 0;
+
+  function say(text, isErr) { msg.textContent = text; msg.className = isErr ? 'err' : ''; }
+
+  function parseId(input) {
+    input = (input || '').trim();
+    if (/^[\w-]{11}$/.test(input)) return input;
+    try {
+      var u = new URL(input);
+      if (u.hostname.indexOf('youtu.be') > -1) return u.pathname.slice(1, 12);
+      var v = u.searchParams.get('v');
+      if (v) return v.slice(0, 11);
+      var m = u.pathname.match(/\/(embed|live|shorts)\/([\w-]{11})/);
+      if (m) return m[2];
+    } catch (e) {}
+    return null;
+  }
+
+  function save() {
+    try { localStorage.setItem('popbox-panel', JSON.stringify(slots.map(function (s) { return { videoId: s.videoId }; }))); } catch (e) {}
+  }
+  function load() {
+    try {
+      var saved = JSON.parse(localStorage.getItem('popbox-panel') || '[]');
+      saved.slice(0, MAX).forEach(function (s) { addSlot(s.videoId); });
+    } catch (e) {}
+    if (!slots.length) addSlot(null);
+  }
+
+  function addSlot(videoId) {
+    if (slots.length >= MAX) { say('En fazla ' + MAX + ' kutu eklenebilir.', true); return; }
+    slots.push({ id: ++counter, videoId: videoId || null, muted: true, focus: false });
+    render(); save();
+  }
+
+  function command(slot, func) {
+    var f = document.getElementById('f' + slot.id);
+    if (f && f.contentWindow) f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: [] }), '*');
+  }
+
+  function render() {
+    grid.innerHTML = '';
+    var n = slots.length;
+    var layout = document.getElementById('layout').value;
+    var cols = layout === 'row' ? n : layout === 'col' ? 1 : (n <= 1 ? 1 : n <= 4 ? 2 : 3);
+    grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
+    grid.style.gridAutoRows = 'minmax(0, 1fr)';
+
+    slots.forEach(function (s) {
+      var el = document.createElement('section');
+      el.className = 'slot' + (s.focus ? ' focus' : '');
+
+      var bar = document.createElement('div'); bar.className = 'bar';
+      var inp = document.createElement('input');
+      inp.placeholder = 'YouTube linki veya video ID'; inp.value = s.videoId || '';
+      inp.setAttribute('aria-label', 'Video linki');
+      var load = document.createElement('button'); load.textContent = 'Yükle';
+      var mute = document.createElement('button'); mute.textContent = s.muted ? 'Sesi aç' : 'Sustur';
+      var big = document.createElement('button'); big.textContent = s.focus ? 'Küçült' : 'Büyüt';
+      var del = document.createElement('button'); del.textContent = 'Kaldır';
+      bar.append(inp, load, mute, big, del);
+
+      var view = document.createElement('div'); view.className = 'view';
+      if (s.videoId) {
+        var f = document.createElement('iframe');
+        f.id = 'f' + s.id;
+        f.src = 'https://www.youtube.com/embed/' + s.videoId + '?enablejsapi=1&autoplay=1&mute=' + (s.muted ? 1 : 0);
+        f.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+        f.allowFullscreen = true;
+        view.appendChild(f);
+      } else {
+        var e = document.createElement('div'); e.className = 'empty';
+        e.textContent = 'Bir YouTube video veya canlı yayın linki yapıştır.';
+        view.appendChild(e);
+      }
+
+      function submit() {
+        var id = parseId(inp.value);
+        if (!id) { say('Geçerli bir YouTube linki veya ID gir.', true); return; }
+        var dup = slots.some(function (o) { return o !== s && o.videoId === id; });
+        if (dup) { say('Bu video başka bir kutuda zaten açık. Her kutuda farklı bir video olmalı.', true); return; }
+        s.videoId = id; say('Yüklendi.'); render(); save();
+      }
+      load.onclick = submit;
+      inp.onkeydown = function (ev) { if (ev.key === 'Enter') submit(); };
+      mute.onclick = function () { s.muted = !s.muted; command(s, s.muted ? 'mute' : 'unMute'); mute.textContent = s.muted ? 'Sesi aç' : 'Sustur'; };
+      big.onclick = function () { var was = s.focus; slots.forEach(function (o) { o.focus = false; }); s.focus = !was; render(); };
+      del.onclick = function () { slots = slots.filter(function (o) { return o !== s; }); if (!slots.length) addSlot(null); else render(); save(); };
+
+      el.append(bar, view);
+      grid.appendChild(el);
+    });
+  }
+
+  document.getElementById('add').onclick = function () { addSlot(null); };
+  document.getElementById('layout').onchange = render;
+  document.getElementById('muteAll').onclick = function () { slots.forEach(function (s) { s.muted = true; command(s, 'mute'); }); render(); };
+  document.getElementById('pauseAll').onclick = function () { slots.forEach(function (s) { command(s, 'pauseVideo'); }); };
+
+  load();
+})();
+</script>
+</body>
+</html>
