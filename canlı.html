@@ -659,6 +659,7 @@ body.nopanel #panel{display:none}
   </div>
 
   <div class="tab" id="tab-rec">
+    <div class="row"><label>Kayıt çözünürlüğü</label><select id="recQ"><option value="4k">4K · 3840×2160 · 24 Mbps</option><option value="2k">2K · 2560×1440 · 12 Mbps</option><option value="1080">Full HD · 1920×1080 · 8 Mbps</option></select></div>
     <div class="row"><label>Yayın kaydı (mp4)</label><button class="btn" id="recBtn">● Kaydı başlat</button></div>
     <div id="recTm" style="font:700 28px ui-monospace,Consolas,monospace;text-align:center;margin:10px 0">00:00</div>
     <button class="btn" id="recPrev" disabled>▶ Son kaydı önizle</button>
@@ -700,7 +701,7 @@ const shuffle = a => { a = a.slice(); for(let i=a.length-1;i>0;i--){ const j=Mat
 
 /* ===================== AYARLAR ===================== */
 const DEF = {
-  tpl: 1, key: '', pkey: '',
+  tpl: 1, key: '', pkey: '', recQ: '4k',
   queries: 'neon lights, city night, rain, ocean sunset, abstract bokeh, aerial landscape, forest fog, clouds timelapse',
   clipSec: 0, fade: 1.5, minDur: 8, maxDur: 60, bgShuffle: false, credit: '',
   brand: 'POP DAMAR',
@@ -1612,7 +1613,7 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
 function fillForms(){
   $('#pxKey').value = S.key; $('#pbKey').value = S.pkey || ''; $('#pxQ').value = S.queries; $('#clipSec').value = S.clipSec; $('#fadeSec').value = S.fade; $('#bgShuffle').checked = !!S.bgShuffle; $('#creditIn').value = S.credit || '';
   $('#brandIn').value = S.brand; $('#msgIn').value = (S.messages||[]).join('\n'); $('#showSec').value = S.showSec; $('#gapSec').value = S.gapSec;
-  $('#vol').value = S.vol; $('#shuffle').checked = !!S.shuffle;
+  $('#recQ').value = S.recQ || '4k'; $('#vol').value = S.vol; $('#shuffle').checked = !!S.shuffle;
 }
 $('#txtApply').onclick = () => {
   S.brand = $('#brandIn').value.trim() || DEF.brand;
@@ -1664,37 +1665,76 @@ window.__pbx = { get state(){ return {tpl:S.tpl, index:cur.index, id:cur.id, cli
 let recMR = null, recChunks = [], recBlob = null, recExt = 'webm', recT0 = 0, recTmr = null;
 const recFmt = x => { x = Math.floor(x); const h = Math.floor(x/3600), m = Math.floor(x%3600/60), sc = x%60, p = n => String(n).padStart(2,'0'); return (h ? h + ':' : '') + p(m) + ':' + p(sc); };
 const recSay = t => { $('#recSt').textContent = t; };
+const REC_Q = {
+  '4k':   {w:3840, h:2160, br:24e6, codecs:['video/mp4;codecs=avc1.640033,mp4a.40.2']},
+  '2k':   {w:2560, h:1440, br:12e6, codecs:['video/mp4;codecs=avc1.640032,mp4a.40.2']},
+  '1080': {w:1920, h:1080, br:8e6,  codecs:['video/mp4;codecs=avc1.64002A,mp4a.40.2']}
+};
+let recBytes = 0;
 async function startRec(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.MediaRecorder){ recSay('Bu tarayıcı ekran kaydını desteklemiyor. Güncel Chrome ya da Edge kullan.'); return; }
+  const q = REC_Q[S.recQ] || REC_Q['4k'];
   ensureAudio(); if (actx && actx.state === 'suspended'){ try{ await actx.resume(); }catch(e){} }
+  openPanel(false);   // panel kayda girmesin
   let disp;
-  try{ disp = await navigator.mediaDevices.getDisplayMedia({video:{frameRate:30}, audio:true, preferCurrentTab:true, selfBrowserSurface:'include', systemAudio:'include'}); }
+  try{ disp = await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:30, max:30}, width:{ideal:q.w}, height:{ideal:q.h}}, audio:true, preferCurrentTab:true, selfBrowserSurface:'include', systemAudio:'include'}); }
   catch(e){
     const n = (e && e.name) || 'Hata';
     recSay('Kayıt başlamadı (' + n + '). ' + (n === 'NotAllowedError' ? 'Paylaşım penceresinde “Bu sekme”yi seçip Paylaş’a bas. Sayfa bir önizleme/iframe içindeyse izin verilmez: dosyayı indirip Chrome’da doğrudan aç.' : (e && e.message) || ''));
     return;
   }
-  const vt = disp.getVideoTracks()[0];
-  try{ if (window.CropTarget && vt.cropTo){ await vt.cropTo(await CropTarget.fromElement($('#stage'))); } }catch(e){}   // sadece sahneyi kaydet (Chrome)
-  const tr = [vt], at = disp.getAudioTracks()[0];
-  if (at) tr.push(at); else if (recDest) recDest.stream.getAudioTracks().forEach(a => tr.push(a));
-  const M = ['video/mp4;codecs=avc1.640028,mp4a.40.2','video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm'];
+  const vt = disp.getVideoTracks()[0], at = disp.getAudioTracks()[0];
+  let cropped = false;
+  try{ if (window.CropTarget && vt.cropTo){ await vt.cropTo(await CropTarget.fromElement($('#stage'))); cropped = true; } }catch(e){}
+  // Yakalanan görüntü her pencere boyutunda gelir (ör. 1420×798). Kodlayıcıya bu tuhaf boyutu vermek
+  // bozuk video üretiyordu; bu yüzden sabit, standart boyutlu bir tuvale çizip onu kaydediyoruz.
+  const vid = document.createElement('video'); vid.muted = true; vid.playsInline = true; vid.srcObject = new MediaStream([vt]);
+  try{ await vid.play(); }catch(e){}
+  const cv = document.createElement('canvas'); cv.width = q.w; cv.height = q.h;
+  const c2 = cv.getContext('2d', {alpha:false}); c2.imageSmoothingEnabled = true; c2.imageSmoothingQuality = 'high';
+  let alive = true, nf = 0, t0f = performance.now(), fps = 0;
+  const fit = (sw, sh) => { const k = Math.min(q.w/sw, q.h/sh), w = sw*k, h = sh*k; return [(q.w-w)/2, (q.h-h)/2, w, h]; };
+  const draw = () => {
+    if (!alive) return;
+    const vw = vid.videoWidth, vh = vid.videoHeight;
+    if (vw && vh){
+      c2.fillStyle = '#000'; c2.fillRect(0, 0, q.w, q.h);
+      const r = $('#stage').getBoundingClientRect(), same = Math.abs(vw/vh - innerWidth/innerHeight) < 0.03;
+      if (!cropped && same){ const k = vw/innerWidth; c2.drawImage(vid, r.left*k, r.top*k, r.width*k, r.height*k, 0, 0, q.w, q.h); }
+      else { const d = fit(vw, vh); c2.drawImage(vid, d[0], d[1], d[2], d[3]); }
+      nf++;
+    }
+    const now = performance.now(); if (now - t0f >= 1000){ fps = Math.round(nf*1000/(now - t0f)); nf = 0; t0f = now; }
+    if (vid.requestVideoFrameCallback) vid.requestVideoFrameCallback(draw); else setTimeout(draw, 33);
+  };
+  draw();
+  const tr = [cv.captureStream(30).getVideoTracks()[0]];
+  // Ses: önce panelin kendi çıkışı (temiz stereo). Sadece uzak (CORS'suz) şarkı çalıyorsa sekme sesi.
+  const useTab = !!at && active === P2;
+  if (useTab) tr.push(at); else if (recDest) recDest.stream.getAudioTracks().forEach(a => tr.push(a));
+  const M = q.codecs.concat(['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm']);
   const mt = M.find(m => MediaRecorder.isTypeSupported(m)) || '';
-  recExt = mt.indexOf('mp4') >= 0 ? 'mp4' : 'webm'; recChunks = [];
-  recMR = new MediaRecorder(new MediaStream(tr), mt ? {mimeType: mt, videoBitsPerSecond: 8e6} : {videoBitsPerSecond: 8e6});
-  recMR.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+  recExt = mt.indexOf('mp4') >= 0 ? 'mp4' : 'webm'; recChunks = []; recBytes = 0;
+  const opt = {videoBitsPerSecond: q.br, audioBitsPerSecond: 192000}; if (mt) opt.mimeType = mt;
+  try{ recMR = new MediaRecorder(new MediaStream(tr), opt); }
+  catch(e){ alive = false; disp.getTracks().forEach(t => t.stop()); recSay('Kayıt başlamadı: ' + ((e && e.message) || 'kodlayıcı açılamadı') + '. Daha düşük çözünürlük seç.'); return; }
+  recMR.ondataavailable = e => { if (e.data && e.data.size){ recChunks.push(e.data); recBytes += e.data.size; } };
+  recMR.onerror = e => recSay('Kayıt hatası: ' + ((e.error && e.error.message) || 'bilinmiyor'));
   recMR.onstop = () => {
-    clearInterval(recTmr); disp.getTracks().forEach(t => t.stop());
+    alive = false; clearInterval(recTmr); disp.getTracks().forEach(t => t.stop()); vid.srcObject = null;
     recBlob = new Blob(recChunks, {type: recExt === 'mp4' ? 'video/mp4' : 'video/webm'});
     $('#recBtn').textContent = '● Kaydı başlat'; $('#recPrev').disabled = false; $('#recDl').disabled = false;
-    recSay('Kayıt hazır: ' + $('#recTm').textContent + ' · ' + (recBlob.size/1e6).toFixed(1) + ' MB · ' + recExt.toUpperCase());
+    recSay('Kayıt hazır: ' + $('#recTm').textContent + ' · ' + q.w + '×' + q.h + ' · ' + (recBlob.size/1e6).toFixed(0) + ' MB · ' + recExt.toUpperCase());
     openRecPv();
   };
   vt.addEventListener('ended', () => { if (recMR && recMR.state === 'recording') recMR.stop(); });
   recMR.start(1000); recT0 = Date.now(); $('#recTm').textContent = '00:00';
-  clearInterval(recTmr); recTmr = setInterval(() => { $('#recTm').textContent = recFmt((Date.now() - recT0)/1000); }, 250);
+  clearInterval(recTmr);
+  recTmr = setInterval(() => {
+    $('#recTm').textContent = recFmt((Date.now() - recT0)/1000);
+    recSay('Kayıt sürüyor · ' + q.w + '×' + q.h + ' · ' + fps + ' kare/sn · ' + (recBytes/1e6).toFixed(0) + ' MB' + (fps && fps < 24 ? ' · Bilgisayar zorlanıyor, Full HD seçmeyi dene' : '') + (useTab ? ' · ses: sekme' : ''));
+  }, 500);
   $('#recBtn').textContent = '■ Kaydı durdur'; $('#recPrev').disabled = true; $('#recDl').disabled = true;
-  recSay(at ? 'Kayıt sürüyor…' : 'Kayıt sürüyor… (sekme sesi paylaşılmadı, müzik panelden alınıyor)');
 }
 const toggleRec = () => { (recMR && recMR.state === 'recording') ? recMR.stop() : startRec(); };
 function openRecPv(){
@@ -1708,6 +1748,7 @@ function saveRec(){
   a.download = 'pop-damar-kayit-' + new Date().toISOString().slice(0,16).replace(/[:T]/g,'-') + '.' + recExt;
   document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500);
 }
+$('#recQ').onchange = e => { S.recQ = e.target.value; saveS(); };
 $('#recBtn').onclick = toggleRec; $('#recPrev').onclick = openRecPv; $('#recDl').onclick = saveRec; $('#recPvDl').onclick = saveRec;
 $('#recPvClose').onclick = () => { $('#recVid').pause(); $('#recPv').classList.remove('show'); };
 $('#recPvDel').onclick = () => { $('#recVid').pause(); recBlob = null; recChunks = []; $('#recPrev').disabled = true; $('#recDl').disabled = true; $('#recTm').textContent = '00:00'; $('#recPv').classList.remove('show'); recSay('Kayıt silindi.'); };
