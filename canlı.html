@@ -2,7 +2,7 @@
 <html lang="tr"> 
 <head>
 <meta charset="utf-8">
-<title>laafle.Com — Canlı Yayın Şablonu</title>
+<title>POP DAMAR — Canlı Yayın Paneli</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -531,6 +531,11 @@ body.nopanel #panel{display:none}
 #plist button:hover{background:#34344f}
 #plist button.delb:hover{background:rgba(234,0,56,.25);color:#ff5c7a}
 #plist input{font-weight:600}
+#recPv{position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center}
+#recPv.show{display:flex}
+#recPvBox{background:#15151f;color:#eee;padding:16px;border-radius:12px;width:min(860px,92vw);font:14px system-ui,sans-serif}
+#recPvBox video{width:100%;border-radius:8px;background:#000;display:block}
+#recPvBox .r3{display:flex;gap:8px;margin-top:10px}#recPvBox .r3 button{flex:1;padding:10px;border-radius:8px;border:1px solid #333;background:#2b2b40;color:#eee;cursor:pointer;font:inherit}
 </style>
 </head>
 <body>
@@ -558,12 +563,13 @@ body.nopanel #panel{display:none}
 <button id="gear" title="Ayarlar (P)">⚙</button>
 
 <div id="panel">
-  <h1>Laafle.Com · Yayın Paneli</h1>
+  <h1>POP DAMAR · Yayın Paneli</h1>
   <div id="tabs">
     <button data-tab="tpl" class="on">Şablon</button>
     <button data-tab="music">Müzik</button>
     <button data-tab="bg">Arka plan</button>
     <button data-tab="txt">Yazılar</button>
+    <button data-tab="rec">Kayıt</button>
     <button data-tab="help">OBS</button>
   </div>
 
@@ -634,11 +640,12 @@ body.nopanel #panel{display:none}
     <ul id="bglist"></ul>
     <p class="hint">Videolar sessiz oynar, liste bitince başa döner. Satırı sürükleyerek sıralayabilir, küçük resme tıklayarak o videoyu hemen gösterebilirsin. Yatay 16:9 videolar en iyi görünür; başka oranlar ekranı dolduracak şekilde kırpılır.</p>
 
-    <details style="margin-top:14px"><summary class="hint" style="cursor:pointer">İsteğe bağlı: Pexels API ile otomatik video</summary>
+    <details style="margin-top:14px"><summary class="hint" style="cursor:pointer">İsteğe bağlı: Pexels / Pixabay API ile otomatik video</summary>
       <div class="row" style="margin-top:10px"><label>Pexels API anahtarı</label><input type="password" id="pxKey" placeholder="API anahtarın"></div>
+      <div class="row"><label>Pixabay API anahtarı</label><input type="password" id="pbKey" placeholder="Pixabay API anahtarın"></div>
       <div class="row"><label>Arama kelimeleri (virgülle)</label><textarea id="pxQ"></textarea></div>
       <button class="btn" id="bgApply">Kaydet</button>
-      <p class="hint" style="margin-top:8px">Liste boşsa ve anahtar varsa kullanılır. API kullanırsan Pexels şartları gereği “Yazılar” sekmesindeki kredi alanına bir yazı eklemelisin.</p>
+      <p class="hint" style="margin-top:8px">Liste boşsa ve anahtar varsa kullanılır; iki anahtar da girilirse videolar ikisinden de çekilir (Pixabay'da kredi yazmak zorunlu değil). API kullanırsan Pexels şartları gereği “Yazılar” sekmesindeki kredi alanına bir yazı eklemelisin.</p>
     </details>
   </div>
 
@@ -651,6 +658,14 @@ body.nopanel #panel{display:none}
     <button class="btn pri" id="txtApply">Kaydet</button>
   </div>
 
+  <div class="tab" id="tab-rec">
+    <div class="row"><label>Yayın kaydı (mp4)</label><button class="btn" id="recBtn">● Kaydı başlat</button></div>
+    <div id="recTm" style="font:700 28px ui-monospace,Consolas,monospace;text-align:center;margin:10px 0">00:00</div>
+    <button class="btn" id="recPrev" disabled>▶ Son kaydı önizle</button>
+    <button class="btn" id="recDl" disabled style="margin-top:6px">⬇ Son kaydı indir</button>
+    <p class="hint" id="recSt" style="margin-top:10px">Başlatınca tarayıcı hangi ekranı paylaşacağını sorar: “Bu sekme”yi seç ve ses paylaşımı kutusunu işaretle. Kısayol: R. Kayıt bitince önizleme açılır, oradan mp4 olarak indirirsin.</p>
+  </div>
+
   <div class="tab" id="tab-help">
     <p class="hint">
     <b>OBS'e ekleme</b><br>
@@ -660,7 +675,7 @@ body.nopanel #panel{display:none}
     4) <b>“Sesi OBS ile kontrol et”</b> kutusunu işaretle (müziği yayına verir).<br>
     5) Ayar yapmak için kaynağa sağ tık → <b>Etkileşim</b>; ⚙ düğmesi veya <b>P</b> tuşu paneli açar.<br><br>
     <b>Adres parametreleri</b><br>
-    <code>t=1..32</code> şablon · <code>panel=0</code> paneli gizle · <code>key=…</code> Pexels anahtarı · <code>q=neon,rain</code> arama kelimeleri.<br><br>
+    <code>t=1..32</code> şablon · <code>panel=0</code> paneli gizle · <code>key=…</code> Pexels anahtarı · <code>pkey=…</code> Pixabay anahtarı · <code>q=neon,rain</code> arama kelimeleri.<br><br>
     <b>Hazır liste</b>: sayfayla aynı klasöre <code>playlist.json</code> koyarsan otomatik yüklenir:<br>
     <code>{"playlist":[{"title":"Gece Yarısı","src":"music/gece.mp4"}],"backgrounds":[{"src":"bg/sehir.mp4"}]}</code><br><br>
     Chrome'da açıp pencere yakalama kullanıyorsan ilk açılışta bir kez “Yayını başlat”a tıkla.
@@ -668,6 +683,8 @@ body.nopanel #panel{display:none}
   </div>
 </div>
 
+<div id="recPv"><div id="recPvBox"><video id="recVid" controls></video><div id="recInfo" style="margin-top:8px"></div>
+<div class="r3"><button id="recPvDl">⬇ mp4 olarak indir</button><button id="recPvClose">Kapat</button><button id="recPvDel">Kaydı sil</button></div></div></div>
 <script>
 (function(){
 'use strict';
@@ -683,17 +700,20 @@ const shuffle = a => { a = a.slice(); for(let i=a.length-1;i>0;i--){ const j=Mat
 
 /* ===================== AYARLAR ===================== */
 const DEF = {
-  tpl: 1, key: '',
+  tpl: 1, key: '', pkey: '',
   queries: 'neon lights, city night, rain, ocean sunset, abstract bokeh, aerial landscape, forest fog, clouds timelapse',
   clipSec: 0, fade: 1.5, minDur: 8, maxDur: 60, bgShuffle: false, credit: '',
-  brand: 'popbox music',
-  messages: ['Abone ol ve zili aç 🔔', 'Yayını beğenmeyi unutma 👍', 'Canlı sohbete katıl 💬', 'Şarkı isteğini sohbete yaz 🎶', 'Arkadaşlarınla paylaş ❤️', 'popbox music · 7/24 canlı müzik'],
+  brand: 'POP DAMAR',
+  messages: ['Abone ol ve zili aç 🔔', 'Yayını beğenmeyi unutma 👍', 'Canlı sohbete katıl 💬', 'Şarkı isteğini sohbete yaz 🎶', 'Arkadaşlarınla paylaş ❤️', 'POP DAMAR · 7/24 canlı müzik'],
   showSec: 6, gapSec: 14, vol: 1, shuffle: false
 };
 let S = Object.assign({}, DEF, LS.get('pbx_settings', {}));
+if (S.brand === 'popbox music') S.brand = 'POP DAMAR';
+S.messages = (S.messages||[]).map(m => m === 'popbox music · 7/24 canlı müzik' ? 'POP DAMAR · 7/24 canlı müzik' : m);
 const qp = new URLSearchParams(location.search);
 if (qp.get('t')) S.tpl = clamp(parseInt(qp.get('t'),10)||1, 1, 32);
 if (qp.get('key')) S.key = qp.get('key');
+if (qp.get('pkey')) S.pkey = qp.get('pkey');
 if (qp.get('q')) S.queries = qp.get('q').split(',').map(x=>x.trim()).filter(Boolean).join(', ');
 if (qp.get('panel') === '0') document.body.classList.add('nopanel');
 const saveS = () => LS.set('pbx_settings', S);
@@ -843,7 +863,7 @@ function mkPlayer(){
 const P1 = mkPlayer();   // ses dalgası için AudioContext'e bağlı
 const P2 = mkPlayer();   // CORS izni olmayan uzak adresler için (dalga simüle edilir)
 let active = P1;
-let actx = null, analyser = null, fdata = null, tdata = null;
+let actx = null, analyser = null, fdata = null, tdata = null, recDest = null;
 let cur = {index:-1, id:null, objUrl:null};
 let token = 0, errCount = 0;
 
@@ -856,6 +876,7 @@ function ensureAudio(){
   analyser = actx.createAnalyser();
   analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.72;
   src.connect(analyser); analyser.connect(actx.destination);
+  recDest = actx.createMediaStreamDestination(); analyser.connect(recDest);
   fdata = new Uint8Array(analyser.frequencyBinCount);
   tdata = new Uint8Array(analyser.fftSize);
 }
@@ -1246,7 +1267,7 @@ const saveBG = () => LS.set('pbx_bglist', BG);
 let bgActive = 0, bgBusy = false, bgTimer = null, bgFails = 0, bgIndex = -1;
 const bgObj = [null, null];
 let pool = LS.get('pbx_pool', []);          // isteğe bağlı Pexels API havuzu
-let queue = [];
+let queue = [], pbBackoff = 0;
 let fetching = false, lastErr = '', rate = '', clipNo = 0, backoffUntil = 0, curClip = null;
 const mod = (n, m) => ((n % m) + m) % m;
 
@@ -1312,7 +1333,7 @@ function renderBgStat(){
   const el = $('#bgStat'); if (!el) return;
   const n = bgAll().length;
   let h = n ? `${n} video · ${fmtDur(totalDur())}` : '';
-  if (!n && S.key) h = `API: ${pool.length} klip` + (rate ? ` · kalan ${esc(rate)}` : '');
+  if (!n && (S.key || S.pkey)) h = `API: ${pool.length} klip` + (rate ? ` · kalan ${esc(rate)}` : '');
   if (lastErr) h += (h ? ' · ' : '') + `<span style="color:#ff7a8a">⚠ ${esc(lastErr)}</span>`;
   el.innerHTML = h;
 }
@@ -1373,9 +1394,35 @@ $('#bgShuffle').onchange = e => { S.bgShuffle = e.target.checked; saveS(); };
 $('#clipSec').onchange = e => { S.clipSec = clamp(+e.target.value || 0, 0, 600); e.target.value = S.clipSec; saveS(); rescheduleBg(); };
 $('#fadeSec').onchange = e => { S.fade = clamp(+e.target.value || 1.5, .3, 5); e.target.value = S.fade; saveS(); stage.style.setProperty('--fade', S.fade + 's'); rescheduleBg(); };
 $('#bgApply').onclick = () => {
-  S.key = $('#pxKey').value.trim(); S.queries = $('#pxQ').value.trim() || DEF.queries; saveS();
+  S.key = $('#pxKey').value.trim(); S.pkey = $('#pbKey').value.trim(); S.queries = $('#pxQ').value.trim() || DEF.queries; saveS();
   queue = []; backoffUntil = 0; lastErr = ''; if (!bgAll().length) { clearTimeout(bgTimer); nextBg(); } renderBgStat();
 };
+
+/* ---- isteğe bağlı Pixabay API ---- */
+function toClipPx(h){
+  if (!h || !h.videos) return null;
+  const v = ['large','medium','small'].map(k => h.videos[k]).filter(x => x && x.url && x.width && x.height && Math.abs(x.width/x.height - 16/9) < 0.03);
+  if (!v.length) return null;
+  v.sort((a,b) => a.width - b.width);
+  const ok = v.filter(x => x.width <= 1920);
+  const f = ok.length ? ok[ok.length-1] : v[0];
+  return {id: 'px' + h.id, kind:'url', link: f.url, dur: h.duration || 20, by: h.user || ''};
+}
+async function pixabaySearch(q, page){
+  const url = 'https://pixabay.com/api/videos/?key=' + encodeURIComponent(S.pkey) + '&q=' + encodeURIComponent(q) + '&per_page=50&page=' + page + '&safesearch=true';
+  const r = await fetch(url);
+  const rem = r.headers.get('X-RateLimit-Remaining'); if (rem) rate = rem;
+  if (!r.ok){
+    const tx = await r.text().catch(() => '');
+    if (r.status === 429){ pbBackoff = Date.now() + 10*60*1000; throw new Error('Pixabay istek sınırı doldu, 10 dk sonra tekrar denenecek'); }
+    if (r.status === 400 && /range|page/i.test(tx)) return [];
+    if (r.status === 400 || r.status === 401 || r.status === 403) throw new Error('Pixabay anahtarı geçersiz');
+    throw new Error('Pixabay hatası ' + r.status);
+  }
+  const hits = (await r.json()).hits || [];
+  const f = hits.filter(h => h.duration >= S.minDur && h.duration <= S.maxDur);
+  return f.length ? f : hits;
+}
 
 /* ---- isteğe bağlı Pexels API ---- */
 function toClip(v){
@@ -1409,6 +1456,13 @@ async function refill(){
         catch(e){ lastErr = (e && e.message) || 'Bağlantı hatası (CORS/ağ)'; }
       }
     }
+    if (S.pkey && Date.now() > pbBackoff){
+      const qs2 = shuffle(S.queries.split(',').map(x=>x.trim()).filter(Boolean)).slice(0,2);
+      for (const q of qs2){
+        try{ (await pixabaySearch(q, 1 + Math.floor(Math.random()*2))).map(toClipPx).filter(Boolean).forEach(c => fresh.push(c)); lastErr = ''; }
+        catch(e){ lastErr = (e && e.message) || 'Bağlantı hatası (CORS/ağ)'; }
+      }
+    }
     const known = new Set(pool.map(c=>c.id));
     fresh.forEach(c => { if (!known.has(c.id)){ pool.push(c); known.add(c.id); } });
     if (pool.length > 150) pool = pool.slice(-150);
@@ -1433,7 +1487,7 @@ function scheduleSwitch(){
   const el = bgEls[bgActive];
   const list = bgAll();
   if (!el.src) return;
-  if (list.length === 1 || (list.length === 0 && !S.key)){ el.loop = true; return; }     // tek video: kesintisiz döngü
+  if (list.length === 1 || (list.length === 0 && !S.key && !S.pkey)){ el.loop = true; return; }     // tek video: kesintisiz döngü
   el.loop = false;
   const d = isFinite(el.duration) && el.duration > 0 ? el.duration : ((curClip && curClip.dur) || 20);
   const playFor = S.clipSec > 0 ? Math.min(d, S.clipSec) : d;
@@ -1556,7 +1610,7 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab));
 });
 function fillForms(){
-  $('#pxKey').value = S.key; $('#pxQ').value = S.queries; $('#clipSec').value = S.clipSec; $('#fadeSec').value = S.fade; $('#bgShuffle').checked = !!S.bgShuffle; $('#creditIn').value = S.credit || '';
+  $('#pxKey').value = S.key; $('#pbKey').value = S.pkey || ''; $('#pxQ').value = S.queries; $('#clipSec').value = S.clipSec; $('#fadeSec').value = S.fade; $('#bgShuffle').checked = !!S.bgShuffle; $('#creditIn').value = S.credit || '';
   $('#brandIn').value = S.brand; $('#msgIn').value = (S.messages||[]).join('\n'); $('#showSec').value = S.showSec; $('#gapSec').value = S.gapSec;
   $('#vol').value = S.vol; $('#shuffle').checked = !!S.shuffle;
 }
@@ -1580,6 +1634,7 @@ addEventListener('keydown', e => {
   else if (k === 'b'){ clearTimeout(bgTimer); nextBg({dir: 1}); }
   else if (k === ' '){ e.preventDefault(); togglePlay(); }
   else if (k === 'p') openPanel();
+  else if (k === 'r') toggleRec();
 });
 let idleT = null;
 addEventListener('mousemove', () => {
@@ -1606,6 +1661,54 @@ addEventListener('pointerdown', () => { if (actx && actx.state === 'suspended') 
 
 window.__pbx = { get state(){ return {tpl:S.tpl, index:cur.index, id:cur.id, clip: curClip && curClip.id, clipNo, simMode, queue:queue.length, pool:pool.length, paused:active.paused, lastErr, bgIndex, bgCount:bgAll().length, loop: bgEls[bgActive].loop}; }, setTemplate, playIndex, nextBg, S };
 })();
+
+/* ===================== KAYIT (mp4) ===================== */
+let recMR = null, recChunks = [], recBlob = null, recExt = 'webm', recT0 = 0, recTmr = null;
+const recFmt = x => { x = Math.floor(x); const h = Math.floor(x/3600), m = Math.floor(x%3600/60), sc = x%60, p = n => String(n).padStart(2,'0'); return (h ? h + ':' : '') + p(m) + ':' + p(sc); };
+const recSay = t => { $('#recSt').textContent = t; };
+async function startRec(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.MediaRecorder){ recSay('Bu tarayıcı ekran kaydını desteklemiyor. Güncel Chrome ya da Edge kullan.'); return; }
+  ensureAudio(); if (actx && actx.state === 'suspended'){ try{ await actx.resume(); }catch(e){} }
+  let disp;
+  try{ disp = await navigator.mediaDevices.getDisplayMedia({video:{frameRate:30}, audio:true, preferCurrentTab:true, selfBrowserSurface:'include', systemAudio:'include'}); }
+  catch(e){ recSay('Kayıt başlamadı: ekran paylaşımı seçilmedi. Açılan pencerede “Bu sekme”yi seçip Paylaş de.'); return; }
+  const vt = disp.getVideoTracks()[0];
+  try{ if (window.CropTarget && vt.cropTo){ await vt.cropTo(await CropTarget.fromElement($('#stage'))); } }catch(e){}   // sadece sahneyi kaydet (Chrome)
+  const tr = [vt], at = disp.getAudioTracks()[0];
+  if (at) tr.push(at); else if (recDest) recDest.stream.getAudioTracks().forEach(a => tr.push(a));
+  const M = ['video/mp4;codecs=avc1.640028,mp4a.40.2','video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm'];
+  const mt = M.find(m => MediaRecorder.isTypeSupported(m)) || '';
+  recExt = mt.indexOf('mp4') >= 0 ? 'mp4' : 'webm'; recChunks = [];
+  recMR = new MediaRecorder(new MediaStream(tr), mt ? {mimeType: mt, videoBitsPerSecond: 8e6} : {videoBitsPerSecond: 8e6});
+  recMR.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+  recMR.onstop = () => {
+    clearInterval(recTmr); disp.getTracks().forEach(t => t.stop());
+    recBlob = new Blob(recChunks, {type: recExt === 'mp4' ? 'video/mp4' : 'video/webm'});
+    $('#recBtn').textContent = '● Kaydı başlat'; $('#recPrev').disabled = false; $('#recDl').disabled = false;
+    recSay('Kayıt hazır: ' + $('#recTm').textContent + ' · ' + (recBlob.size/1e6).toFixed(1) + ' MB · ' + recExt.toUpperCase());
+    openRecPv();
+  };
+  vt.addEventListener('ended', () => { if (recMR && recMR.state === 'recording') recMR.stop(); });
+  recMR.start(1000); recT0 = Date.now(); $('#recTm').textContent = '00:00';
+  clearInterval(recTmr); recTmr = setInterval(() => { $('#recTm').textContent = recFmt((Date.now() - recT0)/1000); }, 250);
+  $('#recBtn').textContent = '■ Kaydı durdur'; $('#recPrev').disabled = true; $('#recDl').disabled = true;
+  recSay(at ? 'Kayıt sürüyor…' : 'Kayıt sürüyor… (sekme sesi paylaşılmadı, müzik panelden alınıyor)');
+}
+const toggleRec = () => { (recMR && recMR.state === 'recording') ? recMR.stop() : startRec(); };
+function openRecPv(){
+  if (!recBlob) return; const v = $('#recVid'); if (v.src) URL.revokeObjectURL(v.src);
+  v.src = URL.createObjectURL(recBlob);
+  $('#recInfo').textContent = 'Süre: ' + $('#recTm').textContent + ' · Boyut: ' + (recBlob.size/1e6).toFixed(1) + ' MB · Biçim: ' + recExt.toUpperCase() + (recExt === 'webm' ? ' (bu tarayıcı mp4 kaydını desteklemiyor, Chrome/Edge güncel sürümü dene)' : '');
+  $('#recPvDl').textContent = '⬇ ' + recExt + ' olarak indir'; $('#recPv').classList.add('show');
+}
+function saveRec(){
+  if (!recBlob) return; const a = document.createElement('a'); a.href = URL.createObjectURL(recBlob);
+  a.download = 'pop-damar-kayit-' + new Date().toISOString().slice(0,16).replace(/[:T]/g,'-') + '.' + recExt;
+  document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500);
+}
+$('#recBtn').onclick = toggleRec; $('#recPrev').onclick = openRecPv; $('#recDl').onclick = saveRec; $('#recPvDl').onclick = saveRec;
+$('#recPvClose').onclick = () => { $('#recVid').pause(); $('#recPv').classList.remove('show'); };
+$('#recPvDel').onclick = () => { $('#recVid').pause(); recBlob = null; recChunks = []; $('#recPrev').disabled = true; $('#recDl').disabled = true; $('#recTm').textContent = '00:00'; $('#recPv').classList.remove('show'); recSay('Kayıt silindi.'); };
 </script>
 </body>
 </html>
