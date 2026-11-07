@@ -612,6 +612,7 @@ body.nopanel #panel{display:none}
 @keyframes lblink{to{visibility:hidden}}
 #lyr .pop{animation:lpop .35s ease}
 @keyframes lpop{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+#smMood,#smGenre,#lyrStyle,#lyrPos,#recQ,#recC{background:#1c1c2b;color:#eee;border:1px solid #333;border-radius:8px;padding:7px 8px;font:inherit;max-width:100%}
 #recPv{position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center}
 #recPv.show{display:flex}
 #recPvBox{background:#15151f;color:#eee;padding:16px;border-radius:12px;width:min(1100px,96vw);max-height:96vh;overflow:auto;font:14px system-ui,sans-serif}
@@ -677,6 +678,7 @@ body.nopanel #panel{display:none}
     <button data-tab="music">Müzik</button>
     <button data-tab="bg">Arka plan</button>
     <button data-tab="txt">Yazılar</button>
+    <button data-tab="smart">Akıllı</button>
     <button data-tab="lyr">Sözler</button>
     <button data-tab="rec">Kayıt</button>
     <button data-tab="help">OBS</button>
@@ -773,6 +775,21 @@ body.nopanel #panel{display:none}
     <button class="btn pri" id="txtApply">Kaydet</button>
   </div>
 
+  <div class="tab" id="tab-smart">
+    <div class="row"><label>Analiz edilecek şarkı</label><div id="smSong" class="hint">—</div></div>
+    <button class="btn" id="smRun">🎬 Şarkıyı analiz et</button>
+    <div id="smRes" class="hint" style="margin-top:8px;line-height:1.55"></div>
+    <div class="row" style="margin-top:8px"><label>Hava (duygu)</label><select id="smMood"><option value="">Otomatik</option><option value="sakin">Sakin / Huzurlu</option><option value="huzunlu">Hüzünlü / Duygusal</option><option value="romantik">Romantik / Yumuşak</option><option value="pop">Pop / Neşeli</option><option value="enerjik">Enerjik / Coşkulu</option><option value="karanlik">Karanlık / Gerilimli</option></select></div>
+    <div class="row"><label>Tür</label><select id="smGenre"><option value="">Otomatik (etiket / başlık)</option><option value="none">Belirtme</option><option value="pop">Pop</option><option value="rock">Rock</option><option value="metal">Metal</option><option value="elektronik">Elektronik / Dans</option><option value="hiphop">Hip-Hop / Rap</option><option value="jazz">Caz / Blues</option><option value="klasik">Klasik / Enstrümantal</option><option value="akustik">Akustik / Folk</option><option value="lofi">Lo-fi / Chill</option><option value="rnb">R&amp;B / Soul</option><option value="turk">Türkçe / Arabesk / Sanat</option></select></div>
+    <label class="switch" style="margin-top:6px"><input type="checkbox" id="smTpl"><i></i> Şablon ve renkleri ayarla</label>
+    <label class="switch" style="margin-top:6px"><input type="checkbox" id="smBg"><i></i> Arka plan videolarını ayarla (Pixabay/Pexels)</label>
+    <label class="switch" style="margin-top:6px"><input type="checkbox" id="smLyr"><i></i> Söz stilini ayarla</label>
+    <label class="switch" style="margin-top:6px"><input type="checkbox" id="smAur"><i></i> Sadece Aurora ailesi</label>
+    <label class="switch" style="margin-top:6px"><input type="checkbox" id="smAuto"><i></i> Her şarkıda otomatik analiz et ve uygula</label>
+    <button class="btn" id="smApply" style="margin-top:10px">✨ Klibi uygula</button>
+    <p class="hint" id="smSt" style="margin-top:8px">Şarkı dosyasının sesi çözülüp ölçülür. Tempo ve enerji güvenilir bir ölçümdür; duygu ve tür ise bir tahmindir, yanılabilir. Beğenmezsen havayı ya da türü elle seçip tekrar uygula.</p>
+  </div>
+
   <div class="tab" id="tab-lyr">
     <div class="row"><label>Sözleri girilen şarkı</label><div id="lyrSong" class="hint">—</div></div>
     <div class="row"><label>Sözler (satır başına bir mısra)</label><textarea id="lyrIn" style="min-height:220px" placeholder="Sözleri yapıştır. İstersen [01:23.50] gibi zaman damgalı da olabilir."></textarea></div>
@@ -846,7 +863,7 @@ const shuffle = a => { a = a.slice(); for(let i=a.length-1;i>0;i--){ const j=Mat
 
 /* ===================== AYARLAR ===================== */
 const DEF = {
-  tpl: 1, key: '', pkey: '', recQ: '1080', recC: 'h264', lyrOn: true, lyrSize: 64, lyrPos: 'alt', lyrStyle: 'klasik', uniqSeed: '', uniqAuto: false, uniqTpl: true,
+  tpl: 1, key: '', pkey: '', recQ: '1080', recC: 'h264', lyrOn: true, lyrSize: 64, lyrPos: 'alt', lyrStyle: 'klasik', uniqSeed: '', uniqAuto: false, uniqTpl: true, smartOn: false, smTpl: true, smBg: true, smLyr: true, smAur: true,
   queries: 'neon lights, city night, rain, ocean sunset, abstract bokeh, aerial landscape, forest fog, clouds timelapse',
   clipSec: 0, fade: 1.5, minDur: 8, maxDur: 60, bgShuffle: false, credit: '',
   brand: 'POP DAMAR',
@@ -857,7 +874,7 @@ let S = Object.assign({}, DEF, LS.get('pbx_settings', {}));
 if (S.brand === 'popbox music') S.brand = 'POP DAMAR';
 S.messages = (S.messages||[]).map(m => m === 'popbox music · 7/24 canlı müzik' ? 'POP DAMAR · 7/24 canlı müzik' : m);
 const qp = new URLSearchParams(location.search);
-if (qp.get('t')) S.tpl = clamp(parseInt(qp.get('t'),10)||1, 1, 32);
+if (qp.get('t')) S.tpl = clamp(parseInt(qp.get('t'),10)||1, 1, 38);
 if (qp.get('key')) S.key = qp.get('key');
 if (qp.get('pkey')) S.pkey = qp.get('pkey');
 if (qp.get('q')) S.queries = qp.get('q').split(',').map(x=>x.trim()).filter(Boolean).join(', ');
@@ -1040,6 +1057,7 @@ async function playIndex(i){
   const my = ++token;
   cur.index = i; cur.id = item.id;
   setNowPlaying(item, i, list.length);
+  smartOnTrack(item);
   renderPlaylist();
   try{
     ensureAudio();
@@ -1768,7 +1786,7 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
 function fillForms(){
   $('#pxKey').value = S.key; $('#pbKey').value = S.pkey || ''; $('#pxQ').value = S.queries; $('#clipSec').value = S.clipSec; $('#fadeSec').value = S.fade; $('#bgShuffle').checked = !!S.bgShuffle; $('#creditIn').value = S.credit || '';
   $('#brandIn').value = S.brand; $('#msgIn').value = (S.messages||[]).join('\n'); $('#showSec').value = S.showSec; $('#gapSec').value = S.gapSec;
-  $('#recQ').value = S.recQ || '1080'; $('#uqSeed').value = S.uniqSeed || ''; $('#uqTpl').checked = S.uniqTpl !== false; $('#uqAuto').checked = !!S.uniqAuto; $('#lyrStyle').value = S.lyrStyle || 'klasik'; $('#recC').value = S.recC || 'h264'; $('#vol').value = S.vol; $('#shuffle').checked = !!S.shuffle;
+  $('#recQ').value = S.recQ || '1080'; $('#uqSeed').value = S.uniqSeed || ''; $('#uqTpl').checked = S.uniqTpl !== false; $('#uqAuto').checked = !!S.uniqAuto; $('#lyrStyle').value = S.lyrStyle || 'klasik'; ['smTpl','smBg','smLyr','smAur','smAuto'].forEach(k => { $('#' + k).checked = !!S[k]; }); $('#recC').value = S.recC || 'h264'; $('#vol').value = S.vol; $('#shuffle').checked = !!S.shuffle;
 }
 $('#txtApply').onclick = () => {
   S.brand = $('#brandIn').value.trim() || DEF.brand;
@@ -1931,11 +1949,13 @@ function uniqApply(){
   if (!S.uniqSeed) return;
   const r = uqRng(uqHash(S.uniqSeed)), R = (a, b) => a + r() * (b - a), tpl = +stage.dataset.tpl, sp = (k, v) => stage.style.setProperty(k, v);
   if (AUR.indexOf(tpl) >= 0){
-    const h0 = R(0, 360), h1 = (h0 + R(35, 80)) % 360, h2 = (h0 + R(120, 200)) % 360;
+    const sm0 = S.smartOn && S.smartHue != null, h0r = R(0, 360);
+    const h0 = sm0 ? (S.smartHue + R(-12, 12) + 360) % 360 : h0r;
+    const h1 = sm0 ? (h0 + R(20, 50)) % 360 : (h0 + R(35, 80)) % 360, h2 = sm0 ? (h0 + R(-50, -18) + 360) % 360 : (h0 + R(120, 200)) % 360;
     sp('--c1', 'hsla(' + (h0|0) + ',95%,62%,.8)'); sp('--c2', 'hsla(' + (h1|0) + ',90%,64%,.82)'); sp('--c3', 'hsla(' + (h2|0) + ',85%,66%,.62)');
     sp('--a1', 'hsl(' + (h0|0) + ',100%,78%)'); sp('--a2', 'hsl(' + (h1|0) + ',95%,78%)');
-    sp('--bw', R(1100, 1500).toFixed(0) + 'px'); sp('--bh', R(650, 900).toFixed(0) + 'px'); sp('--bo', R(.5, .72).toFixed(2));
-    sp('--ad', R(16, 34).toFixed(1) + 's'); sp('--adl', '-' + R(0, 25).toFixed(1) + 's');
+    sp('--bw', R(1100, 1500).toFixed(0) + 'px'); sp('--bh', R(650, 900).toFixed(0) + 'px'); sp('--bo', (sm0 && S.smartBo ? S.smartBo + R(-.04, .04) : R(.5, .72)).toFixed(2));
+    sp('--ad', (sm0 && S.smartAd ? S.smartAd + R(-2, 2) : R(16, 34)).toFixed(1) + 's'); sp('--adl', '-' + R(0, 25).toFixed(1) + 's');
     if (tpl === 31 || tpl === 33 || tpl === 35 || tpl === 36){   // konumlar şablonun kendi düzenine göre değil serbest
       sp('--x1', R(-400, 200).toFixed(0) + 'px'); sp('--y1', R(-300, 300).toFixed(0) + 'px');
       sp('--x2', R(500, 1100).toFixed(0) + 'px'); sp('--y2', R(-250, 200).toFixed(0) + 'px');
@@ -1943,16 +1963,18 @@ function uniqApply(){
     }
   } else {
     const cs = getComputedStyle(stage), dh = R(20, 340);
-    ['--a1', '--a2'].forEach(v => sp(v, uqHexShift(cs.getPropertyValue(v), dh)));
+    if (S.smartOn && S.smartHue != null){ sp('--a1', 'hsl(' + (S.smartHue|0) + ',100%,72%)'); sp('--a2', 'hsl(' + (((S.smartHue + 40) % 360)|0) + ',95%,72%)'); }
+    else ['--a1', '--a2'].forEach(v => sp(v, uqHexShift(cs.getPropertyValue(v), dh)));
   }
-  sp('--vf', 'saturate(' + R(.9, 1.2).toFixed(2) + ') brightness(' + R(.9, 1.05).toFixed(2) + ') hue-rotate(' + (R(-14, 14)|0) + 'deg)');
+  if (S.smartOn && S.smartSat) sp('--vf', 'saturate(' + S.smartSat + ') brightness(' + S.smartBr + ')');
+  else sp('--vf', 'saturate(' + R(.9, 1.2).toFixed(2) + ') brightness(' + R(.9, 1.05).toFixed(2) + ') hue-rotate(' + (R(-14, 14)|0) + 'deg)');
   if (uq){
     const l1 = R(0, 360)|0, l2 = (l1 + R(60, 200))|0;
     uq.style.background = 'radial-gradient(circle at ' + (R(5, 95)|0) + '% ' + (R(5, 95)|0) + '%,hsla(' + l1 + ',90%,60%,' + R(.10, .20).toFixed(2) + '),transparent ' + (R(30, 50)|0) + '%),radial-gradient(circle at ' + (R(5, 95)|0) + '% ' + (R(5, 95)|0) + '%,hsla(' + l2 + ',85%,62%,' + R(.08, .16).toFixed(2) + '),transparent ' + (R(28, 46)|0) + '%)';
   }
 }
 function uniqNew(){
-  S.uniqSeed = uqNewSeed(); saveS(); $('#uqSeed').value = S.uniqSeed;
+  S.smartOn = false; S.uniqSeed = uqNewSeed(); saveS(); $('#uqSeed').value = S.uniqSeed;
   let n = S.tpl; if (S.uniqTpl !== false){ const pool = AUR.filter(x => x !== S.tpl); n = pool[Math.floor(Math.random() * pool.length)]; }
   setTemplate(n);
 }
@@ -1960,7 +1982,219 @@ $('#uqNew').onclick = uniqNew;
 $('#uqSeed').onchange = e => { S.uniqSeed = e.target.value.trim().toUpperCase(); e.target.value = S.uniqSeed; saveS(); setTemplate(S.tpl); };
 $('#uqTpl').onchange = e => { S.uniqTpl = e.target.checked; saveS(); };
 $('#uqAuto').onchange = e => { S.uniqAuto = e.target.checked; saveS(); };
-$('#uqOff').onclick = () => { S.uniqSeed = ''; saveS(); $('#uqSeed').value = ''; setTemplate(S.tpl); };
+$('#uqOff').onclick = () => { S.smartOn = false; S.uniqSeed = ''; saveS(); $('#uqSeed').value = ''; setTemplate(S.tpl); };
+
+/* ===================== AKILLI KLİP ===================== */
+const SM_W = 1024, SM_H = 256;
+const smWin = new Float32Array(SM_W).map((_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (SM_W - 1)));
+const smRev = (() => { const r = new Uint16Array(SM_W), bits = Math.log2(SM_W); for (let i = 0; i < SM_W; i++){ let x = i, y = 0; for (let b = 0; b < bits; b++){ y = (y << 1) | (x & 1); x >>= 1; } r[i] = y; } return r; })();
+const smWr = new Float32Array(SM_W / 2).map((_, i) => Math.cos(2 * Math.PI * i / SM_W)), smWi = new Float32Array(SM_W / 2).map((_, i) => -Math.sin(2 * Math.PI * i / SM_W));
+function smFFT(re, im){
+  const n = SM_W;
+  for (let i = 0; i < n; i++){ const j = smRev[i]; if (j > i){ let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let size = 2; size <= n; size <<= 1){
+    const half = size >> 1, step = n / size;
+    for (let i = 0; i < n; i += size) for (let j = 0, k = 0; j < half; j++, k += step){
+      const a = i + j, b = a + half, tr = re[b] * smWr[k] - im[b] * smWi[k], ti = re[b] * smWi[k] + im[b] * smWr[k];
+      re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+    }
+  }
+}
+const smPear = (a, b) => { let ma = 0, mb = 0; for (let i = 0; i < a.length; i++){ ma += a[i]; mb += b[i]; } ma /= a.length; mb /= b.length; let n = 0, da = 0, db = 0; for (let i = 0; i < a.length; i++){ n += (a[i] - ma) * (b[i] - mb); da += (a[i] - ma) ** 2; db += (b[i] - mb) ** 2; } return n / Math.sqrt(da * db || 1); };
+const SM_MAJ = [6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88], SM_MIN = [6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+const SM_KEYS = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const SM_ID3 = ['Blues','Classic Rock','Country','Dance','Disco','Funk','Grunge','Hip-Hop','Jazz','Metal','New Age','Oldies','Other','Pop','R&B','Rap','Reggae','Rock','Techno','Industrial','Alternative','Ska','Death Metal','Pranks','Soundtrack','Euro-Techno','Ambient','Trip-Hop','Vocal','Jazz+Funk','Fusion','Trance','Classical','Instrumental','Acid','House','Game','Sound Clip','Gospel','Noise','AlternRock','Bass','Soul','Punk','Space','Meditative','Instrumental Pop','Instrumental Rock','Ethnic','Gothic','Darkwave','Techno-Industrial','Electronic','Pop-Folk','Eurodance','Dream','Southern Rock','Comedy','Cult','Gangsta','Top 40','Christian Rap','Pop/Funk','Jungle','Native American','Cabaret','New Wave','Psychadelic','Rave','Showtunes','Trailer','Lo-Fi','Tribal','Acid Punk','Acid Jazz','Polka','Retro','Musical','Rock & Roll','Hard Rock'];
+
+async function smId3Genre(blob){   // mp3 etiketinden tür (ID3v2 TCON / ID3v1)
+  try{
+    const head = new Uint8Array(await blob.slice(0, 65536).arrayBuffer());
+    if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33){
+      const ver = head[3], size = ((head[6] & 127) << 21) | ((head[7] & 127) << 14) | ((head[8] & 127) << 7) | (head[9] & 127), end = Math.min(head.length, 10 + size);
+      let o = 10;
+      while (o + 10 < end){
+        const id = String.fromCharCode(head[o], head[o+1], head[o+2], head[o+3]); if (!/^[A-Z0-9]{4}$/.test(id)) break;
+        const fs = ver === 4 ? ((head[o+4] & 127) << 21) | ((head[o+5] & 127) << 14) | ((head[o+6] & 127) << 7) | (head[o+7] & 127) : (head[o+4] << 24 | head[o+5] << 16 | head[o+6] << 8 | head[o+7]) >>> 0;
+        if (id === 'TCON' && fs > 1 && o + 10 + fs <= head.length){
+          const enc = head[o+10], body = head.slice(o + 11, o + 10 + fs);
+          let txt = enc === 1 || enc === 2 ? new TextDecoder(enc === 1 ? 'utf-16' : 'utf-16be').decode(body) : new TextDecoder(enc === 3 ? 'utf-8' : 'latin1').decode(body);
+          txt = txt.replace(/\0/g, ' ').trim();
+          const m = /^\((\d+)\)\s*(.*)$/.exec(txt); if (m) txt = m[2] || SM_ID3[+m[1]] || '';
+          else if (/^\d+$/.test(txt)) txt = SM_ID3[+txt] || '';
+          if (txt) return txt;
+        }
+        if (fs <= 0) break; o += 10 + fs;
+      }
+    }
+    const tail = new Uint8Array(await blob.slice(Math.max(0, blob.size - 128)).arrayBuffer());
+    if (tail.length === 128 && tail[0] === 0x54 && tail[1] === 0x41 && tail[2] === 0x47 && SM_ID3[tail[127]]) return SM_ID3[tail[127]];
+  }catch(e){}
+  return '';
+}
+function smGenreFamily(str){
+  const t = (str || '').toLowerCase(); if (!t) return '';
+  if (/metal/.test(t)) return 'metal';
+  if (/rock|punk|grunge|alternative/.test(t)) return 'rock';
+  if (/türk|turk|arabesk|sanat|halk|anadolu/.test(t)) return 'turk';
+  if (/hip.?hop|\brap\b|trap|gangsta/.test(t)) return 'hiphop';
+  if (/techno|house|trance|electro|edm|dance|disco|dubstep|synth|rave|eurodance|drum/.test(t)) return 'elektronik';
+  if (/jazz|blues|swing/.test(t)) return 'jazz';
+  if (/lo-?fi|chill|ambient|new age|meditat|relax|lounge|downtempo|slowed|reverb/.test(t)) return 'lofi';
+  if (/classic|orchestr|piano|instrumental|soundtrack|opera/.test(t)) return 'klasik';
+  if (/acoustic|akustik|folk|country|singer/.test(t)) return 'akustik';
+  if (/r&b|rnb|soul|funk|gospel/.test(t)) return 'rnb';
+  if (/pop/.test(t)) return 'pop';
+  return '';
+}
+async function smBlob(item){
+  if (item.kind === 'file'){ const rec = await DB.get(item.id); if (!rec) throw new Error('dosya bulunamadı'); return rec.blob; }
+  const r = await fetch(item.url); if (!r.ok) throw new Error('sunucu ' + r.status); return await r.blob();
+}
+const smTick = () => new Promise(r => setTimeout(r, 0));
+async function smartAnalyze(item, onProg){
+  const blob = await smBlob(item);
+  if (blob.size > 200e6) throw new Error('dosya çok büyük (200 MB üstü)');
+  const tag = await smId3Genre(blob);
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const ab = await new OAC(1, 1, 22050).decodeAudioData(await blob.arrayBuffer());
+  const sr = ab.sampleRate, N = ab.length, ch = ab.numberOfChannels, mono = new Float32Array(N);
+  for (let c = 0; c < ch; c++){ const d = ab.getChannelData(c); for (let i = 0; i < N; i++) mono[i] += d[i] / ch; }
+  const segLen = Math.min(N, Math.floor(75 * sr)), start = Math.max(0, Math.min(Math.floor(N * 0.2), N - segLen));
+  const nF = Math.floor((segLen - SM_W) / SM_H) + 1; if (nF < 200) throw new Error('şarkı çok kısa');
+  const re = new Float32Array(SM_W), im = new Float32Array(SM_W), prev = new Float32Array(SM_W / 2), flux = new Float32Array(nF), rmsA = new Float32Array(nF), chroma = new Float64Array(12);
+  let cenN = 0, cenD = 0, low = 0, tot = 0;
+  for (let f = 0; f < nF; f++){
+    const base = start + f * SM_H; let e = 0;
+    for (let i = 0; i < SM_W; i++){ const v = mono[base + i]; e += v * v; re[i] = v * smWin[i]; im[i] = 0; }
+    rmsA[f] = Math.sqrt(e / SM_W); smFFT(re, im);
+    let fx = 0;
+    for (let k = 1; k < SM_W / 2; k++){
+      const m = Math.sqrt(re[k] * re[k] + im[k] * im[k]), lm = Math.log1p(10 * m);
+      const df = lm - prev[k]; if (df > 0) fx += df; prev[k] = lm;
+      cenN += k * m; cenD += m; const pw = m * m; tot += pw; if (k <= 9) low += pw;
+      if (k >= 9 && k <= 93){ const pc = ((Math.round(12 * Math.log2(k * sr / SM_W / 440) + 69) % 12) + 12) % 12; chroma[pc] += m; }
+    }
+    flux[f] = fx;
+    if (f % 400 === 399){ if (onProg) onProg(Math.round(f / nF * 100)); await smTick(); }
+  }
+  // tempo: akış (flux) özilinti
+  const fps = sr / SM_H, r = Math.round(fps * 0.4), x = new Float32Array(nF), pre = new Float64Array(nF + 1);
+  for (let i = 0; i < nF; i++) pre[i + 1] = pre[i] + flux[i];
+  for (let i = 0; i < nF; i++){ const a = Math.max(0, i - r), b = Math.min(nF, i + r + 1), mean = (pre[b] - pre[a]) / (b - a); x[i] = Math.max(0, flux[i] - mean); }
+  const lmin = Math.floor(fps * 60 / 210), lmax = Math.ceil(fps * 60 / 55), ac = new Float64Array(lmax + 2);
+  let acSum = 0, acN = 0;
+  for (let l = lmin - 1; l <= lmax + 1; l++){ let sm = 0; for (let i = 0; i + l < nF; i++) sm += x[i] * x[i + l]; ac[l] = sm / (nF - l); if (l >= lmin && l <= lmax){ acSum += ac[l]; acN++; } }
+  let best = lmin, bs = -1;
+  for (let l = lmin; l <= lmax; l++){ const bpm = 60 * fps / l, sc = ac[l] * Math.exp(-0.5 * Math.pow(Math.log2(bpm / 118) / 0.7, 2)); if (sc > bs && ac[l] >= ac[l - 1] && ac[l] >= ac[l + 1]){ bs = sc; best = l; } }
+  const a0 = ac[best - 1], a1 = ac[best], a2 = ac[best + 1], den = a0 - 2 * a1 + a2, lag = den ? best + 0.5 * (a0 - a2) / den : best;
+  const bpm = Math.round(60 * fps / lag), tempoSure = a1 / ((acSum / acN) || 1) > 1.6;
+  // enerji, parlaklık, bas, dinamik
+  let ms = 0, mean = 0; for (let i = 0; i < nF; i++){ ms += rmsA[i] * rmsA[i]; mean += rmsA[i]; } ms /= nF; mean /= nF;
+  let vr = 0; for (let i = 0; i < nF; i++) vr += (rmsA[i] - mean) ** 2;
+  const db = 20 * Math.log10(Math.sqrt(ms) + 1e-9), dyn = Math.sqrt(vr / nF) / (mean || 1);
+  const energy = Math.max(0, Math.min(1, (db + 24) / 14)), centroid = (cenN / (cenD || 1)) * sr / SM_W, bass = low / (tot || 1);
+  // tonalite (majör/minör tahmini)
+  let rMaj = -2, rMin = -2, kMaj = 0, kMin = 0;
+  for (let t = 0; t < 12; t++){
+    const rot = Array.from({length: 12}, (_, i) => chroma[(i + t) % 12]);
+    const a = smPear(rot, SM_MAJ), b = smPear(rot, SM_MIN); if (a > rMaj){ rMaj = a; kMaj = t; } if (b > rMin){ rMin = b; kMin = t; }
+  }
+  const major = rMaj >= rMin;
+  return {bpm, tempoSure, db, energy, dyn, centroid, bass, major, key: SM_KEYS[major ? kMaj : kMin] + (major ? '' : 'm'), modeConf: Math.abs(rMaj - rMin), tag, dur: N / sr};
+}
+
+const SM_MOOD = {
+  sakin:    {n:'Sakin / Huzurlu', hue:200, bo:.55, sat:.92, br:.96, q:'calm ocean waves, misty forest, calm lake', tpl:[34,37,35,31], lyr:'ince'},
+  huzunlu:  {n:'Hüzünlü / Duygusal', hue:245, bo:.5, sat:.88, br:.9, q:'rain window, lonely road night, foggy city', tpl:[37,38,34,31], lyr:'zarif'},
+  romantik: {n:'Romantik / Yumuşak', hue:335, bo:.62, sat:1.05, br:1, q:'sunset beach, city lights bokeh, rose petals', tpl:[33,36,38], lyr:'cam'},
+  pop:      {n:'Pop / Neşeli', hue:300, bo:.68, sat:1.15, br:1.02, q:'colorful lights, city night, confetti, neon', tpl:[36,33,31], lyr:'karaoke', ex:[25,24,9]},
+  enerjik:  {n:'Enerjik / Coşkulu', hue:15, bo:.75, sat:1.2, br:1.03, q:'fire sparks, concert lights, speed lights, lightning', tpl:[33,36,31], lyr:'neon', ex:[25,10,4]},
+  karanlik: {n:'Karanlık / Gerilimli', hue:275, bo:.5, sat:.95, br:.88, q:'dark clouds, smoke, storm, night forest fog', tpl:[38,36,37], lyr:'sinema', ex:[22,6]}
+};
+const SM_GENRE = {
+  pop:{n:'Pop', q:'colorful lights, city night', tpl:[36,33,31], lyr:'karaoke'},
+  rock:{n:'Rock', q:'concert stage lights, electric guitar, fire', tpl:[33,36], lyr:'neon'},
+  metal:{n:'Metal', q:'dark clouds lightning, fire, smoke', tpl:[36,38], lyr:'neon'},
+  elektronik:{n:'Elektronik / Dans', q:'neon lights, abstract particles, laser', tpl:[36,34], lyr:'neon'},
+  hiphop:{n:'Hip-Hop / Rap', q:'city street night, skyline, graffiti', tpl:[33,37], lyr:'sinema'},
+  jazz:{n:'Caz / Blues', q:'night city bar lights, saxophone, smoke', tpl:[33,38], lyr:'zarif'},
+  klasik:{n:'Klasik / Enstrümantal', q:'piano keys, abstract ink, starry night', tpl:[37,38], lyr:'zarif'},
+  akustik:{n:'Akustik / Folk', q:'forest sunlight, campfire, nature leaves', tpl:[35,31], lyr:'ince'},
+  lofi:{n:'Lo-fi / Chill', q:'rain window, cozy room, night city rain', tpl:[34,37], lyr:'ince'},
+  rnb:{n:'R&B / Soul', q:'sunset city, neon night drive', tpl:[33,36], lyr:'cam'},
+  turk:{n:'Türkçe / Arabesk / Sanat', q:'istanbul bosphorus, rainy street night, sea sunset', tpl:[33,38,34], lyr:'zarif'}
+};
+function smMoodOf(f){
+  const e = f.energy, b = f.bpm;
+  if (e < 0.35 && b < 110) return f.major ? 'sakin' : 'huzunlu';
+  if (b >= 125 && e >= 0.55) return f.major ? 'enerjik' : 'karanlik';
+  if (!f.major && b < 115) return 'huzunlu';
+  if (f.major && b < 100 && e < 0.6) return 'romantik';
+  if (b >= 105 && e >= 0.45) return 'pop';
+  return e < 0.5 ? 'sakin' : 'pop';
+}
+let smx = {f: null, item: null}, smToken = 0;
+const smSay = t => { $('#smSt').textContent = t; };
+function smShow(f, item){
+  smx.f = f; smx.item = item;
+  const en = f.energy < .35 ? 'düşük' : f.energy < .65 ? 'orta' : 'yüksek', br = f.centroid > 2600 ? 'parlak' : f.centroid < 1500 ? 'yumuşak/koyu' : 'dengeli', bs = f.bass > .45 ? 'güçlü' : f.bass > .25 ? 'orta' : 'hafif';
+  const mood = smMoodOf(f), g = smGenreOf(f, item);
+  $('#smRes').innerHTML = '<b>Tempo:</b> ~' + f.bpm + ' BPM' + (f.tempoSure ? '' : ' (belirsiz)') + ' · <b>Enerji:</b> ' + en + ' (' + f.db.toFixed(0) + ' dB) · <b>Parlaklık:</b> ' + br + ' · <b>Bas:</b> ' + bs +
+    '<br><b>Tonalite (tahmin):</b> ' + (f.major ? 'majör' : 'minör') + ' ' + f.key + (f.modeConf < .08 ? ' (belirsiz)' : '') + '<br><b>Hava (tahmin):</b> ' + SM_MOOD[mood].n + ' · <b>Tür:</b> ' + (g.fam ? SM_GENRE[g.fam].n + ' (' + g.src + ')' : 'bilinmiyor');
+}
+function smGenreOf(f, item){
+  const sel = $('#smGenre').value;
+  if (sel === 'none') return {fam: '', src: ''};
+  if (sel) return {fam: sel, src: 'elle'};
+  const t = smGenreFamily(f && f.tag); if (t) return {fam: t, src: 'etiket'};
+  const k = smGenreFamily(item && item.title); if (k) return {fam: k, src: 'başlık'};
+  return {fam: '', src: ''};
+}
+function smPick(list){ const pool = list.filter(x => x !== S.tpl); const l = pool.length ? pool : list; return l[Math.floor(Math.random() * l.length)]; }
+function smartApply(){
+  if (!smx.f) return;
+  const f = smx.f, mk = $('#smMood').value || smMoodOf(f), M = SM_MOOD[mk], g = smGenreOf(f, smx.item), G = g.fam ? SM_GENRE[g.fam] : null, out = [];
+  const ad = Math.max(12, Math.min(36, 46 - f.bpm / 4));
+  if (S.smTpl){
+    let pool = M.tpl.concat(G ? G.tpl : []); if (!S.smAur && M.ex) pool = pool.concat(M.ex); if (S.smAur) pool = pool.filter(x => AUR.indexOf(x) >= 0);
+    const n = smPick(pool.length ? pool : AUR);
+    S.smartOn = true; S.smartHue = M.hue; S.smartAd = +ad.toFixed(1); S.smartBo = M.bo; S.smartSat = M.sat; S.smartBr = M.br;
+    S.uniqSeed = uqNewSeed(); $('#uqSeed').value = S.uniqSeed; saveS(); setTemplate(n);
+    out.push('şablon ' + n + ' · ' + M.n + ' paleti · ışık hızı ' + ad.toFixed(0) + ' sn');
+  }
+  if (S.smBg){
+    if (S.key || S.pkey){
+      const qs = M.q.split(', ').concat(G ? G.q.split(', ') : []).slice(0, 6).join(', ');
+      S.queries = qs; S.clipSec = f.bpm >= 130 ? 10 : f.bpm >= 100 ? 16 : f.bpm >= 75 ? 24 : 32; saveS();
+      $('#pxQ').value = qs; const cs = $('#clipSec'); if (cs) cs.value = S.clipSec;
+      pool = []; LS.set('pbx_pool', pool); queue = []; backoffUntil = 0; pbBackoff = 0; lastErr = '';
+      if (!bgAll().length){ clearTimeout(bgTimer); nextBg(); } renderBgStat();
+      out.push('videolar: ' + qs + ' · her klip ~' + S.clipSec + ' sn');
+    } else out.push('videolar için Arka plan sekmesine Pixabay/Pexels anahtarı gerekli');
+  }
+  if (S.smLyr){ S.lyrStyle = (G && G.lyr) || M.lyr; saveS(); $('#lyrStyle').value = S.lyrStyle; shown1 = null; out.push('söz stili: ' + S.lyrStyle); }
+  smSay('Uygulandı → ' + out.join(' · '));
+}
+async function smartRun(item, auto){
+  const my = ++smToken;
+  if (!item){ smSay('Önce bir şarkı ekle ve çal.'); return null; }
+  $('#smSong').textContent = item.title; $('#smRun').disabled = true;
+  try{
+    const f = await smartAnalyze(item, p => smSay('Analiz ediliyor… %' + p));
+    if (my !== smToken) return null;
+    smShow(f, item); if (!auto) smSay('Analiz tamam. İstersen hava/türü elle değiştirip “Klibi uygula”ya bas.');
+    return f;
+  }catch(e){ if (my === smToken) smSay('Analiz yapılamadı: ' + ((e && e.message) || 'bilinmeyen hata') + '. Uzak adresli şarkılar CORS yüzünden çözülemeyebilir; dosya olarak eklemeyi dene.'); return null; }
+  finally{ if (my === smToken) $('#smRun').disabled = false; }
+}
+async function smartOnTrack(item){
+  if (!S.smAuto || !item) return;
+  const f = await smartRun(item, true); if (f) smartApply();
+}
+$('#smRun').onclick = () => { const list = allItems(); smartRun(cur.index >= 0 ? list[cur.index] : list[0], false); };
+$('#smApply').onclick = () => { if (!smx.f){ smSay('Önce “Şarkıyı analiz et”e bas.'); return; } smShow(smx.f, smx.item); smartApply(); };
+['smTpl','smBg','smLyr','smAur','smAuto'].forEach(k => { $('#' + k).onchange = e => { S[k] = e.target.checked; saveS(); }; });
+$('#smMood').onchange = () => { if (smx.f) smShow(smx.f, smx.item); };
+$('#smGenre').onchange = () => { if (smx.f) smShow(smx.f, smx.item); };
 
 /* ===================== KAYIT (mp4) ===================== */
 let recMR = null, recChunks = [], recBlob = null, recExt = 'webm', recT0 = 0, recTmr = null;
