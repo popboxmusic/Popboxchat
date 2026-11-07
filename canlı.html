@@ -531,6 +531,14 @@ body.nopanel #panel{display:none}
 #plist button:hover{background:#34344f}
 #plist button.delb:hover{background:rgba(234,0,56,.25);color:#ff5c7a}
 #plist input{font-weight:600}
+#lyr{position:absolute;left:120px;right:120px;bottom:290px;text-align:center;z-index:6;pointer-events:none;text-shadow:0 3px 18px rgba(0,0,0,.85);opacity:0;transition:opacity .4s}
+#lyr.on{opacity:1}
+#lyr .l1{font-size:var(--lyr,64px);font-weight:800;line-height:1.2}
+#lyr .l2{font-size:calc(var(--lyr,64px)*.58);opacity:.62;margin-top:12px;font-weight:600}
+#lyr[data-pos="mid"]{bottom:auto;top:50%;transform:translateY(-50%)}
+#lyr[data-pos="top"]{bottom:auto;top:170px}
+#lyr .pop{animation:lpop .35s ease}
+@keyframes lpop{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 #recPv{position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center}
 #recPv.show{display:flex}
 #recPvBox{background:#15151f;color:#eee;padding:16px;border-radius:12px;width:min(860px,92vw);font:14px system-ui,sans-serif}
@@ -557,6 +565,7 @@ body.nopanel #panel{display:none}
   <div class="msg" id="msg"><span id="msgText"></span></div>
   <div class="prog" id="prog"><i></i></div><div class="time" id="ptime"></div>
   <div class="credit" id="credit"></div>
+  <div id="lyr" data-pos="alt"><div class="l1"></div><div class="l2"></div></div>
   <div id="gate"><button id="gateBtn">▶ Yayını başlat</button></div>
 </div>
 
@@ -569,6 +578,7 @@ body.nopanel #panel{display:none}
     <button data-tab="music">Müzik</button>
     <button data-tab="bg">Arka plan</button>
     <button data-tab="txt">Yazılar</button>
+    <button data-tab="lyr">Sözler</button>
     <button data-tab="rec">Kayıt</button>
     <button data-tab="help">OBS</button>
   </div>
@@ -658,8 +668,25 @@ body.nopanel #panel{display:none}
     <button class="btn pri" id="txtApply">Kaydet</button>
   </div>
 
+  <div class="tab" id="tab-lyr">
+    <div class="row"><label>Sözleri girilen şarkı</label><div id="lyrSong" class="hint">—</div></div>
+    <div class="row"><label>Sözler (satır başına bir mısra)</label><textarea id="lyrIn" style="min-height:220px" placeholder="Sözleri yapıştır. İstersen [01:23.50] gibi zaman damgalı da olabilir."></textarea></div>
+    <button class="btn" id="lyrSave">Kaydet</button>
+    <button class="btn" id="lyrSync" style="margin-top:6px">⏱ Zamanla: şarkı baştan çalar, her mısrada ENTER</button>
+    <button class="btn" id="lyrTap" style="margin-top:6px;display:none">▶ ŞİMDİ (mısra başladı)</button>
+    <button class="btn" id="lyrFind" style="margin-top:6px">🔎 Hazır zamanlı sözü ara (LRCLIB)</button>
+    <button class="btn" id="lyrClr" style="margin-top:6px">Zaman damgalarını sil</button>
+    <p class="hint" id="lyrSt" style="margin-top:8px">Sözler şarkıya göre ayrı saklanır. Zamanlama için şarkıyı bir kez baştan sona dinleyip her mısra başlarken ENTER’a basman yeterli (Backspace: bir geri, Esc: iptal).</p>
+    <div class="set2">
+      <div><label>Yazı boyutu</label><input type="number" id="lyrSize" min="30" max="140"></div>
+      <div><label>Konum</label><select id="lyrPos"><option value="alt">Alt</option><option value="mid">Orta</option><option value="top">Üst</option></select></div>
+    </div>
+    <label class="switch" style="margin-top:8px"><input type="checkbox" id="lyrOn"><i></i> Sözleri ekranda göster</label>
+  </div>
+
   <div class="tab" id="tab-rec">
     <div class="row"><label>Kayıt çözünürlüğü</label><select id="recQ"><option value="4k">4K · 3840×2160 · 24 Mbps</option><option value="2k">2K · 2560×1440 · 12 Mbps</option><option value="1080">Full HD · 1920×1080 · 8 Mbps</option></select></div>
+    <div class="row"><label>Kodlayıcı</label><select id="recC"><option value="h264">Otomatik · H.264 mp4</option><option value="vp9">Uyumlu · VP9 mp4 (kayıt bozuksa dene)</option><option value="webm">VP9 webm (en sağlam)</option></select></div>
     <div class="row"><label>Yayın kaydı (mp4)</label><button class="btn" id="recBtn">● Kaydı başlat</button></div>
     <div id="recTm" style="font:700 28px ui-monospace,Consolas,monospace;text-align:center;margin:10px 0">00:00</div>
     <button class="btn" id="recPrev" disabled>▶ Son kaydı önizle</button>
@@ -701,7 +728,7 @@ const shuffle = a => { a = a.slice(); for(let i=a.length-1;i>0;i--){ const j=Mat
 
 /* ===================== AYARLAR ===================== */
 const DEF = {
-  tpl: 1, key: '', pkey: '', recQ: '4k',
+  tpl: 1, key: '', pkey: '', recQ: '4k', recC: 'h264', lyrOn: true, lyrSize: 64, lyrPos: 'alt',
   queries: 'neon lights, city night, rain, ocean sunset, abstract bokeh, aerial landscape, forest fog, clouds timelapse',
   clipSec: 0, fade: 1.5, minDur: 8, maxDur: 60, bgShuffle: false, credit: '',
   brand: 'POP DAMAR',
@@ -1613,7 +1640,7 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
 function fillForms(){
   $('#pxKey').value = S.key; $('#pbKey').value = S.pkey || ''; $('#pxQ').value = S.queries; $('#clipSec').value = S.clipSec; $('#fadeSec').value = S.fade; $('#bgShuffle').checked = !!S.bgShuffle; $('#creditIn').value = S.credit || '';
   $('#brandIn').value = S.brand; $('#msgIn').value = (S.messages||[]).join('\n'); $('#showSec').value = S.showSec; $('#gapSec').value = S.gapSec;
-  $('#recQ').value = S.recQ || '4k'; $('#vol').value = S.vol; $('#shuffle').checked = !!S.shuffle;
+  $('#recQ').value = S.recQ || '4k'; $('#recC').value = S.recC || 'h264'; $('#vol').value = S.vol; $('#shuffle').checked = !!S.shuffle;
 }
 $('#txtApply').onclick = () => {
   S.brand = $('#brandIn').value.trim() || DEF.brand;
@@ -1661,6 +1688,96 @@ addEventListener('pointerdown', () => { if (actx && actx.state === 'suspended') 
 })();
 
 window.__pbx = { get state(){ return {tpl:S.tpl, index:cur.index, id:cur.id, clip: curClip && curClip.id, clipNo, simMode, queue:queue.length, pool:pool.length, paused:active.paused, lastErr, bgIndex, bgCount:bgAll().length, loop: bgEls[bgActive].loop}; }, setTemplate, playIndex, nextBg, S };
+/* ===================== ŞARKI SÖZLERİ ===================== */
+let LY = LS.get('pbx_lyrics', {});
+const LRC_RE = /^\s*\[(\d+):(\d+(?:[.,]\d+)?)\]\s*(.*)$/;
+const lyrParse = txt => String(txt || '').split('\n').map(l => { const m = LRC_RE.exec(l); return m ? {t: (+m[1])*60 + parseFloat(m[2].replace(',', '.')), x: m[3].trim()} : {t: null, x: l.trim()}; }).filter(o => o.x || o.t !== null);
+const lyrStamp = t => { t = Math.max(0, t); const m = Math.floor(t/60); return '[' + String(m).padStart(2,'0') + ':' + (t - m*60).toFixed(2).padStart(5,'0') + ']'; };
+const lyrSay = t => { $('#lyrSt').textContent = t; };
+let lyrId = null, lyrLines = [], syncMode = false, syncIdx = 0, syncLines = [], shown1 = null, shown2 = null;
+function lyrTimed(txt){ return lyrParse(txt).filter(o => o.t !== null && o.x).sort((a,b) => a.t - b.t); }
+function saveLyr(txt){
+  if (!lyrId) return;
+  if (String(txt).trim()) LY[lyrId] = txt; else delete LY[lyrId];
+  LS.set('pbx_lyrics', LY); lyrLines = lyrTimed(txt);
+}
+function lyrLoad(){
+  lyrId = cur.id; const it = allItems()[cur.index];
+  $('#lyrSong').textContent = it ? it.title : '—';
+  const txt = (lyrId && LY[lyrId]) || '';
+  $('#lyrIn').value = txt; lyrLines = lyrTimed(txt);
+}
+function lyrApply(){
+  const b = $('#lyr'); b.dataset.pos = S.lyrPos || 'alt'; b.style.setProperty('--lyr', (S.lyrSize || 64) + 'px');
+  $('#lyrOn').checked = S.lyrOn !== false; $('#lyrSize').value = S.lyrSize || 64; $('#lyrPos').value = S.lyrPos || 'alt';
+}
+$('#lyrOn').onchange = e => { S.lyrOn = e.target.checked; saveS(); };
+$('#lyrSize').onchange = e => { S.lyrSize = clamp(+e.target.value || 64, 30, 140); saveS(); lyrApply(); };
+$('#lyrPos').onchange = e => { S.lyrPos = e.target.value; saveS(); lyrApply(); };
+lyrApply();
+
+setInterval(() => {   // çalan satırı göster
+  if (cur.id !== lyrId && !syncMode) lyrLoad();
+  const box = $('#lyr'), t = active ? active.currentTime : 0;
+  let k = -1; for (let i = 0; i < lyrLines.length; i++){ if (lyrLines[i].t <= t) k = i; else break; }
+  if (k >= 0 && lyrLines[k + 1] === undefined && t - lyrLines[k].t > 14) k = -2;   // son mısradan sonra uzun enstrümantal
+  let a = k >= 0 ? lyrLines[k].x : '', b = k >= -1 && k + 1 < lyrLines.length ? lyrLines[k + 1].x : '';
+  if (k >= 0 && k + 1 < lyrLines.length && lyrLines[k + 1].t - lyrLines[k].t > 14 && t - lyrLines[k].t > 10) a = '';   // uzun ara
+  const l1 = box.querySelector('.l1'), l2 = box.querySelector('.l2');
+  if (a !== shown1){ shown1 = a; l1.textContent = a; l1.classList.remove('pop'); void l1.offsetWidth; if (a) l1.classList.add('pop'); }
+  if (b !== shown2){ shown2 = b; l2.textContent = b; }
+  box.classList.toggle('on', S.lyrOn !== false && !!(a || b));
+}, 100);
+
+$('#lyrSave').onclick = () => { saveLyr($('#lyrIn').value); lyrSay(lyrLines.length ? 'Kaydedildi · ' + lyrLines.length + ' zamanlı mısra.' : 'Kaydedildi. Zamanlama yok: “Zamanla”ya bas ya da hazır zamanlı söz ara.'); };
+$('#lyrClr').onclick = () => { const txt = lyrParse($('#lyrIn').value).map(o => o.x).join('\n'); $('#lyrIn').value = txt; saveLyr(txt); lyrSay('Zaman damgaları silindi.'); };
+
+/* ENTER ile zamanlama */
+function syncPrompt(){ lyrSay('Sıradaki mısra (' + (syncIdx + 1) + '/' + syncLines.length + '): “' + syncLines[syncIdx].x + '” — söylemeye başlayınca ENTER'); }
+function syncEnd(ok){
+  syncMode = false; $('#lyrTap').style.display = 'none';
+  if (!ok){ lyrSay('Zamanlama iptal edildi.'); return; }
+  const txt = syncLines.map(o => lyrStamp(o.t) + ' ' + o.x).join('\n');
+  $('#lyrIn').value = txt; saveLyr(txt);
+  lyrSay('Zamanlama tamam ve kaydedildi (' + syncLines.length + ' mısra). Şarkıyı baştan çalıp kontrol et; yanlış satırı elle [dk:sn.xx] ile düzeltebilirsin.');
+}
+function syncTap(){
+  if (!syncMode) return;
+  syncLines[syncIdx].t = Math.max(0, (active ? active.currentTime : 0) - 0.25);   // tepki süresi payı
+  syncIdx++; if (syncIdx >= syncLines.length) syncEnd(true); else syncPrompt();
+}
+$('#lyrSync').onclick = () => {
+  syncLines = lyrParse($('#lyrIn').value).map(o => ({t: null, x: o.x})).filter(o => o.x);
+  if (!syncLines.length){ lyrSay('Önce sözleri yapıştır.'); return; }
+  const list = allItems(); if (!list.length){ lyrSay('Önce bir şarkı ekle.'); return; }
+  const idx = cur.index >= 0 ? cur.index : 0;
+  lyrId = list[idx].id; syncMode = true; syncIdx = 0; $('#lyrTap').style.display = 'block';
+  if (document.activeElement) document.activeElement.blur();
+  playIndex(idx); syncPrompt();
+};
+$('#lyrTap').onclick = syncTap;
+addEventListener('keydown', e => {
+  if (!syncMode) return;
+  if (e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); syncTap(); }
+  else if (e.key === 'Backspace' && !/INPUT|TEXTAREA/.test((e.target || {}).tagName || '')){ e.preventDefault(); e.stopPropagation(); if (syncIdx > 0){ syncIdx--; syncPrompt(); } }
+  else if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); syncEnd(false); }
+}, true);
+
+/* hazır zamanlı söz (LRCLIB, ücretsiz açık servis) */
+$('#lyrFind').onclick = async () => {
+  const it = allItems()[cur.index]; if (!it){ lyrSay('Önce bir şarkı çal.'); return; }
+  lyrSay('Aranıyor…');
+  try{
+    const r = await fetch('https://lrclib.net/api/search?q=' + encodeURIComponent(it.title));
+    if (!r.ok) throw new Error('sunucu ' + r.status);
+    const j = await r.json(), h = (j || []).find(x => x.syncedLyrics);
+    if (!h){ lyrSay('Bu şarkı için zamanlı söz bulunamadı. Sözleri yapıştırıp “Zamanla”yı kullan.'); return; }
+    $('#lyrIn').value = h.syncedLyrics.trim(); saveLyr($('#lyrIn').value);
+    const d = active && isFinite(active.duration) ? active.duration : 0;
+    lyrSay('Bulundu: ' + (h.artistName || '') + ' – ' + (h.trackName || '') + '.' + (d && h.duration && Math.abs(d - h.duration) > 3 ? ' Dikkat: süre farklı (' + Math.round(h.duration) + ' sn / bu dosya ' + Math.round(d) + ' sn), zamanlar kayık olabilir.' : ' Kontrol et.'));
+  }catch(e){ lyrSay('Arama yapılamadı: ' + ((e && e.message) || 'bağlantı hatası') + '. Sözleri yapıştırıp “Zamanla”yı kullan.'); }
+};
+
 /* ===================== KAYIT (mp4) ===================== */
 let recMR = null, recChunks = [], recBlob = null, recExt = 'webm', recT0 = 0, recTmr = null;
 const recFmt = x => { x = Math.floor(x); const h = Math.floor(x/3600), m = Math.floor(x%3600/60), sc = x%60, p = n => String(n).padStart(2,'0'); return (h ? h + ':' : '') + p(m) + ':' + p(sc); };
@@ -1712,7 +1829,10 @@ async function startRec(){
   // Ses: önce panelin kendi çıkışı (temiz stereo). Sadece uzak (CORS'suz) şarkı çalıyorsa sekme sesi.
   const useTab = !!at && active === P2;
   if (useTab) tr.push(at); else if (recDest) recDest.stream.getAudioTracks().forEach(a => tr.push(a));
-  const M = q.codecs.concat(['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm']);
+  const C = S.recC || 'h264';
+  const M = C === 'webm' ? ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']
+          : C === 'vp9' ? ['video/mp4;codecs=vp09.00.40.08,opus','video/mp4;codecs=vp9,opus','video/webm;codecs=vp9,opus','video/webm']
+          : q.codecs.concat(['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm']);
   const mt = M.find(m => MediaRecorder.isTypeSupported(m)) || '';
   recExt = mt.indexOf('mp4') >= 0 ? 'mp4' : 'webm'; recChunks = []; recBytes = 0;
   const opt = {videoBitsPerSecond: q.br, audioBitsPerSecond: 192000}; if (mt) opt.mimeType = mt;
@@ -1732,7 +1852,7 @@ async function startRec(){
   clearInterval(recTmr);
   recTmr = setInterval(() => {
     $('#recTm').textContent = recFmt((Date.now() - recT0)/1000);
-    recSay('Kayıt sürüyor · ' + q.w + '×' + q.h + ' · ' + fps + ' kare/sn · ' + (recBytes/1e6).toFixed(0) + ' MB' + (fps && fps < 24 ? ' · Bilgisayar zorlanıyor, Full HD seçmeyi dene' : '') + (useTab ? ' · ses: sekme' : ''));
+    recSay('Kayıt sürüyor · ' + q.w + '×' + q.h + ' · ' + (mt.split('codecs=')[1] || 'otomatik').split(',')[0] + ' · ' + fps + ' kare/sn · ' + (recBytes/1e6).toFixed(0) + ' MB' + (fps && fps < 24 ? ' · Bilgisayar zorlanıyor, Full HD seçmeyi dene' : '') + (useTab ? ' · ses: sekme' : ''));
   }, 500);
   $('#recBtn').textContent = '■ Kaydı durdur'; $('#recPrev').disabled = true; $('#recDl').disabled = true;
 }
@@ -1740,7 +1860,7 @@ const toggleRec = () => { (recMR && recMR.state === 'recording') ? recMR.stop() 
 function openRecPv(){
   if (!recBlob) return; const v = $('#recVid'); if (v.src) URL.revokeObjectURL(v.src);
   v.src = URL.createObjectURL(recBlob);
-  $('#recInfo').textContent = 'Süre: ' + $('#recTm').textContent + ' · Boyut: ' + (recBlob.size/1e6).toFixed(1) + ' MB · Biçim: ' + recExt.toUpperCase() + (recExt === 'webm' ? ' (bu tarayıcı mp4 kaydını desteklemiyor, Chrome/Edge güncel sürümü dene)' : '');
+  $('#recInfo').textContent = 'Süre: ' + $('#recTm').textContent + ' · Boyut: ' + (recBlob.size/1e6).toFixed(1) + ' MB · Biçim: ' + recExt.toUpperCase() + (recExt === 'webm' && S.recC !== 'webm' ? ' (bu tarayıcı mp4 kaydını desteklemiyor, Chrome/Edge güncel sürümü dene)' : '');
   $('#recPvDl').textContent = '⬇ ' + recExt + ' olarak indir'; $('#recPv').classList.add('show');
 }
 function saveRec(){
@@ -1748,6 +1868,7 @@ function saveRec(){
   a.download = 'pop-damar-kayit-' + new Date().toISOString().slice(0,16).replace(/[:T]/g,'-') + '.' + recExt;
   document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500);
 }
+$('#recC').onchange = e => { S.recC = e.target.value; saveS(); };
 $('#recQ').onchange = e => { S.recQ = e.target.value; saveS(); };
 $('#recBtn').onclick = toggleRec; $('#recPrev').onclick = openRecPv; $('#recDl').onclick = saveRec; $('#recPvDl').onclick = saveRec;
 $('#recPvClose').onclick = () => { $('#recVid').pause(); $('#recPv').classList.remove('show'); };
