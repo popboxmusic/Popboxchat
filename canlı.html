@@ -640,7 +640,13 @@ body.nopanel #panel{display:none}
 #stage[data-conv] .prog{background:rgba(255,255,255,.18)}
 #stage[data-conv] .time,#stage[data-conv] .credit{color:#fff;font-weight:300}
 /* ===== yazıları sürükleyerek taşıma ===== */
-body.posedit #panel,body.posedit #gear,body.posedit #gate{display:none!important}
+#editBtn{position:fixed;right:14px;top:70px;z-index:60;width:46px;height:46px;border-radius:50%;border:none;background:rgba(20,20,30,.82);color:#fff;font-size:22px;cursor:pointer;opacity:0;transition:opacity .25s}
+body.hover #editBtn,body.panel-open #editBtn{opacity:1}
+body.panel-open #editBtn{right:424px}
+body.nopanel #editBtn{display:none}
+@media (max-width:520px){body.panel-open #editBtn{display:none}}
+body.posedit #panel,body.posedit #gear,body.posedit #editBtn,body.posedit #gate{display:none!important}
+body.posedit #stage .possel{outline:3px solid #7cf!important}
 body.posedit #stage :is(.brand,.np,.msg,#lyr,.credit){pointer-events:auto!important;cursor:move;outline:2px dashed rgba(255,255,255,.65);outline-offset:6px;user-select:none}
 body.posedit #stage .msg{opacity:1!important;transform:translateX(var(--tx,0))!important}
 body.posedit #stage #lyr{opacity:1!important}
@@ -711,9 +717,10 @@ body.posedit #posBar{display:flex}
   <div id="gate"><button id="gateBtn">▶ Yayını başlat</button></div>
 </div>
 
-<div id="posBar"><span>Yazıları sürükle · ortaya yaklaşınca hizalanır · çift tıkla: sıfırla</span><button id="posReset">Bu şablonu sıfırla</button><button id="posDone">Bitti</button></div>
+<div id="posBar"><span>Sürükle: taşı · tekerlek ya da A−/A+: boyut · çift tık: o yazıyı sıfırla</span><button id="posSmall">A−</button><button id="posBig">A+</button><button id="posReset">Bu şablonu sıfırla</button><button id="posDone">Bitti</button></div>
 
 <button id="gear" title="Ayarlar (P)">⚙</button>
+<button id="editBtn" title="Yazıları sürükleyerek taşı (E)">✥</button>
 
 <div id="panel">
   <h1>POP DAMAR · Yayın Paneli</h1>
@@ -729,11 +736,12 @@ body.posedit #posBar{display:flex}
   </div>
 
   <div class="tab on" id="tab-tpl">
+    <button class="btn" id="posEdit" style="margin-bottom:6px">✥ Sayfa düzenini düzenle: yazıları sürükle, boyutlandır</button>
+    <p class="hint" style="margin:0 0 10px">Marka, şarkı adı, mesaj, söz ve kredi yazılarını fareyle taşı, tekerlekle büyüt/küçült. Her şablonun düzeni ayrı saklanır. Kısayol: E.</p>
     <div class="row"><label>Şablon numarası (1–38)</label><input type="number" id="tplNo" min="1" max="38"></div>
     <div class="tplgrid" id="tplgrid"></div>
     <div class="row" style="margin-top:14px"><label>Şablon stili</label><select id="skinSel"><option value="aurora">Aurora (yeni stil)</option><option value="klasik">Klasik (eski)</option></select></div>
-    <button class="btn" id="posEdit" style="margin-top:8px">✥ Yazıları sürükleyerek taşı</button>
-    <p class="hint" style="margin-top:6px">Ekrandaki marka, şarkı adı, mesaj, söz ve kredi yazılarını fare ile istediğin yere taşıyabilirsin. Her şablonun konumu ayrı saklanır. Kısayol: E. Aurora stili eski şablonların düzenini korur, görünümünü yeni stile çevirir.</p>
+    <p class="hint" style="margin-top:8px">Aurora stili eski şablonların düzenini korur, görünümünü yeni stile çevirir.</p>
     <div class="row" style="margin-top:14px"><label>Benzersiz görünüm</label><button class="btn" id="uqNew">🎲 Yeni benzersiz görünüm</button></div>
     <div class="row"><label>Görünüm kodu</label><input type="text" id="uqSeed" placeholder="boş = şablonun kendi rengi" maxlength="12" style="text-transform:uppercase"></div>
     <label class="switch" style="margin-top:6px"><input type="checkbox" id="uqTpl"><i></i> Aurora ailesinden rastgele şablon seç (31, 33–38)</label>
@@ -2506,11 +2514,17 @@ $('#skinSel').onchange = e => { S.skin = e.target.value; saveS(); buildTplGrid()
 /* ===================== YAZILARI SÜRÜKLEYEREK TAŞI ===================== */
 function posApply(){
   const m = (S.pos && S.pos[S.tpl]) || {};
-  POS_KEYS.forEach(([k, sel]) => { const el = stage.querySelector(sel); if (el) el.style.translate = m[k] ? m[k][0] + 'px ' + m[k][1] + 'px' : ''; });
+  POS_KEYS.forEach(([k, sel]) => { const el = stage.querySelector(sel); if (el) { el.style.translate = m[k] ? m[k][0] + 'px ' + m[k][1] + 'px' : ''; el.style.scale = m[k] && m[k][2] && m[k][2] !== 1 ? String(m[k][2]) : ''; } });
+}
+let posSel = null;
+function posSelect(key){ posSel = key; POS_KEYS.forEach(([k, sel]) => { const el = stage.querySelector(sel); if (el) el.classList.toggle('possel', k === key); }); }
+function posScale(key, f){
+  const m = ((S.pos = S.pos || {})[S.tpl] = S.pos[S.tpl] || {}), v = m[key] || [0, 0, 1];
+  m[key] = [v[0], v[1], +Math.max(0.4, Math.min(3, (v[2] || 1) * f)).toFixed(3)]; saveS(); posApply();
 }
 function posEdit(on){
   const b = document.body; on = on === undefined ? !b.classList.contains('posedit') : on;
-  b.classList.toggle('posedit', on); if (on) openPanel(false);
+  b.classList.toggle('posedit', on); if (on) openPanel(false); else posSelect(null);
   if (!on){ saveS(); }
 }
 let posDrag = null;
@@ -2520,7 +2534,7 @@ stage.addEventListener('pointerdown', ev => {
   const key = posKeyOf(ev.target); if (!key) return; ev.preventDefault();
   const sel = POS_KEYS.find(x => x[0] === key)[1], el = stage.querySelector(sel), m = ((S.pos = S.pos || {})[S.tpl] = S.pos[S.tpl] || {}), cur0 = m[key] || [0, 0];
   const k = stage.getBoundingClientRect().width / 1920;
-  posDrag = {key, el, sx: ev.clientX, sy: ev.clientY, ox: cur0[0], oy: cur0[1], k};
+  posDrag = {key, el, sx: ev.clientX, sy: ev.clientY, ox: cur0[0], oy: cur0[1], sc: cur0[2] || 1, k}; posSelect(key);
   try{ stage.setPointerCapture(ev.pointerId); }catch(e){}
 });
 stage.addEventListener('pointermove', ev => {
@@ -2535,7 +2549,7 @@ stage.addEventListener('pointermove', ev => {
 });
 const posEnd = () => {
   if (!posDrag) return; const d = posDrag; posDrag = null;
-  if (d.nx !== undefined){ S.pos[S.tpl][d.key] = [Math.round(d.nx), Math.round(d.ny)]; saveS(); }
+  if (d.nx !== undefined){ S.pos[S.tpl][d.key] = [Math.round(d.nx), Math.round(d.ny), d.sc]; saveS(); }
   $('#posG .gx').style.display = $('#posG .gy').style.display = 'none';
 };
 stage.addEventListener('pointerup', posEnd); stage.addEventListener('pointercancel', posEnd);
@@ -2545,6 +2559,14 @@ stage.addEventListener('dblclick', ev => {
   if (!key) return;
   if (S.pos && S.pos[S.tpl]){ delete S.pos[S.tpl][key]; saveS(); posApply(); }
 });
+stage.addEventListener('wheel', ev => {
+  if (!document.body.classList.contains('posedit')) return;
+  let key = null; for (const el of document.elementsFromPoint(ev.clientX, ev.clientY)){ key = posKeyOf(el); if (key) break; }
+  if (!key) return; ev.preventDefault(); posSelect(key); posScale(key, ev.deltaY < 0 ? 1.06 : 1 / 1.06);
+}, {passive: false});
+$('#posBig').onclick = () => posScale(posSel || 'np', 1.1);
+$('#posSmall').onclick = () => posScale(posSel || 'np', 1 / 1.1);
+$('#editBtn').onclick = () => posEdit(true);
 $('#posEdit').onclick = () => posEdit(true);
 $('#posDone').onclick = () => posEdit(false);
 $('#posReset').onclick = () => { if (S.pos) delete S.pos[S.tpl]; saveS(); posApply(); };
